@@ -1,0 +1,6 @@
+$MODS_SCRIPTS/general/gsm2u406_pum.sge
+$MODS_SCRIPTS/general/script_fix_eddie.mod
+$MODS_SCRIPTS/general/um_archive45_eddie.mod
+$MODS_SCRIPTS/general/mpirun-openib
+$MODS_SCRIPTS/general/ksh93.mod
+$STETT2/um/mods/scripts/debug.mod

@@ -1,0 +1,52 @@
+#!/bin/ksh
+#$ -N xhdiu000
+#$  -pe sharedmem 16
+#$ -l h_rt=8000
+#$ -P geos_optclim
+#$ -j y
+# force reservation
+#$ -R y
+#$ -l h_vmem=4G
+
+export ITMPDIR=$TMPDIR
+TMPDIR=${TMPTMPDIR:-${TMPDIR}}
+# make TMPDIR of run unique
+TMPDIR=/exports/csce/eddie/geos/groups/OPTCLIM/HadAM3//xhdiu/T
+export TMPDIR
+mkdir -p $TMPDIR
+MY_OUTPUT=/exports/csce/eddie/geos/groups/OPTCLIM/HadAM3//xhdiu/U
+export TMPDIR TMPTMPDIR MY_OUTPUT
+mkdir -p  $MY_OUTPUT 
+
+set -a            # Set jobscript UNICOS options
+SETOPT=a          # Choose shell "set" options for  lower level scripts
+TYPE=NRUN
+STEP=4
+# Output file for run following compilation run.
+UMRUN_OUTPUT=/exports/csce/eddie/geos/groups/OPTCLIM/HadAM3//xhdiu/U/xhdiu000.xhdiu.d21006.t182152.leave
+CJOBN=xhdiu000
+CRDOERUN=false
+CRPRODRUN=false
+BUILDSECT=false
+SKIP_SRC_EXTRACT=false
+SKIP_TAR_COMPDIR=false
+JOBDIR=/home/stett2/umui_runs/xhdiu-006182113
+SUBMITID=006182113
+QUEUE=
+SUBMITHOST=login01.ecdf.ed.ac.uk
+ROVING=false
+NPROC=1
+RECON_NPROC=1
+UM_NPES=16
+NCPUS=UNSET
+NCORE=
+NCORES_PER_NUMANODE=
+UM_ATM_NPROCX=4
+UM_ATM_NPROCY=4
+UM_OCN_NPROCX=UNSET
+UM_OCN_NPROCY=UNSET
+if test $STEP = 2; then
+  . /home/stett2/umui_runs/xhdiu-006182113/SCRIPT_compile
+else
+  . /home/stett2/umui_runs/xhdiu-006182113/SCRIPT
+fi

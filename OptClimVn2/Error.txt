@@ -1,0 +1,8 @@
+4th May 2019 Found long standing error in runOptimise/StudyConfig.
+Code that computes covariance taking account of constraint which is active from 20/8/17  computes the cpt
+due to constraint incorrectly. Rather than setting cov[-1,-1] to 2*mu covariance is set to 1/(2*mu). This started off in runOptimise
+and then propagated into StudyConfig.
+
+The effect of this is to reduce dramatically the impact of the constraint (netflux) on the optimisation.
+Fortunately this does not affect any of the optimisation studies used in this paper as they were all run
+in June/July 2017. It does affect runs subsequent to that!

@@ -1,0 +1,732 @@
+
+MESSAGE="Run xlro#b started. Time=`date`"
+echo "$MESSAGE" | mailx -s "$MESSAGE" simon.tett@ed.ac.uk
+#
+########################################################################
+#          Unified Model script - calls master with various args       #
+########################################################################
+#  imports JOBDIR from submit. Normally set to $HOME/umui_runs/$RUNID-$SUBMITID
+#
+echo "*****************************************************************"
+echo "     Job started at : `date`"
+if test -z "$OPRESTART"
+then
+    echo "     Run started from UMUI"
+elif test "$OPRESTART" -eq 0
+then
+    echo "     Run restarted by user startrun after a stoprun" 
+elif test "$OPRESTART" -eq 1
+then
+    echo "     Run restarted by operator startrun after a stoprun"
+elif test "$OPRESTART" -eq 2
+then
+    echo "     Run restarted by operator after a system crash/failure"
+elif test "$OPRESTART" -eq 3
+then
+    echo "     Run resubmitted automatically from previous run"
+elif test "$OPRESTART" -eq 4
+then
+    echo "     Run resubmitted by operator after an archive error"
+elif test "$OPRESTART" -eq 5
+then
+    echo "     Run resubmitted by operator after a system error"
+else
+    echo "     Run resubmitted with unknown restart code $OPRESTART"
+fi
+
+echo "     Running from control files in $JOBDIR"
+echo "*****************************************************************"
+echo
+echo "     Version 4.5 template, Unified Model ,  Non-Operational"
+echo "     Created by UMUI version 4.5.1                        "
+echo "*****************************************************************"
+
+VN=4.5                # Model version number
+. $UMDIR/vn$VN/scripts/setglobalvars # set UI system variables
+
+
+########################################################################
+######   Set up unified model environment variables               ######
+######   for export to lower shells                               ######
+########################################################################
+
+######                                                            ######
+######   Run Identifier                                           ######
+
+EXPTID=xlro
+EXPTALIAS="NONE"
+JOBID=b
+RUNID=$EXPTID$JOBID
+JOB_LINE='15 month run starting 1st Dec 1999 no compilation'
+
+# OASIS coupling flag
+OASIS=false # Using OASIS
+
+
+UM_SECTOR_SIZE=2048
+ARCHTAPE=true # archive to tape, otherwise leave on data park.
+if test $UMMACHINE = 'METOCRAY'
+then
+########################################################################
+###S_NONP     start  of non-portable block. UKMO only             ######
+
+OPSTOPRUN=/u/m20/cprod/opstoprun
+AUTO_RESTART=false
+OPSTARTDIR=/u/m20/cprod/opstartinfo
+OPSYSERR=/u/m20/cprod/opsyserr
+OPARCHERR=/u/m20/cprod/oparcherr
+CRERRDIR=/u/m20/cprod/runerrmsg
+. prg_3.0.2.1            # This is the module command to set up the compilers 
+module list              # Report what is used.
+AC=geos_optclim
+newacct $AC
+CC=$?
+if test $CC -ne 0
+then
+ echo "################################################################"
+ echo "# TIC code requested is not allowed, default TIC will be used ##"
+ echo "################################################################"
+fi
+IBM_RETRY=5   # allows retries of getibm and similar facilities.
+# Comment the following to run with streams off.
+# May be required if system is not stream safe.
+SCACHE_D_STREAMS=1
+
+if test "$ROVING" = true; then
+  # Temporary: Add rove scripts directory to path
+  PATH=$PATH:$UMDIR/rove
+
+  # ROVING flag is used for tests relating to anything in the series of
+  # runs such as location of restart files, presence of a restart file.
+  # whereas the thisJobRoving flag relates to this section of the run
+  # only and ensures that the job does not need to check for a token
+  # file before starting.
+
+  # If thisJobRoving is unset, then this job is not roving.
+  # This would be the case after a startrun
+  thisJobRoving=${thisJobRoving:-false}
+  # Set up general set of variables for roving jobs
+  . roveGlobalVars
+fi
+
+# Stop the run if there is already a restartable job running.
+ if $AUTO_RESTART
+  then
+    result=false
+    # For roving jobs need to test other machine as well
+    onHost=$thisHost
+    if test "$ROVING" = true; then
+      if test $(checkHost $otherHostUp) -eq 0; then
+        result=`remsh $otherHost "test -e $OPSTARTDIR/$RUNID* && echo true"`
+        if test "$result" = true; then
+          onHost=$otherHost
+        fi
+      fi
+    fi
+    if test -e $OPSTARTDIR/"$RUNID"* -o "$result" = true
+    then
+
+      echo ------------------------------------------------------------
+      echo
+      echo "ERROR: A restart file exists for runid $RUNID in $OPSTARTDIR"
+      if test "$ROVING" = true; then
+        echo " on machine $onHost."
+      fi
+      echo " Either this runid is already running on this system or any"
+      echo " files (left by a sudden run failure) for this runid need"
+      echo " to be deleted from $OPSTARTDIR before rerunning."
+      echo
+      echo ------------------------------------------------------------
+
+      exit 1
+
+    fi
+  fi
+###E_NONP       END  of non-portable block. UKMO only             ######
+########################################################################
+fi
+### CRAY-only parameter(s):
+UM_RNL_SKIP=0  # Set to 1 if you want a message about skipped namelists
+### End of CRAY-only parameter(s):
+
+
+
+######   Machine and directory information                        ######
+if test "$UMMACHINE" = 'METOCRAY'
+then
+  echo "Run $RUNID is running using `newacct -l`"
+fi
+echo "$JOB_LINE"
+echo "This job is running on machine `uname -n`,"
+echo "using UM directory $UMDIR,"  # set in your logon profile.
+echo "and test directory $UMTEST." # set in your logon profile.
+
+######   CORE DUMP SAVING                                         ######
+SAVECORE=true
+COREDUMP=/tmp/$RUNID.core$$
+
+######   Set up directory pointers in environment variables    #####
+TEMP=${UM_TMPDIR:-${TMPDIR}}	# Files required only during the run
+IN=$TEMP			# Formatted input control files
+STASETS_DIR=$UMDIR/vn$VN/ctldata/stasets  # stash sets file
+EXEC=$UMDIR/vn$VN/exec          # Executable files
+EXECN=$UMTEST/vn$VN/exec	# Executable files (test versions)
+SCRIPT=$UMDIR/vn$VN/scripts 	# Shell script files
+PROG=$UMDIR/vn$VN/source        # UPDATE program libraries
+PROG_OBJ=$PROG
+PROG_EXEC=$PROG
+PROG_CA=$PROG
+### User defined environment variables.
+UM_INPUT=$UMDIR/PUM_Input/vn4.5
+UM_OUTPUT=$HOME/PUM_Output/vn4.5
+### Standard directories for input files etc.
+UM_ANCIL_A=$UMDIR/vn$VN/ancil/atmos/cl_9673
+UM_ANCIL_HADCM3=$UMDIR/vn$VN/ancil/atmos/cl_9673/hadcm3
+UM_ANCIL_A_SLAB=$UMDIR/vn$VN/ancil/slab/cl_9673
+UM_DUMP_A=$UMDIR/vn$VN/dumps/atmos/cl_9673
+UM_SPECTRAL=$UMDIR/vn$VN/ctldata
+MODS_SOURCE=$UM_INPUT/mods/source/clim
+MODS_SCRIPTS=$UM_INPUT/mods/scripts
+DUMPS=$UM_INPUT/dumps
+MODS=$UM_INPUT/mods/source
+OVERRIDES=$UM_INPUT/overrides
+UM_ANCIL_SAGES=/exports/work/geos_sages/um/ancil_sages
+MODS_ST=/exports/work/geos_sages/um/mods_sages/st
+HADISST_ANCIL=$UM_ANCIL_SAGES/HadISST
+COREDUMP=$DATADIR/$RUNID/M/core.$$
+DUMPS_SAGES=/exports/work/geos_sages/um/dumps_sages/
+MODS_HIGHRES=/exports/home/stett2/um/mods/high_res/
+N96_ANCIL=$UM_ANCIL_SAGES/n96_ancil/
+STETT2=/exports/home/stett2
+EXECDIR=/exports/work/geos_cesd_workspace/stett2/um/exec/
+### User defined output directories
+DATAW=$DATADIR/$RUNID/W                    # User-specific read/write data files
+DATAM=$DATADIR/$RUNID/M                    # Output Dumps/PP/etc. Generated names 
+UCOMPDIR=$DATAW/compile_$RUNID                # source/objects/Makefile
+URECONDIR=$DATAW/recon_$RUNID              # remade reconfiguration
+REBUILD_DIR=$DATAW/rebuild_$RUNID         # remade section-def combinations
+
+if test ! -d $TEMP
+then
+echo "Creating directory $TEMP"
+mkdir -p $TEMP
+fi
+
+if test ! -d $DATAW
+then
+echo "Creating directory $DATAW"
+mkdir -p $DATAW
+fi
+
+if test ! -d $DATAM
+then
+echo "Creating directory $DATAM"
+mkdir -p $DATAM
+fi
+
+if test ! -d $UCOMPDIR
+then
+echo "Creating directory $UCOMPDIR"
+mkdir -p $UCOMPDIR
+fi
+
+if $BUILDSECT
+then
+  if test ! -d $REBUILD_DIR
+  then
+    echo "Creating directory $REBUILD_DIR"
+    mkdir -p $REBUILD_DIR
+  fi
+fi
+
+ERRFLAG=$TEMP/$RUNID.errflag
+
+UM_NAM_MAX_SECONDS=${UM_NAM_MAX_SECONDS:-300}
+DEL_MPP_OUTPUT=false   # set false to always keep output from all PEs
+USE_CAMELOT=false             # send PP header s to Camelot database
+MODSCRIPT=true         # set true to use test versions of scripts
+TESTEXEC=false          # set true to use test versions of execs
+OPERATIONAL=false       # Indicates whether operational model
+AUTOMATIC_PP=true      # Switch for automatic output processing
+TFPREFIX="CRACERU"  # IBM prefix used by trigger files in archiving system
+OUT_CLASSR=leave       # Output class for resubmitted jobs
+OUT_CLASS=leave        # Output class for start-run jobs (if not resubmit)
+RECONA=true            # Indicates if atmos reconfiguration step
+RECONO=false            # Indicates if ocean reconfiguration step
+RECONW=false            # Indicates if ocean reconfiguration step
+RECONEW=false           # Indicates if new recon. execut. required
+ATMOS=true # Set for roving job scripts
+OCEAN=false # Set for roving job scripts
+ASTART_DUMP=$DATAW/$RUNID.astart  # Ensure handedits to this are mirrored in INITHIS
+OSTART_DUMP=$DATAW/$RUNID.ostart  # Ensure handedits to this are mirrored in INITHIS
+PURGEHIST=true          # Flag to delete old histfile in NRUN
+LONGOUTPUT=false        # Indicates whether OUTPUT2 is printed
+OBS_FORMAT=2                  # ACOBS file format (A)
+
+NUPCOMMD=nupdate        # Change to update for update system
+UPDOUT="dc,ed,in,um"   # UPDATE output options: Model
+UPDOUTS="dc,ed,um,in"           # UPDATE output options: Scripts
+SCRLIB=$PROG/umsl       # Pathname of UM scripts library
+PROGLIB=$PROG/umpl      # Pathname of UM program library
+OBJXREF=$PROG_OBJ/obj_xref  # Source/object code x-reference file
+EXECXREF=$PROG_EXEC/exec_xref            # reference file for remake
+COMPVARS=$UMDIR/vn$VN/source/compile_vars  # Default compilation variables
+UCOMPVARS=$UCOMPDIR/ucompile_vars # ...holding compilation variables used in run
+PREOBJDIR=$UMDIR/vn$VN/obj        # Directory with precompiled objects.
+PRESRCDIR=$UMDIR/vn$VN/src        # Directory with preextracted source.
+
+# Required for t3e with PVM
+PVM_SM_POOL=256
+PVM_RETRY_COUNT=10000000
+
+PERFTRACE=false # perftrace options for perfview
+PERFVIEWOPT="0"
+#
+CF77_ALL_MODEL=false              # Hand edit for full compilation.
+ATEXPERT=false  # Hand edit for ATEXPERT (need CF77_ALL_MODEL)
+#
+
+LOADMODULE=$DATAW/$RUNID.exec    # load module, model
+LOADRECON=$DATAW/$RUNID.recon   # load module, reconfiguration
+
+######   Control files associated with the run                    ######
+
+  PREFIXX=""
+  PREFIXI=""
+  PREFIXR=""
+  PREFIXW=""
+  PREFIXS=""
+  PREFIXT=""
+
+### Output processing history file ###
+
+PPHIST=$DATAM/$PREFIXW$RUNID.pphist # Front-end control file
+
+
+###  Model control files              ###
+
+
+PRINT_INPUT=true # Switch for printing files.
+SIZES=$IN/$PREFIXI$RUNID.sizes         # Sizes for dynamic allocation
+CNTLALL=$IN/$PREFIXI$RUNID.cntlall     # All model control
+CNTLGEN=$IN/$PREFIXI$RUNID.cntlgen     # Control dimensioned by sub-model
+INITHIS=$IN/$PREFIXI$RUNID.inithis     # History initialisation
+CNTLATM=$IN/$PREFIXI$RUNID.cntlatm     # Atmos control
+CNTLOCN=$IN/$PREFIXI$RUNID.cntlocn     # Ocean control
+CNTLSLB=$IN/$PREFIXI$RUNID.cntlslb     # SLAB control
+CNTLWAV=$IN/$PREFIXI$RUNID.cntlwav     # WAVE control
+NAMELIST=$IN/$PREFIXI$RUNID.namelists  # All the above namelists control
+INITHIS=$IN/$PREFIXI$RUNID.inithis     # History initialisation
+PPCNTL=$IN/$PREFIXW$RUNID.ppcntl       # Front-end control file
+OASISF=$IN/$PREFIXI$RUNID.oasis        # OASIS control file
+CONTCNTL=$IN/$PREFIXI$RUNID.contcntl   # control of continuation runs
+PHIST=$DATAW/$PREFIXW$RUNID.phist      # Permanent history file
+THIST=$DATAW/$PREFIXW$RUNID.thist      # Temporary history file
+RECONCTLA=$IN/$PREFIXI$RUNID.recona    # Reconfiguration control file,atmos
+RECONCTLO=$IN/$PREFIXI$RUNID.recono    # Reconfiguration control file,ocean
+HKFILE=$TEMP/$PREFIXT$RUNID.hkfile     # Dummy housekeeping file 
+DEFS=$TEMP/$PREFIXS$RUNID.updefs       # *DEFinitions file for model
+SECTMODE=$TEMP/$PREFIXS$RUNID.sectmode # SECTion_MODE file for model
+UPDATE=$TEMP/$PREFIXS$RUNID.update     # UPDATE mods filename
+UPDATEC=$TEMP/$PREFIXS$RUNID.updatec   # UPDATE mods filename, c code
+UPDATEO=$TEMP/$PREFIXS$RUNID.updateo   # UPDATE Ocean  mods filename
+UPDATEW=$TEMP/$PREFIXS$RUNID.updatew   # UPDATE Wave  mods filename
+UPDATES=$TEMP/$PREFIXS$RUNID.updates   # UPDATE Script Mods filename
+UPDATE_RECON=$TEMP/$RUNID.uprecon      # UPDATE mods for reconfig: FORTRAN
+UPDATE_RECONC=$TEMP/$RUNID.upreconc    # UPDATE mods for reconfig: C CODE
+CDECKS=$PROG/cdecks                    # *C decks list for control section
+STASHCTL=$IN/$PREFIXI$RUNID.stashc     # Diagnostic control file (STASH)
+PPXREFU=$IN/$PREFIXI$RUNID             # Root for users STASHmaster files
+STASHMSTR=$UMDIR/vn$VN/ctldata/STASHmaster  # Root for system STASHmaster files
+HISTNLIST=$IN/$PREFIXI$RUNID.hnlist    # NAMELIST input for histprint
+FAILPROC=$DATAM/$RUNID.failure         # failed server requests
+JOBSCRIPT=$TEMP/$RUNID.job             # Job to level script
+OUTPUT=$DATAW/$PREFIXT$RUNID.out       # Output file for the job step
+OUTPUT2=$DATAW/$PREFIXT$RUNID.out2     # Additional printed output file
+UM_STDOUT_FILE=$DATAW/$RUNID.fort6.pe  # Destination of standard output files.
+MPP_OUTPUT="$UM_STDOUT_FILE"0          # Output from pe0
+RESUB_FILE=$TEMP/$RUNID.resub          # File holding job for resubmit
+
+######   Set up histprint NAMELIST input                          ######
+cat >$HISTNLIST <<EOF
+ &PRINTOPT
+ LONG=F,
+ LAST_RECORD=F
+ &END
+EOF
+
+######   Set up the directory path searches.                      ######
+if $MODSCRIPT
+then
+  echo " Test versions of UM scripts used"
+  PATH=$TEMP/modscr_$RUNID:$PATH             # Add script directory
+fi
+
+if $TESTEXEC
+then
+  echo " Test versions of UM executables used"
+  PATH=$PATH:$EXECN               # Add exec directory
+fi
+
+PATH=$PATH:$SCRIPT:$EXEC          # Add script directory and executable
+                                  #   file directory to search path
+                                  
+echo "PATH USED = $PATH"
+
+########################################################################
+######                                                            ######
+######        Set up control files for Unified Model run          ######
+######                                                            ######
+########################################################################
+
+
+######   Set up dummy housekeeping file                           ######
+  >$HKFILE
+submitScript=$JOBDIR/qsubmit.`hostname`
+if test -r $submitScript
+then
+# Not all systems use SUBMIT
+  banner QSUBMIT >> $OUTPUT
+  echo "Copy of script submitted to the queue" >> $OUTPUT
+  cat $submitScript >> $OUTPUT
+fi
+if test $STEP -ge 1
+then
+
+  . getfile SIZES $JOBDIR $SIZES $PRINT_INPUT
+  . getfile CNTLALL $JOBDIR $CNTLALL $PRINT_INPUT
+  . getfile CNTLGEN $JOBDIR $CNTLGEN $PRINT_INPUT
+  . getfile CNTLATM $JOBDIR $CNTLATM $PRINT_INPUT
+   > $CNTLOCN
+   > $CNTLSLB
+   > $CNTLWAV
+
+if [ -f $SIZES ]
+  then
+      echo "$RUNID seems ok at namelist cat"
+     alertd=`date +%j", "%D" "%H":"%M":"%S`
+     alertText="SIZES ok, $RUNID, $HOSTNAME, $JOB_ID, $USER, $DATADIR, $alertd"
+     echo $alertText>>/exports/work/geos_sages/um/umAlert.txt
+  else
+     alertd=`date +%j", "%D" "%H":"%M":"%S`
+     alertText="SIZES missing, $RUNID, $HOSTNAME, $JOB_ID, $USER, $DATADIR, $alertd"
+     echo $alertText >> /exports/work/geos_sages/um/umAlert.txt
+     . getfile SIZES $JOBDIR $SIZES $PRINT_INPUT
+     if [ -f $SIZES ]
+     then
+      echo "$RUNID recovered SIZES at namelist cat"
+    else
+      echo "SIZES missing $SIZES - fatal error"
+     alertText="SIZES unrecovered, $RUNID, $HOSTNAME, $JOB_ID, $USER, $DATADIR, $alertd"
+     echo $alertText >> /exports/work/geos_sages/um/umAlert.txt
+     exit 1
+    fi
+ fi
+
+  cat $SIZES $CNTLALL $CNTLGEN $CNTLATM $CNTLOCN $CNTLSLB  $CNTLWAV > $NAMELIST
+ 
+  . getfile STASHC  $JOBDIR $STASHCTL $PRINT_INPUT
+  . getfile SCRIPT  $JOBDIR $JOBSCRIPT $PRINT_INPUT
+  if test $TYPE = 'CRUN'
+  then
+    . getfile CONTCNTL $JOBDIR $CONTCNTL $PRINT_INPUT
+  fi      #     for if test $TYPE = 'CRUN'
+
+fi  #  for if test $STEP -ge 1
+
+. getfile PRESM_A $JOBDIR $PPXREFU.PRESM_A $PRINT_INPUT
+ > $PPXREFU.PRESM_O
+ > $PPXREFU.PRESM_S
+ > $PPXREFU.PRESM_W
+. getfile INITHIS $JOBDIR $INITHIS $PRINT_INPUT
+. getfile RECONA $JOBDIR $RECONCTLA $PRINT_INPUT
+
+. getfile PPCNTL $JOBDIR $PPCNTL $PRINT_INPUT
+
+# Changing permissions for faster namelist reads
+# Remove comment to use
+# chmod 555 $IN/* 
+
+if test $STEP -ne 4      # Files needed only when compiling......
+then
+###      Set up UPDATE DEFinitions file                           ######
+  . getfile UPDEFS $JOBDIR $DEFS $PRINT_INPUT
+###      Set up SECTion_MODE file
+  . getfile SECT_MODE $JOBDIR $SECTMODE $PRINT_INPUT
+###ALL   Set up UPDATE mods file                                  ######
+  . allmods MODS_UM $JOBDIR  $UPDATE
+###ALL   Set up UPDATEC mods file                                 ######
+  . allmods MODS_C $JOBDIR $UPDATEC
+fi
+
+###ALL   Set up RECON UPDATE mods                                ######
+if $RECONEW
+  then
+  . allmods MODS_RECF $JOBDIR $UPDATE_RECON
+  . allmods MODS_RECC $JOBDIR $UPDATE_RECONC
+fi  
+
+###ALL   Set up SCRIPT UPDATE mods                                ######
+if $MODSCRIPT
+  then
+  . allmods MODS_SCRIPT $JOBDIR $UPDATES
+  . updscripts
+  hash -r
+fi  
+
+### Roving Jobs ###
+if test "$ROVING" = true; then
+  # Temporary: Add rove scripts directory to path
+  PATH=$PATH:/u/m20/home/mec/t20sm/rove
+  echo '********************************************'
+  echo Starting script: startCheck
+  echo Starting : `date`
+  echo '********************************************'
+  # Checks whether twin has started. If not, gets latest files
+  # and if successful, lock out twin and continue run.
+  startCheck "$roveId" $USER $RUNID $DATAW $TYPE $thisJobRoving
+  returnCode=$?
+  echo '********************************************'
+  echo Ending script   : startCheck
+  echo Completion code : $returnCode
+  echo Completion date : `date`
+  echo '********************************************'
+  if test $returnCode -ne 0; then
+    # Either other twin has started first or there is a problem
+    mv $outputFile $outputFile.ignore
+    echo Exiting
+    exit 1
+  fi
+  # Set up location information file as appropriate
+
+  if test $STEP -eq 4 -o $STEP -eq 1; then
+    # For CRUNs this is the restart machine whether or not job fails
+    if test $TYPE = CRUN; then
+      setLocation $RUNID restartLocation $thisHost
+      returnCode=$?
+      if test $returnCode -ne 0; then
+        echo 1. Run unable to continue
+        exit 1
+      fi
+    else
+      # NRUN so cannot restart unless this is successful
+      setLocation $RUNID restartLocation NONE
+      returnCode=$?
+      if test $returnCode -ne 0; then
+        echo 2. Run unable to continue
+        exit 1
+      fi
+    fi
+  fi
+  # Write location of run to log files
+  logJobDetails $USER $RUNID $STEP $TYPE $(basename $outputFile)
+  result=`remsh $otherHost "test -r $outputFile && echo yes"`
+  if test "$result" = yes; then
+    echo Now tagging output file name on other host with .ignore suffix
+    remsh $otherHost mv $outputFile $outputFile.ignore
+  fi
+
+fi
+
+########################################################################
+######                                                            ######
+######     Set up environment for the OASIS coupler               ######
+######                                                            ######
+########################################################################
+
+if $OASIS
+then
+. getfile OASIS $JOBDIR $OASISF $PRINT_INPUT
+. $OASISF
+else
+OMASTER=false
+fi
+
+########################################################################
+######                                                            ######
+######     Initialise Hadley Centre Camelot database              ######
+######                                                            ######
+########################################################################
+
+if $USE_CAMELOT
+then
+  camjobinfo
+fi
+
+########################################################################
+######                                                            ######
+######      Run the model - Printed output goes to $DATAW         ######
+######                      before being deleted, normally        ######
+######                                                            ######
+########################################################################
+                                 
+SERVEROUT=$TEMP/$RUNID.servout    # Output from server process
+AUTOPPOUT=$TEMP/$RUNID.autoppout  # Output from auto-tidyup.
+
+if $AUTOMATIC_PP
+then
+   . autopp_tidyup > $AUTOPPOUT
+   if test $AUTOPPCODE -eq 0  -a  $RCSERVER = 'F'
+   then
+     qsmaster $RUNID
+     RCMASTER=$?
+   fi
+else
+   qsmaster $RUNID                # Run the UM master script.
+   RCMASTER=$?                    # return code.
+fi
+
+# For roving jobs set up location information for next job
+if test $ROVING = true; then
+  # This is the restart machine whether or not job failed
+  if test $TYPE = CRUN; then
+    setLocation $RUNID restartLocation $thisHost
+    returnCode=$?
+    # In case of autoresubmission ensure next job cannot rove if
+    # setLocation fails
+    if test $returnCode -ne 0; then
+      echo Unable to register restart location following successful NRUN
+      RCMASTER=1
+    fi
+  else 
+    # Type is NRUN. Can only restart if NRUN was successful
+    if test $RCMASTER -eq 0; then
+      setLocation $RUNID restartLocation $thisHost
+      returnCode=$?
+      if test $returnCode -ne 0; then
+        echo Unable to register restart location following successful NRUN
+	RCMASTER=1
+      fi
+    fi
+  fi
+fi
+
+echo ' <<<< Information about How Many Lines of Output follow >>>>'
+echo ' '`wc -l $OUTPUT | cut -f1 -d'/'`' lines in main OUTPUT file.'
+echo ' '`wc -l $MPP_OUTPUT | cut -f1 -d'/'`' lines of output from pe0.'
+if $LONGOUTPUT
+then
+echo ' '`wc -l $OUTPUT2 | cut -f1 -d'/'`' lines in long OUTPUT file.'
+fi
+if $AUTOMATIC_PP
+then
+echo ' '`wc -l $SERVEROUT | cut -f1 -d'/'`' lines in SERVER file.'
+fi
+echo ' <<<<         Lines of Output Information ends          >>>>'
+
+banner " OUTPUT "
+cols=80
+
+count=`expr \( 500000 \* $cols / 128000 + 1 \)`
+                         # Print and remove output file
+  dd bs=128k count=$count if=$OUTPUT && rm $OUTPUT
+if $LONGOUTPUT
+then
+  banner " OUTPUT2"
+                                  # Print and remove output file
+  count2=`expr \( $cols \* 1 \)`
+  dd bs=128k count=$count2 if=$OUTPUT2 && rm $OUTPUT2
+fi
+
+banner 'PE0 OUTPUT'
+echo '%PE0 OUTPUT%'
+dd bs=128k count=$count if=$MPP_OUTPUT && rm $MPP_OUTPUT
+
+if $DEL_MPP_OUTPUT
+then
+  # Delete remaining fort.6 output files if run completed OK
+  if test $RCMASTER -eq 0 -a  ! -z "$UM_STDOUT_FILE"
+  then
+     rm "$UM_STDOUT_FILE"*
+  fi
+fi
+
+
+if $AUTOMATIC_PP
+then
+  banner " AUTOPP_TIDYUP"
+  echo %AUTOPP_TIDYUP
+                                  # Print and remove output file
+  count=`expr \( $cols \* 2 \)`
+  dd bs=128k count=$count if=$AUTOPPOUT && rm $AUTOPPOUT
+fi
+
+if $AUTOMATIC_PP
+then
+  banner " SERVER"
+  echo %SERVER
+                                  # Print and remove output file
+  count=`expr \( $cols \* 2 \)`
+  dd bs=128k count=$count if=$SERVEROUT && rm $SERVEROUT
+fi
+
+##############################################################
+########   USERS bottom script insert       start
+###############################################################
+##
+##
+##
+BOTT=../../../um_bottom_insert
+if test -f $BOTT
+then
+. $BOTT
+else
+  echo "ERROR: not found  bottom script insert $BOTT"
+  exit 1
+fi
+#
+#    #############################################################
+#    #######   USERS bottom script insert       end
+#    ##############################################################
+#
+
+
+echo "Files in directory DATAW= $DATAW"
+ls -ls $DATAW                     # Lists all files created in user
+echo "Files in directory DATAM= $DATAM"
+ls -ls $DATAM                     # directories (including temporary
+echo "Files in directory TEMP = $TEMP"
+ls -ls $TEMP                      # files)
+
+echo 'Free disk space'
+#DEV=`echo $HOME|cut -f3 -d'/'`
+#df|grep $DEV
+DEV=`dirname $HOME`
+df $DEV
+
+########################################################################
+# Take appropriate action for resubmitted or stopped runs.
+# Otherwise delete files in $JOBDIR
+. submitchk
+
+########################################################################
+echo "****************************************************************"
+echo "     Job ended at :  `date`"
+echo "****************************************************************"
+
+if test $UMMACHINE = 'METOCRAY' -o $UMMACHINE = 'CRAYMPP' -o $UMMACHINE = 'SGI'
+then
+  if [[ "$STEP" -ne 0 ]] && [[ "$STEP" -ne 2 ]] && [[ "$STEP" -ne 99 ]]
+  then
+    # Only print out accounting info if executable has been run
+    echo
+    echo "****************************************************************"
+    echo "     Full accounting summary follows                            "
+    echo "****************************************************************"
+
+    EXECUTABLE_NAME=`basename $LOADMODULE`
+    typeset -L8 EXEC_8
+    EXEC_8=$EXECUTABLE_NAME
+    [ $UMMACHINE = 'METOCRAY' -o $UMMACHINE = 'CRAYMPP' ] && \
+      ja -c -l -M -n  $EXEC_8 || ja -c -l -n  $EXEC_8
+  fi
+fi
+
+MESSAGE="Run xlro#b finished. Time=`date`"
+echo "$MESSAGE" | mailx -s "$MESSAGE" simon.tett@ed.ac.uk
+
+
+exit $RCMASTER
+
+
+# END OF FILE

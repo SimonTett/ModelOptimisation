@@ -1,0 +1,394 @@
+#!/bin/ksh
+# construct script for submission: Then submit with qsub on Cray or 'at'
+# on UNIX. 
+. /etc/profile
+[ "$UMDIR" ] || . $HOME/.profile
+. $UMDIR/setvars_4.5
+SUBMITID=225163228                   # defines the job directory
+export SUBMITID                           # just in case someone uses it
+export RUNID=xlrob
+JOBDIR=$HOME/umui_runs/$RUNID-$SUBMITID
+DATADIR=`dirname $JOBDIR`
+export JOBDIR DATADIR
+##################################################################
+#           Hand edit section                                    #
+##################################################################
+###    General variables controlling UM script internal logic  ###
+
+#
+#  # Edit these for continuation runs.
+#  # STEP=0  compilation only
+#  # STEP=1  compile and run as one job (normal for Non MPP or
+#            handedit for short compiles on MPP)
+#  # STEP=2  compile and run in two separate batch jobs
+#            Normal for MPP; required for full compilation.
+#            The compile step will have STEP=2 set in the SCRIPT
+#            The run step will have STEP=4 set in the SCRIPT and
+#            the reconfiguration will be switched off since any
+#            reconfiguration work has been done in the first step
+#  # STEP=4  skips compilation.
+#  # STEP=99 Reconfiguration only
+TYPE=NRUN 		# Indicates run type-CRUN is continuation
+STEP=4     # First step of main script to run (A)
+#
+###################################################
+# Queue details for NRUN and compilation only run #
+###################################################
+# Applies to STEP=0 or 2
+COMPILE_TIME_STEPS2_AND_0=-1 # -1 requests maximum
+NRUN_TIME_LIMIT=43000           # Applies to STEP!=0
+###################################################
+# Queue details for CRUN and resubmission runs    #
+###################################################
+CRUN_TIME_LIMIT=43000
+###################################################
+# Other queue details                             #
+###################################################
+MEMORY=900Mw
+CJOBN=xlrob000
+###################################################
+# Details for second machine if ROVING            #
+###################################################
+###################################################
+# Account ID                                      #
+###################################################
+ACCOUNT=geos_optclim
+###################################################
+# Number of processors for model run              #
+###################################################
+# Processor decomposition for MPP.
+# Atmos, wave or coupled. N-S by E-W
+NMPPN=3           # N-S decomposition
+NMPPE=4           # E-W decomposition
+###################################################
+# Rebuild all missing section-defs combinations.  #
+# This should only be needed for runs using       #
+# section-def combinations that are not pre-built #
+# at UM build time                                #
+###################################################
+BUILDSECT=false
+###################################################
+# Setting SKIP_SRC_EXTRACT to true will cause     #
+# all the extraction step to be skipped, if the   #
+# run is doing a compilation. The only step that  #
+# will be done is the make step in case any of    #
+# the source code in UCOMPDIR has been changed.   #
+# Do not set SKIP_SRC_EXTRACT to true, if you     #
+# have change or added mods or changed or added   #
+# any of the compiler override files, as your     #
+# changes will not be picked up.                  #
+###################################################
+SKIP_SRC_EXTRACT=false
+###################################################
+# Setting the following to true prevents the      #
+# compile directory being tarred. Set to true if  #
+# you are compiling in a TEMPDIR. Leave false     #
+# otherwise; it increases the efficiency of the   #
+# migration system. Decks can easily be extracted #
+# for editing by hand if required.                #
+###################################################
+SKIP_TAR_COMPDIR=false
+###################################################
+# NPROC specifies the number of concurrent
+# compilation processes that the user compile
+# system should run at once. The value should
+# reflect how much memory you have available
+# on the buildhost. Higher NPROC numbers should
+# make compilation faster but will use more
+# memory. The value is set in UMUI panel
+# subindep_JobRes. The host system default value of
+# NPROC is used only if NPROC has not been set here
+# (ie in UMUI(subindep_Jobres), SETNPROC=0).
+###################################################
+NPROC=1
+###################################################
+# Roving Jobs
+# To improve load balancing when two machines are
+# available, some jobs are set up as roving jobs
+# which are submitted to both machines, and the first
+# one that gets to the top of the queue deletes its
+# twin from the other machine. 
+# Edit the following for setting up roving jobs.
+# You should only do this after taking advice.
+# You need to include an appropriate script mod
+###################################################
+ROVING=false # Set true or false
+if test "$ROVING" = true; then
+  # Queue time limits for second host
+  NRUN_TIME_LIMIT2=0 # Applies to STEP!=0
+  CRUN_TIME_LIMIT2=0 # Applies to STEP!=0
+  # MPP decomposition for second host
+  NMPPN2=0          # N-S decomposition
+  NMPPE2=0          # E-W decomposition
+fi
+####################################################################
+#           End of Hand edit section                               #
+####################################################################
+
+# Ensure that any compile job has been submitted to correct machine
+if test "$ROVING" = true; then
+  export PATH=$PATH:$UMDIR/rove
+  . roveGlobalVars
+  MAINHOST= # sn6702 for t3ea or sn6910 for t3eb
+  if test $thisHost != $MAINHOST -a $STEP -le 2; then
+    echo Error: Compile jobs must be initially submitted to $MAINHOST
+    exit 1
+  fi
+else
+  # Initialise hostname in non-roving jobs
+  thisHost=`hostname`
+fi
+
+
+# Get dates to timestamp output files.
+OUTPUT_D=`date +%y%j`
+OUTPUT_T=`date +%H%M%S`
+# File suffix
+OCO=leave
+
+####################################################################
+# This section deals with the separation of STEP=1 runs into       #
+# STEP=0 + STEP=4 chunks by creating two scripts.                  #
+####################################################################
+
+# FULL_STEP represents the total step for the two jobs.
+FULL_STEP=$STEP
+
+if test $STEP -eq 2
+then
+# Compiling and running are to be done in separate runs.
+# Setup for compile only. THIS_STEP is used to determine what goes in
+# the first script - which will be named umcomp_submit. Then the 
+# second, umuisubmit, script is created by making minor subsitutions
+# to the umcomp_submit script.
+ STEP=0
+ OUTPUT_FILE=$MY_OUTPUT/$CJOBN.$RUNID.d$OUTPUT_D.t$OUTPUT_T.comp.$OCO
+ RUN_OUTPUT_FILE=$MY_OUTPUT/$CJOBN.$RUNID.d$OUTPUT_D.t$OUTPUT_T.$OCO
+ echo "Your compilation output will be sent to file:"
+ echo "  $OUTPUT_FILE"
+ echo "Your run output will be sent to file:"
+ echo "  $RUN_OUTPUT_FILE"
+ echo "  "	
+ mv $JOBDIR/SCRIPT $JOBDIR/SCRIPT_compile
+else
+ OUTPUT_FILE=$MY_OUTPUT/$CJOBN.$RUNID.d$OUTPUT_D.t$OUTPUT_T.$OCO
+ RUN_OUTPUT_FILE=$OUTPUT_FILE
+ echo "Your output will be sent to file:"
+ echo "  $OUTPUT_FILE"
+ echo "  "	
+fi
+# export for use in script
+
+# Calculate total PEs for use in QSUB option
+UM_NPES=`expr $NMPPE \* $NMPPN`
+if test "$ROVING" = true; then
+  UM_NPES2=`expr $NMPPE2 \* $NMPPN2`
+  NQS_PE_REQ2=$UM_NPES2
+fi  
+NQS_PE_REQ=$UM_NPES
+# start with the qsub commands then add the script
+
+# Options common to all STEPs  /tmp/qsubmit.$thisHost.$$
+echo "#!/bin/ksh">/tmp/qsubmit.$thisHost.$$
+if test $TYPE = 'NRUN'
+then
+LINE2="#$ -N $CJOBN"
+QUEUE=$QUEUE_NRUN
+RUN_TIME_LIMIT=$NRUN_TIME_LIMIT
+if test "$ROVING" = true; then
+  RUN_TIME_LIMIT2=$NRUN_TIME_LIMIT2
+fi
+elif test $TYPE = 'CRUN'
+then
+LINE2="# Jobname supplied by autoresubmit or startrun script"
+QUEUE=$QUEUE_CRUN
+RUN_TIME_LIMIT=$CRUN_TIME_LIMIT
+if test "$ROVING" = true; then
+  RUN_TIME_LIMIT2=$CRUN_TIME_LIMIT2
+fi
+else
+echo ERROR: Run type $TYPE: Should be NRUN or CRUN. Job not submitted
+exit 
+fi
+
+# If one of following is true, failure messages are sent to operators
+CRDOERUN=false
+CRPRODRUN=false
+
+if test "$ACCOUNT" = ""
+then
+   SGE_ACC="# Default account used"
+else
+   SGE_ACC="#$ -P $ACCOUNT"
+fi
+
+cat >>/tmp/qsubmit.$thisHost.$$<<EOF
+$LINE2
+EOF
+
+
+NODESIZE=1
+if (( NQS_PE_REQ%NODESIZE == 0 ))
+then
+   (( NNODE = NQS_PE_REQ/NODESIZE ))
+else
+   (( NNODE = 1+NQS_PE_REQ/NODESIZE ))
+fi
+(( NCPU = NNODE*NODESIZE ))
+
+if test $STEP -eq 0 || test $STEP -eq 99 # Compile or reconf. only
+then
+if test $COMPILE_TIME_STEPS2_AND_0 -eq -1
+then
+ QSUB_TIME="# Default queue time limit selected"
+else
+ QSUB_TIME="#$ -l h_rt=$COMPILE_TIME_STEPS2_AND_0"
+fi
+cat >>/tmp/qsubmit.$thisHost.$$<<EOF
+$QSUB_TIME
+#$ -j y
+# force reservation
+#$ -R y
+
+EOF
+elif test $STEP -eq 1 || test $STEP -eq 4 # Run, or compilation and run
+then
+
+cat >>/tmp/qsubmit.$thisHost.$$<<EOF
+#$  -l infiniband=TRUE -pe openmpi_smp12_mark2  $NCPU
+#$ -l h_rt=$RUN_TIME_LIMIT
+$SGE_ACC
+#$ -j y
+# force reservation
+#$ -R y
+
+EOF
+fi
+
+cat >>/tmp/qsubmit.$thisHost.$$<<EOF
+export ITMPDIR=\$TMPDIR
+TMPDIR=\${TMPTMPDIR:-\${TMPDIR}}
+TMPDIR=$TMPDIR/$RUNID
+TMPTMPDIR=$TMPDIR/$RUNID
+export TMPDIR TMPTMPDIR
+mkdir -p \$TMPDIR
+EOF
+
+# Now create block for setting variables
+
+# First add all variables for use in NRUNs and CRUNs
+cat >/tmp/qsubmitvars1.$$<<EOF
+set -a            # Set jobscript UNICOS options
+SETOPT=a          # Choose shell "set" options for  lower level scripts
+TYPE=$TYPE
+STEP=$FULL_STEP
+# Output file for run following compilation run.
+UMRUN_OUTPUT=$RUN_OUTPUT_FILE
+CJOBN=$CJOBN
+CRDOERUN=$CRDOERUN
+CRPRODRUN=$CRPRODRUN
+BUILDSECT=$BUILDSECT
+SKIP_SRC_EXTRACT=$SKIP_SRC_EXTRACT
+SKIP_TAR_COMPDIR=$SKIP_TAR_COMPDIR
+JOBDIR=$JOBDIR
+SUBMITID=$SUBMITID
+QUEUE=$QUEUE
+SUBMITHOST=$thisHost
+ROVING=$ROVING
+NPROC=$NPROC
+RECON_NPROC=1
+EOF
+
+if test "$ROVING" = true; then
+  # Create a second submit file that applies to second host
+  cp /tmp/qsubmitvars1.$$ /tmp/qsubmitvars2.$$
+  cat >>/tmp/qsubmitvars2.$$<<EOF
+UM_NPES=$UM_NPES2
+NCPUS=UNSET
+UM_ATM_NPROCX=$NMPPE2
+UM_ATM_NPROCY=$NMPPN2
+UM_OCN_NPROCX=UNSET
+UM_OCN_NPROCY=UNSET
+
+. $JOBDIR/SCRIPT
+EOF
+fi
+
+cat >>/tmp/qsubmitvars1.$$<<EOF
+UM_NPES=$UM_NPES
+NCPUS=UNSET
+NCORE=$NCORE
+NCORES_PER_NUMANODE=$NCORES_PER_NUMANODE
+UM_ATM_NPROCX=$NMPPE
+UM_ATM_NPROCY=$NMPPN
+UM_OCN_NPROCX=UNSET
+UM_OCN_NPROCY=UNSET
+if test \$STEP = 2; then
+  . $JOBDIR/SCRIPT_compile
+else
+  . $JOBDIR/SCRIPT
+fi
+EOF
+
+# ....then add to qsubmit file and copy to job library
+cat /tmp/qsubmitvars1.$$>>/tmp/qsubmit.$thisHost.$$
+\rm /tmp/qsubmitvars1.$$
+mv /tmp/qsubmit.$thisHost.$$ $JOBDIR/qsubmit.$thisHost
+chmod 755 $JOBDIR/qsubmit.$thisHost
+if test "$ROVING" = true; then
+  cat /tmp/qsubmitvars2.$$>>/tmp/qsubmit.$otherHost.$$
+  \rm /tmp/qsubmitvars2.$$
+  mv /tmp/qsubmit.$otherHost.$$ $JOBDIR/qsubmit.$otherHost
+  chmod 755 $JOBDIR/qsubmit.$otherHost
+fi
+
+# submit job using Sun Grid Engine command qsub
+if test $TYPE = 'NRUN'
+then
+# Jobname is in qsubmit file
+  qsubCmd1="qsub -V -o $OUTPUT_FILE -S /bin/ksh $JOBDIR/qsubmit"
+else
+# Supply jobname for first run.
+  qsubCmd1="qsub -V -o $OUTPUT_FILE -N $CJOBN -S /bin/ksh $JOBDIR/qsubmit"
+fi
+export outputFile=$OUTPUT_FILE
+mv $JOBDIR/qsubmit.$thisHost $JOBDIR/qsubmit
+$qsubCmd1
+
+# If FULL_STEP=1 then modify qsubmit to be used for run once compiled.
+if test $FULL_STEP -eq 2
+then
+# Add MPP qsub options to umuisubmit, remove non-MPP time limit, 
+# turn off reconfiguration compile and run
+# and change STEP to run only.
+ mv $JOBDIR/qsubmit $JOBDIR/qsubmit\_compile_copy
+ awk -F = -v RUN_TIME_LIMIT=$RUN_TIME_LIMIT -v NCPU=$NCPU -v QSUB_TIME="$QSUB_TIME" -v SGE_ACC="$SGE_ACC" '
+
+  {
+    if ($0!="STEP=2" && $0!= QSUB_TIME) print $0
+  }
+
+  /STEP=2/ {
+      print "STEP=4"
+  }
+
+  /#\$ -j y/ {
+      print "#$  -l infiniband=TRUE -pe openmpi_smp12_mark2  " NCPU
+      print "#$ -l h_rt=" RUN_TIME_LIMIT
+      print SGE_ACC
+      print ""
+  }'  $JOBDIR/qsubmit\_compile_copy > $JOBDIR/qsubmit
+
+
+  # Create run SCRIPT from compile SCRIPT
+  awk -F = '
+  {
+  print $0
+  }
+  /RECONA=true|RECONO=true|RECONW=true|RECONEW=true/ {
+    print $1"=false"
+  }'  $JOBDIR/SCRIPT_compile > $JOBDIR/SCRIPT
+
+fi
+
+# END OF FILE

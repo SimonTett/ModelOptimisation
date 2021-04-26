@@ -1,0 +1,289 @@
+{
+  "history": "Example JSON file. Copy and adjust for your needs and update the history",
+  "svnInfo": "Revision: $Revision$ URL: $URL: https://svn.ecdf.ed.ac.uk/repo/geos/OptClim/trunk/test_in/hires_Example.json $ Date: $Date$",
+  "svnInfo_comment": "Information automatically updated by SVN -- please don't edit",
+  "study": {
+    "comment": "Parameters that specify the study. Used by framework and not by optimisation routines",
+    "covariance": {
+      "comment": "Covariance matrices and operations on them. If CovObsErr and CovIntVar are *both* specified then CovTotal will be computed from them",
+      "CovTotal": "covariance/hires_diag_cov_total_20.csv",
+      "CovTotal_Comment": "Name of file containing Covariance Matrix for total Error.",
+      "CovIntVar": "covariance/hires_diag_covmat_20.csv",
+      "CovIntVar_Comment": "Name of file containing Covariance Matrix of Internal Variability",
+      "CovObsErr": "covariance/diag_cov_obsErr20.csv",
+      "CovObsErr_Comment": "Name of file containing Covariance Matrix for Observational Error "
+    },
+    "ParamList": [
+      "VF1",
+      "RHCRIT",
+      "ICE_SIZE",
+      "ENTCOEF",
+      "EACF",
+      "CT",
+      "CW_LAND"
+    ],
+    "ParamList_Comment": "List of Parameters that Algorithm Adjusts. ",
+    "ObsList": [
+      "olr_nhx",
+      "rsr_nhx",
+      "lat_nhx",
+      "lprecip_nhx",
+      "mslp_nhx_dgm",
+      "temp@500_nhx",
+      "rh@500_nhx",
+      "olr_tropics",
+      "rsr_tropics",
+      "lat_tropics",
+      "lprecip_tropics",
+      "mslp_tropics_dgm",
+      "temp@500_tropics",
+      "rh@500_tropics",
+      "olr_shx",
+      "rsr_shx",
+      "lat_shx",
+      "lprecip_shx",
+      "temp@500_shx",
+      "rh@500_shx"
+    ],
+    "ObsList_Comment": "List of Observations that Algorithm Uses"
+  },
+  "begin": {
+    "comment": "Specifies the optimisation startup.",
+    "firstOptimiseStep": "GN",
+    "firstOptimiseStep_comment": "First optimisation step to run. Depends on algorithm you are using",
+    "paramValues": {
+      "comment": "Initial Values for optimisation. Only uses those ones specified in ParamList and if not specified default value is used.",
+      "example_use": "Example values are DEFAULT values. Delete ones you want at default values or set null and provide values for the ones you want set differently. Documented in standardModel",
+      "CT": 1e-4,
+      "EACF": 0.5,
+      "ENTCOEF": null,
+      "ICE_SIZE": 30e-6,
+      "RHCRIT": 0.7,
+      "VF1": 1.0,
+      "CW_LAND": 2e-4,
+      "DYNDIFF": 12.0,
+      "KAY_GWAVE": 2e4,
+      "ASYM_LAMBDA": 0.15,
+      "CHARNOCK": 0.012,
+      "G0": 10.0,
+      "Z0FSEA": 1.3e-3,
+      "ALPHAM": 0.5
+    }
+  },
+  "optimise": {
+    "comment": "Parameters to control optimisation. This is used within optimisation routines AND not by framework",
+    "algorithm": [
+      "GN",
+      "LS"
+    ],
+    "algorithm_comment": "Algorithm tells what each iteration does with parameters relevant below",
+    "alphas": [
+      1.0,
+      0.7,
+      0.3
+    ],
+    "sigma": true,
+    "sigma_comment": "Have constraint on (sigma >= 1) or off (sigma <1). Might be better as true/false",
+    "mu": 1.0,
+    "constraint_target": 0.5,
+    "covar_cond": 5.0,
+    "covar_cond_comment": "This might be a property of the covariance matrices and so moved to that block in the config file",
+    "prob_int": 0.5,
+    "prob_int_comment": "Critical Probability that new state is consistent with old state for termination.",
+    "prob_obs": 0.5,
+    "prob_obs_comment": "Critical Probability that new state is consistent with Observations for termination."
+  },
+  "postProcess": {
+    "comment": "Options to control post processing. Details depend on your post processing script.",
+    "script":"$OPTCLIMTOP/obs_in_nc/comp_obs.py",
+    "script_comment":"Full path name -- including any environment variables you might have -- to postprocessing script",
+    "note": "Specify mask_file -- file where l/s mask is, name of mask, start and end times",
+    "mask_file": "~stett2/analyse/optclim/post_processing/land_sea_n96.nc",
+    "mask_file_comment": "Path to mask file",
+    "mask_name": "LAND MASK (LOGICAL: LAND=TRUE)",
+    "mask_name_comment": "Name of mask variable",
+    "start_time": [
+      2000,
+      3,
+      1,
+      0,
+      0,
+      0
+    ],
+    "start_time_comment": "Start time as YY,MM, DD, Hr, Min, Sec",
+    "end_time": [
+      2001,
+      3,
+      1,
+      0,
+      0,
+      0
+    ],
+    "end_time_comment": "End time as YY,MM, DD, Hr, Min, Sec"
+  },
+  "constraint": "netflux_global",
+  "constraint_note": "Name of constraint variable -- constraint_target in study defines the target value. ",
+  "minmax": {
+    "comment": "Defines the minimum and maximmum ranges for the parameters",
+    "CT": [
+      5e-5,
+      4e-4
+    ],
+    "EACF": [
+      0.5,
+      0.7
+    ],
+    "ENTCOEF": [
+      0.6,
+      9.0
+    ],
+    "ICE_SIZE": [
+      2.5e-5,
+      4e-5
+    ],
+    "RHCRIT": [
+      0.6,
+      0.9
+    ],
+    "VF1": [
+      0.5,
+      2.0
+    ],
+    "CW_LAND": [
+      1e-4,
+      2e-3
+    ],
+    "DYNDIFF": [
+      6.0,
+      24.0
+    ],
+    "KAY_GWAVE": [
+      1e4,
+      2e4
+    ],
+    "ASYM_LAMBDA": [
+      0.05,
+      0.5
+    ],
+    "CHARNOCK": [
+      0.012,
+      0.02
+    ],
+    "G0": [
+      5.0,
+      20.0
+    ],
+    "Z0FSEA": [
+      2e-4,
+      5e-3
+    ],
+    "ALPHAM": [
+      0.5,
+      0.65
+    ]
+  },
+  "steps": {
+    "comment": "Steps for perturbations -- norm around 10% of the range",
+    "CT": 2e-5,
+    "EACF": 0.02,
+    "ENTCOEF": 0.6,
+    "ICE_SIZE": 1.5e-6,
+    "RHCRIT": 0.05,
+    "VF1": 0.5,
+    "CW_LAND": 1e-4,
+    "DYNDIFF": 1.0,
+    "KAY_GWAVE": 2.0e+5,
+    "ASYM_LAMBDA": 0.03,
+    "CHARNOCK": 2.0e-3,
+    "G0": 1.0,
+    "Z0FSEA": 5.0e-4,
+    "ALPHAM": 0.01
+  },
+  "targets": {
+    "comment": "Observed targets for optimisation",
+    "rsr_nhx": 102.276779013,
+    "rsr_tropics": 94.172585284,
+    "rsr_shx": 108.113226173,
+    "rsr_gm": 99.5,
+    "olr_nhx": 222.981135462,
+    "olr_tropics": 259.889979681,
+    "olr_shx": 216.123659078,
+    "olr_gm": 239.6,
+    "lat_nhx": 275.837176497,
+    "lat_tropics": 297.551167045,
+    "lat_shx": 287.433252179,
+    "lprecip_nhx": 1.67274541294e-05,
+    "lprecip_tropics": 3.61223235446e-05,
+    "lprecip_shx": 2.23188435704e-05,
+    "mslp_nhx_dgm": 3.30683773931e+02,
+    "mslp_tropics_dgm": 1.78755937185e+02,
+    "temp@500_nhx": 251.407284938,
+    "temp@500_tropics": 266.733035653,
+    "temp@500_shx": 248.927897989,
+    "rh@500_nhx": 53.4221821948,
+    "rh@500_tropics": 33.9426666031,
+    "rh@500_shx": 52.6728738156,
+    "netrad_global": 0.5,
+    "netrad_global_comment": "Often used as a constraint.."
+  },
+  "scalings": {
+    "comment": "Scalings on observables -- only defined when not 1.0",
+    "lprecip_nhx": 86400.0,
+    "lprecip_tropics": 86400.0,
+    "lprecip_shx": 86400.0,
+    "mslp_gm": 0.01,
+    "mslp_nhx_dgm": 0.01,
+    "mslp_tropics_dgm": 0.01
+  },
+  "standardModel": {
+    "paramValues": {
+      "comment": "Default values for HadAM3",
+      "CT": 1e-4,
+      "EACF": 0.5,
+      "ENTCOEF": 3.0,
+      "ICE_SIZE": 30e-6,
+      "RHCRIT": 0.7,
+      "VF1": 1.0,
+      "CW_LAND": 2e-4,
+      "CW_LAND_comment": "Seed parameter which also affects CW_SEA",
+      "DYNDIFF": 12.0,
+      "DYNDIFF_comment": "Seed parameter which affects DIFF_COEFF, DIFF_COEFF_Q, DIFF_EXP & DIFF_EXP_Q",
+      "KAY_GWAVE": 2e4,
+      "KAY_GWAVE_comment": "Seed parameter which also affects KAY_LEE_GWAVE",
+      "ASYM_LAMBDA": 0.15,
+      "CHARNOCK": 0.012,
+      "CHARNOCK_comment": "Note this is Murphy et al, 200X and is different from that reported in Yamazaki et al, 2013",
+      "G0": 10.0,
+      "Z0FSEA": 1.3e-3,
+      "ALPHAM": 0.5,
+      "ALPHAM_comment": "Seed parameter which affects DTICE and ALPHAM"
+    },
+    "SimulatedValues": {
+      "comment": "Values from Initial Cond ensemble -- used for display",
+      "rsr_nhx": 104.828645378,
+      "rsr_tropics": 96.1125810912,
+      "rsr_shx": 106.220769668,
+      "rsr_gm": 100.640785304,
+      "olr_nhx": 219.239170954,
+      "olr_tropics": 260.168543324,
+      "olr_shx": 212.43007422,
+      "olr_gm": 238.839351859,
+      "lat_nhx": 273.33065608,
+      "lat_tropics": 295.525024032,
+      "lat_shx": 286.028285954,
+      "lprecip_nhx": 1.93355069031e-05,
+      "lprecip_tropics": 3.31722810623e-05,
+      "lprecip_shx": 2.19885246512e-05,
+      "mslp_nhx_dgm": 500.077320213,
+      "mslp_tropics_dgm": 145.528208095,
+      "temp@500_nhx": 250.103101527,
+      "temp@500_tropics": 266.024844065,
+      "temp@500_shx": 247.127341727,
+      "rh@500_nhx": 57.1694930762,
+      "rh@500_tropics": 35.4667676984,
+      "rh@500_shx": 57.1532300099,
+      "netrad_global": 1.11525220386
+    }
+  }
+}
+

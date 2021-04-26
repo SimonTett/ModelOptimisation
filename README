@@ -1,0 +1,37 @@
+
+tools/runOptimise.py is a python script that runs the optimisation -- it is controlled by a json file
+see Configurations/example.json or Configurations/example_dfols.json
+
+Installation:
+
+1) Put the code somewhere convenient.
+2) Define in your environment OPTCLIMTOP where ever this is.
+3) Put $OPTCLIMTOP/OptClimVn2 and $OPTCLIMTOP/tools/optFunctions (and DFOLS and what ever else needed by your optimisation algorithm ) in your python search path.
+4) Add $OPTCLIMTOP/tools to your PATH.
+
+Works at python 3.7+. *May* work at python 3.6+
+You also need the following modules (generally available from conda-forge)
+f90nml
+pandas
+matplotlib
+xarray
+netCDF4
+numpy
+
++ dfols (pip)
+
+Testing:
+run pytest in OptClimVn2 in OPTCLIMTOP. There are about 100 tests. One in test_Optimise may fail. If so run it again...
+
+To test runOptimise.py you need to do the following in ipython in OPTCLIMTOP:
+import tempfile
+tdir=tempfile.TemporaryDirectory() # gives you a temp directory.
+%run -i tools/runOptimise --restart  --test -d $tdir.name Configurations/dfols14param.json
+# this first time. Then for each iteration...
+%run -i tools/runOptimise  --test -d $tdir.name Configurations/dfols14param.json
+
+For porting you will need to modify runOptimise so that it uses the correct submission method & model class.
+OptClimVN2 provides classes/methods for you. See README in that directory.
+tools contains some other potentially useful tools...
+
+tools/optFunctions/config contains the actual function used for optimisation (though it gets some arguments added to the call)

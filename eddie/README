@@ -1,0 +1,9 @@
+Shell scripts needed on eddie. eddie is a large cluster at the
+University of Edinburgh.
+
+Scripts below will need modification to run on other systems. Depends
+on the job management system on the cluster...
+
+postProcess.sh -- needed for an array of post processing jobs. Runs the post-processing  script to produce output.
+
+qsub.sh -- run a job. Sets up std environment. Though -V arg in qsub should remove the need for that.

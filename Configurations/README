@@ -1,0 +1,9 @@
+Description of Configurations
+
+xhdio -- HadAM3 N48 Configuration that uses indirect aerosol effect on
+clouds. Apart from changes for that should be parallel to xhdil.
+xnmef -- Reference HadCM3 control configuration with interactive indirect aerosol switched on
+xnmeg -- reference HadAM3 configuration with interactive aerosols turned on. 
+xnmeh -- reference 2xCO2 HadCM3 config with interactive indirect aerosols
+xnmei -- reference 4xCO2 HadCM3 config with interactive indirect aerosols
+xnmej -- reference 1%  HadCM3 config with interactive indirect aerosols

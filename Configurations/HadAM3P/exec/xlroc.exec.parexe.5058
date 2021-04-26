@@ -1,0 +1,6 @@
+#!/bin/sh
+ulimit -c unlimited
+ulimit -s 600000
+/bin/hostname >> hostname.685540.list
+date >> hostname.685540.list
+/exports/work/geos_sages/CESD/s6/bin/env2 -f /exports/work/geos_sages_workspace/stett2/um/tmp/environ.060180213 /exports/work/geos_cesd/OptClim/stett2//trials9/Configurations/HadAM3P/exec/xlroc.exec "$@"

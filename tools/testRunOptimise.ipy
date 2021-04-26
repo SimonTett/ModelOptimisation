@@ -1,0 +1,96 @@
+"""
+Test code to runOptimise. Run by?
+"""
+import pathlib
+import tempfile
+import copy
+
+# importing them for debugging really
+from OptClimVn2 import StudyConfig
+
+
+def rmObs(noFiles=3):
+    """
+    Remove some obs files for testing purposes
+    :param noFiles: number of files to remove.
+    :return:
+    """
+    dirCount = 1
+    for p in sorted(tempDir.iterdir(), reverse=True):
+        if p.is_dir():
+            obs = p / obsFile
+            if obs.exists():
+                obs.unlink()
+                dirCount += 1
+            if dirCount > noFiles: break
+
+
+tdir = tempfile.TemporaryDirectory()
+name = pathlib.Path(tdir.name)
+configFile = pathlib.Path('../Configurations/dfols14param.json')
+configData = StudyConfig.readConfig(filename=configFile)
+# modify configData so that nfunc is smaller!
+configData.DFOLS_config()['maxfun']=25 # max of 25 evaluations
+# and write it into the temp dir.
+tConfig  = name/configFile.name
+configData.save(filename=tConfig)
+obsFile = configData.postProcessOutput()
+
+%run -i runOptimise --test -d $name $tConfig
+# run it again.
+%run -i runOptimise --test -d $name $tConfig
+# delete obs file  in three dirs
+tempDir = pathlib.Path(name)
+
+rmObs()
+# Now run the next step -- should fail
+try:
+    %run -i runOptimise --test -d $name $tConfig
+except Exception:
+    print("Failed as expected")
+# and with continue
+%run -i runOptimise --noobs continue --test -d $name $tConfig
+rmObs()
+# and with perturb,
+%run -i runOptimise --noobs perturb --test -d $name $tConfig
+count = np.array([(d / obsFile).exists() for d in tempDir.iterdir()]).sum()
+print("Count is ", count)
+rmObs(8)
+count = np.array([(d / obsFile).exists() for d in tempDir.iterdir()]).sum()
+print("Count is ", count)
+%run -i runOptimise --noobs clean --test -d $name $tConfig
+
+count = np.array([(d / obsFile).exists() for d in tempDir.iterdir()]).sum()
+print("Count is ", count)
+
+nsim = dfols_config.get('maxfun')  # how many sims we want
+#finished = False
+while finished is  None: # finished defined by runOptimize so we already have it from above..
+    %run -i runOptimise --monitor --noobs  clean --test -d $name $tConfig
+
+    count = np.array([(d / obsFile).exists() for d in tempDir.iterdir()]).sum()
+    print("Count is ", count)
+
+# now read in the final config and hack it so we can run  ensemble of 2 for the optimized case.
+# will do this in a new directory.
+print('All Done')
+MODELRUN_orig = MODELRUN # this eems to not return the optimum parameters... Because it does not it is running dfols!
+origConfig = copy.deepcopy(finalConfig)
+#breakpoint()
+tdir2 = tempfile.TemporaryDirectory()
+name2 = tdir2.name
+file= pathlib.Path(configFile).stem
+file = file + '_doopt'+'.json'
+filePath = pathlib.Path(name)/file
+import copy
+newConfig = copy.deepcopy(origConfig) # copy the final config
+newConfig.getv('optimise')['algorithm']='runOptimised'
+newConfig.baseRunID(newConfig.baseRunID()+'at')
+newConfig.maxDigits(1)
+newConfig.ensembleSize(2)
+newConfig.save(filePath)
+#breakpoint()
+%run -i runOptimise --monitor --noobs clean --test -d $name2 $filePath
+%run -i runOptimise --monitor --noobs clean --test -d $name2 $filePath
+
+finalConfig = MODELRUN.runConfig()

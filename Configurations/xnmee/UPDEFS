@@ -1,0 +1,26 @@
+*/ Global Definitions:   
+*DEFINE CONTROL,REPROD,MPP
+*/
+*/ Atmospheric Model Definitions:
+*DEFINE ATMOS,GLOBAL,A04_ALL,FRADIO
+*/
+*/ Atmospheric Sections Definitions:
+*DEFINE A01_3A,A02_3A,A03_5A,A04_2E,A05_3C,A06_3A,A07_0A,A08_5A,A09_1A,A10_1C,A11_1A,A12_1C,A13_1C,A14_1B,A15_1A,A16_1A,A17_1A,A18_0A,A19_0A,A70_1A,A71_1A,A87_0A
+*/
+*/
+*/ Oceanic Sections Definitions:    
+*DEFINE O30_0A,O31_0A,O32_0A,O35_0A
+*/
+*/
+*/ Slab Sections Definitions:    
+*DEFINE S40_0A
+*/
+*/
+*/ WAVE Sections Definitions:    
+*DEFINE W01_0A,W02_0A,W03_0A,W04_0A,W05_0A,W06_0A,W07_0A,W08_0A
+*/
+*/
+*/ All-model Sections Definitions:    
+*DEFINE C70_1A,C72_0A,C80_1A,C82_1A,C84_1A,C90_2B,C91_2A,C92_1A,C93_1A,C94_1A,C95_2A,C96_1A,C97_3A,C99_0A
+*/
+*/ END OF FILE  

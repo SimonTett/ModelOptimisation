@@ -1,0 +1,48 @@
+# fixed parameters are not set by the UI
+# and should not need to be edited.
+#
+#
+F_END_JOB_TIC='GEOS_OPTCLIM'
+F_END_DSN_PREFIX='UGAMP'
+F_END_JOB_PROGID='TT'
+MAIL='simon.tett@ed.ac.uk'
+MAIL_ID='simon.tett@puma'
+STORCLAS="SCDATPRK"
+MGMTCLAS="mcsnc30"     # fixed parameter
+SCRATCH="S"           # fixed par. "N" implies data stays on disk after archive.
+TAPE="R"     # Tape for archiving. N for normal, R for Redwood.
+#
+#
+USERID='stett2'
+PP_UNPACK='FALSE'                            # fixed parameter
+#
+#
+#
+STREAM_OPTION=3
+
+BKUP_PP='N'
+BKUP_BNDY='N'
+BKUP_MEANPP='N'
+BKUP_DUMP='N'
+BKUP_AUTH=/u/m20/cprod/bkup_auth
+
+DM_REVIEW='NONE'
+DM_METHOD='EXPIRY'
+IBM_ARCHNAME='OTHER'
+
+DATE_FORMAT=2
+DM_PERIOD=500
+
+ARCH_CNTL=$UMDIR/vn$VN/ctldata/clim_arch_control
+
+DMP_RQST_LIMIT=0           # Fixed Parameters. Set to non-zero to override 
+BF_RQST_LIMIT=0            # automatic system based on file size.
+DB_RQST_LIMIT=0            #
+PP_RQST_LIMIT=0 
+MPP_RQST_LIMIT=0    
+PMP_RQST_LIMIT=0
+MIX_RQST_LIMIT=0
+
+ARCHSYS='true'
+
+ ### END OF FILE ###

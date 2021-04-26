@@ -1,0 +1,44 @@
+#!/bin/ksh
+#$ -N xlrob000
+#$  -l infiniband=TRUE -pe openmpi_smp12_mark2  12
+#$ -l h_rt=43000
+#$ -P geos_optclim
+#$ -j y
+# force reservation
+#$ -R y
+
+export ITMPDIR=$TMPDIR
+TMPDIR=${TMPTMPDIR:-${TMPDIR}}
+
+set -a            # Set jobscript UNICOS options
+SETOPT=a          # Choose shell "set" options for  lower level scripts
+TYPE=NRUN
+STEP=4
+# Output file for run following compilation run.
+UMRUN_OUTPUT=/exports/work/geos_sages_workspace/stett2/um/umui_out/xlrob000.xlrob.d15225.t163246.leave
+CJOBN=xlrob000
+CRDOERUN=false
+CRPRODRUN=false
+BUILDSECT=false
+SKIP_SRC_EXTRACT=false
+SKIP_TAR_COMPDIR=false
+JOBDIR=/exports/home/stett2/umui_runs/xlrob-225163228
+SUBMITID=225163228
+QUEUE=
+SUBMITHOST=frontend03
+ROVING=false
+NPROC=1
+RECON_NPROC=1
+UM_NPES=12
+NCPUS=UNSET
+NCORE=
+NCORES_PER_NUMANODE=
+UM_ATM_NPROCX=4
+UM_ATM_NPROCY=3
+UM_OCN_NPROCX=UNSET
+UM_OCN_NPROCY=UNSET
+if test $STEP = 2; then
+  . /exports/home/stett2/umui_runs/xlrob-225163228/SCRIPT_compile
+else
+  . /exports/home/stett2/umui_runs/xlrob-225163228/SCRIPT
+fi

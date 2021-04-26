@@ -1,0 +1,22 @@
+Description of Covariance Files here:
+
+cov_intvar_20.csv -- csv file giving internal variability for 20 observationals.
+                      This was derived from covmat.csv with names redone and MSLP_SHX dropped. (though could be added back in).
+                      See Wiki (https://www.wiki.ed.ac.uk/display/cesdwiki/Output+data)
+
+cov_obserr_20.csv -- csv file giving observational error covariance for 20 observations.
+                      This was derived from cov_obs_entire with names redon and Mslp_SHX dropped.
+                      See Wiki (https://www.wiki.ed.ac.uk/display/cesdwiki/Output+data)
+
+_old are early attempts at a covariance matrix.
+
+
+All other files are obsolete and should be deleted (at some point!)
+diag_cov_total_20.csv -- diagonalised total covariance file -- sum of observational and internal variability.
+                        Used in Kuniko's 7 parameter cases (is a copy of /exports/work/geos_cesd/OptClim/umdata/cov/diag_cov_total_20.csv with columns renames). Both appear to be derived from cov_total.csv
+                         BUT precipitation values are very different.
+                                   diag_xxx    cov_total.csv
+                         NHX:     1.97E-13 vs 5.04E-13
+                         Tropics: 4.73E-13 vs 6.96E-14
+                         SHX:     2.89E-12 vs 2.54E-13
+                         This appears to be coming from differences in the observational precipitation errors used.

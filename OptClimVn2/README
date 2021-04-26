@@ -1,0 +1,37 @@
+file -- all python scripts *should* be internally documented. When I know how to use sphinx the quality might be better..
+Uses python 3.6+
+comp_obs.py -- computes simulated observations as used in Tett et al, 2017
+ModelSimulation.py -- a general class to handle model configurations.
+The general approach is to copy a reference case then modify it.
+HadCM3.py - a class to suport HadCM3 (and related)  models. (Supports coupled and atmosphere only models).
+   This needs f90nml.
+Optimise.py -- provides functions for GaussNewton optimisation.
+ref_code.py -- original (Kuniko) implementation used to test Optimise. Could probably be deleted if test_Optimise modified.
+StudyConfig.py -- provides methods to read and write from configuration files.
+Submit.py -- provides functions to submit -- just two currently. A dummy one and one for eddie (cluster at Edinburgh)
+test_XXXXX -- unit tests for the modules above. test cases should be run from "main level" as configurations are used.
+
+
+Porting:
+1) Add a function in Submit which does the submission. Easiest approach is to copy and modify eddieSubmit.
+2) Add a model class -(new python module) - see HadCM3.py for an example.
+   This probably best done with help from Simon as documentation not very clear.
+3) Decide what optimisation algorithm you want.
+4) Modify runOptimise so that it uses the correct submission method & model class.
+  If you are feeling helpful you might put this in the configuration json file and possibly modify StudyConfig to deal with it.
+
+  What needed for install
+f90nml
+netCDF4
+xarray
+
+
+Setup pythonpath to include directory where you installed
+
+Your model classs should inherit from modelSimulation
+Then you need to modify or extend the following methods:
+1) modify submit method -- the full path name of the file that when executed submits the model.
+2) extend setParams to write parameters to model configuration so that it also does what is needed for your model.
+    You can (if you want) modify/extend getParams.
+3) modify readObs to read observations from post processed model simulation.
+4) extend __init__ to do what is needed for your configuration.
