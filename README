@@ -35,3 +35,5 @@ OptClimVN2 provides classes/methods for you. See README in that directory.
 tools contains some other potentially useful tools...
 
 tools/optFunctions/config contains the actual function used for optimisation (though it gets some arguments added to the call)
+
+Warning: This code is research quality and probabaly not really suitable for production. I am happy to collaborate with others to make it more useful.
