@@ -9,7 +9,7 @@ Installation:
 3) Put $OPTCLIMTOP/OptClimVn2 and $OPTCLIMTOP/tools/optFunctions (and DFOLS and what ever else needed by your optimisation algorithm ) in your python search path.
 4) Add $OPTCLIMTOP/tools to your PATH.
 
-Works at python 3.7+. *May* work at python 3.6+
+Works at python 3.8.  *May* work at python 3.6+. 
 You also need the following modules (generally available from conda-forge)
 f90nml
 pandas
