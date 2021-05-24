@@ -1,11 +1,15 @@
 """
 Support for handling model submission. Idea is various functions needed are passed into the __init__ method.
 See config.py for some actual functions that do the work.
-TODO rename this as does not just handle submission..
-and code is ratehr messy and would benefit from some re-engineering. Which means thinking quite hard about what this module actually doess.
-It is a place that handles all the models soprobably should also handle the various algorithms and thier data needs.
+TODO rename this as does not just handle submission..or move the non submission code into an other module.
+and code is rather messy and would benefit from some re-engineering. Which means thinking quite hard about what this module actually doess.
+It is a place that handles all the models so probably should also handle the various algorithms and their data needs.
+
+TODO: Make this module handle ensembles. This is quite tricky but best done here and will make life a lot easier for all layers built on top of this...
+TODO: Take the optimum function from config and move it here. No real need to have multiple ones. If we find we do then we can handle that
+   when it happens. And this function can handle ensembles.
 """
-import collections  # TODO remove as dict in python 3.7+ is ordered.
+
 import copy
 import functools
 import logging
@@ -120,13 +124,13 @@ class ModelSubmit(object):
         if self.refDir is not None:
             self._fixParams.update(refDir=str(self.refDir))
 
-        self._modelsToSubmit = collections.OrderedDict()  # where we store models to be submitted.
-        self._modelsToRerun = collections.OrderedDict()  # where we store models to be reran.
+        self._modelsToSubmit = dict()  # where we store models to be submitted.
+        self._modelsToRerun = dict() # where we store models to be reran.
 
         self.verbose = verbose
         # store models.
         # self.dirCount = len(modelDirs)  # how many directories we got -- not the same as the number of models.
-        self._models = collections.OrderedDict()  # initialise ordered collection where models stored.
+        self._models = dict()  # initialise ordered collection where models stored.
 
         if not self.rootDir.is_dir():  # dir does not exist so create it.
             self.rootDir.mkdir(parents=True)
@@ -552,6 +556,8 @@ class ModelSubmit(object):
         Extract the parameters used in the simulations. Will include ensembleMember -- as a "fake" parameter
         :includeFixed (optional; default True) -- include all fixed params if True
         :return: pandas dataframe of parameters
+
+        TODO: Remove ensembleMember -- this is "hidden" at this level.
         """
         p = []
         indx = []
@@ -575,6 +581,8 @@ class ModelSubmit(object):
         Extract the Obs used in the simulations
         :param scale (optional; default = True)
         :return: pandas dataframe of observations
+
+        TODO: Handle ensemble averaging. (Which is tricky as will need to identify models from the same ensemble. )
         """
         o = []
         for key, model in self.allModels():
@@ -684,7 +692,7 @@ class ModelSubmit(object):
 
         # initialise _paramObs.
         if not hasattr(self, '_paramObs'):
-            self._paramObs = collections.OrderedDict()  # intitialise _paramObs with empty orderedDict.
+            self._paramObs = dict() # intitialise _paramObs with empty orderedDict.
 
         if obs is not None:
             # got some obs so store them!
@@ -704,7 +712,7 @@ class ModelSubmit(object):
 
         return pd.DataFrame(list(self._paramObs.values()))  # name coming from obs series.
 
-    def optFunction(self, params,ensembleMember=None):
+    def optFunction(self, params, ensembleMember=None):
         """
         Runs user supplied function, does various post processing and returns result.
         :param params -- parameters (as a np array) to run with.
@@ -713,7 +721,7 @@ class ModelSubmit(object):
 
         fn = self.optimiseFunction()
         # fn = self._optimiseFn
-        result = fn(params,MODELRUN=self,ensembleMember=ensembleMember)
+        result = fn(params, MODELRUN=self, ensembleMember=ensembleMember)
         obsNames = self.obsNames()
         # result = result.loc[self.obsNames()]  # order it consistently
         # Optionally catch Nan and raise runModelError if any. Really for algorithms which don't trap!
@@ -722,6 +730,7 @@ class ModelSubmit(object):
             raise runModelError("ERROR")  # ("params are %"%(repr(params)))
 
         # optionally transform data to eigenvectors of covariance matrix
+        # TODO: Consider removing this though needed by code which thinks values are independent.
         if self._extraArgs.get('transform', True):
             logging.debug('Transforming data')
             tMat = self.transMatrix()
@@ -738,14 +747,30 @@ class ModelSubmit(object):
 
         return np.squeeze(result)
 
+    """
+      Code below is to deal with various algorithms. (not all of which are optimization)
+      Idea is that each function should use cases that exist and deal with parallelism. 
+      If it finds out that cases are missing it should raise runModelError.
+      Functions should take no arguments -- only class variable and returns a finalConfig which contains
+      whatever additional information they consider useful. 
+    
+      TODO: Add a decorator which handles runModelError and triggers running of model simulations.  
+         This decorator would then handle the gory business of submitting runs + capturing some standard data for display. 
+      TODO: Above suggests display is a method of this class rather than of StudyConfig as StudyConfig cannot know what to display. 
+      TODO: Handle multiple ensemble members at the model creation stage with observations being averaged at readin. 
+            Will need to know how large the ensemble is as that means the uncertainty is reduced in the internal var covariance matrix.  
+            I think this is quite tricky but well worth doing as it solves a lot of other problems. 
+    """
+
     def runOptimized(self):
         """
         :arg self
-        Run optimised case using reference model which may be p[otential different from configuration used to optimize.
+        Run optimised case using reference model which may be potentially different from configuration used to optimize.
         Cares about number of ensemble members (default is 1 if not set) and the optimum parameters which should be set.
 
         One issue is what to name it. As things stand it is up to the user. They should also set maxDigits sensibly.
-        For the UM the suk of length of baseRun & maxDigits should  be 5 or less.
+        For the UM the sum of length of baseRun & maxDigits should  be 5 or less.
+        TODO: Modify the HadAM3 class so it enforces this.
 
 
 
@@ -771,7 +796,9 @@ class ModelSubmit(object):
             # unscalable and so not scaling them...
             # TODO remove this evil hack of modifying initParams.
             # At the level of a model simulation then ensembleMember is a parameter -- just not one that you optimize.
-            # At teh algorithm level ensembles hsouldl be hidden -- they get run and averaged for the optimisation...
+            # At the algorithm level ensembles should be hidden -- they get run and averaged for the optimisation...
+            # Suggests another approach -- that nEns is passed into the magic  function and the submission magic handles it
+            # and it then magically averages the result. This would give easy parallelism too.
         start = configData.optimumParams()
         for ens in range(0, nEns):  # generate ensemble members getting data returned as a dataframe.
             series = fn(start.values, MODELRUN=self, ensembleMember=ens, df=True).iloc[0, :]  # make it a series
@@ -794,14 +821,81 @@ class ModelSubmit(object):
         bestParams = params.loc[idxbest, :]
         finalConfig.optimumParams(bestParams.to_dict())
         # and remove begin parameters fromm finalConfig as makes no sense in this context
-        finalConfig.Config['Parameters'].pop('initParams')  # removbe init parameters from config.
+        finalConfig.Config['Parameters'].pop('initParams')  # remove init parameters from config.
         # TODO -- do not use direct acess to Config. Instead use a method which means making initParams a method with a delete option.
         # FIXME -- problem I am having is that ensembleMember is not a formal parameter... but it should be added
         # if nEns > 1.
-        # need to deal with ensemblemember here -- relly as a hack for "best" case.
+        # need to deal with ensembleMember here -- relly as a hack for "best" case.
         # add the best case (min cost)
 
         # fixes to make -- work out what information goes into finalConfig and so is returned...
         # start parameters; best parameters -- they should all be the same so will pick first ensemnble
 
         return finalConfig
+
+    def rangeAwarePerturbations(self, baseVals, parLimits, steps):
+        """
+        Generate perturbations towards the centre of the valid range for each
+        parameter
+
+        Inputs
+
+            arg: self -- Submit object.
+            arg: baseVals: parameters at which Jacobian computed at.
+            arg: parLimits: dataset max,min limits. parLimits.loc[:,'maxParm'] are the max values;
+              parLimits.loc[:,'minParam'] are the min values;
+            arg: steps: stepsizes for each parameter.
+
+        Inputs, except parLimits, are all pandas series
+        Returns pandas series array defining the perturbed parameter  parameter values
+        """
+
+        if self.verbose:
+            print(f"in rangeAwarePerturbations with {baseVals}")
+        # derive the centre-of-valid-range
+        centres = (parLimits.loc[:, 'minParam'] + parLimits.loc[:, 'maxParam']) * 0.5
+        deltaParam = np.abs(steps)
+        sgn = np.sign((centres - baseVals))
+        L = (sgn < 0)
+        deltaParam[L] *= -1
+
+        return deltaParam
+
+    def runJacobian(self):
+        """
+        run Jacobian cases.
+        :arg self -- a modelSimulation object.
+        """
+        raise NotImplementedError  # code not implemented yet!
+
+        configData = self.config
+        nEns = configData.ensembleSize()  # how many ensemble members to run
+        fn = self.optimiseFunction()  # get the function for the evaluation.
+        base = configData.optimumParams()
+        paramRanges = configData.paramRanges()
+        steps = configData.steps()
+        delta = self.rangeAwarePeturbations(base, paramRanges, steps)
+        series = []  # list of series.
+        for ens in range(0, nEns):  # generate ensemble members getting data returned as a dataframe.
+            # iterate over params here..
+            for p, v in delta.items():
+                deltaP = base + delta.loc[p]
+                s = fn(deltaP.values, MODELRUN=self, ensembleMember=ens, df=True).iloc[0, :]  # make it a series
+                # add in the ensemble member as a column for later averaging.
+                # check we don't have ensembleMember and parameter set in s.
+                s.loc['ensembleMember'] = ens
+                s.loc['parameter'] = p
+                series.append(series)
+
+        jac = pd.DataFrame(series)
+        # see if have any missing obs. If we do raise runModelError which should cause them to be run if the calling code
+        # follows the prototype approach.
+        someMissing = np.any(jac.isnull())
+        if someMissing:
+            raise runModelError("Run Optimized Cases")
+
+        # now have all the data -- lets do the Jacobian calculation.
+        # first make  multi-index and average over ensemble member. Want to do that from the ensmembleMember and parameter columns
+
+        finalConfig = self.runConfig()  # get the configuration
+        return finalConig
