@@ -10,7 +10,7 @@ Installation:
 4) Add $OPTCLIMTOP/tools to your PATH.
 
 Works at python 3.8.  *May* work at python 3.6+. 
-You also need the following modules (generally available from conda-forge)
+You also need the following modules (generally available from conda-forge though could be installed using pip)
 f90nml
 pandas
 matplotlib
