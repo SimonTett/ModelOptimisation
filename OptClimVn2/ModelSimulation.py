@@ -14,6 +14,7 @@ import f90nml  # available from http://f90nml.readthedocs.io/en/latest/
 import netCDF4
 import numpy as np
 import pandas as pd  # pandas
+import warnings  # so we can turn of warnings..
 
 import optClimLib  # provide std routines
 
@@ -72,7 +73,7 @@ class ModelSimulation(object):
        data from it. See readObs for more details.
 
        TODO -- write more extensive documentation  esp on namelist read/writes.
-       TODO -- move namelist stuff out of ModelSimulation into seperate module??
+       TODO -- move namelist stuff out of ModelSimulation into separate module??
 
     """
 
@@ -161,7 +162,7 @@ class ModelSimulation(object):
         :param verbose (Default = False) if set then print out more information
         :return: configuration
         """
-        #TODO replace this by reading parameters, pp stuff and obsnames.
+        # TODO replace this by reading parameters, pp stuff and obsnames.
         # let these be overwritten from the init values if set.
         # pickle makes it difficult to update while running which might be an advantage
         with open(self._configFilePath, 'rb') as fp:
@@ -169,7 +170,7 @@ class ModelSimulation(object):
 
         return config
 
-    def readModelSimulation(self, obsNames=None, update=False,ppOutputFile=None, verbose=False):
+    def readModelSimulation(self, obsNames=None, update=False, ppOutputFile=None, verbose=False):
         """
         Read in information on modelSimulation
         :param obsNames -- obs names being used -- if set will override original config
@@ -189,11 +190,11 @@ class ModelSimulation(object):
                 print("Setting Obsnames")
             obs = {k: None for k in obsNames}
             config['observations'] = obs
-            #TODO -- not sure why I do this. the config was pickled so round now is just an ordered collection.
+            # TODO -- not sure why I do this. the config was pickled so round now is just an ordered collection.
         if ppOutputFile is not None:
-            postProcess = config.get('postProcess',{})
+            postProcess = config.get('postProcess', {})
             postProcess['outputPath'] = ppOutputFile
-            config['postProcess']=postProcess
+            config['postProcess'] = postProcess
         self.set(config, write=False, verbose=verbose)
         self.readObs(verbose=verbose)  # and read the observations
         self._readOnly = not update
@@ -364,14 +365,14 @@ class ModelSimulation(object):
 
         return self.config['name']
 
-    def ppOutputFile(self,file=None):
+    def ppOutputFile(self, file=None):
         """
         Return the name of the file to be produced by the post Processing 
         :param file -- if defined set value for ppOoutputFile to file.
         :return: 
         """
         if file is not None:
-            self.set('ppOutputFile',file) # 
+            self.set('ppOutputFile', file)  #
         return self.get(['ppOutputFile'])
 
     def ppExePath(self):
@@ -382,15 +383,17 @@ class ModelSimulation(object):
 
         return self.get(['ppExePath'])
 
-    def readObs(self, verbose=False, justRead=False):
+    def readObs(self, verbose=False, justRead=False, series=False):
         """
         Read the post processed data.
          This default implementation reads netcdf, json or csv data and
          stores it in the configuration
         :param verbose (default False). If true print out helpful information
         :param justRead (default False). Just read the observations and return them. (do not use names of observations in model)
-        :return: a ordered dict of observations wanted. Values not found when requested will be set to None.
+        :param series (default False), If true return a pandas series containing the values.
+        :return: a ordered dict of observations (or pandas series) wanted. Values not found when requested will be set to None.
         """
+
         obsFile = os.path.join(self.dirPath, self.ppOutputFile())
         obs = collections.OrderedDict()
         varsWant = self.get(['observations']).keys()  # extract keys from current obs
@@ -410,14 +413,17 @@ class ModelSimulation(object):
                 print("For: ", obs.keys())
 
             with netCDF4.Dataset(obsFile, "r")  as ofile:  # open it up for reading
-                if verbose: print(f"nc file {obsFile}  got {ofile.variables.keys()}")
-                if justRead:
-                    raise NotImplementedError("Implement justRead with netcdf4")
-                for var in varsWant:  # loop over variables
-                    if var in ofile.variables:  # got it?
-                        obs[var] = float(ofile.variables[var][0]) #this  will break if obs is not a scalar and masked
-                    else:
-                        obs[var] = None  # set to None if we don't have it.
+                # get depreciation warnings because netCDF4 needs to update as numpy no longer use np.bool (which I guess it does)
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    if verbose: print(f"nc file {obsFile}  got {ofile.variables.keys()}")
+                    if justRead: raise NotImplementedError("Implement justRead with netcdf4")
+                    for var in varsWant:  # loop over variables
+                        if var in ofile.variables:  # got it?
+                            obs[var] = float(ofile.variables[var][0])
+                            # this  will break if obs is not a scalar and masked
+                        else:
+                            obs[var] = None  # set to None if we don't have it.
         elif fileType == '.json':
             # this should just be a json file.
             with open(obsFile, 'r') as fp:
@@ -431,17 +437,20 @@ class ModelSimulation(object):
             obsdf = pd.read_csv(obsFile, header=None, index_col=False)
             obs = obsdf.to_dict()
             if not justRead:
-                for k in varsWant: # loop overs vars we def want
+                for k in varsWant:  # loop overs vars we def want
                     obs[k] = obsdf.loc[k].values
         else:  # don't know what to do. So raise an error
             raise NotImplementedError("Do not recognize %s" % fileType)
         self.set({'observations': obs}, write=False)
+
+        if series:
+            obs = pd.Series(obs)  # convert to series.
         return obs  # return the obs.
 
     def writeObs(self, obs, verbose=False):
         """
         Write the observations to file. Type of file determines how write done
-        :param obs -- observations (dict with keys obsNames)
+        :param obs -- observations (dict with keys obsNames) (or pandas series)
         :param verbose: (default False) be verbose if True
         :return: nada!
         """
@@ -456,10 +465,13 @@ class ModelSimulation(object):
             rootgrp = netCDF4.Dataset(file, "w", format="NETCDF4")
             try:
                 for key, obsV in obs.items():  # iterate over index in series.
+                    if verbose:
+                        print(f"key:{key} value {obsV}")
                     v = rootgrp.createVariable(key, 'f8')  # create the NetCDF variable
-                    v[:] = obsV  # write to it -- will fail if not a scalar I imagine!
                     if verbose:
                         print("Var is ", v, obsV, v.size)
+                    v[:] = obsV  # write to it -- will fail if not a scalar I imagine!
+
             finally:  # any failure close the netcdf file
                 rootgrp.close()
         elif fileType == '.json':  # json file

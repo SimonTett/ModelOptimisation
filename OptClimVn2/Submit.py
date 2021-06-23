@@ -3,11 +3,8 @@ Support for handling model submission. Idea is various functions needed are pass
 See config.py for some actual functions that do the work.
 TODO rename this as does not just handle submission..or move the non submission code into an other module.
 and code is rather messy and would benefit from some re-engineering. Which means thinking quite hard about what this module actually doess.
-It is a place that handles all the models so probably should also handle the various algorithms and their data needs.
+It is a place that handles all the models.
 
-TODO: Make this module handle ensembles. This is quite tricky but best done here and will make life a lot easier for all layers built on top of this...
-TODO: Take the optimum function from config and move it here. No real need to have multiple ones. If we find we do then we can handle that
-   when it happens. And this function can handle ensembles.
 """
 
 import copy
@@ -21,11 +18,15 @@ import numpy as np
 import pandas as pd
 
 import optClimLib
+import sys
 
-# import optClimLib
+# check we are version 3.7 or above.
 
-__version__ = '0.4.0'
-# subversion properties
+if (sys.version_info.major < 3) or (sys.version_info.major == 3 and sys.version_info.minor < 7):
+    raise Exception("Only works at 3.7+ as needs ordered dict only available at 3.7 or greater")
+
+__version__ = '0.5.0'
+# subversion properties TODO remove/modify as now using GIT
 subversionProperties = \
     {
         'Date': '$Date$',
@@ -35,13 +36,12 @@ subversionProperties = \
     }
 
 
-class runModelError(Exception):
-    """
-    Error when need to run a model!
-    """
-    pass
-
-
+# TODO:Current design fixed_params are special and fixed per instance of ModelSubmit
+#    but we could (in theory) have multiple runs with different fixed_params in a directory.
+#    Which would be read in when we read the directory. One problem is that if they are in a pandas array
+#    Meaning params would be hard. But we probably don't want to do that.
+#      So treat fixed params like any other param and just have the fn being used get preset with them...
+#      that way gets computed correctly -- params then ensemble then fixed params.
 class ModelSubmit(object):
     """
     provides methods to support working out which models need to be submitted
@@ -49,9 +49,10 @@ class ModelSubmit(object):
 
     # so replacing modelDirs functionality. (rootDir & config would then be compulsory)
     # TODO add a new argument -- restart which if set would remove all stuff in rootDir
-    # wonder if modelFn & submitFn can be extracted from config???
+    # wonder if submitFn can be extracted from config? I think not as very dependant on the
+    # system in use.
 
-    def __init__(self, config, modelFn, submitFn, optimiseFn, fakeFn=None,
+    def __init__(self, config, modelFn, submitFn, fakeFn=None,
                  rootDir=None, ignoreKeys=None, verbose=False, readOnly=False, renameRefDir=None,
                  keyFn=None, noObs='fail'):
         """
@@ -59,8 +60,7 @@ class ModelSubmit(object):
         :param config: configuration information
         :param modelFn: function that creates model instance
         :param submitFn: function that submits the models -- will likely be system (& model) dependent
-        :param optimiseFn: function that does the work -- it gets mixed up with the instance
-          TODO: Document the expected function signature.
+
 
         :param fakeFn (optional = None): if provided then nothing will actually be submitted.
             Instead the fakeFunction will be ran which will generate fake values for the observations file.
@@ -81,7 +81,7 @@ class ModelSubmit(object):
 
         submitFn(model_list, config, rootDir, verbose=False, resubmit=None, *args, **kwargs)
          where model_list is a list of models to be submitted, config is a StudyConfig, rootDir is the
-           root where and files can be created, verbose - -be verbose, resubmit -- what to resubmit,
+           root where  files can be created, verbose - -be verbose, resubmit -- what to resubmit,
             other args and kwargs are to be interpreted as needed!
 
         fakeFn(params, config) # given input parameters as pandas Series returns obs as pandas series.
@@ -104,8 +104,6 @@ class ModelSubmit(object):
         self.renameRefDir = renameRefDir
         self.keyFn = keyFn
 
-        self._optimiseFn = optimiseFn
-        # self._optimiseFn_args = optimiseFn_args
         self.readOnly = readOnly
         if ignoreKeys is None:
             self.ignoreKeys = ['runCode', 'runTime', 'RUNID']  # values to ignore when generating keys.#
@@ -113,7 +111,7 @@ class ModelSubmit(object):
         else:
             self.ignoreKeys = ignoreKeys
 
-        self.refDir = config.referenceConfig()
+        self.refDir = pathlib.Path(config.referenceConfig())
         if rootDir is None:
             self.rootDir = pathlib.Path.cwd() / config.name()  # default path
         else:
@@ -122,14 +120,14 @@ class ModelSubmit(object):
         self._fixParams = self.config.fixedParams()
         # add on refDir if defined
         if self.refDir is not None:
-            self._fixParams.update(refDir=str(self.refDir))
+            self._fixParams.update(refDir=self.refDir)
 
         self._modelsToSubmit = dict()  # where we store models to be submitted.
-        self._modelsToRerun = dict() # where we store models to be reran.
+        self._modelsToRerun = dict()  # where we store models to be reran.
 
         self.verbose = verbose
         # store models.
-        # self.dirCount = len(modelDirs)  # how many directories we got -- not the same as the number of models.
+
         self._models = dict()  # initialise ordered collection where models stored.
 
         if not self.rootDir.is_dir():  # dir does not exist so create it.
@@ -139,7 +137,7 @@ class ModelSubmit(object):
         return  # and all done
 
     # methods that extract information from config. caching to avoid recomputation.
-    # suspect there is a more pythonic way to generate them..
+    # suspect there is a more pythonic way to generate them.. And might be a bad idea to cache them too.
 
     @functools.lru_cache()
     def obsNames(self):
@@ -149,7 +147,6 @@ class ModelSubmit(object):
         """
         return self.config.obsNames()
 
-    @functools.lru_cache()
     def fixedParams(self):
         """
 
@@ -180,18 +177,19 @@ class ModelSubmit(object):
     def scales(self):
         """
         Get scales from config
-        :return: scaling values
+        :return: scaling values as pandas series. See StudyConfig scales.
         """
         return self.config.scales(obsNames=self.obsNames())
 
     @functools.lru_cache()
-    def transMatrix(self, scale=True):
+    def transMatrix(self, scale=True, dataFrame=True):
         """
-        Return  transform matrix by calling config method.
-        :param (optional) scale (default True) -- scale transformation matrix
+        Return  transform matrix by calling StudyConfig.transMatrix
+        :param (optional) scale (default True) -- scale transformation matrix;
+        :param (optional) dataframe (default True) -- if True  wrap as a dataframe.
         :return: transform matrix.
         """
-        return self.config.transMatrix(scale=scale)
+        return self.config.transMatrix(scale=scale, dataFrame=dataFrame)
 
     def genModelKey(self, model):
         """
@@ -228,7 +226,7 @@ class ModelSubmit(object):
         Read model configuration from directory, generate key and store it.
           Behaviour when no observations found depends on self.noObs
              'fail': fail!
-             'continue: attempt to continue the simulation
+             'continue': attempt to continue the simulation
              'perturb': perturb the simulation and restart it.
              'clean': remove the directory.
         :param dir: path to directory where model configuration is to be found
@@ -249,8 +247,8 @@ class ModelSubmit(object):
             key = self.genModelKey(model)
             if self.verbose:
                 print("Read Dir %s Key is:\n %s " % (dir, key))
-            if self._models.get(key) is not None:
-                print("Got duplicate dir =  %s " % (dir) + "\n key = " + repr(key))
+                if self._models.get(key) is not None: # warn if verbose on and got duplicate dir.
+                    print("Got duplicate dir =  %s " % (dir) + "\n key = " + repr(key))
             # check model has observations and if not do something!
             obs = model.getObs()
             if (obs is None) or any([v is None for v in obs.values()]):  # Obs is None or any  obs are None.
@@ -306,7 +304,7 @@ class ModelSubmit(object):
         This should be unique (to some rounding on float parameters)
         :param paramDict -- a dictionary (or something that behaves likes a dict) of variable parameters.
         :param fpFmt -- format to convert float to string. (Default is %.4g)
-        :return: a tuple as an index.
+        :return: a tuple as an index. tuple is key_name, value in sorted order of key_name.
         #TODO -- make the paramNames/values be everything. Passed in as an iterable.
         # then construct keys from name/values as now. Note this means that would be possible to
         # make this a method of the model which would have lots of advantages!
@@ -339,7 +337,7 @@ class ModelSubmit(object):
                 pass  # nothing to do
 
             if isinstance(v, float):
-                key.append(fpFmt % (v))  # float point number so use formatter.
+                key.append(fpFmt % v)  # float point number so use formatter.
             else:  # just append the value.
                 key.append(repr(v))  # use the object repr method.
         key = tuple(key)  # convert to tuple
@@ -386,7 +384,7 @@ class ModelSubmit(object):
         model = self._models.get(key, None)
         if (model is None) and update:
             if doVerbose:
-                print("Failed to find", paramAll)
+                print("Failed to find", paramAll, '\n using key: ', key)
             self.modelSubmit((key, paramAll))
 
         return model
@@ -453,6 +451,7 @@ class ModelSubmit(object):
             yield (createDir, name)  # "return" the directory to be created and the name.
 
     def submit(self, resubmit=None, dryRun=False, verbose=None, postProcess=True,
+               cost=False, scale=True,
                *args, **kwargs):
         """
         Submit models that need to be submitted using self.submitFn -- see init documentation
@@ -471,13 +470,20 @@ class ModelSubmit(object):
         :param resubmit -- if provided command to resubmit the calling script.
         :param dryRun (optional; default False). If True don't submit any runs though do create them.
         :param verbose (optional: default None). If set override value in self.
+        :param cost (optional: default False) -- compute and store the cost in the configuration. (Only some algorithms will produce a cost)
+        :param scale -- (optional: default True) -- when computing costs apply scaling to transform matrix and cost.
         :param args: unnamed arguments passed into submitFn
         :param kwargs: keyword arguments passed into submitFn
-        :return: status of submission (depends on submit function) and number of models passed to submit. True -- all OK; False -- something went wrong!
+        :return: status of submission (depends on submit function), number of models passed to submit, and configuration.
+
+             status True -- all OK; False -- something went wrong!
         """
 
+        finalConfig = self.runConfig(self.config)  # get final runInfo
+        if cost:
+            finalConfig = self.runCost(finalConfig, scale=scale)
         if self.readOnly:  # read only so return not much.
-            return True, 0
+            return True, 0, finalConfig
 
         doVerbose = self.verbose
         if verbose is not None:
@@ -488,7 +494,7 @@ class ModelSubmit(object):
         ## all setup so go and submit models.
 
         submitModels = self.rerunModels()
-        if len(submitModels) > 0:  # got minimal models to submit. Submit them **all** regardeless of max models.
+        if len(submitModels) > 0:  # got minimal models to submit. Submit them **all** regardless of max models.
             # TODO think about what happens if fail because have too many jobs submitted..
             if dryRun:  # doing dry run so no actual submission
                 return True, len(submitModels)
@@ -504,7 +510,7 @@ class ModelSubmit(object):
                 for model in submitModels:
                     fakeObs = self.fakeFn(model, self.config)  # fake the obs
                 status = True
-            return status, len(submitModels)  # minimal models so don't do any more!
+            return status, len(submitModels), finalConfig  # minimal models so don't do any more!
 
         # Do possible continuation runs.
         submitModels = []
@@ -536,9 +542,10 @@ class ModelSubmit(object):
                 print("Params are:\n", repr(param), "\n", '-' * 80)
 
         # end of iterating over models  to generate.
+        nmodels = len(submitModels)
+        if dryRun:  # doing dry run so no actual submission. Return now!
+            return True, nmodels, finalConfig
 
-        if dryRun:  # doing dry run so no actual submission
-            return True, len(submitModels)
         # otherwise submit using submitFunction
         if self.fakeFn is None:  # actually submit the model
             status = self.submitFn(submitModels, self.config, self.rootDir,
@@ -549,7 +556,8 @@ class ModelSubmit(object):
             for model in submitModels:
                 fakeObs = self.fakeFn(model, self.config)  # fake the obs
             status = True
-        return status, len(submitModels)
+
+        return status, nmodels, finalConfig
 
     def params(self, includeFixed=False):
         """
@@ -557,16 +565,18 @@ class ModelSubmit(object):
         :includeFixed (optional; default True) -- include all fixed params if True
         :return: pandas dataframe of parameters
 
-        TODO: Remove ensembleMember -- this is "hidden" at this level.
         """
         p = []
         indx = []
-        names = self.paramNames()[:]
-        names.sort()  # sort names.
-        # add ensembleMember for times when we have an ensemble.
-        names.append('ensembleMember')
+        names = []
         if includeFixed:
             names.extend(self._fixParams)  # add in the fixParams
+        params = self.paramNames()[:]
+        # params.sort()
+        names.extend(params)
+        # add ensembleMember for times when we have an ensemble.
+        names.append('ensembleMember')
+
         for key, model in self.allModels():
             param = model.getParams(series=True, params=names)
             if includeFixed:  # add refDir
@@ -578,16 +588,16 @@ class ModelSubmit(object):
 
     def obs(self, scale=True):
         """
-        Extract the Obs used in the simulations
-        :param scale (optional; default = True)
+        Extract the Obs used in the *individual* simulations
+        No ensemble averaging is done. (and you need the param data to work out which ensemble is which)
+        :param scale (optional; default = True).
         :return: pandas dataframe of observations
 
-        TODO: Handle ensemble averaging. (Which is tricky as will need to identify models from the same ensemble. )
+
         """
         o = []
         for key, model in self.allModels():
             obs = model.getObs(series=True)
-            print(obs.name)
             if scale:  # scale obs.
                 scales = self.config.scales()
                 name = obs.name
@@ -595,43 +605,43 @@ class ModelSubmit(object):
                 obs = obs.rename(name)
                 # need to reset name
             o.append(obs)
+        if len(o) == 0:  # empty list
+            return None
 
         obsDF = pd.DataFrame(o)
         return obsDF
 
-    def runConfig(self, filename=None):
+    def runCost(self, config, filename=None, scale=True):
         """
-        **copy** config and add parameters, obs and cost to it. Config is returned and maybe saved if filename provided.
-        :param self:
+        Add information on cost to configuration and return modified config.
+        :param config -- configuration to be copied and have cost added in. Also stores
+           best evaluation.
+
+        :param scale (default True). If True scale covariance matrix and data for cost calculation.
         :param filename (default None). If set then new config will be saved to this file.
+        :returns finalConfig -- the following methods will then work on it:
 
-.
-        :return:
+           finalConfig.cost() -- the cost for all model simulations.
+           final.getv('bestEval') -- the  best evaluation over all model simulations.
+              Note these are not the same as ensemble averages used within various algorithms.
+
         """
-        newConfig = self.config.copy(filename=filename)
 
-        paramObs = self.paramObs()  # get params & obs
-        if paramObs is None:
+        newConfig = config.copy(filename=filename)
+        obs = self.obs(scale=scale)  # get params & obs
+        if obs is None:  # no data
             if filename is not None:
                 newConfig.save()
             return newConfig  # no data so return the config.
+        obs = obs.loc[:, config.obsNames()]  # extract the obs.
+        tMat = self.transMatrix(scale=scale)  # which puts us into space where totalError is Identity matrix.
 
-        params = paramObs.reindex(columns=self.paramNames())
-        obs = paramObs.reindex(columns=self.obsNames())  # extract the obs.
-        scales = self.scales()  # get the scales
-        obs = obs * scales  # normalise scales.
-        tMat = self.transMatrix()  # which puts us into space where totalError is Identity matrix.
-        nObs = len(self.obsNames())
-        resid = tMat.dot((obs - self.targets(scale=True)).T)
-
-        cost = np.sqrt(np.sum(resid ** 2, axis=0).astype(float) / nObs)
-        # print("Cost is ",cost)
-        cost = pd.Series(cost, index=obs.index)
+        nObs = len(obs.columns)
+        resid = (obs - self.targets(scale=scale)) @ tMat.T
+        cost = np.sqrt((resid ** 2).sum(1).astype(float) / nObs)
 
         # update newConfig
         cost = newConfig.cost(cost)
-        newConfig.parameters(params)
-        newConfig.simObs(obs)
         # work out best directory by finding minimum cost.
         bestEval = None
         if len(cost) > 0:
@@ -644,37 +654,39 @@ class ModelSubmit(object):
 
         return newConfig
 
-    def optimiseFunction_args(self, clear=False, **extraArgs):
+    def runConfig(self, config, filename=None):
         """
-        Setup extra named arguments for the optimise function
-        :param clear (Default False): If True set internal arguments to {}
-        :param extraArgs: named arguments which get slurped into a dict and then used
-           to update arguments already provided.
-        :return:Nada
+        **copy** config and add parameters and obs to it . Config is returned and maybe saved if filename provided.
+        :param self:
+        :param filename (default None). If set then new config will be saved to this file.
+
+        TODO: Move to runSubmit as it is really there for the "run" cases.
+        :return: modifed config. The following methods will work:
+            finalConfig.parameters() -- returns the parameters for each model simulation
+            finalConfig.simObs() -- returns the simulated observations for each model simulation.
         """
+        newConfig = config.copy(filename=filename)
 
-        if not hasattr(self, '_extraArgs') or clear:
-            self._extraArgs = {}
+        paramObs = self.paramObs()  # get params & obs
+        if paramObs is None:
+            if filename is not None:
+                newConfig.save()
+            return newConfig  # no data so return the config.
 
-        self._extraArgs.update(**extraArgs)
+        params = paramObs.reindex(columns=self.paramNames())
+        obs = paramObs.reindex(columns=self.obsNames())  # extract the obs.
 
-        return self._extraArgs
+        # update newConfig with obs & params. As normal all are unscaled.
 
-    # TODO -- change name of this from optimise as jacobian uses it and that is not optimisation!
-    def optimiseFunction(self, fn=None):
-        """
-        :param fn (optional default None): If not None then store this function for later
-           and then continue
-        :return: a function suitable for use in an optimisation  algorithm.
-        by generating a partial function which has MODELRUN=self in the argument list
-        and any extra args (as named arguments) that are present.
-        """
-        if fn is not None:
-            self._optimiseFn = fn  # store the fn.
+        newConfig.parameters(params)
+        newConfig.simObs(obs)
 
-        fn = functools.partial(self._optimiseFn, MODELRUN=self)
+        if filename is not None:
+            newConfig.save()
 
-        return fn
+        return newConfig
+
+
 
     def paramObs(self, params=None, obs=None, clear=False):
         """
@@ -692,7 +704,7 @@ class ModelSubmit(object):
 
         # initialise _paramObs.
         if not hasattr(self, '_paramObs'):
-            self._paramObs = dict() # intitialise _paramObs with empty orderedDict.
+            self._paramObs = dict()  # intitialise _paramObs with empty Dict.
 
         if obs is not None:
             # got some obs so store them!
@@ -712,190 +724,4 @@ class ModelSubmit(object):
 
         return pd.DataFrame(list(self._paramObs.values()))  # name coming from obs series.
 
-    def optFunction(self, params, ensembleMember=None):
-        """
-        Runs user supplied function, does various post processing and returns result.
-        :param params -- parameters (as a np array) to run with.
-        :return: result of user function.
-        """
 
-        fn = self.optimiseFunction()
-        # fn = self._optimiseFn
-        result = fn(params, MODELRUN=self, ensembleMember=ensembleMember)
-        obsNames = self.obsNames()
-        # result = result.loc[self.obsNames()]  # order it consistently
-        # Optionally catch Nan and raise runModelError if any. Really for algorithms which don't trap!
-        if self._extraArgs.get('failNan', True) and np.any(np.isnan(result)):
-            logging.debug('Found NaN and raising runModelError')
-            raise runModelError("ERROR")  # ("params are %"%(repr(params)))
-
-        # optionally transform data to eigenvectors of covariance matrix
-        # TODO: Consider removing this though needed by code which thinks values are independent.
-        if self._extraArgs.get('transform', True):
-            logging.debug('Transforming data')
-            tMat = self.transMatrix()
-            result = result * self.scales().values  # scale it
-            result = result - self.targets().values  # make it a residual
-            # do dot product with non-missing values
-            for indx in range(0, result.shape[0]):
-                if not np.any(pd.isnull(result[indx, :])):
-                    result[indx, :] = tMat.dot(result[indx, :])  # transform into orthogonal basis of covar matrix
-
-        if self._extraArgs.get('sumSquare', False):
-            # compute sum of squares...
-            result = np.sum(result ** 2, 1)  # sum along dim 1
-
-        return np.squeeze(result)
-
-    """
-      Code below is to deal with various algorithms. (not all of which are optimization)
-      Idea is that each function should use cases that exist and deal with parallelism. 
-      If it finds out that cases are missing it should raise runModelError.
-      Functions should take no arguments -- only class variable and returns a finalConfig which contains
-      whatever additional information they consider useful. 
-    
-      TODO: Add a decorator which handles runModelError and triggers running of model simulations.  
-         This decorator would then handle the gory business of submitting runs + capturing some standard data for display. 
-      TODO: Above suggests display is a method of this class rather than of StudyConfig as StudyConfig cannot know what to display. 
-      TODO: Handle multiple ensemble members at the model creation stage with observations being averaged at readin. 
-            Will need to know how large the ensemble is as that means the uncertainty is reduced in the internal var covariance matrix.  
-            I think this is quite tricky but well worth doing as it solves a lot of other problems. 
-    """
-
-    def runOptimized(self):
-        """
-        :arg self
-        Run optimised case using reference model which may be potentially different from configuration used to optimize.
-        Cares about number of ensemble members (default is 1 if not set) and the optimum parameters which should be set.
-
-        One issue is what to name it. As things stand it is up to the user. They should also set maxDigits sensibly.
-        For the UM the sum of length of baseRun & maxDigits should  be 5 or less.
-        TODO: Modify the HadAM3 class so it enforces this.
-
-
-
-        """
-
-        #
-        # basic idea is that users takes final json file and edits it to suit their needs
-
-        configData = self.config
-
-        nEns = configData.ensembleSize()  # how many ensemble members to run
-        simObs = []
-        fn = self.optimiseFunction()  # get the function!
-        # add ensembleMember to the list of parameters IFF nEns > 1
-        # this is tricky as StudyConfig gets that from the initial parameters (as it thinks about optimisation)
-        # a hack might be to add ensembleMember =0 to the initial parameters...
-        # note here we have start.
-        if nEns > 1:
-            pass
-            # self.config.Config['Parameters']['initParams'].update(ensembleMember=0)
-            # SADLY this  hack fails because ensembleMember has no known range...
-            # I don't want to make a bunch of extensive changes to code base -- which would inlcude identifying some parameters as
-            # unscalable and so not scaling them...
-            # TODO remove this evil hack of modifying initParams.
-            # At the level of a model simulation then ensembleMember is a parameter -- just not one that you optimize.
-            # At the algorithm level ensembles should be hidden -- they get run and averaged for the optimisation...
-            # Suggests another approach -- that nEns is passed into the magic  function and the submission magic handles it
-            # and it then magically averages the result. This would give easy parallelism too.
-        start = configData.optimumParams()
-        for ens in range(0, nEns):  # generate ensemble members getting data returned as a dataframe.
-            series = fn(start.values, MODELRUN=self, ensembleMember=ens, df=True).iloc[0, :]  # make it a series
-            simObs.append(series)
-        simObs = pd.DataFrame(simObs)  # pack all the series together to get the simulated observations as a dataframe.
-        # see if have any missing obs. If we do raise runModelError which should cause them to be run if the calling code
-        # follows the prototype approach.
-        someMissing = np.any(simObs.isnull())
-        if someMissing:
-            raise runModelError("Run Optimized Cases")
-
-        # now to set up information having done all cases.
-        finalConfig = self.runConfig()  # get final runInfo
-        # need to hack a bit by adding ensembleMember to the parameters
-        params = finalConfig.parameters()
-        params.loc[:, 'ensembleMember'] = range(0, nEns)
-        finalConfig.parameters(params)
-        # and add optimum parameters (which as a hack will be min cost)
-        idxbest = finalConfig.cost().idxmin()
-        bestParams = params.loc[idxbest, :]
-        finalConfig.optimumParams(bestParams.to_dict())
-        # and remove begin parameters fromm finalConfig as makes no sense in this context
-        finalConfig.Config['Parameters'].pop('initParams')  # remove init parameters from config.
-        # TODO -- do not use direct acess to Config. Instead use a method which means making initParams a method with a delete option.
-        # FIXME -- problem I am having is that ensembleMember is not a formal parameter... but it should be added
-        # if nEns > 1.
-        # need to deal with ensembleMember here -- relly as a hack for "best" case.
-        # add the best case (min cost)
-
-        # fixes to make -- work out what information goes into finalConfig and so is returned...
-        # start parameters; best parameters -- they should all be the same so will pick first ensemnble
-
-        return finalConfig
-
-    def rangeAwarePerturbations(self, baseVals, parLimits, steps):
-        """
-        Generate perturbations towards the centre of the valid range for each
-        parameter
-
-        Inputs
-
-            arg: self -- Submit object.
-            arg: baseVals: parameters at which Jacobian computed at.
-            arg: parLimits: dataset max,min limits. parLimits.loc[:,'maxParm'] are the max values;
-              parLimits.loc[:,'minParam'] are the min values;
-            arg: steps: stepsizes for each parameter.
-
-        Inputs, except parLimits, are all pandas series
-        Returns pandas series array defining the perturbed parameter  parameter values
-        """
-
-        if self.verbose:
-            print(f"in rangeAwarePerturbations with {baseVals}")
-        # derive the centre-of-valid-range
-        centres = (parLimits.loc[:, 'minParam'] + parLimits.loc[:, 'maxParam']) * 0.5
-        deltaParam = np.abs(steps)
-        sgn = np.sign((centres - baseVals))
-        L = (sgn < 0)
-        deltaParam[L] *= -1
-
-        return deltaParam
-
-    def runJacobian(self):
-        """
-        run Jacobian cases.
-        :arg self -- a modelSimulation object.
-        """
-        raise NotImplementedError  # code not implemented yet!
-
-        configData = self.config
-        nEns = configData.ensembleSize()  # how many ensemble members to run
-        fn = self.optimiseFunction()  # get the function for the evaluation.
-        base = configData.optimumParams()
-        paramRanges = configData.paramRanges()
-        steps = configData.steps()
-        delta = self.rangeAwarePeturbations(base, paramRanges, steps)
-        series = []  # list of series.
-        for ens in range(0, nEns):  # generate ensemble members getting data returned as a dataframe.
-            # iterate over params here..
-            for p, v in delta.items():
-                deltaP = base + delta.loc[p]
-                s = fn(deltaP.values, MODELRUN=self, ensembleMember=ens, df=True).iloc[0, :]  # make it a series
-                # add in the ensemble member as a column for later averaging.
-                # check we don't have ensembleMember and parameter set in s.
-                s.loc['ensembleMember'] = ens
-                s.loc['parameter'] = p
-                series.append(series)
-
-        jac = pd.DataFrame(series)
-        # see if have any missing obs. If we do raise runModelError which should cause them to be run if the calling code
-        # follows the prototype approach.
-        someMissing = np.any(jac.isnull())
-        if someMissing:
-            raise runModelError("Run Optimized Cases")
-
-        # now have all the data -- lets do the Jacobian calculation.
-        # first make  multi-index and average over ensemble member. Want to do that from the ensmembleMember and parameter columns
-
-        finalConfig = self.runConfig()  # get the configuration
-        return finalConig

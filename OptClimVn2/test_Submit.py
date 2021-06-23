@@ -1,13 +1,12 @@
 """
 Place to put tests for Submit.
 """
-import collections
+
 import copy
 import os
 import shutil
 import tempfile
 import unittest
-
 import numpy as np
 import numpy.testing as nptest
 import pandas as pd
@@ -27,6 +26,7 @@ class testSubmit(unittest.TestCase):
         Standard setup for all test cases
         :return:
         """
+        self.verbose = False  # set True if want verbose output.
         self.tmpDir = tempfile.TemporaryDirectory()
         testDir = self.tmpDir.name
         refDir = 'test_in'
@@ -39,34 +39,48 @@ class testSubmit(unittest.TestCase):
         self.refPath = refDir
         refDirPath = os.path.join(refDir, 'start')
         # now do stuff.
-        # create a ModelSubmit instance... and then read in dir.
+        # create a ModelSubmit instance... and then read in dirs.
 
         jsonFile = os.path.join('Configurations', 'example.json')
         configData = StudyConfig.readConfig(filename=jsonFile, ordered=True)  # parse the jsonFile.
+        # reset the reference dir. Rather hack. TODO: fix config methods so this can be done
+        configData.getv('study')['referenceModelDirectory'] = refDirPath
         begin = configData.beginParam()
         keys = begin.keys()
-        keys = sorted(keys)
-        parameters = collections.OrderedDict([(k, begin[k]) for k in keys])
+
+        parameters = configData.fixedParams()
+        parameters.update(refDir=refDirPath)
+        dUP = dict()
+        for k in keys:
+            dUP[k] = begin[k]
+        parameters.update(dUP)
         parameters.update(ensembleMember=0)
         models = []
-        parameters.update(configData.fixedParams())
-        parameters.update(refDir=refDirPath)
+
         self.parameters = []
-        for count, dir in enumerate(['zz001', 'zz002']):
-            createDir = os.path.join(testDir, dir)
+        # set up fake done model simulations. For thsi to work we need to copy in some observations.
+        for count, dir_dirname in enumerate(['zz001', 'zz002']):
+            createDir = os.path.join(testDir, dir_dirname)
             parameters.update(ensembleMember=count)
-            self.parameters.append(parameters.copy())
-            models.append(ModelSimulation.ModelSimulation(createDir, name=dir, create=True,
-                                                          refDirPath=refDirPath,
-                                                          ppExePath=configData.postProcessOutput(),
-                                                          ppOutputFile=configData.postProcessOutput(),
-                                                          parameters=parameters.copy(), obsNames=configData.obsNames(),
-                                                          verbose=False
-                                                          ))
+            self.parameters.append(parameters.copy())  # I am not sure I need parameters...
+            # load up a model -- note this is just a stub but is suitable for testing.
+            model = ModelSimulation.ModelSimulation(createDir, name=dir_dirname, create=True,
+                                                    refDirPath=refDirPath,
+                                                    ppExePath=configData.postProcessOutput(),
+                                                    ppOutputFile=configData.postProcessOutput(),
+                                                    parameters=parameters.copy(), obsNames=configData.obsNames(),
+                                                    verbose=self.verbose
+                                                    )
+            models.append(model)
             outFile = os.path.join(createDir, configData.postProcessOutput())
 
             shutil.copy(os.path.join(refDir, '01_GN', 'h0101', 'observables.nc'),
                         outFile)  # copy over a netcdf file of observations.
+            # and put a perturbation on it...
+            obs = model.readObs(series=True)
+            # apply a small perturbation based on count -- applying only to the variable. At 1% of count*val
+            obs.iloc[0] *= 1 + count / 100.
+            model.writeObs(obs, verbose=self.verbose)
 
         mDirs = [m.dirPath for m in models]  # used for testing
         self.modelDirs = mDirs
@@ -74,7 +88,9 @@ class testSubmit(unittest.TestCase):
         self.config = copy.deepcopy(configData)  # make a COPY of the config.
 
         self.mSubmit = Submit.ModelSubmit(configData, ModelSimulation.ModelSimulation,
-                                          None, config.optFunctions['default'], rootDir=testDir, verbose=True)
+                                          None, rootDir=testDir, verbose=self.verbose)
+        # set verbose True if want lots of output...
+        return
 
     def tearDown(self):
         """
@@ -154,7 +170,7 @@ class testSubmit(unittest.TestCase):
         m = ModelSimulation.ModelSimulation(
             dir, name=name, create=True, refDirPath=os.path.join(self.refPath, 'start'),
             ppExePath=self.config.postProcessOutput(), ppOutputFile=self.config.postProcessOutput(),
-            parameters=parameters, obsNames=self.config.obsNames(), verbose=False
+            parameters=parameters, obsNames=self.config.obsNames(), verbose=self.verbose
         )
         # put some fake obs in!
         outFile = os.path.join(m.dirPath, self.config.postProcessOutput())
@@ -214,16 +230,8 @@ class testSubmit(unittest.TestCase):
         # first case -- one we already have.
         m = self.mSubmit.modelFn(self.modelDirs[0])  # read a model.
         params = m.getParams()  # models contains all params. So need to remove fixed ones.
-        # for p in self.mSubmit.fixedParams().keys():
-        #    params.pop(p, None)
-
-        # params.update(refDir=m.refDirPath()) # add in refDir. Think this should be done in mSubmit.model?
-        print("params are ", params)
 
         m2 = self.mSubmit.model(params)
-        print("model params ", m.getParams())
-        print("model2 params", m2.getParams())
-
         self.assertEqual(m, m2)
 
     def test_nextName(self):
@@ -274,10 +282,10 @@ class testSubmit(unittest.TestCase):
         :return:
         """
 
-        self.mSubmit.fakeFn = config.easyFake
-        submitStat = self.mSubmit.submit(dryRun=True)
+        self.mSubmit.fakeFn = config.fake_fn
+        status, nmodels, finalConfig = self.mSubmit.submit(dryRun=True)
         # no new models so expect to have two directories in the filespace and submitStat to be True
-        self.assertTrue(submitStat)
+        self.assertEqual((status, nmodels), (True, 0))
         # count dirs
         dirCount = 0
         with os.scandir(self.mSubmit.rootDir) as dirIter:
@@ -296,9 +304,9 @@ class testSubmit(unittest.TestCase):
             self.assertEqual(m, None)  # should get None as dir does not exist.
 
         # now expect 5 dirs & 3 new ones
-        submitStat = self.mSubmit.submit(dryRun=False)
+        status, nmodels, finalConfig = self.mSubmit.submit(dryRun=False)
 
-        self.assertEqual(submitStat, (True, 3))
+        self.assertEqual((status, nmodels), (True, 3))
         # count dirs
         dirCount = 0
         with os.scandir(self.mSubmit.rootDir) as dirIter:
@@ -342,7 +350,7 @@ class testSubmit(unittest.TestCase):
 
         # need to write some fake ons into model dirs...
         oNames = self.mSubmit.obsNames()
-        obs = collections.OrderedDict([(k, v) for (v, k) in enumerate(oNames)])
+        obs = dict([(k, v) for (v, k) in enumerate(oNames)])
         expectObs = []
         indx = []
         for count, m in enumerate(self.mSubmit._models.values()):
@@ -369,8 +377,8 @@ class testSubmit(unittest.TestCase):
         self.mSubmit.rerunModel(self.models[0])
         self.assertEqual(1, len(self.mSubmit._modelsToRerun))
         # run submit and should only have 1 model to run.
-        result = self.mSubmit.submit(dryRun=True)
-        self.assertEqual(result, (True, 1))
+        status, nmodels, finalConfig = self.mSubmit.submit(dryRun=True)
+        self.assertEqual((status, nmodels), (True, 1))
 
     def test_paramObs(self):
         """
@@ -404,79 +412,24 @@ class testSubmit(unittest.TestCase):
         got = self.mSubmit.paramObs()  # just get
         self.assertTrue(np.all(got == df))
 
-    def test_optimiseFunction(self):
+    def test_runCost(self):
         """
-        Test optimise function works
-        :return:
-        """
-
-        def fn1(a):
-            return a ** 2
-
-        def fn2(a, MODELRUN=None):
-            return (a ** 2, MODELRUN)
-
-        def fn3(a, MODELRUN=None, failNan=False, justObs=False):
-            return (a ** 2, MODELRUN, failNan, justObs)
-
-        self.mSubmit.optimiseFunction(fn1)
-        r = self.mSubmit.optimiseFunction()
-        # should fail.
-        with self.assertRaises(TypeError):
-            got = r(2)
-
-        r = self.mSubmit.optimiseFunction(fn2)  # should work.
-        got = r(2)
-        self.assertEqual(got, (4, self.mSubmit))
-
-        self.mSubmit.optimiseFunction_args(failNan=True, justObs=False)
-        r = self.mSubmit.optimiseFunction(fn3)  # should work.
-        got = r(2)
-        self.assertEqual(got, (4, self.mSubmit, False, False))
-
-    def test_runOptimized(self):
-        """
-
-        test runOptimized!
-
-        Tests:
-            Use idiot test function -- which should not do anything clever.
-            And generate configuration too.
-            config as nEns not present -- runs one case
-            nEns set to one -- runs one case
-            nEns set to 2 -- runs two cases.
-
-            Change configuration name -- should  run fresh cases.
+        test runCost method.
 
         """
 
-        # case 1 -- want to not set nensemble but do modify baseRunId and maxDigits
-        config = self.mSubmit.config  # reduce typing -- note this is (as normal in python) a pointer to the config!
-        config.baseRunID('test1')
-        config.maxDigits(0)
-        params = dict(CT=1e-4, EACF=0.5, ENTCOEF=3, ICE_SIZE=3e-5, RHCRIT=0.7, VF1=0.5, CW_LAND=2e-4)
-        config.optimumParams(
-            **params)  # really should be passed as a series. TODO: Fix all code to use pd.Series undernearth!
-        # runOptimized should raise runModelError as needs to run new things.
-        with self.assertRaises(Submit.runModelError):
-            self.mSubmit.runOptimized()
-        # and check what is to be created is as expected.
-        nmodels = len(self.mSubmit.modelSubmit())
-        expect = 1
-        self.assertEqual(nmodels, expect, msg=f'Expected {expect} got {nmodels}')
+        configData = self.config
+        fConfig = self.mSubmit.runCost(configData)
 
-        # increase ensemble to four and shorten basename.
-        config.baseRunID('test')
-        config.maxDigits(1)
-        config.ensembleSize(4)
-        with self.assertRaises(Submit.runModelError):
-            self.mSubmit.runOptimized()
-        nmodels = len(self.mSubmit.modelSubmit())
-        expect = 4
-        self.assertEqual(nmodels, expect, msg=f'Expected {expect} got {nmodels}')
+        # what do we expect?
+        scale = True  # scaling makes a difference -- likely because of the translation matrix.
+        obs = self.mSubmit.obs(scale=scale)
+        expect = obs - self.config.targets(scale=scale)
+        Tmat = self.config.transMatrix(scale=scale)
+        expect = expect @ Tmat.T
+        expect = np.sqrt((expect ** 2).sum(1) / len(obs.columns))
+        nptest.assert_allclose(expect, fConfig.cost())
 
-
-# TODO add a test case for optimiseFn().
 
 if __name__ == "__main__":
     print("Running Test Cases")

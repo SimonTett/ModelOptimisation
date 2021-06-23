@@ -12,10 +12,12 @@ import numpy as np
 import numpy.testing as nptest
 import pandas as pd
 import xarray
+import copy
 
 import StudyConfig
 
 os.environ['OPTCLIMTOP'] = os.path.curdir
+
 
 class testStudyConfig(unittest.TestCase):
     """
@@ -38,6 +40,18 @@ class testStudyConfig(unittest.TestCase):
             'optimiseFunction': {'default': os.getcwd},
             'fakeFunction': {'default': os.getcwd}
         }
+        # add in some DFOLS info
+        dfols = {
+            "logging.save_poisedness": False,
+            "logging.save_poisedness_comment": "whether or not  to calculate geometry statistics as part of diagnostic information",
+            "init.random_initial_directions": True,
+            "init.random_initial_directions_comment": "If true perturb in random directions. If true perturb along co-ordinate axis.",
+            "noise.additive_noise_level": 0.2,
+            "noise.additive_noise_level_comment": "Estimate of noise in cost function. Used in termintion -- nb cost fn is sum of squares **not** sum of squares/nObs",
+
+        }
+        self.config.Config['optimise']['dfols'] = {}
+        self.config.Config['optimise']['dfols']['namedSettings'] = dfols
 
     def test_version(self):
         """
@@ -67,16 +81,21 @@ class testStudyConfig(unittest.TestCase):
         self.assertEqual(expect.equals(got), True, msg='Differences in beginParam')
 
         # add test case to deal with scaling within beginParam & nulls (which get standard values)
-        Params = self.config.getv('Parameters') # get the parameters block.
+        Params = self.config.getv('Parameters')  # get the parameters block.
         for p in Params['initParams'].keys():
-            Params['initParams'][p]=None # set value to None
-        Params['initScale']=True
+            Params['initParams'][p] = None  # set value to None
+        Params['initScale'] = True
         getParams = self.config.beginParam()
         stdParams = self.config.standardParam()
-        self.assertTrue(getParams.equals(stdParams),msg='getParams not stdParams as expected')
+        self.assertTrue(getParams.equals(stdParams), msg='getParams not stdParams as expected')
 
+        # test that setting works...
+        setp = expect * 1.1  # 10% increase
+        p = self.config.beginParam(values=setp)
+        self.assertTrue(setp.equals(p), msg='getParams not  as expected')
+        self.assertFalse(self.config.Config['Parameters']["initScale"])
 
-    def test_covariances(self):
+    def test_Covariances(self):
         """
         test Covariances method.
         :return:
@@ -102,6 +121,18 @@ class testStudyConfig(unittest.TestCase):
         for k in covKeys:
             self.assertEqual(cov[k].shape, (nobs - 1, nobs - 1), msg='Shape wrong without constraint')
 
+        # and test we can overwrite.
+        obsNames = config.obsNames()
+        c = pd.DataFrame(np.identity(len(obsNames)) * 2, index=obsNames, columns=obsNames)
+
+        cov = config.Covariances(constraint=False, CovTotal=c, CovIntVar=c * 0.1, CovObsErr=c * 0.9)
+
+        cov = config.Covariances()
+        cov = config.Covariances(constraint=False, CovTotal=c, CovIntVar=c * 0.1, CovObsErr=c * 0.9)
+
+        for k, scale in zip(covKeys, [1, 0.1, 0.9]):
+            self.assertTrue(cov[k].equals(c * scale),msg=f"{k} does not match")
+
     def test_version(self):
         """
         Test the version is 2 as expected
@@ -124,6 +155,11 @@ class testStudyConfig(unittest.TestCase):
         if platform.system() == 'Windows':
             ref = ref.replace('/', '\\')
         self.assertEqual(ref, expect, msg='expected %s got %s' % (expect, ref))
+
+        # test we can set it
+        expect = 'test'
+        self.config.referenceConfig('test')
+        self.assertEqual(expect,self.config.referenceConfig())
 
     def test_cacheFile(self):
         """
@@ -181,12 +217,22 @@ class testStudyConfig(unittest.TestCase):
         expect = (pd.Series(steps).loc[params] * rng).astype(float).rename(self.config.name())
         self.assertTrue(got.equals(expect))
 
+        # and test changing steps adds values as expected.
+
+        steps = self.config.steps() # get the steps
+        steps.iloc[:-1] = steps.iloc[:-1]*2# double some of them
+        expect = steps[:]
+        steps.loc['scale_steps'] = False
+        self.config.steps(steps=steps) # write them back.
+        got = self.config.steps()
+        self.assertTrue(got.equals(expect))
+
     def test_targets(self):
         """
         Test targets are as expected
         :return: 
         """
-        # values ebl;ow are cut-n-paste from input json file!
+        # values below are cut-n-paste from input json file!
         tgt = pd.Series({"rsr_nhx": 102.276779013,
                          "rsr_tropics": 94.172585284,
                          "rsr_shx": 108.113226173,
@@ -215,6 +261,16 @@ class testStudyConfig(unittest.TestCase):
         got = self.config.constraintTarget()
         self.assertEqual(got.values, 0.5, msg='Constraint values differ')
 
+        # test we can set value for target.
+        set_tgt = pd.Series(dict(obs1=10, obs2=5, obs3=7))
+        self.config.obsNames(set_tgt.index.tolist())  # set obsNames
+        self.config.constraint(False)  # do not want constraint
+        self.config.targets(targets=set_tgt)  # set the tgt
+        # having trouble with constraint here...Two options -- ignore it by passing in the obsNames explicitly.
+        # or set constraint to
+        got = self.config.targets()
+        self.assertTrue(set_tgt.equals(got), 'Target differs when passed in')
+
     def test_Fixed(self):
         """
         Test can read fixed parameters
@@ -239,6 +295,7 @@ class testStudyConfig(unittest.TestCase):
         values['VF1'] = 2.0
         fix = self.config.fixedParams()
         self.assertEqual(fix['VF1'], 2.0, msg='VF1 not as expected 2nd time')
+
     def test_runTime(self):
         """
         Test that runtime is None
@@ -318,7 +375,22 @@ class testStudyConfig(unittest.TestCase):
         expect.append(self.config.constraintName())
         obs = self.config.obsNames()  # and with constraint included.
         self.assertEqual(obs, expect, msg='Constraint on failed')
+        # and set names.
+        newNames = ['obs1', 'obs2', 'obs3']
+        got = self.config.obsNames(obsNames=newNames)
+        got = self.config.obsNames()
+        self.assertEqual(got, newNames)  # we should get the names back
 
+    def test_paramNames(self):
+        """
+        test paramNames
+
+        """
+
+        got = self.config.paramNames()  # should get them back..
+        begin = self.config.beginParam() #paramnames come from init valye
+        expect = begin.index.tolist()
+        self.assertEqual(expect, got, msg="params not as expected")
 
     def test_GNsetget(self):
         """
@@ -502,12 +574,11 @@ class testStudyConfig(unittest.TestCase):
         """
 
         got = self.config.maxDigits()
-        self.assertIsNone(got,'Expected None')
+        self.assertIsNone(got, 'Expected None')
         self.config.maxDigits(2)
         expect = 2
         got = self.config.maxDigits()
-        self.assertEqual(expect,got,f'Expected {expect} got {got} ')
-
+        self.assertEqual(expect, got, f'Expected {expect} got {got} ')
 
     def test_copy(self):
         """
@@ -539,58 +610,138 @@ class testStudyConfig(unittest.TestCase):
         :return: nada
         """
 
-        for scale in [True,False]:
+        for scale in [True, False]:
             tMat = self.config.transMatrix(scale=scale)
             cov = self.config.Covariances(scale=scale)['CovTotal']
             got = tMat.dot(cov).dot(tMat.T)
-            expect = np.identity(len(self.config.obsNames()))
+            expect = np.identity(got.shape[0]) # trans matrix might, in effect, truncate matrix.
             atol = 1e-7
             rtol = 1e-7
-            if not scale:
-                # TODO understand why these tolerances so large...
-                atol = 1e-2
-                rtol = 1e-2
 
-            nptest.assert_allclose(got, expect, atol=atol,rtol=rtol,
+
+            nptest.assert_allclose(got, expect, atol=atol, rtol=rtol,
                                    err_msg=f' Scale {scale} Transform not giving I')
-
 
     def test_DFOLS_userParams(self):
         """
         test DFOLS_userParams.
         :return:  nada
+        :return:  nada
         """
         import re
 
-        dfols = {
-                "logging.save_poisedness": False,
-                "logging.save_poisedness_comment": "whether or not  to calculate geometry statistics as part of diagnostic information",
-                "init.random_initial_directions": True,
-                "init.random_initial_directions_comment": "If true perturb in random directions. If true perturb along co-ordinate axis.",
-                "noise.additive_noise_level": 0.2,
-                "noise.additive_noise_level_comment": "Estimate of noise in cost function. Used in termintion -- nb cost fn is sum of squares **not** sum of squares/nObs",
 
-            }
-        self.config.Config['optimise']['dfols']={}
-        self.config.Config['optimise']['dfols']['namedSettings']=dfols
 
         # test case
+        dfols = { # cut-n-paste from setup
+            "logging.save_poisedness": False,
+            "logging.save_poisedness_comment": "whether or not  to calculate geometry statistics as part of diagnostic information",
+            "init.random_initial_directions": True,
+            "init.random_initial_directions_comment": "If true perturb in random directions. If true perturb along co-ordinate axis.",
+            "noise.additive_noise_level": 0.2,
+            "noise.additive_noise_level_comment": "Estimate of noise in cost function. Used in termintion -- nb cost fn is sum of squares **not** sum of squares/nObs",
+
+        }
         dfolsConfig = self.config.DFOLS_userParams()
-        self.assertEqual(len(dfolsConfig),3,'Expecting 3 elements in dfolsConfig')
+        self.assertEqual(len(dfolsConfig), 3, 'Expecting 3 elements in dfolsConfig')
         # and verify that values (after stripping comments are good)
         expect = {}
-        for k,v in dfols.items():
-            if not re.search(r'_comment\s*$',k):
-                expect[k]=v
-        self.assertEqual(dfolsConfig,expect,'config not as expected')
-
-        # case where we pass in some values
-        newV = {'randomParm':2,'noise.additive_noise_level':20.}
-        dfolsConfig = self.config.DFOLS_userParams(newV) # note that noise.additive_noise_level will be overwritten.
-        expect.update(randomParm=2) # update expect
+        for k, v in dfols.items():
+            if not re.search(r'_comment\s*$', k):
+                expect[k] = v
         self.assertEqual(dfolsConfig, expect, 'config not as expected')
 
+        # case where we pass in some values
+        newV = {'randomParm': 2, 'noise.additive_noise_level': 20.}
+        dfolsConfig = self.config.DFOLS_userParams(newV)  # note that noise.additive_noise_level will be overwritten.
+        expect.update(randomParm=2)  # update expect
+        self.assertEqual(dfolsConfig, expect, 'config not as expected')
+        # check that updateParams works
+        expect.update(newV) # all new value
+        self.config.DFOLS_userParams(updateParams=expect)
 
+        self.assertEqual(expect,self.config.DFOLS_userParams(),'user params not as expected')
+
+        # check IDs are different for different calls to config
+
+        self.assertNotEqual(id(self.config.DFOLS_userParams()),id(self.config.DFOLS_userParams()))
+
+    def test_DFOLS_config(self):
+        """
+        Test DFOLS_config
+
+        """
+
+        config = copy.deepcopy(self.config.DFOLS_config())
+        # should be the same as the raw data
+        dfols = self.config.optimise()['dfols']
+        self.assertEqual(config,dfols)
+        # modify dfols set it and check.
+        config['rhobeg']=0.1
+        # underlying data should be different
+        self.assertNotEqual(config,self.config.DFOLS_config())
+        self.config.DFOLS_config(config) # set it and now should be the same
+        self.assertEqual(config,self.config.DFOLS_config())
+
+
+
+    def test_dataFrameInfo(self):
+
+        """
+        Test can set/get dataFrameInfo.
+
+        """
+
+        df = pd.DataFrame(np.random.uniform(0,1,[20,20]))
+        self.config.set_dataFrameInfo(randomMatrix=df)
+        got = self.config.get_dataFrameInfo('randomMatrix')
+        atol = 1e-10
+        nptest.assert_allclose(got,df,atol=atol) # round tripping losing some precision. (fp conversion does not quite go to full precision)
+        # now add another two and get them all back.
+        self.config.set_dataFrameInfo(twoRandom=2*df,minusRandom=-df)
+        got1,got2,got3 = self.config.get_dataFrameInfo(['randomMatrix','twoRandom','minusRandom'])
+        nptest.assert_allclose(got1,df,atol=atol)
+        nptest.assert_allclose(got2, 2*df, atol=atol)
+        nptest.assert_allclose(got3, -df, atol=atol)
+
+
+
+    def test_transJacobian(self):
+        """
+        Test transJacobian method works
+
+        """
+
+        jac=pd.DataFrame(np.identity(5))
+        jac.iloc[0,1]= 0.0001
+        self.config.transJacobian(jac)
+        got = self.config.transJacobian()
+        self.assertTrue(jac.equals(got))
+
+    def test_jacobian(self):
+        """
+        Test jacobian method works
+
+        """
+
+        jac = pd.DataFrame(np.identity(5))
+        jac.iloc[0, 1] = 0.0001
+        self.config.jacobian(jac)
+        got = self.config.jacobian()
+        self.assertTrue(jac.equals(got))
+
+
+    def test_hessian(self):
+        """
+        Test hessian method works
+
+        """
+
+        hessian = pd.DataFrame(np.identity(5))
+        hessian.iloc[0, 1] = 0.0001
+        self.config.hessian(hessian)
+        got = self.config.hessian()
+        self.assertTrue(hessian.equals(got))
 
 if __name__ == "__main__":
     print("Running Test Cases")

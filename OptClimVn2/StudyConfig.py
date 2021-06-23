@@ -6,16 +6,23 @@ Provides classes and methods suitable for manipulating study configurations.  In
        manipulate it. Idea being to insulate rest of code from details of configuration file and allow complex processing 
        if necessary.
 
+    TODO: Sort out constraint use in studyConfig. Current implementation is problematic as constraint turns up
+      from time to time without any obvious reason why
+
+    TODO: Consider major re-factorisation of studyConfig -- it has been accreting functionality in an unplanned way.
+     Perhaps splitting into core and derived values might be the way to go.
+
 
 
 """
-import collections
+import collections  # TODO remove as collections no longer needed as dict are ordered from 3.7+
 import copy
 import datetime
 import json
 import os
 import pathlib
 import re
+import warnings
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -262,6 +269,7 @@ class OptClimConfig(dictFile):
         """
 
         self.__dict__.update(config.__dict__)  # just copy the values across!
+        self._covariances = None  # where we store the covariances.
 
     def version(self):
         """
@@ -283,18 +291,26 @@ class OptClimConfig(dictFile):
             # name = 'Unknown'
         return name
 
-    def paramNames(self):
+    def paramNames(self, paramNames=None):
         """
+        :param paramNames (default None). If not none set ParamList in config to this. paramNames should be a list.
         :return: a list of parameter names from the configuration files
         """
+        if paramNames is not None:
+            self.Config['study']['ParamList'] = paramNames[:]  # copy paramnames in
         return self.Config['study']['ParamList'][:]  # return a copy of the list.
 
-    def obsNames(self, add_constraint=True):
+    def obsNames(self, obsNames=None, add_constraint=True):
         """
+        :param (optional default is None). If not None set obsNames to values
         :param (optional default = False) add_constraint -- if True add the constraint name to the list of obs
         :return: a list  of observation names from the configuration files
         """
-        obs = self.getv('study', {}).get('ObsList', [])[:]  # return a copy of the array.
+        if obsNames is None:
+            obs = self.getv('study', {}).get('ObsList', [])[:]  # return a copy of the array.
+        else:
+            self.getv('study', {})['ObsList'] = obsNames[:]  # need to copy not have a reference.
+            obs = obsNames
         if add_constraint and self.constraint():  # adding constraint and its defined.
             obs.append(self.constraintName())
         return obs
@@ -445,15 +461,22 @@ class OptClimConfig(dictFile):
         if fileStore is None: fileStore = 'cache_file.json'
         return fileStore
 
-    def targets(self, obsNames=None, scale=False):
+    def targets(self, targets=None, obsNames=None, scale=False):
         """
-        Get the target values for specific obs names
+        Get (or set) the target values for specific obs names
+        :param targets -- tgt values as pandas array. Note that this does not change the obsNames which
+                                        which should be set using obsNames()
         :param obsNames: optional list of observations to use
         :param scale: optional if True (default is False) scale target values by scaling
         :return: target values as a pandas series
         """
         if obsNames is None:  obsNames = self.obsNames()
-        tgt = self.getv('targets')
+        if targets is None:
+            tgt = self.getv('targets')
+        else:
+            tgt = targets.to_dict().copy()  # make sure we make a copy.
+            self.setv('targets', tgt)
+            # and also need to set the obSNames to match but that is best done elsewhere.
         tvalues = pd.Series([tgt.get(k, np.nan) for k in obsNames], index=obsNames)
         if scale: tvalues = tvalues * self.scales(obsNames=obsNames)
         return tvalues.rename(self.name())
@@ -473,12 +496,15 @@ class OptClimConfig(dictFile):
         constraint = opt.get('sigma', False)
         return constraint
 
-    def constraintName(self):
+    def constraintName(self, constraintName=None):
         """
         Extract the name of the constraint (if any) variable from the configuration file
 
         :return: the name of the constraint variable
         """
+        if constraintName is not None:
+            self.Config['study']['constraintName'] = constraintName
+
         return self.Config['study'].get("constraintName")
 
     def constraintTarget(self, constraintName=None, scale=False):
@@ -516,68 +542,106 @@ class OptClimConfig(dictFile):
         if maxFails is None: maxFails = 0
         return maxFails
 
-    def Covariances(self, obsNames=None, trace=False, dirRewrite=None, scale=False, constraint=None):
+    def Covariances(self, obsNames=None, trace=False, dirRewrite=None, scale=False, constraint=None, read=False,
+                    CovTotal=None, CovIntVar=None, CovObsErr=None):
         """
         If CovObsErr and CovIntVar are both specified then CovTotal will be computed from
         CovObsErr+2*CovIntVar overwriting the value of CovTotal that may have been specified.
         Unspecified values will be set equal to None.
+        If CovIntVar is not present it will be set to diag(1e-12)
+        If CovTotal is not present it will be set to the identity matrix
 
         :param obsNames: Optional List of observations wanted and in order expected.
         :param trace: optional with default False. If True then additional output will be generated.
-        :param dirRewrite: optional ith default None. If set then rewrite directory names used in readCovariances.
+        :param dirRewrite: optional with default None. If set then rewrite directory names used in readCovariances.
         :param scale: if set true (default is false) then covariances are scaled by scaling factors derived from self.scales()
-        :param constraint: is set to True  (default is None) then add constraint weighting into Covariances. If not set then
-           if configuration asks for constraint (study.sigma set True) then will be set True.
+        :param constraint: is set to True  (default is None) then add constraint weighting into Covariances. If set to None then
+           if configuration asks for constraint (study.sigma set True) then will be set True. If set False then no constraint will be set.
             Total and ObsErr covariances for constraint will be set to 1/(2*mu) while IntVar covariance will be set to 1/(100*2*mu)
-        :return: a dictionary containing CovTotal,CovIntVar, CovObsErr --  the covariance matrices. None if not present.
-        Could be modified to cache covariance matrices to save re-reading but not bothering..
+            This is applied when data is returned. If you don't want constraint set then see StudyConfig.constraint method.
+
+        :param CovTotal -- if not None set CovTotal to  value overwriting any existing values. Should be a pandas datarrray
+        :param CovIntVar -- if not None set CovIntVar to value overwriting any existing values. Should be a pandas datarrray
+        :param CovObsErr -- if not None set CovObsErr to value overwriting any existing values. Should be a pandas datarrray
+         In setting values you can make CovTotal inconsistent with CovIntVar and CovObsErr.
+         This method does not check this. You should also pass in unscaled values as scaling is applied on data
+        No diagonalisation  is done to these value. Constraint, if requested, added on.
+         Scaling is then applied to these values (or orginal values)
+        :param read (default True)-- if True use readCovariances to read in the data in essence resetting covariances
+        :return: a dictionary containing CovTotal,CovIntVar, CovObsErr-  the covariance matrices and ancillary data.
+         None if not present.
+
+        TODO: Modify internal var covariance matrix as depends on ensemble size.
         """
-        keys = ['CovTotal', 'CovIntVar', 'CovObsErr']
+
+        keys = ['CovTotal', 'CovIntVar', 'CovObsErr']  # names of covariance matrices
         useConstraint = constraint
+
         if constraint is None:
             useConstraint = self.constraint()  # work out if we have a constraint or not.
 
-        if obsNames is None: obsNames = self.obsNames(add_constraint=useConstraint)
+        if obsNames is None: obsNames = self.obsNames(
+            add_constraint=False)  # don't want constraint here. Included later
         cov = {}  # empty dict to return things in
         covInfo = self.getv('study', {}).get('covariance')
         # extract the covariance matrix and optionally diagonalise it.
+        readData = (self._covariances is None) or read
+        if readData:
+            for k in keys:
+                fname = covInfo.get(k, None)
+                if fname is not None:  # specified in the configuration file
+                    cov[k] = self.readCovariances(fname, obsNames=obsNames, trace=trace, dirRewrite=dirRewrite)
+                    cov[k + "File"] = fname  # store the filename
+                    if cov[k] is not None:  # got some thing to further process
+                        if covInfo.get(k + "Diagonalise", False):  # want to diagonalise the covariance
+                            # minor pain is that np.diag returns a numpy array so we have to remake the DataFrame
+                            cov[k] = pd.DataFrame(np.diag(np.diag(cov[k])), index=obsNames, columns=obsNames,
+                                                  dtype=float)
+                            if trace: print("Diagonalising " + k)
 
-        for k in keys:
-            fname = covInfo.get(k, None)
-            if fname is not None:  # specified in the configuration file
-                cov[k] = self.readCovariances(fname, obsNames=obsNames, trace=trace, dirRewrite=dirRewrite)
-                cov[k + "File"] = fname  # store the filename
-                if cov[k] is not None:  # got some thing to further process
-                    if covInfo.get(k + "Diagonalise", False):  # want to diagonalise the covariance
-                        # minor pain is that np.diag returns a numpy array so we have to remake the DataFrame
-                        cov[k] = pd.DataFrame(np.diag(np.diag(cov[k])), index=obsNames, columns=obsNames, dtype=float)
-                        if trace: print("Diagonalising " + k)
+            # make total covariance from CovIntVar and CovObsErr if both are defined.
+            if cov.get('CovIntVar') is not None and cov.get(
+                    'CovObsErr') is not None:  # if key not defined will "get" None
+                k = 'CovTotal'
+                cov[k] = cov['CovObsErr'] + 2.0 * cov['CovIntVar']
+                cov[k + '_info'] = 'CovTotal generated from CovObsErr and CovIntVar'
+                if trace: print("Computing CovTotal from CovObsErr and CovIntVar")
+                if covInfo.get(k + "Diagonalise", False):  # diagonalise total covariance if requested.
+                    if trace: print("Diagonalising " + k)
+                    cov[k] = pd.DataFrame(np.diag(np.diag(cov['CovTotal'])), index=obsNames, columns=obsNames)
 
-        # make total covariance from CovIntVar and CovObsErr if both are defined.
-        if cov.get('CovIntVar') is not None and cov.get('CovObsErr') is not None:  # if key not defined will "get" None
-            k = 'CovTotal'
-            cov[k] = cov['CovObsErr'] + 2.0 * cov['CovIntVar']
-            cov[k + '_info'] = 'CovTotal generated from CovObsErr and CovIntVar'
-            if trace: print("Computing CovTotal from CovObsErr and CovIntVar")
-            if covInfo.get(k + "Diagonalise", False):
-                if trace: print("Diagonalising " + k)
-                cov[k] = pd.DataFrame(np.diag(np.diag(cov['CovTotal'])), index=obsNames, columns=obsNames)
-                # diagonalise total covariance if requested.
-        # check have total covarince and raiseError if not
-        if cov.get('CovIntVar') is None:  # make it very small!
-            cov['CovIntVar'] = pd.DataFrame(1.0e-12 * np.identity(len(obsNames)),
-                                            index=obsNames, columns=obsNames,
-                                            dtype=float)
-        if cov.get('CovTotal') is None:
-            cov['CovTotal'] = pd.DataFrame(np.identity(len(obsNames)),
-                                           index=obsNames, columns=obsNames,
-                                           dtype=float)
+            if cov.get('CovIntVar') is None:  # make it very small!
+                cov['CovIntVar'] = pd.DataFrame(1.0e-12 * np.identity(len(obsNames)),
+                                                index=obsNames, columns=obsNames,
+                                                dtype=float)
+            if cov.get('CovTotal') is None:
+                cov['CovTotal'] = pd.DataFrame(np.identity(len(obsNames)),
+                                               index=obsNames, columns=obsNames,
+                                               dtype=float)
 
-            print("Warning: No covariance defined. Assuming Identity")
-            # raise ValueError("No covtotal found for totalFile=", covInfo.get(k, None))
+                print("Warning: No covariance defined. Assuming Identity")
 
-        # apply constraint
-        if useConstraint:  # want to have constraint wrapped in to  covariance matrices. Rather arbitrary for all but Total!
+            self._covariances = copy.deepcopy(cov)  # store the covariances as we have read them in.
+            # Need a deep copy as cov is a dict pointing to datarrays. If the dataarrays get modified then
+            # they get modifed here which we don't want...
+        # end of reading in data.
+
+        # set up values from values passed in  overwriting values if necessary
+        if CovTotal is not None:
+            self._covariances['CovTotal'] = CovTotal.copy()
+            self._covariances['CovTotal' + 'File'] = 'Overwritten '
+        if CovIntVar is not None:
+            self._covariances['CovIntVar'] = CovIntVar.copy()
+            self._covariances['CovIntVar' + 'File'] = 'Overwritten '
+        if CovObsErr is not None:
+            self._covariances['CovObsErr'] = CovObsErr.copy()
+            self._covariances['CovObsErr' + 'File'] = 'Overwritten '
+
+        cov = copy.deepcopy(self._covariances)  # copy from stored covariances.
+        # Need a deep copy as cov is a dict pointing to datarrays. If the dataarrays get modified then
+        # they get modified here which we don't want...
+        # apply constraint.
+        if useConstraint:  # want to have constraint wrapped in to covariance matrices. Rather arbitrary for all but Total!
             consValue = 2.0 * self.optimise()['mu']
             consName = self.constraintName()
             for k, v in zip(keys, (consValue, consValue / 100., consValue)):
@@ -588,7 +652,10 @@ class OptClimConfig(dictFile):
                     cov[k].loc[consName, consName] = v
         # scale data
         if scale:
+            obsNames = self.obsNames(
+                add_constraint=useConstraint)  # make sure we have included the constraint (if wanted) in obs
             scales = self.scales(obsNames=obsNames)
+
             cov_scale = pd.DataFrame(np.outer(scales, scales), index=scales.index, columns=scales.index)
             for k in keys:
                 if k in cov and cov[k] is not None:
@@ -597,14 +664,14 @@ class OptClimConfig(dictFile):
 
         return cov
 
-    # TODO add cache functionality
-    def transMatrix(self, scale=False, verbose=False, dataFrame=True):
+    def transMatrix(self, scale=False, verbose=False, minEvalue=1e-6, dataFrame=True):
         """
         Return matrix that projects data onto eigenvectors of total covariance matrix
         :param scale: (Default False) Scale covariance.
         :param verbose: (default False) Be verbose.
         :param dataFrame: wrap result up as a dataframe
-        :return:
+        :param minEvalue: evalues less than minEvalue * max(eigenvalues) are removed. Meaning a non-square transMatrix
+        :return: Transformation matrix that makes Total covariance matrix I.
         """
 
         # compute the matrix that diagonalises total covariance.
@@ -612,21 +679,28 @@ class OptClimConfig(dictFile):
         errCov = cov['CovTotal']
         # compute eigenvector and eigenvalues of covariances so we can transform residual into diagonal space.
         evalue, evect = np.linalg.eigh(errCov)
-        transMatrix = (np.diag(evalue ** (-0.5)).dot(evect.T))  # what we need to do to transform to
-        if dataFrame:
-            transMatrix = pd.DataFrame(transMatrix, index=np.arange(0, len(errCov.columns)), columns=errCov.columns)
-        return transMatrix  # TODO wrap this up as a pandas array.
+        # deal with small evalues.
+        crit = evalue.max() * minEvalue
+        indx = evalue > crit
 
-    def steps(self, paramNames=None):
+        transMatrix = (np.diag(evalue[indx] ** (-0.5)).dot(evect[:, indx].T))  # what we need to do to transform to
+        if dataFrame:
+            transMatrix = pd.DataFrame(transMatrix, index=np.arange(0, np.sum(indx)), columns=errCov.columns)
+        return transMatrix
+
+    def steps(self, steps=None, paramNames=None):
         """
         Compute perturbation  for all parameters supplied. If value specified use that. If not use 10% of the range.
         Quasi-scientific in that 10% of range is science choice but needs knowledge of the structure of the JSON file
              so in this module.
+        :param steps (optional). If not None then set the steps.
         :param paramNames -- optional the parameter names for step sizes. If not defined uses self.paramNames() to work
                 them out
         :return: the step sizes for the parameters as a pandas Series.
         """
 
+        if steps is not None:
+            self.Config['steps'] = steps
         if paramNames is None: paramNames = self.paramNames()
 
         param = self.paramRanges(paramNames=paramNames)
@@ -707,42 +781,41 @@ class OptClimConfig(dictFile):
 
         return cov
 
-    def postProcessScript(self):
+    def postProcessScript(self, postProcessScript=None):
         """
-
+        :param postProcessScript (defaultNone). If not None set the postProcessScript to this value
         :return: the full path for the postprocessing script
         """
+        if postProcessScript is not None:
+            self.Config['postProcess']["script"] = postProcessScript
+
         ppScript = self.Config['postProcess'].get("script",
                                                   "$OPTCLIMTOP/obs_in_nc/comp_obs.py")  # get PostProcessScript
         ppScript = os.path.expanduser(os.path.expandvars(ppScript))  # expand shell variables and home
         return ppScript
 
-    def postProcessOutput(self, value=None):
+    def postProcessOutput(self, postProcessOutput=None):
         """
-            :param (optional) value -- if not None (which is default) value will be used to set
+            :param (optional) postProcessOutput -- if not None (which is default) value will be used to set
         :return: relative  path for output from post processing script. Path is taken relative to model directory
 
         """
         ppProcess = self.getv('postProcess', {})
-        if value is not None:
-            ppProcess['outputPath'] = value
+        if postProcessOutput is not None:
+            ppProcess['outputPath'] = postProcessOutput
             self.setv('postProcess', ppProcess)
 
         ppOutput = self.getv('postProcess').get("outputPath", "observations.nc")
 
         return ppOutput
 
-    def referenceConfig(self, studyDir=None):
+    def referenceConfig(self, referenceConfig=None):
         """
-        :param studyDir -- where study is. Default will be to use current working directory
+        :param referenceConfig  -- set referenceConfig if not None (Should be a string).
         :return: full path to the reference configuration of model being used
         """
-        # if studyDir is None: studyDir = os.getcwd()
-        # modelConfigDir = getDefault(self.Config['study'], 'referenceModelDirectory', os.path.join(studyDir, "start"))
-        # # and now expand home directories and env variables
-        # modelConfigDir = os.path.expanduser(os.path.expandvars(modelConfigDir))
-        # return modelConfigDir
-        # simplify -- if none just return it.
+        if referenceConfig is not None:
+            self.getv('study')['referenceModelDirectory'] = referenceConfig
         modelConfigDir = self.getv('study').get('referenceModelDirectory')
         # and now expand home directories and env variables
         if modelConfigDir is not None:
@@ -751,10 +824,11 @@ class OptClimConfig(dictFile):
 
     def optimise(self):
         """
-        Extract and package all optimistion information into one directory
+        Extract and package all optimisation information into one directory
+        Note this is not a copy
         :return: a dict
         """
-
+        # TODO deal with case when optimise does not exist by creating it.
         return self.Config['optimise']
 
     def fixedParams(self):
@@ -822,7 +896,7 @@ class OptClimConfig(dictFile):
         :param: fnTable -- dict  of functions
         :return: optimisation function
         """
-
+        warnings.warn("No long reqd and will be deleted")
         name = getDefault(self.Config, 'optimiseFunction', 'default')
         return fnTable.get(name)
 
@@ -957,15 +1031,15 @@ class OptClimConfig(dictFile):
         return alpha
 
     def GNparamErrCovar(self, normalise=False, constraint=True, Jac=None):
-        """
+        r"""
         Compute the covariance for parameter error.
-        Theory is that (to first order) \vect{\delta O}= \matrix{J}\vect{\delta p}
-          where \delta O are perturbations in observations, \delta p are perturbations to parameters and J is the Jacobian.
-          Then multiple by J^+ (the pseudo-inverse) to give \vect{\delta p} = \matrix{J}^+  \vect{\delta O}.
-        Then the covariance is \matrix{J}^+ C {\matrix{J}^+}^T
+        Theory is that (to first order) $$\vect{\delta O}= \matrix{J}\vect{\delta p}$$
+          where $$\delta O$$ are perturbations in observations, $$\delta p$$ are perturbations to parameters and J is the Jacobian.
+          Then multiple by J^+ (the pseudo-inverse) to give $$\vect{\delta p} = \matrix{J}^+  \vect{\delta O}$$.
+        Then the covariance is $$\matrix{J}^+ C {\matrix{J}^+}^T$$
 
          or alternatively with covariance...
-         P=(J^TC^{-1}J)^{-1}J^TC^{-1}
+         $$P=(J^TC^{-1}J)^{-1}J^TC^{-1}$$
         :param normalise (default = True) -- compute the normalised covariance error (fraction of range)
         :return: covariance of parameters
         """
@@ -1028,8 +1102,8 @@ class OptClimConfig(dictFile):
 
         if set is not None:  # set the value
             # check we've got GNinfo
-            GNinfo = self.getv('GNinfo',
-                               collections.OrderedDict())  # should modify to use GNgetset but that assumes numpy array.
+            GNinfo = self.getv('GNinfo', {})
+            # should modify to use GNgetset but that assumes numpy array.
             GNinfo['SimulatedObs'] = set.to_dict()
             self.setv('GNinfo', GNinfo)  # and set it.
         # get the value.
@@ -1068,42 +1142,113 @@ class OptClimConfig(dictFile):
         """
 
         alg_info_name = self.optimise()['algorithm'].upper() + "_information"
-        info = self.getv(alg_info_name,
-                         collections.OrderedDict())  # should modify to use GNgetset but that assumes nump
-        if len(argv) > 0:  # got some values to set
+        info = self.getv(alg_info_name, {})
+        if len(info) == 0:  # empty so set it.
+            self.setv(alg_info_name, {})
+            info = self.getv(alg_info_name)
+
+        if argv:  # got some values to set
             for key, item in argv.items():  # iterate over any arguments we have
                 info[key] = item
             self.setv(alg_info_name, info)  # set it
 
         return info
 
+    def set_dataFrameInfo(self, **setargs):
+        """
+        Put pandas dataframe into alg_info
+        :param **setargs -- arguments to set.
+        example: config.set_dataFrameInfo(result=result,flaming=flaming,success=pd.Dataframe(data))
+        """
+        # raise NotImplementedError("Write self test")
+        alg_info = self.alg_info()
+        for k, v in setargs.items():
+            alg_info[k] = v.to_json(orient='split')  # set it
+
+    def get_dataFrameInfo(self, input_keys, type=None):
+
+        """
+        Return pandas dataframes from alg_info
+
+        :param keys a *list* of variables to return or a string. If a string then this is interpreted as a key.
+        If list then each element is a key.
+        returns a tuple containing dataframes. If tuple has one element then a dataframe is returned.
+        :param type If not None the type to convert the dataframe to using astype method.
+        Example: config.get_dataFrameInfo(['transJacobian','Flames'])
+
+
+        """
+        alg_info = self.alg_info()
+        result = []
+        if isinstance(input_keys, str):
+            keys = [input_keys]
+        else:
+            keys = input_keys
+        for arg in keys:  # get back the value
+            try:
+                df = pd.read_json(alg_info[arg], orient='split')
+                if type is not None:
+                    df = df.astype(type)
+            except KeyError:  # failed to find so set to None
+                df = None
+            result.append(df)
+        if len(keys) == 1:  # deal with single list.
+            return result[0]
+        else:
+            return tuple(result)
+
     def diagnosticInfo(self, diagnostic=None):
         """
 
-        :param diagnosticInfo: A pandas dataframe. If set add ths to the confguration
+        :param diagnosticInfo: A pandas dataframe. If set add this to the configuration
         :return: the values as a  dataframe
         """
 
         if diagnostic is not None:
-            self.alg_info(diagnostic=diagnostic.to_json(orient='split'))
+            self.set_dataFrameInfo(diagnosticInfo=diagnostic)
 
-        return pd.read_json(self.alg_info().get('diagnostic'), orient='split')
+        return self.get_dataFrameInfo(['diagnostic'])
 
     def jacobian(self, jacobian=None):
         """
         Set jacobian if set. Return jacobian as pandas dataframe
         :param jacobian: a pandas dataframe containing the jacobian information
-        :return: jacobian
+        :return: jacobian -- converted to a float (the json conversion loses type info)
         """
 
         if jacobian is not None:
-            self.alg_info(jacobian=jacobian.to_json(orient='split'))
+            self.set_dataFrameInfo(jacobian=jacobian)
 
-        return pd.read_json(self.alg_info().get('jacobian'), orient='split')
+        return self.get_dataFrameInfo('jacobian', type=float)
+
+    def transJacobian(self, transJacobian=None):
+        """
+        Set transformed jacobian if set. Return transJacobian as pandas dataframe
+        :param transJacobian: a pandas dataframe containing the transformed jacobian information.
+           If not None will set values.
+        :return: transformed jacobian (J.Trans^T) where Trans is the transform matrix (see transMatrix)
+               converted to a float (the json conversion loses type info)
+        """
+
+        if transJacobian is not None:
+            self.set_dataFrameInfo(transJacobian=transJacobian)
+
+        return self.get_dataFrameInfo('transJacobian', type=float)
+
+    def hessian(self, hessian=None):
+        """
+        :param hessian. If not None set hessian to this value. Should be a pandas dataframe.
+        return -- returns the hessian matrix converted to a float (the json conversion loses type info).
+        """
+
+        if hessian is not None:
+            self.set_dataFrameInfo(hessian=hessian)
+
+        return self.get_dataFrameInfo('hessian', type=float)
 
     def paramErrCovar(self, normalise=True, useCov=False):
         r"""
-        Compute the covariance for parameter error. TODO -- verify what DFOLS does and work out how
+        Compute the covariance for parameter error. TODO -- consider removing.
           to store in the final json file. Then regardless of algorithm we can get it out again...
         Theory is that (to first order) \vect{\delta O}= \matrix{J}\vect{\delta p}
           where \delta O are perturbations in observations, \delta p are perturbations to parameters and J is the Jacobian.
@@ -1113,6 +1258,7 @@ class OptClimConfig(dictFile):
          or alternatively with covariance...
          P=(J^TC^{-1}J)^{-1}J^TC^{-1}
         :param normalise (default = True) -- compute the normalised covariance error (fraction of range)
+        :param useCov
         :return: covariance of parameters
         """
         import numpy.linalg as linalg
@@ -1138,10 +1284,10 @@ class OptClimConfig(dictFile):
         """
 
         if best_obs is not None:
-            self.alg_info(best_obs=best_obs.to_json(orient='split'))
+            self.dataFrameInfo(best_obs=best_obs.to_json(orient='split'))
 
         return pd.read_json(self.alg_info().get('best_obs'), orient='split',
-                            typ='series')
+                            typ='series')  # magic because it is a series not a dataframe.
 
     def DFOLSinfo(self, diagnosticInfo=None):
         """
@@ -1154,27 +1300,35 @@ class OptClimConfig(dictFile):
         warnings.warn("Use diagnosticInfo not DFOLSinfo")
         return self.diagnosticInfo(diagnostic=diagnosticInfo)
 
-    def DFOLS_config(self):
-        """
-        Extract the DFOLS specific information
-        :return:
+    def DFOLS_config(self, dfolsConfig=None):
         """
 
+        Extract (and optionally set) the DFOLS specific information
+        :param dfolsConfig -- a dict of dfoLS config data which replaces existing values
+        :return: the configuration which (like most python is a ptr tothe data. If you change
+        """
+        if dfolsConfig is not None:
+             self.optimise()['dfols'] = copy.deepcopy(dfolsConfig)  # copy input.
         return self.optimise().get('dfols', {})
 
-    def DFOLS_userParams(self, userParams=None):
+    def DFOLS_userParams(self, userParams=None, updateParams=None):
         """
 
         Extract the user parameters for DFOLS
-        :param userParams (default None) -- default user params
+        :param userParams (default None) -- default user params which are overwritten by config values.
+        :param updateParams (default None) -- modify userparams in configuration.
         :return: user parameters
         """
 
         if userParams is None:
-            result = {}
+            result = {}.copy()  # make sure get different empty dict.
         else:
-            result = userParams.copy()
+            result = copy.deepcopy(userParams)
 
+        if updateParams is not None:
+            # breaks
+            self.DFOLS_config()['namedSettings'] = copy.deepcopy(
+                updateParams)  # deep copy so stored dict not linked to var
         namedSettings = self.DFOLS_config().get('namedSettings', {})
         for k in namedSettings.keys():  # loop over keys
             if not re.search(r'_comment\s*$', k):  # not a comment
@@ -1202,10 +1356,12 @@ class OptClimConfig(dictFile):
     def simObs(self, simObs=None, best=False):
         """
 
-        :param simObs: optional -- default None and if passed should a pandas dataframe
+        :param simObs: optional -- default None and if passed should be a pandas dataframe
         :param best: optional-- defaultFalse. If true return the obs for the best iteration
         :return:  dataframe of simulated observations in order in which they were ran (which may not be
-           the smae as the algorithm sees them)
+           the same as the algorithm sees them)
+
+        TODO: Modify to use set/get_dataframe
         """
         if simObs is not None:
             # add fake index to preserve index.
@@ -1224,6 +1380,7 @@ class OptClimConfig(dictFile):
         : param (optional) normalise -- default False. If True the parameters 
            returned are normalised to 0 (min allowed) to 1 (max allowed)
         :return:  dataframe of simulated observations
+        :TODO rewrite to use set/get_dataframe.
         """
         if parameters is not None:
             self.setv('parameters', parameters.to_dict())
@@ -1255,7 +1412,7 @@ class OptClimConfig(dictFile):
             # probably need similar for parameters and obs to it is more generic.
             self.setv('costd', cost.to_dict())
 
-        cost = pd.Series(self.getv('costd'))
+        cost = pd.Series(self.getv('costd'),dtype=float)
         cost.name = 'Cost'
         bestEval = self.getv('bestEval')
         if best:
@@ -1274,7 +1431,7 @@ class OptClimConfig(dictFile):
             self.setv('dirValues', directories.to_json())
 
         directories = self.getv('dirValues', [])
-        if len(directories) is 0: return pd.Series()
+        if len(directories) == 0: return pd.Series()
         directories = pd.read_json(directories, typ='series')
 
         if best:
@@ -1320,6 +1477,7 @@ class OptClimConfig(dictFile):
         :param jacobian: jacobian as dataset with mean (Jacobian) and variances (Jacobian_var)
         :return: jacobian as xaarry dataset.
         TODO : Consider removing dependance on xarray -- which means storing as dataframe.
+        TODO: Remove -- probably not needed.
         """
 
         if jacobian is None:
@@ -1394,12 +1552,14 @@ class OptClimConfigVn2(OptClimConfig):
     Version 2 of OptClimConfig -- modify OptClimConfig methods and see OptClimConfig.__init__() for  
     """
 
-    # NB __init__ method is just the superclasss OptClimConfig) __init__ method.
+    # NB __init__ method is just the superclasss OptClimConfig__init__ method.
 
-    def paramNames(self):
+    def paramNames(self, paramNames=None):
         """
+        :param paramNames -- a set of paramNames to overwrite existing values. Should be a list
         :return: a list of parameter names from the configuration files
         """
+
         keys = self.Config['Parameters']['initParams'].keys()  # return a copy of the list.
         # remove comment keys
         keys = [k for k in keys if 'comment' not in k]
@@ -1448,52 +1608,63 @@ class OptClimConfigVn2(OptClimConfig):
         param.loc['rangeParam', :] = param.loc['maxParam', :] - param.loc['minParam', :]  # compute range
         return param
 
-    def beginParam(self, paramNames=None, scale=False):
-        # TODO -- make this a set/get (if values passed in then set them).
+    def beginParam(self, values=None, paramNames=None, scale=False):
+
         """
         get the begin parameter values for the study. These are specified in the JSON file in begin block
         Any values not specified use the standard values
+        :param values -- if not None then set begin values to this. This should be provided as a pandas series  Note no scaling is done.
+            and initScale will be set False.
         :param paramNames: Optional names of parameters to use.
         :param scale (default False). If True scale parameters by their range so 0 is minimum and 1 is maximum
         :return: pandas series of begin parameter values.
         """
-        if paramNames is None:  paramNames = self.paramNames()
-        begin = {}  # empty dict
-        standard = self.standardParam(paramNames=paramNames)
+
+        if values is None:  # No values specified
+            begin = self.Config['Parameters'].get('initParams')
+
+        else:  # set them
+            begin = values.to_dict()  # convert from pandas series to dict for internal storage
+            self.Config['Parameters']['initParams'] = begin
+            self.Config['Parameters']["initScale"] = False
+
         scaleRange = self.Config['Parameters'].get("initScale")  # want to scale ranges?
+        if paramNames is None:  paramNames = self.paramNames()
+        beginValues = {}  # empty dict
+        standard = self.standardParam(paramNames=paramNames)
+
         range = self.paramRanges(paramNames=paramNames)  # get param range
 
         for p in paramNames:  # list below is probably rather slow and could be sped up!
-            # begin[p] = self.Config['Parameters']['initParams'].get(p, standard.get(p))
-            begin[p] = self.Config['Parameters']['initParams'].get(p)
-            if begin[p] is None:
-                begin[p] = standard[p]  # Will trigger an error if standard[p] does not exist
+            beginValues[p] = begin.get(p)
+            if beginValues[p] is None:
+                beginValues[p] = standard[p]  # Will trigger an error if standard[p] does not exist
             else:
                 if scaleRange:  # values are specified as 0-1
-                    begin[p] = begin[p] * range.loc['rangeParam', p] + range.loc['minParam', p]
+                    beginValues[p] = beginValues[p] * range.loc['rangeParam', p] + range.loc['minParam', p]
             if scale:  # want to return params  in range 0-1
-                begin[p] = (begin[p] - range.loc['minParam', p]) / range.loc['rangeParam', p]
+                beginValues[p] = (beginValues[p] - range.loc['minParam', p]) / range.loc['rangeParam', p]
 
-        begin = pd.Series(begin, dtype=float)[paramNames]  # order in the same way for everything.
+        beginValues = pd.Series(beginValues, dtype=float)[paramNames]  # order in the same way for everything.
 
         # verify values are within range
         if scale:
-            L = begin.gt(1.0) | begin.lt(0.0)
+            L = beginValues.gt(1.0) | beginValues.lt(0.0)
         else:
-            L = range.loc['maxParam', :].lt(begin) | begin.lt(range.loc['minParam', :])
+            L = range.loc['maxParam', :].lt(beginValues) | beginValues.lt(range.loc['minParam', :])
 
         if np.any(L):
             print("L  \n", L)
-            print("begin: \n", begin)
+            print("begin: \n", beginValues)
             print("range: \n", range)
-            print("Parameters out of range", begin[L].index)
+            print("Parameters out of range", beginValues[L].index)
             raise ValueError("Parameters out of range: ")
 
-        return begin.astype(float).rename(self.name())
+        return beginValues.astype(float).rename(self.name())
 
     def optimumParams(self, paramNames=None, normalise=False, **kwargs):
         """
-        Set/get the optimum parameters.
+        Set/get the optimum parameters. (VN2 version)
         :param normalise (default False). If True then normalise parameters.
         :param values: default None -- if set then parameter values in configuration gets updated with values
         :param paramNames -- name of parameters
@@ -1525,23 +1696,31 @@ class OptClimConfigVn2(OptClimConfig):
 
         return values.rename(self.name())
 
-    def steps(self, paramNames=None, normalise=None):
+    def steps(self, paramNames=None, normalise=None, steps=None):
         """
         Compute perturbation  for all parameters supplied. If value specified use that. If not use 10% of the range.
         Quasi-scientific in that 10% of range is science choice but needs knowledge of the structure of the JSON file
              so in this module.
+
         :param paramNames -- optional the parameter names for step sizes. If not defined uses self.paramNames() to work
                 them out
         :param normalise -- if True normalise by the range regardless of the value of scale in the configuration
+        :param steps (optional). If not None then update the steps with values here. Should be a pandas series or dict.
+              These values should be consistent with scale_step which determines the ... Which you can pass in.
         :return: the step sizes for the parameters as a pandas Series.
         """
 
         if paramNames is None: paramNames = self.paramNames()
+        if steps is not None:  # setting steps. This is update. Existing values may still be there...
+            for p, v in steps.items():
+                self.Config['Parameters']['steps'][p] = v
 
         param = self.paramRanges(paramNames=paramNames)
         defaultStep = 0.1 * param.loc['rangeParam', :]  # 10% of range and default cases
         pert = {}
         scale = self.Config['Parameters']['steps'].get('scale_steps', False)
+        # this is probably a bad design choice. TODO modify for vn3. Make steps the variable for all steps
+        # and self.Config['Parameters']['scale_steps'] be scaling (or not)
         if scale:  # scaling so set default step to 0.1
             defaultStep.loc[:] = 0.1
         for p in paramNames:
@@ -1581,7 +1760,9 @@ class OptClimConfigVn2(OptClimConfig):
 
         Note needs matplotlib
         """
-
+        # get a bunch of annoying messages from matplotlib so turn them off...
+        import logging
+        logging.getLogger('matplotlib.font_manager').disabled = True
         cost = self.cost()
         if len(cost) == 0:
             return  # nothing to plot
@@ -1592,22 +1773,22 @@ class OptClimConfigVn2(OptClimConfig):
             fig, ax = plt.subplots(3, 1, num=figName, figsize=[8.3, 11.7], sharex='col')
 
         (costAx, paramAx, obsAx) = ax  # name the axis .
-        cmap = plt.cm.get_cmap('RdYlGn')
+        cmap = copy.copy(plt.cm.get_cmap('RdYlGn'))
         cmap.set_under('skyblue')
         cmap.set_over('black')
         try:  # now to plot
             nx = len(cost)
             costAx.plot(np.arange(0, nx), cost.values)
-            costAx.set_xlim(-0.5, nx)
+            a=costAx.set_xlim(-0.5, nx)
             minv = cost.min()
             minp = cost.values.argmin()  # use location in array (as that is what we plot)
             costAx.set_title("Cost", fontsize='small')
-            costAx.plot(minp, minv, marker='o', ms=12, alpha=0.5)
+            a=costAx.plot(minp, minv, marker='o', ms=12, alpha=0.5)
             costAx.axhline(minv, linestyle='dotted')
-            costAx.set_yscale('log')
+            a=costAx.set_yscale('log')
             yticks = [1, 2, 5, 10, 20, 50]
-            costAx.set_yticks(yticks)
-            costAx.set_yticklabels([str(y) for y in yticks])
+            a=costAx.set_yticks(yticks)
+            a=costAx.set_yticklabels([str(y) for y in yticks])
             # plot params
 
             parm = self.parameters(normalise=True)
@@ -1615,10 +1796,10 @@ class OptClimConfigVn2(OptClimConfig):
             X = np.arange(-0.5, parm.shape[1])
             Y = np.arange(-0.5, parm.shape[0])  # want first iteration at 0.0
             cm = paramAx.pcolormesh(Y, X, parm.T.values, cmap=cmap, vmin=0.0, vmax=1.)  # make a colormesh
-            paramAx.set_yticks(np.arange(0, len(parm.columns)))
-            paramAx.set_yticklabels(parm.columns)
-            paramAx.set_title("Normalised Parameter")
-            paramAx.axvline(minp, linestyle='dashed', linewidth=2, color='gray')
+            a=paramAx.set_yticks(np.arange(0, len(parm.columns)))
+            a=paramAx.set_yticklabels(parm.columns)
+            a=paramAx.set_title("Normalised Parameter")
+            a=paramAx.axvline(minp, linestyle='dashed', linewidth=2, color='gray')
 
             # plot norm obs
 
@@ -1632,12 +1813,12 @@ class OptClimConfigVn2(OptClimConfig):
             X = np.arange(-0.5, normObs.shape[1])
             Y = np.arange(-0.5, normObs.shape[0])
             cmO = obsAx.pcolormesh(Y, X, normObs.T.values, vmin=-4, vmax=4, cmap=cmap)
-            obsAx.set_yticks(np.arange(0, len(normObs.columns)))
-            obsAx.set_yticklabels(normObs.columns, fontsize='x-small')
+            a=obsAx.set_yticks(np.arange(0, len(normObs.columns)))
+            a=obsAx.set_yticklabels(normObs.columns, fontsize='x-small')
             obsAx.set_xlabel("Iteration")
             xticks = np.arange(0, nx // 5 + 1) * 5
-            obsAx.set_xticks(xticks)
-            obsAx.set_xticklabels(xticks)
+            a=obsAx.set_xticks(xticks)
+            a=obsAx.set_xticklabels(xticks)
             obsAx.axvline(minp, linestyle='dashed', linewidth=2, color='gray')
 
             obsAx.set_title("Normalised Observations")
@@ -1661,5 +1842,7 @@ class OptClimConfigVn2(OptClimConfig):
 class OptClimConfigVn3(OptClimConfigVn2):
     """
     Vn3 of OptClimConfig. Currently does nothing but is a place to grab things for next upgrade. 
-    1) have runTime() and runCode() methods only work with runInfo block -- vn1/2 methods work with names in top level dict. 
+    1) have runTime() and runCode() methods only work with runInfo block -- vn1/2 methods work with names in top level dict.
+    2) Have generic way of dealing with dataframes and make all methods use and
+       return pandas series or dataframes as appropriate.
     """

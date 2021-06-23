@@ -59,7 +59,7 @@ def fakeModel(paramV, studyCfg, obsNames=None, trace=False):
                      sqrTerm, # square term
                      cubeTerm], # cubic term
                      index=index,columns=standardObs.index)
-    cov=studyCfg.Covariances(scale=False)
+    cov= studyCfg.Covariances(scale=False)
     noise = cov['CovIntVar'] # noise.
 
     standardParam = studyCfg.standardParam(paramNames=paramNames) # standard values

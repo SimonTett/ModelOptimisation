@@ -1,5 +1,5 @@
 
-tools/runOptimise.py is a python script that runs the optimisation -- it is controlled by a json file
+tools/runAlgorithm.py is a python script that runs an optimisation or other algorithm-- it is controlled by a json file
 see Configurations/example.json or Configurations/example_dfols.json
 
 Installation:
@@ -9,8 +9,8 @@ Installation:
 3) Put $OPTCLIMTOP/OptClimVn2 and $OPTCLIMTOP/tools/optFunctions (and DFOLS and what ever else needed by your optimisation algorithm ) in your python search path.
 4) Add $OPTCLIMTOP/tools to your PATH.
 
-Works at python 3.8.  *May* work at python 3.6+. 
-You also need the following modules (generally available from conda-forge)
+Works at python 3.8.  *May* work at python 3.7+. Needs dicts that are ordered.
+You also need the following modules (generally available from conda-forge but could be installed via pip)
 f90nml
 pandas
 matplotlib
@@ -18,23 +18,23 @@ xarray
 netCDF4
 numpy
 
-+ dfols (pip)
++ dfols (pip) pip install DFO-LS (See https://github.com/numericalalgorithmsgroup/dfols/)
+If you want to use pysot (which has not been tested) then you will need to install that too (see https://pypi.org/project/pySOT/)
 
 Testing:
-run pytest in OptClimVn2 in OPTCLIMTOP. There are about 100 tests. One in test_Optimise may fail. If so run it again...
+run pytest in OptClimVn2 in OPTCLIMTOP. There are about 120 tests. One in test_Optimise may fail. If so run it again...
 
-To test runOptimise.py you need to do the following in ipython in OPTCLIMTOP:
+To test runAlgorithm.py you need to do the following in ipython in OPTCLIMTOP:
 import tempfile
 tdir=tempfile.TemporaryDirectory() # gives you a temp directory.
-%run -i tools/runOptimise --restart  --test -d $tdir.name Configurations/dfols14param.json
-# this first time. Then for each iteration...
-%run -i tools/runOptimise  --test -d $tdir.name Configurations/dfols14param.json
+%run -i tools/runAlgorithm --restart  --test -d $tdir.name Configurations/dfols14param.json
+# This will run continually run until the algorithm has finished.
 
-For porting you will need to modify runOptimise so that it uses the correct submission method & model class.
+For porting you will need to modify (or add new )  code  so that it uses the correct submission method & model class.
 OptClimVN2 provides classes/methods for you. See README in that directory.
 tools contains some other potentially useful tools...
 
-tools/optFunctions/config contains the actual function used for optimisation (though it gets some arguments added to the call)
+OptClimVn2/config.py contains a lookup table for models.
 
-Warning: This code is research quality and probabaly not really suitable for production. I am happy to collaborate with others to make it more useful.
+Warning: This code is research quality and probably not really suitable for production. I am happy to collaborate with others to make it more useful.
 All code is available on a GPLv3 license. See License.

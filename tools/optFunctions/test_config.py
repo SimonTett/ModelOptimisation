@@ -69,7 +69,7 @@ class testModelSimulation(unittest.TestCase):
 
 
         """
-        obs1 = config.easyFake(self.model,self.config)
+        obs1 = config.easyFake(self.model, self.config)
         obs2 = config.easyFake(self.model2, self.config)
         self.assertTrue(np.abs(obs1.loc['netflux_global']-obs2.loc['netflux_global']) < 0.5)
 

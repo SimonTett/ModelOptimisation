@@ -369,6 +369,8 @@ def runJacobian(function, startParam, deltaParam, paramRange, *args,
     :param deltaParam:  perturbations as a pandas Series
     :param paramRange: paramRange as a pandas dataFrame
 
+    TODO: Remove this code -- functionality gone to Submit (and should really go in a module of its own)
+
     Other unnamed arguments are passed to jacobian (and then to function)
 
     :keyword args

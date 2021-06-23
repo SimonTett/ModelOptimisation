@@ -1,7 +1,5 @@
 """Configuration information/functions for runOptimise and similar.
-Provides standard optimisation function, fake function and submission
-functions for  different systems
-
+Provides fake function and submission functions for  different systems
 """
 
 import collections
@@ -13,59 +11,75 @@ from contextlib import contextmanager
 import numpy as np
 import pandas as pd
 
-import HadCM3
+import HadCM3  # only model, currently, used.
 import optClimLib
 
 
-# function for optimisation.
-def stdOptFunction(params, ensembleMember=None, MODELRUN=None, df=False, *args, **kwargs):
+## set up fake fn.
+
+def bare_fn(params, config=None, verbose=False, var_scales=None, rng=None):
     """
-    Standard Function used for optimisation. Returns values from cache if already got it.
-      If not got it return array of Nan  and set value to None.
+    Wee test fn for trying out things.
+    :param params -- numpy array of parameter values
+    :param config -- configurations -- default is None. If not available then fn will crash.
+    :param verbose -- if True print out more information.
+    :param var_scales -- scales to apply to variables.
+        Should be a pandas series. If not provided no scaling will be done
+    :param rng -- random number generator. Default None
+      If provided than random multivariate noise  based on the internal variance covariance will be added.
 
-    :param: params -- a numpy array with the parameter values. TODO: convince myself that ordering is fixed.
-    :param: ensembleMember -- ensemble member for this case.
+    for everything but params given design of optimisation algorithms you will need to find a way of getting
+      the extra params in. One way is to make a lambda fn. Another is to wrap it in a function.
 
-
-    TODO use "random" perturbation approach to find how many parallel cases we can run.
+    returns  "fake" data. If params is a pandas series then result will be a pandas series.
     """
+    pranges = config.paramRanges()
+    min_p = pranges.loc['minParam', :].values
+    max_p = pranges.loc['maxParam', :].values
+    scale_params = max_p - min_p
+    pscale = (params - min_p) / scale_params
+    pscale -= 0.5  # tgt is at params = 0.5
+    result = 10 * (pscale + pscale ** 2)
+    # this fn has one minima and the no maxima between the boundaries and the minim. So should be easy to optimise.
+    if var_scales is not None:
+        result /= var_scales.values  # make sure changes are roughly comparable size after scaling.
 
-    if MODELRUN is None:
-        raise Exception("Specify MODELRUN")
-    paramNames = MODELRUN.paramNames()
-    # params can be a 2D array...
-    if params.ndim == 1:
-        use_params = params.reshape(1, -1)
+    tgt = config.targets().values
 
-    elif params.ndim == 2:
-        use_params = params
+    delta_len = len(tgt) - result.shape[-1]
+    if delta_len < 0:
+        tgt = np.append(tgt, np.zeros(-delta_len))  # increase tgt
+    elif delta_len > 0:
+        result = np.append(result, np.zeros(delta_len), axis=-1)  # increase result
 
-    else:
-        raise Exception("params should be 1 or 2d ")
-    nsim = use_params.shape[0]
-    nparams = use_params.shape[1]
-    if nparams != len(paramNames):
-        raise Exception(
-            "No of parameters %i not consistent with no of varying parameters %i\n" % (nparams, len(paramNames)) +
-            "Params: " + repr(use_params) + "\n paramNames: " + repr(paramNames))
-    nObs = len(MODELRUN.obsNames())  # How many observations are we expecting?
-    result = np.full((nsim, nObs), np.nan)  # array of np.nan for result
-    for indx in range(0, nsim):  # iterate over the simulations.
-        pDict = dict(zip(paramNames, use_params[indx, :]))  # create dict with names and values.
-        if ensembleMember is not None:
-            pDict.update(ensembleMember=ensembleMember)
-        mc = MODELRUN.model(pDict, update=True)
-        if mc is not None:  # got a model
-            obs = mc.getObs(series=True)  # get obs from the modelConfig
-            MODELRUN.paramObs(pd.Series(pDict), obs)  # store the params and obs.
-            result[indx, :] = obs.reindex(MODELRUN.obsNames()).values # sort it and extract values.
-
-    if df:
-        result = pd.DataFrame(result,columns=MODELRUN.obsNames())
-
-
+    result += tgt
+    if rng is not None:
+        intVar = config.Covariances()['CovIntVar']
+        result += rng.multivariate_normal(tgt.values, intVar)  # add in some noise usually not needed for testing
 
     return result
+
+
+def fake_fn(model, studyCfg, verbose=False, var_scales=None, rng=None):
+    """
+    Fake model -- computes obs without running! uses bare_fn to actually compute values.
+    Fake model values -- uses fn to actually compute values but modifies slightly. (defined above)
+
+    :param model: model that we are running.
+    :param studyCfg: study configuration -- which contains much useful information
+    :param verbose (optional) If True (default is False) more information will be printed out.
+    :param var_scales -- scaling applied to each obs -- used by bare_fn.  See that for documentation.
+    :param rng -- random number generator. See bare_fn to see what this does
+    :return: simulated observations as a pandas series
+    """
+
+    paramNames = studyCfg.paramNames()
+    obsNames = studyCfg.obsNames()
+
+    simObs = bare_fn(model.getParams(series=True, params=paramNames).values, config=studyCfg, verbose=verbose,
+                     var_scales=var_scales, rng=rng)  # get values
+    simObs = pd.Series(simObs, index=obsNames)  # turn into a pandas series
+    model.writeObs(simObs, verbose=verbose)  # and write them out
 
 
 @contextmanager
@@ -126,80 +140,8 @@ def arcSubmit(model_list, config, rootDir, verbose=False, resubmit=None, *args, 
     return True
 
 
-def easyFake(model, studyCfg, verbose=False):
-    """
-    Fake model -- computes obs without running! Write for your purpose.
-    Fake model values --
-    Assume that simulated values are a linear sum of effects from each parameter and that each parameter affects two
-      types of parameters. With each region behaving similarly.
-    :param model: model that we are running.
-    :param studyCfg: study configuration -- which contains much useful information
-    :param verbose (optional) If True (default is False) more information will be printed out.
-    :return: simulated observations as a pandas series
-    """
-    paramNames = studyCfg.paramNames()  # index is names
-    paramV = model.getParams(series=True)
-
-    seed = optClimLib.genSeed(paramV)  # all parameters used to start the RNG.
-    paramV = paramV.loc[paramNames]
-    np.random.seed(seed)  # set the RNG up
-    obsNames = studyCfg.obsNames()
-    standardObs = studyCfg.standardObs(obsNames=obsNames, scale=False)  # standard obs
-    nobs = standardObs.shape[0]
-    index = [0, 1, 2, 3]
-    linTerm = 200 * np.array([[0.1] * 10, [0.2] * 10, [0.3] * 10]).flatten()[0:nobs]
-    sqrTerm = linTerm * 2.
-    cubeTerm = linTerm * 4.
-    pwr = pd.DataFrame([standardObs.values,
-                        linTerm,  # linear term
-                        sqrTerm,  # square term
-                        cubeTerm],  # cubic term
-                       index=index, columns=standardObs.index)
-    cov = studyCfg.Covariances(scale=False)
-    noise = cov['CovIntVar']  # noise.
-    err = cov['CovTotal']
-    obsSd = pd.Series(np.sqrt(np.diag(err)), index=err.columns)
-    # noise = 0.0*noise
-    # don't worry about noise on constraint as constraint gets re-computed!
-
-    standardParam = studyCfg.standardParam(paramNames=paramNames)  # standard values
-
-    rangep = studyCfg.paramRanges(paramNames=paramNames)
-    delta_p = (paramV - standardParam) / rangep.loc['rangeParam', :]  # scale parameters
-    delta_p = delta_p.dropna()  # remove any NaN's
-    result = pd.Series(np.random.multivariate_normal(pwr.iloc[0].loc[obsNames].values,
-                                                     noise.loc[obsNames, obsNames].values),
-                       index=obsNames)
-    # initialise with standard values + noise realisation.
-    # hardwire for moment # need to make this a matrix -- converting from fn of parameters to fn of obs,
-    # iterate over parameters
-    # TODO -- make this work more generally...
-    obsRoot = np.array([s.split("_", 1)[0] for s in obsNames if 'mslp' not in s])
-    # extract obs root names (so region) but removing mslp
-    nobs = len(obsRoot)  # how many different types of obs
-    for i, param in enumerate(delta_p.index):
-        obs = obsRoot[np.array([i, i + 3]) % nobs]  # those are the obs this parameter affects
-        # and nhx, shx and tropics to them
-        obs = [o + root for root in ['_nhx', '_shx', '_tropics'] for o in obs]  # full obs names
-        # print(param,delta_p[param],"\n",pwr.ix[1:3, obs])
-        for p in range(1, 4):  # hardwired limit on powers -- up to Cubic.
-            addStuff = pwr.iloc[p].reindex(obs) * (delta_p[param] ** p) * obsSd.loc[obs]
-            result.loc[obs] += addStuff
-    # compute constraint
-    obs = ['olr_nhx', 'olr_tropics', 'olr_shx', 'rsr_nhx', 'rsr_tropics', 'rsr_shx']
-    wt = pd.Series([0.25, 0.5, 0.25, 0.25, 0.5, 0.25], index=obs)
-    # overwrite the constraint value
-    constraint = 340.25 - (result.reindex(obs) * wt).sum()
-    result[studyCfg.constraintName()] = constraint
-    result.rename(studyCfg.name())
-    model.writeObs(result)
-
-    return result
-
-    ## end of fakeModel.
-
-
-def eddieSubmit(model_list, config, rootDir, verbose=False, postProcess=True, resubmit=None, Submit=True, archiveDir=None, *args,
+def eddieSubmit(model_list, config, rootDir, verbose=False, postProcess=True, resubmit=None, Submit=True,
+                archiveDir=None, *args,
                 **kwargs):
     """
     Submit models to eddie, the post processing and the next iteration in the algorithm.
@@ -238,7 +180,7 @@ def eddieSubmit(model_list, config, rootDir, verbose=False, postProcess=True, re
     submitProcessCount = 0  # how many processes were submitted.
     # need to ssh to a login node to do things to Q's and cd to current dir
     if postProcess:
-        modelDirFile = os.path.join(rootDir,'tempDirList.txt')
+        modelDirFile = os.path.join(rootDir, 'tempDirList.txt')
         # name of file containing list of directories for post processing stage
         with open(modelDirFile, 'w') as f:
             for m in model_list:
@@ -289,7 +231,6 @@ def eddieSubmit(model_list, config, rootDir, verbose=False, postProcess=True, re
 
     # Submit the models.
 
-
     # submit the archive script which will be held until the post-processing scripts have all ran.
     if archiveDir is not None:
         # TODO add archiveDIR to json configuration. And then can pass it through to
@@ -324,8 +265,8 @@ def eddieSubmit(model_list, config, rootDir, verbose=False, postProcess=True, re
         if verbose: print("Next iteration cmd is ", cmd)
         if Submit:
             submitCmd = sshCmd + cmd + '"'
-            print("SubmitCmd is ",submitCmd)
-            jid = subprocess.check_output(submitCmd,shell=True) 
+            print("SubmitCmd is ", submitCmd)
+            jid = subprocess.check_output(submitCmd, shell=True)
             # submit the script. Good to remove shell=True and '"'
             jid = jid.split()[2]  # extract the actual job id.
         else:
@@ -366,18 +307,17 @@ def eddieSubmit(model_list, config, rootDir, verbose=False, postProcess=True, re
 try:
     sz = len(modelFunctions)  # see if it exists!
 except NameError:  # need to create them as they do not exist
-    modelFunctions = collections.OrderedDict()
-    submitFunctions = collections.OrderedDict()
-    optFunctions = collections.OrderedDict()
-    fakeFunctions = collections.OrderedDict()
+    modelFunctions = dict()
+    submitFunctions = dict()
+    fakeFunctions = dict()
 
 # now have lookup tables  can set values up
 modelFunctions.update(HadCM3=HadCM3.HadCM3)  # lookup table for model functions to run.Your model fn goes here.
 modelFunctions.update(HadAM3=HadCM3.HadCM3)  # HadAM3 is HadCM3!
 submitFunctions.update(eddie=eddieSubmit,
                        ARC=arcSubmit)  # lookup table for submission functions -- depends on architecture
-optFunctions.update(default=stdOptFunction)  # Functions to be used for optimising
-fakeFunctions.update(default=easyFake)  # function for faking run as part of testing.
+# optFunctions.update(default=stdOptFunction)  # Functions to be used for optimising
+fakeFunctions.update(default=fake_fn)  # function for faking run as part of testing.
 # names for fake and optFunction
 
 # test code
@@ -448,18 +388,7 @@ class testSubmit(unittest.TestCase):
         # self.tmpDir.cleanup() # sadly fails because not all files in are writable.
         optClimLib.delDirContents(self.tmpDir.name)
 
-    def test_easyFake(self):
-        """
-        Test that easyFake works
-        :return:
-        """
-        import pandas as pd
-        paramDF = pd.DataFrame({'VF1': [1.0, 1.5, 2.0], 'RHCRIT': [0.6, 0.7, 0.8]},
-                               index=['run01', 'run02', 'run03'])
-        o = easyFake(self.models[0], self.config)
-        o2 = easyFake(self.models[1], self.config)
 
-        self.assertFalse(np.all(o2 == o))
 
 
 if __name__ == "__main__":

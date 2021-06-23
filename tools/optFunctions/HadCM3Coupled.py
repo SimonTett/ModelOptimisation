@@ -24,7 +24,6 @@ import pandas as pd
 import HadCM3
 import StudyConfig
 import Submit
-import config
 import optClimLib
 
 
@@ -800,11 +799,11 @@ def fakeEQ4(model, studyCfg, verbose=False):
 
 
 # modify the lookup tables in config.
-config.optFunctions.update(HadCM3ECS4=EQ4)
-config.fakeFunctions.update(HadCM3ECS4=fakeEQ4)
+#config.optFunctions.update(HadCM3ECS4=EQ4)
+#config.fakeFunctions.update(HadCM3ECS4=fakeEQ4)
 
-config.optFunctions.update(HadCM3TCR=TCR)
-config.fakeFunctions.update(HadCM3TCR=fakeTCR)
+#config.optFunctions.update(HadCM3TCR=TCR)
+#config.fakeFunctions.update(HadCM3TCR=fakeTCR)
 
 
 ## test code. Included in module as only two routines to be tested.

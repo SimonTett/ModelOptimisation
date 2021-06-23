@@ -383,6 +383,7 @@ def doGaussNewton(param_value, param_range, UM_value, obs, cov=None,
         raise ValueError()
     # Compute Jacobian
     UM = use_UM_value[0, :]
+
     nruns = param_value.shape[0]  # how many runs were done
     Jacobian = np.zeros((nruns - 1, nObs))
     paramIndex = np.zeros(nruns - 1, dtype=int)  # the index to the parameters actually changed.
@@ -712,6 +713,7 @@ def run_fn(function, params, npt, constraint_target=None):
     Support function to run function in a way that all cases are ran before error happens..
     :param function: function to run
     :param params: parameter set for function
+    :param npt -- number of obs values but not actually used.
     :param constraint_target: if not none then have a constraint
     :return: array of obs values and constraint.
     """
@@ -719,8 +721,8 @@ def run_fn(function, params, npt, constraint_target=None):
         raise Exception
 
 
-    obsValues = np.zeros([params.shape[0], npt])
-    obsValues[:, :] = function(params)
+    #obsValues = np.zeros([params.shape[0], npt])
+    obsValues = function(params)
     if np.any(np.isnan(obsValues)):
         # got some nan -- trigger error.
         raise ValueError

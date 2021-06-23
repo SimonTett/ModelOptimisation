@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
+THIS WILL NO LONGER WORK AND IS BEING LEFT FOR A WHILE!
 Run DFO-LS or gauss-Newton optimisation using HadCM3 on Eddie.
 This relies on algorithm being deterministic. So repeatedly runs generating model simulations
 as necessary. Only makes sense as function evaluation (running the model) very expensive. So
-rereading them is really cheep!
+rereading them is really cheap!
 
 Should be relatively easy to change to other model, optimisation algorithm and  other cluster/super-computers
 general approach is that there is a class for specific model inheriting from a base class.
@@ -52,6 +53,8 @@ import stat
 import sys
 import pathlib
 import numpy as np
+
+np.seterr(all='raise')  # define before your code.
 import pandas as pd
 
 
@@ -171,9 +174,8 @@ renameRefDir = {'/exports/csce/eddie/geos/groups/OPTCLIM/software/optimise2018/C
 MODELRUN = Submit.ModelSubmit(configData,
                               configData.modelFunction(config.modelFunctions),  # model function
                               configData.submitFunction(config.submitFunctions),  # submit function
-                              configData.optimiseFunction(config.optFunctions),  # optimise function
                               fakeFn=fakeFn, rootDir=rootDir, verbose=verbose,
-                              readOnly=args.readOnly,noObs=args.noobs)
+                              readOnly=args.readOnly, noObs=args.noobs)
 
 
 
@@ -201,6 +203,7 @@ verifyFile = os.path.join(verifyDir, 'expect_' + rootDiagFiles + "_final" + ext)
 
 np.random.seed(123456)  # init RNG
 algorithmName = optimise['algorithm'].upper()
+tMat = configData.transMatrix()
 try:
     minModels = MODELRUN.rerunModels()
     if len(minModels) > 0:  # got some minimal models to run so trigger error
@@ -211,17 +214,23 @@ try:
         userParams = {'logging.save_diagnostic_info': True,
                       'logging.save_xk': True,
                       'noise.quit_on_noise_level': True,
-                      'general.check_objfun_for_overflow': False
+                      'general.check_objfun_for_overflow': False,
+                      'init.run_in_parallel': True,
+                      'general.check_objfun_for_overflow': False,
+                      'interpolation.throw_error_on_nans':True, # make an error happen!
                       }
         prange = (configData.paramRanges(paramNames=varParamNames).loc['minParam', :].values,
                   configData.paramRanges(paramNames=varParamNames).loc['maxParam', :].values)
         # update the user parameters from the configuration.
         userParams = configData.DFOLS_userParams(userParams=userParams)
 
-        MODELRUN.optimiseFunction_args(failNan=False, transform = True)
-        # set failNan to False to NOT fail in fn when it gets Nan. This means that dfols handles Nan
+        optFn = MODELRUN.genOptFunction(transform=tMat, residual=True,raiseError=False,scale=True) #TODO determine if scale needs to be set.
+        #seem to have lost multiple evaluations here.. Think it is a DFOLS feature as have same problem with "old" code.
+        # will ask Lindon about this. Actaully don'tthink so. Downgraded to same version as eddie and still have the
+        # same problem...
+        np.seterr(all='raise')
         try:
-            solution = dfols.solve(MODELRUN.optFunction, start.values,
+            solution = dfols.solve(optFn, start.values,
                                objfun_has_noise=True,
                                bounds=prange,scaling_within_bounds=True,
                                maxfun=dfols_config.get('maxfun', 100),
@@ -231,14 +240,12 @@ try:
         except np.linalg.linalg.LinAlgError:
             raise(Submit.runModelError("dfols failed with lin alg error"))
 
-        if solution.flag == solution.EXIT_LINALG_ERROR:  # linear algebra error
-            raise Submit.runModelError  # raise modelError to make more runs happen.
-        elif solution.flag not in (solution.EXIT_SUCCESS, solution.EXIT_MAXFUN_WARNING):
+        # code here will be run when DFOLS has completed. It mostly is to put stuff in the final JSON file
+        # so can easily be looked at for subsequent analysis.
+        # some of it could be done even if DFOLS did not complete.
+        if solution.flag not in (solution.EXIT_SUCCESS, solution.EXIT_MAXFUN_WARNING):
             print("dfols failed with flag %i error : %s" % (solution.flag, solution.msg))
             raise Exception("Problem with dfols")
-        # code here will be run when DFOLS has completed. It mostly is to put stuff in the final JSON file
-        # ## so can easily be looked at for subsequent analysis.
-        # some of it could be done even if DFOLS did not complete.
 
         # need to wrap best soln.
         finalConfig = MODELRUN.runConfig()  # get final runInfo
@@ -256,6 +263,7 @@ try:
         print("DFOLS completed: Solution status: %s" % (solution.msg))
     elif algorithmName == 'PYSOT':
         # pySOT -- probably won't work without some work.
+        optFn = MODELRUN.genOptFunction(transform=tMat, residual=True) # need scale??
         import pySOT
         from pySOT.experimental_design import SymmetricLatinHypercube
         from pySOT.strategy import SRBFStrategy, DYCORSStrategy  # , SOPStrategy
@@ -271,7 +279,7 @@ try:
         #  - maxfun: total number of evaluations allowed, default 100
         #  - initial_npts: number of initial evaluations, default 2*n+1 where n is the number of variables to optimise
         pysot_config = optimise.get('pysot', {})
-        MODELRUN.optimiseFunction_args(failNan=False,transform=True)
+
         # Light wrapper of objfun for pySOT framework
         class WrappedObjFun(OptimizationProblem):
             def __init__(self):
@@ -281,7 +289,7 @@ try:
                 self.info = "Wrapper to DFOLS cost function"  # info
                 self.int_var = np.array([])  # integer variables
                 self.cont_var = np.arange(self.dim)  # continuous variables
-                self.dfols_residual_function = MODELRUN.optFunction
+                self.dfols_residual_function = optFn
 
             def eval(self, x):
                 # Return same cost function as DFO-LS gets
@@ -309,10 +317,8 @@ try:
             raise RuntimeError("Unknown pySOT strategy: %s (expect SRBF or DYCORS)" % strategy)
 
         # Run the optimization
-        try:
-            result = controller.run()
-        except ValueError:
-            raise(Submit.runModelError("pySOT failed with ValueError"))
+        result = controller.run()
+
 
 
         # code here will be run when PYSOT has completed. It is mostly is to put stuff in the final JSON file
@@ -335,13 +341,13 @@ try:
         intCov = tMat.dot(intCov).dot(tMat.T)
         optimise['sigma'] = False  # wrapped optimisation into cost function.
         optimise['deterministicPerturb'] = True  # deterministic perturbations.
-        MODELRUN.optimiseFunction_args(transform=True)
+        optFn = MODELRUN.genOptFunction(transform=tMat) # think only need tMat. What about scaling???
         best, status, info = Optimise.gaussNewton(MODELRUN.optFunction, start.values,
                                                   configData.paramRanges(paramNames=varParamNames).values.T,
                                                   configData.steps(paramNames=varParamNames).values,
                                                   np.zeros(nObs), optimise,
                                                   cov=np.identity(nObs), cov_iv=intCov, trace=verbose)
-        # TODO store status.
+
         finalConfig = MODELRUN.runConfig()  # get final runInfo
         jacobian = finalConfig.GNjacobian(info['jacobian'])
         hessian = finalConfig.GNhessian(info['hessian'])
@@ -362,10 +368,9 @@ try:
 
     elif algorithmName == 'JACOBIAN':
         # compute the Jacobian.
-        nEns = configData.ensembleSize()  # how many ensemble members to run
-        MODELRUN.optimiseFunction_args(transform=False)
+        optFn = MODELRUN.genOptFunction() # do we need scaling??
         jacobian = Optimise.runJacobian(MODELRUN.optFunction, start, configData.steps(paramNames=varParamNames),
-                                        configData.paramRanges(paramNames=varParamNames), nEnsemble=nEns,
+                                        configData.paramRanges(paramNames=varParamNames),
                                         obsNames=configData.obsNames(), returnVar=True)
         # store  result
         finalConfig = MODELRUN.runConfig()  # get final runInfo
@@ -389,11 +394,17 @@ try:
         best = finalConfig.optimumParams()
         best.name = 'best'
         # lookup the label for the best config.
-        bestID = MODELRUN.model(params=best).name()
+        # add ensembleMember 0 -- arbitrary and with ensembles no run will correspond to the best case..
+        best.loc['ensembleMember']=0
+        try:
+            bestID = MODELRUN.model(params=best).name()
+        except AttributeError:
+            print("got an attribute error.Something wrong with model")
+            breakpoint()
         finalConfig.bestEval = bestID
         # include cost in if we have it!
         try:  # could go wrong if cost defined badly!
-            best['cost'] = cost.iloc[-1] # I think this is in error...Though do not think anything done with best['cost']
+            best['cost'] = cost.loc[bestID] # I think this is in error...Though do not think anything done with best['cost']
             start['cost'] = cost.iloc[0]
         except NameError:
             pass  # we don't have costs.
@@ -418,10 +429,10 @@ try:
         print("Verified for Algorithm %s both cost and parameters" % algorithmName)
 except (Submit.runModelError):  # error which triggers need to run more models.
     # update configData info and save to temp file.
-    finalConfig = MODELRUN.runConfig()  # get final runInfo
+
     # work out fn for submission.
 
-    status = MODELRUN.submit(resubmit=restartCMD, dryRun=dryRun)
+    status, nModels, finalConfig = MODELRUN.submit(resubmit=restartCMD, dryRun=dryRun)
     if not status:
         raise Exception("Some problem...")
 
@@ -429,4 +440,5 @@ except (Submit.runModelError):  # error which triggers need to run more models.
 finalConfig.save(filename=finalJsonFile)  # save the (updated) configuration file.
 # optionally produce monitoring picture.
 if args.monitor:
-    finalConfig.plot(monitorFile=monitorFile)
+    #finalConfig.plot(monitorFile=monitorFile)
+    pass

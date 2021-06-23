@@ -30,13 +30,14 @@ name = pathlib.Path(tdir.name)
 configFile = pathlib.Path('../Configurations/dfols14param.json')
 configData = StudyConfig.readConfig(filename=configFile)
 # modify configData so that nfunc is smaller!
-configData.DFOLS_config()['maxfun']=25 # max of 25 evaluations
+configData.DFOLS_config()['maxfun']=50 # max of 25 evaluations
 # and write it into the temp dir.
 tConfig  = name/configFile.name
 configData.save(filename=tConfig)
 obsFile = configData.postProcessOutput()
 
 %run -i runOptimise --test -d $name $tConfig
+
 # run it again.
 %run -i runOptimise --test -d $name $tConfig
 # delete obs file  in three dirs
@@ -94,3 +95,4 @@ newConfig.save(filePath)
 %run -i runOptimise --monitor --noobs clean --test -d $name2 $filePath
 
 finalConfig = MODELRUN.runConfig()
+print('-'*60)

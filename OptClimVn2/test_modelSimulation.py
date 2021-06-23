@@ -31,6 +31,8 @@ class testModelSimulation(unittest.TestCase):
         Standard setup for all test cases
         :return:
         """
+
+        self.verbose = False  # verbose if True
         parameters = collections.OrderedDict()
         parameters['one'] = 1.0
         parameters['two'] = 2.0
@@ -52,7 +54,7 @@ class testModelSimulation(unittest.TestCase):
                                                      ppOutputFile='obs.nc',
                                                      parameters=self.parameters,
                                                      obsNames=self.obsNames,
-                                                     verbose=True)
+                                                     verbose=self.verbose)
         shutil.copy(self.exampleObsPath, os.path.join(self.testDir, 'obs.nc'))
         # copy over a netcdf file of observations.
 
@@ -87,7 +89,7 @@ class testModelSimulation(unittest.TestCase):
         self.assertListEqual(list(self.model.get(['observations']).keys()), list(expectObs.keys()))
         # test that read works. Works means no failures and have observations..
 
-        m = ModelSimulation.ModelSimulation(self.dirPath, verbose=True)
+        m = ModelSimulation.ModelSimulation(self.dirPath, verbose=self.verbose)
         # observations should have changed but nothing else.
         self.assertEqual(m.get(['name']), 'test')
         self.assertEqual(m.get(['ppExePath']), 'postProcess.sh')
@@ -102,7 +104,7 @@ class testModelSimulation(unittest.TestCase):
             m.setParams({'aaa': 99.9}, addParam=True)
 
         ## now  to test that update works.
-        m = ModelSimulation.ModelSimulation(self.dirPath, verbose=True, update=True)
+        m = ModelSimulation.ModelSimulation(self.dirPath, verbose=self.verbose, update=True)
         # observations should have changed but nothing else.
         self.assertEqual(m.get(['name']), 'test')
         self.assertEqual(m.get(['ppExePath']), 'postProcess.sh')
@@ -150,21 +152,20 @@ class testModelSimulation(unittest.TestCase):
         """
         # compare exisiting config with fresh one we read in.
         self.model.readObs()  # should prob be init.
-        m = ModelSimulation.ModelSimulation(self.model.dirPath, verbose=True)
+        m = ModelSimulation.ModelSimulation(self.model.dirPath, verbose=self.verbose)
         self.assertEqual(m.get(), self.model.get())
         # verify we fail to modify
         with self.assertRaises(Exception):
             m.set({'someInfo', {'silly': 2, 'silly_more': 3}})
         # make an updatable version.
-        m = ModelSimulation.ModelSimulation(self.model.dirPath, update=True, verbose=True)
+        m = ModelSimulation.ModelSimulation(self.model.dirPath, update=True, verbose=self.verbose)
         self.assertEqual(m.get(), self.model.get())
         # verify can  modify
         m.set({'someInfo': {'silly': 2,
                             'silly_more': 3}})  # this will get written through but next read should overwrite.
         # now config should be different from ref case. Read it in and verify
-        m = ModelSimulation.ModelSimulation(self.model.dirPath, verbose=True)
+        m = ModelSimulation.ModelSimulation(self.model.dirPath, verbose=self.verbose)
         self.assertNotEqual(m.get(), self.model.get())
-
 
     def test_readObs(self):
         """
@@ -176,7 +177,7 @@ class testModelSimulation(unittest.TestCase):
         self.assertEqual(type(obs), collections.OrderedDict)
         obs['rh@500_nhx'] = False
         self.model.set({'observations': obs}, write=False)
-        self.model.readObs(verbose=True)
+        self.model.readObs(verbose=self.verbose)
         mobs = self.model.getObs()
         self.assertEqual(mobs.keys(), obs.keys())
         self.assertNotEqual(mobs, obs)
@@ -199,16 +200,20 @@ class testModelSimulation(unittest.TestCase):
         # hack the model to test json reading works
         self.model.setReadOnly(False)
         self.model.set({'ppOutputFile': 'obs.json'})
-        self.model.readObs(verbose=True)
-        obs = self.model.getObs(verbose=True)
+        self.model.readObs(verbose=self.verbose)
+        obs = self.model.getObs(verbose=self.verbose)
         self.assertEqual(obs, mobs2)
 
         # verify that justRead works
         self.model.readObs(justRead=True)
-        obs = self.model.getObs(verbose=True, justRead=True)
+        obs = self.model.getObs(verbose=self.verbose, justRead=True)
         self.assertEqual(obs, mobs2)
 
+        # verify that series works...
 
+        expect = pd.Series(self.model.getObs())
+        obs = self.model.getObs(verbose=self.verbose,series=True)
+        self.assertTrue(expect.equals(obs),msg='series not as expected')
     def test_writeObs(self):
         """
         Test that write obs works.
@@ -216,10 +221,10 @@ class testModelSimulation(unittest.TestCase):
         """
         # use default to write..
         obs = collections.OrderedDict([(key, number) for number, key in enumerate(self.obsNames)])
-        self.model.writeObs(obs, verbose=True)
+        self.model.writeObs(obs, verbose=self.verbose)
         # read it back in.
-        self.model.readObs(verbose=True)
-        obsGet = self.model.getObs(verbose=True)
+        self.model.readObs(verbose=self.verbose)
+        obsGet = self.model.getObs(verbose=self.verbose)
         self.assertEqual(obsGet, obs)
 
         # now make it write to a json file.
@@ -232,13 +237,27 @@ class testModelSimulation(unittest.TestCase):
                                                 ppOutputFile='obs.json',
                                                 parameters=self.parameters,
                                                 obsNames=self.obsNames,
-                                                verbose=True)
+                                                verbose=self.verbose)
         obs[self.obsNames[0]] = 4.0
-        model.writeObs(obs, verbose=True)
+        model.writeObs(obs, verbose=self.verbose)
         # read it back in.
-        model.readObs(verbose=True)
-        obsGet = model.getObs(verbose=True)
+        model.readObs(verbose=self.verbose)
+        obsGet = model.getObs(verbose=self.verbose)
         self.assertEqual(obsGet, obs)
+
+        # now test we can write a series to a json file
+        obs = pd.Series(obs)
+        model.writeObs(obs,verbose=self.verbose)
+
+        model = ModelSimulation.ModelSimulation(self.testDir,
+                                                name='test', create=True,
+                                                refDirPath=self.refDirPath,
+                                                ppExePath='postProcess.sh',
+                                                ppOutputFile='obs.nc',
+                                                parameters=self.parameters,
+                                                obsNames=self.obsNames,
+                                                verbose=self.verbose)
+        model.writeObs(obs, verbose=self.verbose)
 
     def test_set(self):
         """
@@ -268,13 +287,13 @@ class testModelSimulation(unittest.TestCase):
         self.model.setParams(param, write=False)
         self.assertEqual(self.model.get('parameters'), param)
         # verify addParam works
-        self.model.setParams({'p3': 3}, write=False, addParam=True, verbose=True)
+        self.model.setParams({'p3': 3}, write=False, addParam=True, verbose=self.verbose)
         param['p3'] = 3
         self.assertEqual(self.model.get('parameters'), param)
 
         # check a pandas series work
         params = pd.Series([1, 2, 3], index=['p1', 'p2', 'p3'])
-        self.model.setParams(params, verbose=True, write=False)
+        self.model.setParams(params, verbose=self.verbose, write=False)
         self.assertEqual(self.model.get('parameters').to_dict(), param)
 
     def test_genVarToNameList(self):
@@ -336,7 +355,7 @@ class testModelSimulation(unittest.TestCase):
             else:
                 return {'rhcrit': x + 2, 'rhcrit2': x / 2, 'rhcrit3': [x] * 19}
 
-        self.model.registerMetaFn('rhcrit', fn, verbose=True)
+        self.model.registerMetaFn('rhcrit', fn, verbose=self.verbose)
         self.assertEqual(self.model.applyMetaFns(rhcrit=1.0), ({'rhcrit': [1.0] * 19}, ['rhcrit']))
 
         # verify failure happens when we force it!
@@ -345,7 +364,7 @@ class testModelSimulation(unittest.TestCase):
         # verify failure *does not* happen when we don't ask for it.
         self.assertEqual(self.model.applyMetaFns(rhcrit2=1.0), ({}, []))
         # add  a 2nd fn
-        self.model.registerMetaFn('rhcrit2', fn2, verbose=True)
+        self.model.registerMetaFn('rhcrit2', fn2, verbose=self.verbose)
         self.assertEqual(self.model.applyMetaFns(rhcrit=1.0, rhcrit2=2.0),
                          ({'rhcrit': [1.0] * 19, 'rhcrit2': [4.0] * 19}, ['rhcrit', 'rhcrit2']))
 
@@ -354,7 +373,7 @@ class testModelSimulation(unittest.TestCase):
             print(self.model.applyMetaFns(fail=True, rhcrit=1.0, rhcrit3=1.0))
 
             # verify multiple parameter apply works..
-        self.model.registerMetaFn('rhcritAll', fn3, verbose=True)
+        self.model.registerMetaFn('rhcritAll', fn3, verbose=self.verbose)
         self.assertEqual(self.model.applyMetaFns(rhcritAll=1.0),
                          ({'rhcrit': 3.0, 'rhcrit2': 0.5, 'rhcrit3': [1.0] * 19},
                           ['rhcritAll']))
@@ -377,7 +396,7 @@ class testModelSimulation(unittest.TestCase):
         # now to make configuration and patch outfile
         self.model._readOnly = False  # we can write to it.
         self.model.genVarToNameList('VF1', nameListVar='vf1', nameListName='slbc21', nameListFile=outFile)
-        self.model.writeNameList(verbose=True, VF1=1.5)
+        self.model.writeNameList(verbose=self.verbose, VF1=1.5)
         # should have a backup file
         self.assertTrue(os.path.isfile(backFile))
         # read the namelist
@@ -405,7 +424,7 @@ class testModelSimulation(unittest.TestCase):
         rhcv = [0.65, 0.7]
         rhcv.extend(
             [0.8] * 17)  # there is a bug with f90nml version 0.19 which does not overwrite existing parts of the array
-        self.model.writeNameList(verbose=True, VF1=1.5, RHCRIT=rhcv)
+        self.model.writeNameList(verbose=self.verbose, VF1=1.5, RHCRIT=rhcv)
         self.assertEqual(os.path.isfile(backFile), True)
         # read the namelist
         with open(outPath) as nml_file:
@@ -431,7 +450,7 @@ class testModelSimulation(unittest.TestCase):
         expect = collections.OrderedDict()
         expect['RHCRIT'] = rhcv
         expect['VF1'] = 1.5
-        self.model.writeNameList(verbose=True, VF1=1.5, RHCRIT=rhcv)
+        self.model.writeNameList(verbose=self.verbose, VF1=1.5, RHCRIT=rhcv)
         self.model.setReadOnly(True)
         vars = self.model.readNameList(['RHCRIT', 'VF1'], fail=True)
         self.assertDictEqual(vars, expect)
@@ -444,7 +463,7 @@ class testModelSimulation(unittest.TestCase):
         # set up meta fn and test it works... HadCM3 as will read the standard file.
 
         self.model.registerMetaFn('ALPHAM', iceAlbedo)  # register ice fn
-        a = self.model.readMetaNameList('ALPHAM', verbose=True)
+        a = self.model.readMetaNameList('ALPHAM', verbose=self.verbose)
         self.assertEqual(a, 0.5)
 
     def test_cmp(self):
@@ -482,11 +501,10 @@ class testModelSimulation(unittest.TestCase):
         """
 
         result = self.model.continueSimulation()
-        self.assertEqual(result,[False])
+        self.assertEqual(result, [False])
 
         result = self.model.continueSimulation(minimal=True)
         self.assertEqual(result, [False, True])
-
 
     def test_perturb(self):
         """
@@ -494,19 +512,18 @@ class testModelSimulation(unittest.TestCase):
         Run it multiple times -- perturbCount should increase each time.
         :return: nada
         """
-        plist=['p1','p2','p3']
-        expect =[]
+        plist = ['p1', 'p2', 'p3']
+        expect = []
         for p in plist:
-            params = {p:2.0}
-            pList = self.model.perturb(params = params)
+            params = {p: 2.0}
+            pList = self.model.perturb(params=params)
             expect.append(params)
-            self.assertEqual(pList,expect)
+            self.assertEqual(pList, expect)
 
         # check giving pertub nothing just returns the same list.
-        for a in range(0,2):
-            pList = self.model.perturb() # just get it back
-            self.assertEqual(pList,expect)
-
+        for a in range(0, 2):
+            pList = self.model.perturb()  # just get it back
+            self.assertEqual(pList, expect)
 
     def test_perturbParams(self):
         """
@@ -519,13 +536,11 @@ class testModelSimulation(unittest.TestCase):
         modParams1 = self.model.perturbParams()
         self.assertEqual(len(modParams1), 1, 'Len of pertrubation  dict not 1')
         p2 = self.model.perturb(modParams1)
-        self.assertEqual(len(p2),1,'Len of pertubed list not 1')
+        self.assertEqual(len(p2), 1, 'Len of pertubed list not 1')
         # do it again..
         modParams2 = self.model.perturbParams()
         self.assertEqual(len(modParams2), 2, 'Len of 2nd pertrubation  dict not 2')
-        self.assertNotEqual(modParams1,modParams2,'params the same..')
-
-
+        self.assertNotEqual(modParams1, modParams2, 'params the same..')
 
 
 if __name__ == "__main__":
