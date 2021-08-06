@@ -4,6 +4,7 @@ Module to support running coupled models to estimate Equilibrium solutions.
 TOCONSIDER: Convert these into methods -- they could inherit from Submit (which gets renamed). Then would not need to
   pass MODELRUN in.
 TODO: Find some way of stuffing values back into model.
+TODO: Now have continue handled automatically this may no longer be needed.
 """
 import functools
 import os
@@ -26,18 +27,6 @@ import StudyConfig
 import Submit
 import optClimLib
 
-
-# old code for problems with iris import -- seems fixed at vn 2.2.0
-# if os.name == 'nt':
-#     # iris a pain on windows
-#     print("Dealing with iris trouble on windows")
-#     pwd = os.getcwd()
-#     os.chdir('c:')
-#     import iris
-#
-#     os.chdir(pwd)
-# else:
-#     import iris
 
 
 def comp_fit(cubeIn, order=2, year=np.array([109, 179]), x=None, bootstrap=None, timeAvg=None, mask=False,
