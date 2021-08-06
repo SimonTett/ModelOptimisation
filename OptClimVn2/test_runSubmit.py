@@ -264,6 +264,7 @@ class testRunSubmit(unittest.TestCase):
 
             Change configuration name -- should  run fresh cases.
 
+            pass in an optimum config. Should run with those values.
         """
         configData = self.config
 
@@ -292,6 +293,16 @@ class testRunSubmit(unittest.TestCase):
             rSubmit.runOptimized()
         nmodels = len(rSubmit.modelSubmit())
         expect = 4
+        self.assertEqual(nmodels, expect, msg=f'Expected {expect} got {nmodels}')
+
+        optConfig = copy.deepcopy(configData)
+        opt = optConfig.optimumParams()
+        opt *= 1.1 # multiply everything by 1.1
+        optConfig.optimumParams(**opt.to_dict()) #TODO change optimumParams to get a series.
+        with self.assertRaises(exceptions.runModelError):
+            rSubmit.runOptimized(optConfig=optConfig)
+        nmodels = len(rSubmit.modelSubmit()) # should generate another 4 runs to do. Making 8.
+        expect = 8
         self.assertEqual(nmodels, expect, msg=f'Expected {expect} got {nmodels}')
 
     def test_runDFOLS(self):
@@ -446,6 +457,8 @@ class testRunSubmit(unittest.TestCase):
 
         Drive with extreme cases for all  parameters should get dp towards centre (so easy to compute)
         Check jacobian from bare run and compare with runJacobian. Expect two goes at runJacobian and one submit.
+
+        Test that optConfig works.
         """
         # Make the optimum values be max values (so we know perturbations take us to the center)
 
@@ -508,6 +521,19 @@ class testRunSubmit(unittest.TestCase):
         # now check jac is what we expect...
         jac_run = finalConfig.transJacobian()
         nptest.assert_allclose(jac_run, jac_bare, atol=1e-10)  # round trip through json removes some precision.
+
+        # check that passing in optConfig works and that have nparam +1 cases.
+        optConfig = copy.deepcopy(self.config)
+        opt = optConfig.optimumParams()
+        opt *= 0.9
+        optConfig.optimumParams(**opt.to_dict())
+        try:
+            finalConfig = rSubmit.runJacobian(optConfig)  # run Jacobian
+
+        except exceptions.runModelError:  # Need to run some models.
+            status, nModels, finalConfig = rSubmit.submit(restartCmd=None, verbose=self.verbose)
+            # expect nparam+1 models
+            self.assertEqual(nparam + 1, nModels, f'Expected to have {nparam + 1} models ran on iteration#1')
 
     def test_runGaussNewton(self):
         """

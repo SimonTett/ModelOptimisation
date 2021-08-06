@@ -170,15 +170,18 @@ class runSubmit(Submit.ModelSubmit):
 
         return fn
 
-    def runOptimized(self):
+    def runOptimized(self, optConfig=None):
         """
         :arg self
         Run optimised case using reference model which may be potentially different from configuration used to optimize.
         Cares about number of ensemble members (default is 1 if not set) and the optimum parameters which should be set.
-        User needs to edit final configuration (or at least merge optimised parameters into another config)
+
         One issue is what to name it. As things stand it is up to the user. They should also set maxDigits sensibly.
         For the UM the sum of length of baseRun & maxDigits should  be 5 or less.
         TODO: Modify the HadAM3 class so it enforces this.
+
+        :param optConfig -- configuration where optimum value is. If None (default) then config as used in runSubmit
+          init will be used.  If optConfig is provided *only* the optimum value will be used.
 
         """
 
@@ -198,8 +201,11 @@ class runSubmit(Submit.ModelSubmit):
         # not running more than once... Which is what Submit gives...
         # Hard will come back when I actually have a need!
 
-        configData = self.config
-        start = configData.optimumParams()
+        if optConfig is None: # no optimum config specified so use whatever used to setup runOptimise.
+            start = self.config.optimumParams()
+        else: # have got an optimum config so use that for starting values
+            start = optConfig.optimumParams()
+
         modelFn = self.genOptFunction(df=True)
         obsSeries = modelFn(start.values)
         # should run ensemble avg etc as side effect...and if things don't exist raise modelError
@@ -239,7 +245,7 @@ class runSubmit(Submit.ModelSubmit):
 
         return deltaParam
 
-    def runJacobian(self):
+    def runJacobian(self, optConfig=None):
         """
         run Jacobian cases.
         Rather crude (first order accurate) estimate. Evaluates functions at
@@ -251,10 +257,12 @@ class runSubmit(Submit.ModelSubmit):
         TODO:put this under configuration control.
 
         :arg self -- a Submit object.
+        :arg optConfig (optional). If not None (default) then use optimum value in this config to
+           perturb jacobian around. All other values -- particularly steps and boundaries will be taken from
+           config used to generate runSubmit.
         :returns a configuration. The following methods should work on it:
                 return: finalConfig -- a studyConfig. The following methods should give you useful data:
 
-                # Generic stuff (that is probably more useful)
                 finalConfig.transJacobian() -- the  transformed Jacobian matrix at the optimum pt
                 finalConfig.hessian() -- the  hessian computed from J^T J at the optimum pt.
 
@@ -264,13 +272,16 @@ class runSubmit(Submit.ModelSubmit):
 
         configData = self.config
         Tmat = configData.transMatrix()
-        modelFn = self.genOptFunction(raiseError=True, df=True,residual=True,transform=Tmat)
+        modelFn = self.genOptFunction(raiseError=True, df=True, residual=True, transform=Tmat)
+        if optConfig is None:
+            base = configData.optimumParams()
+        else:
+            base = optConfig.optimumParams()
 
-        base = configData.optimumParams()
         paramRanges = configData.paramRanges()
         steps = configData.steps()  # see what the steps are
         delta = self.rangeAwarePerturbations(base, paramRanges, steps)  # compute the actual deltas
-        params = [base]  # list of parameter values to run at -- including the base. Needed to compute jac
+        params = [base] # list of parameter values to run at -- including the base. Needed to compute jac
 
         for p, v in delta.items():  # iterate over parameters
             param = base[:].rename(p)
@@ -296,7 +307,7 @@ class runSubmit(Submit.ModelSubmit):
 
         finalConfig = self.runConfig(configData)  # get the configuration
         finalConfig.transJacobian(transJacobian=jac)  # store the jacobian.
-        hes = jac.T @jac
+        hes = jac.T @ jac
         finalConfig.hessian(hes)
         return finalConfig
 
@@ -424,9 +435,10 @@ class runSubmit(Submit.ModelSubmit):
         optimise['deterministicPerturb'] = True  # deterministic perturbations.
         paramNames = configData.paramNames()
         obsNames = configData.obsNames()
-        nObs = tMat.shape[0]  # might be a smaller because some evals in the covariance matrix are close to zero (or -ve)
+        nObs = tMat.shape[
+            0]  # might be a smaller because some evals in the covariance matrix are close to zero (or -ve)
         start = configData.beginParam()
-        optFn = self.genOptFunction(transform=tMat, scale=scale, verbose=verbose,residual=True)
+        optFn = self.genOptFunction(transform=tMat, scale=scale, verbose=verbose, residual=True)
         best, status, info = Optimise.gaussNewton(optFn, start.values,
                                                   configData.paramRanges(paramNames=paramNames).values.T,
                                                   configData.steps(paramNames=paramNames).values,
@@ -466,7 +478,7 @@ class runSubmit(Submit.ModelSubmit):
             See documentation of runCost & runConfig methods  to see what they provide.
         """
 
-        # pySOT -- probably won't work without some work.
+        # pySOT -- probably won't work without some work. conda instal conda-forge pysot will install it.
         import pySOT
         warnings.warn("No testing done for pysot")
         configData = self.config
