@@ -1521,11 +1521,11 @@ class OptClimConfig(dictFile):
 
     def maxDigits(self, value=None):
         """
-        Return (and optionaly set) the maxDigits for model run names
+        Return (and optionally set) the maxDigits for model run names
 
         If not defined return None -- up to the user of this to deal with it.
 
-        :param Value -- value to be set -- default is not to set it
+        :param value -- value to be set -- default is not to set it
 
         """
 
