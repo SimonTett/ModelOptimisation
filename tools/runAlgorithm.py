@@ -43,7 +43,6 @@ import sys
 import pathlib
 import numpy as np
 
-
 from OptClimVn2 import StudyConfig, optClimLib, exceptions, runSubmit, config
 
 # try and import HadCM3Coupled which provides specialist functions for
@@ -55,8 +54,6 @@ try:
 except ImportError:
     print("Failed to load HadCM3Coupled")
 
-
-
 ## main script
 
 ## set up command line args
@@ -65,7 +62,7 @@ parser = argparse.ArgumentParser(description="Run study")
 parser.add_argument("-d", "--dir", help="path to root directory where model runs will be created")
 parser.add_argument("jsonFile", help="json file that defines the study")
 parser.add_argument("-r", "--restart", action='store_true',
-                    help="Restart the optimisation by deleting all files except json file")
+                    help="Restart the optimisation by deleting all files and sub-directories of dir except json files (.json) in dir itself")
 parser.add_argument("-v", "--verbose", action='store_true', help="Provide Verbose information")
 parser.add_argument("-n", "--noresubmit", action='store_false',
                     help="If set then do not resubmit this script. Good for testing")
@@ -77,8 +74,10 @@ parser.add_argument("--nonew", action='store_true', help="If set fail if generat
 parser.add_argument("-t", "--test", action='store_true',
                     help='If set run fake codes rather than submitting models.')
 parser.add_argument("-m", "--monitor", action='store_true', help='Producing monitoring plot after running')
-parser.add_argument("-V", "--verify", action='store_true',
-                    help='Verify test results by comparision with old case -- hardwired for test cases and only available for some algorithms ')
+
+parser.add_argument("-o", "--optimise", nargs=1,
+                    help='Name of JSON file providing configuration with optimisation. Used by runOptimised & '
+                         'runJacobian')
 
 helpStr = """Behaviour for model with no observations. 
                          Choices are fail (default), continue (continue run and submit), 
@@ -93,9 +92,10 @@ verbose = args.verbose
 resubmit = args.noresubmit
 dryRun = args.dryrun
 testRun = args.test
-jsonFile = os.path.expanduser(os.path.expandvars(args.jsonFile))
+jsonFile = pathlib.Path(os.path.expanduser(os.path.expandvars(args.jsonFile)))
 monitor = args.monitor
 genNew = not args.nonew
+restart = args.restart  # do we want to restart?
 
 configData = StudyConfig.readConfig(filename=jsonFile, ordered=True)  # parse the jsonFile.
 rootDir = None
@@ -111,6 +111,11 @@ else:  # code from Submit -- this whole block should go in there along with rest
 
 if args.monitor:
     restartCMD.extend(['--monitor'])
+
+optConfig = None  # default is no extra optimisation config file
+if args.optimise:
+    restartCMD.extend([f'--optimise {args.optimise}'])
+    optConfig = StudyConfig.readConfig(args.optimise)
 if verbose:
     print("Running from config %s named %s" % (jsonFile, configData.name()))
     restartCMD.extend(['--verbose'])
@@ -119,28 +124,10 @@ if verbose:
 logging.basicConfig(level=logging.DEBUG, format='%(message)s')  # detailed info: show every function evaluation
 
 if not resubmit: restartCMD = None  # nothing to resubmit.
-if args.restart and (rootDir is not None) and rootDir.is_dir():  # starting anew.
-    # TODO move this to Submit.
-    if os.path.split(rootDir)[-1] == 'Configurations':
-        print("You will delete configurations -- aborting")
-        raise Exception("Attempted to delete configurations")
-    # go and clean all directories  by removing everything EXCEPT args.jsonFile
-    # algorithm -- iterate over all files in rootDir
-    #  if file is a file and not jsonFile delete it,   if file is a dir delete it
-    for p in os.listdir(rootDir):
-        fp = os.path.join(rootDir, p)
-        if os.path.isfile(fp) and os.path.basename(p) != os.path.basename(jsonFile):
-            if verbose: print("Deleting %s" % fp)
-            os.chmod(fp, stat.S_IWRITE)
-            os.remove(fp)  # remove the file
-        elif os.path.isdir(fp):
-            if verbose: print("Deleting %s and contents" % fp)
-            shutil.rmtree(fp, onerror=optClimLib.errorRemoveReadonly)
 
 fakeFn = None
 if testRun:
     fakeFn = config.fake_fn
-
 
 # work out what final json file is called regardless of why run finished.
 rootDiagFiles, ext = os.path.splitext(os.path.basename(jsonFile))
@@ -156,7 +143,8 @@ monitorFile = rootDir / (rootDiagFiles + "_monitor.png")
 
 
 doRun = True  # keep runnign until done. If no fake fn will breakout from this loop to finish.
-iterCount = 0 # for testing print out iterCount
+iterCount = 0  # for testing print out iterCount
+
 while doRun:
     np.random.seed(123456)  # init RNG though probably should go to the runXXX methods.
     # setup MODELRUN
@@ -164,7 +152,9 @@ while doRun:
                                    configData.modelFunction(config.modelFunctions),  # model function
                                    configData.submitFunction(config.submitFunctions),  # submit function
                                    fakeFn=fakeFn, rootDir=rootDir, verbose=verbose,
-                                   readOnly=args.readOnly, noObs=args.noobs)
+                                   readOnly=args.readOnly, noObs=args.noobs, restart=restart)
+    restart = False  # subsequently do not want to restart (i.e. clean up dir)
+
     try:
         minModels = MODELRUN.rerunModels()
         if len(minModels) > 0:  # got some minimal models to run so trigger error
@@ -181,9 +171,9 @@ while doRun:
             finalConfig = MODELRUN.runGaussNewton(scale=True)
         elif algorithmName == 'JACOBIAN':
             # compute the Jacobian.
-            finalConfig = MODELRUN.runJacobian()
+            finalConfig = MODELRUN.runJacobian(optConfig=optConfig)
         elif algorithmName == 'RUNOPTIMISED':  # run optimised case through configuration in JSON file.
-            finalConfig = MODELRUN.runOptimized()
+            finalConfig = MODELRUN.runOptimized(optConfig=optConfig)
         else:
             raise Exception(f"Don't know what to do with Algorithm: {algorithmName}")
 
@@ -197,7 +187,7 @@ while doRun:
     finalConfig.save(filename=finalJsonFile)  # save the (updated) configuration file.
     if fakeFn is None:  # no fake fn so time to exit. This is "normal" behaviour.
         break  # exit the run for ever loop as no more runs should be submitted on this go.
-    else: # we have a fake function so keep going-- this is test mode
+    else:  # we have a fake function so keep going-- this is test mode
         iterCount += 1
         print(f"On iteration {iterCount} submitted {nModels} models")
 
