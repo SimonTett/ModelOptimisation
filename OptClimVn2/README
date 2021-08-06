@@ -1,23 +1,27 @@
 file -- all python scripts *should* be internally documented. When I know how to use sphinx the quality might be better..
-Uses python 3.6+
+Uses python 3.7+
 comp_obs.py -- computes simulated observations as used in Tett et al, 2017
-ModelSimulation.py -- a general class to handle model configurations.
-The general approach is to copy a reference case then modify it.
-HadCM3.py - a class to suport HadCM3 (and related)  models. (Supports coupled and atmosphere only models).
-   This needs f90nml.
+config -- contains some general configuration. Place to put submit for different systems
+exceptions.py -- new exceptions used. Might be better hiding in ModelSimulation but that causes grief..
+HadCM3.py - a class to support HadCM3 (and related)  models. (Supports coupled and atmosphere only models).
+ModelSimulation.py -- a general class to handle model configurations. The general approach is to copy a reference case then modify it.
+optClimLib.py --handy functions
 Optimise.py -- provides functions for GaussNewton optimisation.
+OptimiseVn2 -- a rather incomplete attempt to refactor Optimise. Probably better to use the scipy.optimise library and include fn that approximates jacobian.
 ref_code.py -- original (Kuniko) implementation used to test Optimise. Could probably be deleted if test_Optimise modified.
 StudyConfig.py -- provides methods to read and write from configuration files.
-Submit.py -- provides functions to submit -- just two currently. A dummy one and one for eddie (cluster at Edinburgh)
+stdRoutines.py --some more handy info. Should be merged with optClimLib.py
+Submit.py -- Handles the core part of the approach and keeps track of all models submitted.
+
 test_XXXXX -- unit tests for the modules above. test cases should be run from "main level" as configurations are used.
 
 
 Porting:
-1) Add a function in Submit which does the submission. Easiest approach is to copy and modify eddieSubmit.
+1) Add a function in config which does the submission. Easiest approach is to copy and modify eddieSubmit.
 2) Add a model class -(new python module) - see HadCM3.py for an example.
    This probably best done with help from Simon as documentation not very clear.
 3) Decide what optimisation algorithm you want.
-4) Modify runOptimise so that it uses the correct submission method & model class.
+4) Modify runAlgorithm so that it uses the correct submission method & model class.
   If you are feeling helpful you might put this in the configuration json file and possibly modify StudyConfig to deal with it.
 
   What needed for install
@@ -28,10 +32,8 @@ xarray
 
 Setup pythonpath to include directory where you installed
 
-Your model classs should inherit from modelSimulation
+Your model class should inherit from modelSimulation
 Then you need to modify or extend the following methods:
-1) modify submit method -- the full path name of the file that when executed submits the model.
-2) extend setParams to write parameters to model configuration so that it also does what is needed for your model.
-    You can (if you want) modify/extend getParams.
-3) modify readObs to read observations from post processed model simulation.
-4) extend __init__ to do what is needed for your configuration.
+1) Update self.SubmitFiles['start'] & self.SubmitFiles['continue']
+2) write your own version of createPostProcessFile
+3) extend __init__ to do what is needed for your configuration which might be quite hard!
