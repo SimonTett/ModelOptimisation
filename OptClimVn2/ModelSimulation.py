@@ -9,12 +9,13 @@ import pickle
 import shutil
 import stat
 import tempfile
-
+import datetime
 import f90nml  # available from http://f90nml.readthedocs.io/en/latest/
 import netCDF4
 import numpy as np
 import pandas as pd  # pandas
 import warnings  # so we can turn of warnings..
+import pathlib  # TODO slowly move to use this rather than os.path
 
 import optClimLib  # provide std routines
 
@@ -55,9 +56,10 @@ class modelEncoder(json.JSONEncoder):
 
 
 _namedTupClass = collections.namedtuple('TupClassxx',
-                                        ('var', 'namelist', 'file'))  # named tupple for namelist information
+                                        ('var', 'namelist', 'file'))  # named tuple for namelist information
 
 
+# TODO -- make this a class function which is available not private.
 class ModelSimulation(object):
     """
     Class to define Model Simulations. This class is top class that
@@ -74,7 +76,7 @@ class ModelSimulation(object):
 
        TODO -- write more extensive documentation  esp on namelist read/writes.
        TODO -- move namelist stuff out of ModelSimulation into separate module??
-
+       TODO -- do not use pickle but save as a json file. Though that will make reading in tricky.
     """
 
     _simConfigPath = 'simulationConfig.cfg'  # default configuration filename for the Model Simulation.
@@ -115,6 +117,13 @@ class ModelSimulation(object):
         self.dirPath = os.path.abspath(self.dirPath)
         self._readOnly = True  # default is read only.
         self._configFilePath = os.path.join(self.dirPath, self._simConfigPath)  # full path to configuration file
+
+        ppModifyMark = '# =insert post-process script here= # '
+        self.postProcessMark = ppModifyMark
+        # names of submission files. Modify for your own model.  See submit for details.
+        self.SubmitFiles={'start':'submit.sh','continue':'submit_cont.sh'}
+
+
         postProcessFile = ppOutputFile
         if postProcessFile is None:
             postProcessFile = 'observations.nc'
@@ -261,6 +270,7 @@ class ModelSimulation(object):
         """
         get values from configuration.
         :param keys: keys to extract from configuration. If not defined returns the entire configuration.
+          If a single string returns that value.
         :param verbose (Optional -- default = False). If true print out some information.
         :return: orderedDict indexed by keys
         """
@@ -316,6 +326,9 @@ class ModelSimulation(object):
         config['observations'] = obs
         config['parameters'] = parameters
 
+        config['newSubmit'] = True  # default is that run starts normally.
+        config['history'] = dict()  # where we store history information. Stores info on resubmit, continue information.
+
         if verbose:   print("Config is ", config)
 
         if os.path.exists(self.dirPath):  # delete the directory (if it currently exists)
@@ -368,7 +381,7 @@ class ModelSimulation(object):
     def ppOutputFile(self, file=None):
         """
         Return the name of the file to be produced by the post Processing 
-        :param file -- if defined set value for ppOoutputFile to file.
+        :param file -- if defined set value for ppOutputFile to file.
         :return: 
         """
         if file is not None:
@@ -412,7 +425,7 @@ class ModelSimulation(object):
                 print("Reading netcdf data from %s " % obsFile)
                 print("For: ", obs.keys())
 
-            with netCDF4.Dataset(obsFile, "r")  as ofile:  # open it up for reading
+            with netCDF4.Dataset(obsFile, "r") as ofile:  # open it up for reading
                 # get depreciation warnings because netCDF4 needs to update as numpy no longer use np.bool (which I guess it does)
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
@@ -805,33 +818,67 @@ class ModelSimulation(object):
         names.extend(self._metaFn.keys())
         return names
 
-    def continueSimulation(self, minimal=False, verbose=False):
-        """
-        Default continue simulation. Will modify the configuration.
-        :param minimal (default False). If True make minimal changes to the model.
-        :return: list of all continuations (True or False depending on minimal)
-        """
-        self.setReadOnly(readOnly=False)  # let us write to the configuration.
-        continueList = self.get('continueList', default=[])
-        continueList.append(minimal)
-        self.set2(continueList=continueList)  # store if minimal or not
-        self.setReadOnly(readOnly=True)  # no more writing to the configuration.
-        return continueList
 
-    def restartSimulation(self, minimal=False, verbose=False):
+    def runStatus(self,value=None):
         """
-        Default restart simulation. Will modify the configuration.
-        :param minimal (default False). If True make minimal changes to the model.
+        provide current value of runStatus -- useful for dealing with model failures.
+        This is persistent as status is stored in the configuration.,
+        :param value: set runStatus to this value if not None.
+           Allowed values are come from self.SubmitFiles
+           This is used by the submit method to decide what script to submit.
+        :return:  current value of runStatus with default value of 'start'
+        """
+
+        # deal with value
+        if value is not None:
+            if value not in self.SubmitFiles.keys(): # list of allowed runStatus values
+                raise ValueError(f"unrecognized value {value}")
+            self.setReadOnly(False)
+            self.set2(runStatus=value)
+            self.setReadOnly()
+
+        return self.get('runStatus',default='start')
+
+
+
+
+
+    def continueSimulation(self, verbose=False):
+        """
+        Default continue simulation. Will modify the configuration so that next time it is submitted
+          it will be a continuation case rather than a new simulation. History information will be updated.
+        This is useful when the simulation has crashed and can safely be continued.
+        :return: list of all timestamps when runs set for continuation
+        """
+
+        self.setReadOnly(readOnly=False)  # let us write to the configuration.
+        history = self.get('history', default={})
+        cont_list = history.get('cont', [])
+        cont_list.append(datetime.datetime.now())
+        history['cont'] = cont_list
+        self.set2(history=history)  # store if minimal or not
+        self.runStatus('continue') # will continue the simulation.
+        self.setReadOnly(readOnly=True)  # no more writing to the configuration.
+        return cont_list
+
+    def restartSimulation(self, verbose=False):
+        """
+        Restart simulation. This is useful if the model  crashed because it ran out of
+          time and needs restarting but cannot be continued safely.
+          This will start the run again from scratch.
         :param verbose -- If True (default is False) print out some information.
-        :return: list of all restarts (True or False depending on minimal)
+        :return: list of all restarts -- gives times when model has been restarted
         """
+
         status = self.setReadOnly()  # let us write to the configuration.
         self.setReadOnly(readOnly=False)
-        restartList = self.get('restartList', default=[])
-        restartList.append(minimal)
-        self.set2(restartList=restartList)  # store if minimal or not
+        history = self.get('history', default={})
+        restart = history.get('Restart', [])
+        restart.append(datetime.datetime.now())
+        history.update(restart)
+        self.runStatus('start')  # we want to have the run start again.
         self.setReadOnly(readOnly=status)  # reset readOnly status...
-        return restartList
+        return restart  # return the timestamps from the history file.
 
     def perturbParams(self, verbose=False, pScale=1.000001):
         """
@@ -861,24 +908,64 @@ class ModelSimulation(object):
 
     def perturb(self, params=None, verbose=False):
         """
-        Perturb configuration. This method updates config info by list of parameters perturbed.
-        :param params -- parameters to perturb. If not set then the list of previous perturbations will be returned.
+        Perturb configuration. This method updates config info & history info by list of parameters perturbed.
+          It does not modify runStatus. This is useful if the model crashes and needs rerunning with a perturbation.
+        :param params -- parameters to perturb. If not set then the list of previous perturbations will be returned
+          and nothing will be changed in the configuration.
         :param verbose -- be verbose. Currently does nothing..
-        :return: list of perturbations. Note this method does not actually change the model..
+
+        :return: list of perturbations.
         """
         perturbList = self.get('perturbList', default=[])
         if params is None:
-            return perturbList  # just return the  the list
+            return perturbList  # just return the   list
 
         # got some params so add to list.
         perturbList.append(params)
         self.setReadOnly(readOnly=False)  # let us write to the configuration.
-        self.restartSimulation(minimal=True)  # restart but with no post processing.
+        history = self.get('history', default={})  # get the history info.
+        perturb = history.get('perturb', [])
+        perturb.append(datetime.datetime.now())
+        perturb.extend(perturbList)
+        history.update(perturb=perturb)
+        self.set2(history=history)
         self.set2(perturbList=perturbList)
         self.setReadOnly(readOnly=True)  # no more writing to the configuration.
         return perturbList
 
+    def submit(self, runStatus=None):
+        """
+        Provides full path to submit script.
+        :param runStatus (default None)-- If 'start' return path to new submit script (defined in self.SubmitFile)
+                                      If 'continue' return path to continuation submit script (defined in self.SubmitFile)
+                            If None then use value from runStatus method to chose.
+        :return: path to appropriate submit script that should be ran to submit the model
+        """
 
+        if runStatus is None:
+            newSubmit = self.runStatus()
+        else:
+            newSubmit = runStatus
+        script = pathlib.Path(self.dirPath)/self.SubmitFiles[newSubmit]
+
+        return script
+
+    def createPostProcessFile(self, postProcessCmd):
+
+        """
+        Used by the submission system to allow teh post-processing job to be submitted when the simulation
+        has completed. As needs to be implemented for each model  this abstract version just raises an
+        NotImplementedError with message to create version for your model.
+
+        :param postProcessCmd -- a string which is the postProcessCmd. For example qrls XXXX.n
+        :return -- the path to the file that was created/modified. (could be a list or something else)
+        """
+
+        raise NotImplementedError("implement createPostProcessFile for your model")
+
+        file= 'notImplimented'
+        return file
+##I don't think code below is used or necessary
 class EddieModel(ModelSimulation):
     """
     A simple model suitable for running on Eddie -- this allows testing of the whole approach.
@@ -923,10 +1010,4 @@ class EddieModel(ModelSimulation):
             studyConfig.save(
                 filename=os.path.join(self.dirPath, "config.json"))  # write study configuration for fakemodel.
 
-    def submit(self):
-        """
-        Provides full path to submit script.
-        :return: path to submit (this gets the run)
-        """
 
-        return os.path.join(self.dirPath, 'submit.sh')

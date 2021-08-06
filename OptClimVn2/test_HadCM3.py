@@ -10,6 +10,7 @@ import re
 import shutil
 import tempfile
 import unittest
+import pathlib  # TODO move towards using pathlib away from os.path.xxxx
 
 import numpy as np
 import pandas as pd
@@ -20,7 +21,8 @@ import optClimLib
 
 def cmp_lines(path_1, path_2, ignore=None, verbose=False):
     """
-    From Stack exchange -- http://stackoverflow.com/questions/23036576/python-compare-two-files-with-different-line-endings
+    From Stack exchange --
+       http://stackoverflow.com/questions/23036576/python-compare-two-files-with-different-line-endings
     :param path_1: path to file 1 
     :param path_2: path to file 2
     :param ignore -- list of regep patterns to ignore
@@ -63,20 +65,18 @@ class testHadCM3(unittest.TestCase):
                       "RHCRIT": 0.7, "VF1": 1.0, "CW_LAND": 2e-4, "DYNDIFF": 12.0, "KAY_GWAVE": 2e4,
                       "ASYM_LAMBDA": 0.15, "CHARNOCK": 0.012, "G0": 10.0, "Z0FSEA": 1.3e-3, "ALPHAM": 0.5,
                       'START_TIME': [1997, 12, 1], 'RUNID': 'a0101', 'ASTART': '$MYDUMPS/fred.dmp',
-                      'SPHERICAL_ICE': False,'OcnIceDiff':2.5e-5,'IceMaxConc':0.99,'OcnIsoDiff':800}
+                      'SPHERICAL_ICE': False, 'OcnIceDiff': 2.5e-5, 'IceMaxConc': 0.99, 'OcnIsoDiff': 800}
 
         tmpDir = tempfile.TemporaryDirectory()
-        print("tmpDir is %s" % (tmpDir.name))
-
-        testDir = tmpDir.name  # used throughout.
-        refDir = os.path.join('Configurations', 'xnmea')  # need a coupled model.
+        testDir = pathlib.Path(tmpDir.name)  # used throughout.
+        refDir = pathlib.Path('Configurations') / 'xnmea'  # need a coupled model.
         simObsDir = 'test_in'
         self.dirPath = testDir
         self.refPath = refDir
         self.tmpDir = tmpDir  # really a way of keeping in context
         self.testDir = testDir
-        refDir = os.path.expandvars(os.path.expanduser(refDir))
-        simObsDir = os.path.expandvars(os.path.expanduser(simObsDir))
+        # refDir = os.path.expandvars(os.path.expanduser(refDir))
+        # simObsDir = os.path.expandvars(os.path.expanduser(simObsDir))
         shutil.rmtree(testDir, onerror=optClimLib.errorRemoveReadonly)
 
         self.model = HadCM3.HadCM3(testDir, name='a0101', create=True, refDirPath=refDir,
@@ -116,7 +116,7 @@ class testHadCM3(unittest.TestCase):
         for k in ['temp@500_nhx', 'temp@500_tropics', 'temp@500_shx']: expectObs[k] = None
         expectParam = {"CT": 1e-4, "EACF": 0.5, "ENTCOEF": 3.0, "ICE_SIZE": 30e-6,
                        "RHCRIT": 0.7, "VF1": 1.0, "CW_LAND": 2e-4, "DYNDIFF": 12.0, "KAY_GWAVE": 2e4,
-                       "SPHERICAL_ICE": False,'OcnIceDiff':2.5e-5, 'IceMaxConc':0.99,'OcnIsoDiff':800,
+                       "SPHERICAL_ICE": False, 'OcnIceDiff': 2.5e-5, 'IceMaxConc': 0.99, 'OcnIsoDiff': 800,
                        "ASYM_LAMBDA": 0.15, "CHARNOCK": 0.012, "G0": 10.0, "Z0FSEA": 1.3e-3, "ALPHAM": 0.5,
                        'START_TIME': [1997, 12, 1], 'RUNID': 'a0101', 'ASTART': '$MYDUMPS/fred.dmp'}
         self.assertEqual(self.model.get(['name']), 'a0101')
@@ -177,7 +177,8 @@ class testHadCM3(unittest.TestCase):
                          "RHCRIT": 0.7, "VF1": 1.0, "CW_LAND": 2e-4, "DYNDIFF": 12.0, "KAY_GWAVE": 2e4,
                          'SPHERICAL_ICE': False,
                          "ASYM_LAMBDA": 0.15, "CHARNOCK": 0.012, "G0": 10.0, "Z0FSEA": 1.3e-3, "ALPHAM": 0.5,
-                         "OcnIceDiff":2.5e-5, 'IceMaxConc':0.99,'OcnIsoDiff': 800,'RUN_TARGET': [180, 0, 0, 0, 0, 0],
+                         "OcnIceDiff": 2.5e-5, 'IceMaxConc': 0.99, 'OcnIsoDiff': 800,
+                         'RUN_TARGET': [180, 0, 0, 0, 0, 0],
                          'START_TIME': [1997, 12, 1], 'RUNID': 'a0101',
                          'OSTART': '$DATAW/$RUNID.ostart', 'ASTART': '$MYDUMPS/fred.dmp',
                          'AINITIAL': '$MY_DUMPS/aeabra.daf4c10', 'OINITIAL': '$MY_DUMPS/aeabro.daf4c10'}
@@ -191,14 +192,15 @@ class testHadCM3(unittest.TestCase):
             elif isinstance(v, list):
                 self.assertEqual(v, expect_values[k])
             else:
-                self.assertAlmostEqual(v, expect_values[k], delta=expect_values[k]*1e-4,
+                self.assertAlmostEqual(v, expect_values[k], delta=expect_values[k] * 1e-4,
                                        msg='Failed to almost compare for %s got %.4g expect %.4g' % (
                                            k, v, expect_values[k]))
 
         # tests that namelists are as expected -- per function...
         # IceMaxConc  NH 00.99, SH 0.98
-        cases = self.model.readNameList(['IceMaxConc',"CW_LAND","OcnIceDiff",'OcnIsoDiff'],verbose=verbose,full=True)
-        self.assertEqual(list(cases['IceMaxConc'].values()),[0.99,0.98])
+        cases = self.model.readNameList(['IceMaxConc', "CW_LAND", "OcnIceDiff", 'OcnIsoDiff'], verbose=verbose,
+                                        full=True)
+        self.assertEqual(list(cases['IceMaxConc'].values()), [0.99, 0.98])
         self.assertEqual(list(cases['CW_LAND'].values()), [2e-4, 5e-5])
         self.assertEqual(list(cases['OcnIceDiff'].values()), [2.5e-5, 2.5e-5])
         self.assertEqual(list(cases['OcnIsoDiff'].values()), [800, 800])
@@ -265,7 +267,7 @@ class testHadCM3(unittest.TestCase):
         :return: 
         """
 
-        # testing modifyScript is tricky. I did use comparision with a file but I think this is difficult to maintain.
+        # testing modifyScript is tricky. I did use comparison with a file but I think this is difficult to maintain.
         # better to count the number of lines with ## modified at the end.
         modifyStr = '## modified *$'
         file = os.path.join(self.model.dirPath, 'SCRIPT')
@@ -274,9 +276,9 @@ class testHadCM3(unittest.TestCase):
             for line in f:
                 if re.search(modifyStr, line): count += 1
 
-        # expected changes are  exprID, jobID, 4 DATA[M,W,U,T] +2 more DATA [M,W]+ MY_DATADIR + mark (5 changes). -- this depends on config.
+        # expected changes are  exprID, jobID, MY_DATADIR, 4 DATA[M,W,U,T] +2 more DATA [M,W]+ the postProcessing script -- this depends on config.
         # If emailing then will expect more changes.
-        expect = 14
+        expect = 10
         # Note config this being tested on has no MY_DATADIR/A
         self.assertEqual(count, expect, 'Expected %d %s got %d' % (expect, modifyStr, count))
 
@@ -299,7 +301,7 @@ class testHadCM3(unittest.TestCase):
                 if re.search(modifyStr, line): count += 1
         # expected changes are CJOBN, RUNID, JOBDIR, MY_DATADIR, 2 [NR]RUN+_TIME_LIMIT, ACCOUNT and 5 DATADIR/$RUNID
         expect = 10
-        self.assertEqual(count, expect, 'Expected %d %s got %d' % (expect, modifyStr, count))
+        self.assertEqual(count, expect, f'Expected {expect} {modifyStr} got {count}')
 
         self.assertRaises(Exception, self.model.modifySubmit)  # run modify a 2nd time and get an error.
 
@@ -311,7 +313,6 @@ class testHadCM3(unittest.TestCase):
         :param self:
         :return:
         """
-
 
         modifyStr = r'## modified\s*$'
         modifyStrCont = r'## modifiedContinue\s*$'
@@ -343,8 +344,7 @@ class testHadCM3(unittest.TestCase):
         expect = 1  # one TYPE=CRUN/NRUN
         self.assertEqual(countMC, expect, 'Expected %d %s got %d' % (expectMod, modifyStrCont, countMC))
 
-
-    def check_script(self, print_output=False, runType='CRUN',expect=None,expectMod=None):
+    def check_script(self, print_output=False, runType='CRUN', expect=None, expectMod=None):
         modifyStr = r'## modified\s*$'
         modifyStrCont = r'## modifiedContinue\s*$'
         if runType == 'NRUN':
@@ -372,108 +372,38 @@ class testHadCM3(unittest.TestCase):
         self.assertEqual(count, expect, 'Expected %d %s got %d' % (expect, modifyStr, count))
         self.assertEqual(countMC, expectMod, 'Expected %d %s got %d' % (expectMod, modifyStrCont, countMC))
 
-    ###
-
-
-    def test_continueSimulation(self):
+    def test_genContSUBMIT(self):
         """
-        Test continueSimulation method
-        :return:
+        test that contSUBMIT works.
+        Tests are that it only had two modification marks in the continuation SUBMIT script
         """
-        import fileinput
 
+        self.model.genContSUBMIT()  # create the file.
+        # should be different from std file.
+        f1 = self.model.submit()
+        f2 = self.model.submit('continue')
+        self.assertFalse(filecmp.cmp(f2, f1, shallow=False))
+        # and count the number of modfy marks.
+        modifyStrCont = '## modifiedContinue$'
+        modifyStr = '## modified$'
 
-        print_output = False  # set True to print out output
-
-        # pretend run has been submitted which means adding something to model.
-        model = self.model
-        with fileinput.input(model.postProcessFile, inplace=1, backup='.bak2') as f:
+        count = 0
+        mc = 0
+        with open(f2, 'r') as f:
             for line in f:
-                line = line[0:-1]
-                # if m.postProcessFile does not exist then  get an error which is what we want!
-                # fix your model method!
-                if model.postProcessMark in line:  # got the mark so add some text.
-                    print('SOME VERY LONG COMMAND TO RUN MODEL', 'qrls ', '201012.1',
-                          '"')  # this releases the post processing job.
-                else:
-                    print(line)  # just print the line out.
+                if re.search(modifyStr, line):
+                    count += 1
+                elif re.search(modifyStrCont, line):
+                    mc += 1
 
-
-        # expected changes are RUNID, JOBDIR, MY_DATADIR,MY_OUTPUT, MY_DATADIR, MY_OUTPUT
-        # NRUN_TIME_LIMIT, CRUN_TIME_LIMIT, CJOBN, ACCOUNT, TMPDIR, MY_OUTPUT
-        # expectedMod is TYPE,
-        self.model.continueSimulation(minimal=True)
-        self.check_Submit(print_output=print_output,expect=10,expectMod=1)
-
-        self.model.continueSimulation()
-        self.check_Submit(print_output=print_output,expect=10,expectMod=1)
-
-
-        # check SCRIPT as well.
-        self.check_script(print_output=print_output,expect=9,expectMod=5)
-
-        # Compare SCRIPT & SCRIPT.bakR
-        file = os.path.join(self.model.dirPath, 'SCRIPT')
-        fileBak = file + '.bakR'
-        import difflib
-        if not filecmp.cmp(file, fileBak):  # files are different so show differences.
-            with open(file) as ff:
-                fromlines = ff.readlines()
-            with open(fileBak) as tf:
-                tolines = tf.readlines()
-
-            delta = difflib.context_diff(fromlines, tolines, fromfile=file, tofile=fileBak)
-            for d in delta:
-                print(d[:-1])
-        else:
-            self.fail('Files %s & %s are the same ' % (file, fileBak))
-
-
-    def test_restartSimulation(self):
-        """
-        Test that restrtSimulation work.
-        basically same as continueSimulation except have NRUN
-        :return:
-        """
-        modifyStr = r'## modified\s*$'
-        modifyStrCont = r'## modifiedRestart\s*$'
-
-        print_output = False  # set True to print out output
-
-        # pretend run has been continued so we are undoing this.
-
-        model = self.model
-        model.continueSimulation()
-        self.model.restartSimulation(minimal=True)
-        # check submit
-        # expected changes are RUNID, JOBDIR, MY_DATADIR,MY_OUTPUT, MY_DATADIR, MY_OUTPUT
-        # NRUN_TIME_LIMIT, CRUN_TIME_LIMIT, CJOBN, ACCOUNT, TMPDIR, MY_OUTPUT
-        # expectedMod is TYPE,
-
-        self.check_Submit(print_output=print_output,runType='NRUN',expect=10,expectMod=1)
-        # check Script file as expected -- minimal change so no change
-        self.check_script(print_output=print_output,runType='NRUN',expect=9,expectMod=0)
-        # now do restartSimulation with minimal set to false  (default)
-        self.model.restartSimulation()
-        # check submit
-        self.check_Submit(print_output=print_output,runType='NRUN',expect=10,expectMod=1)
-        # check Script file as expected --
-        self.check_script(print_output=print_output,runType='NRUN',expect=9,expectMod=5)
-        # Compare SCRIPT & SCRIPT.bakR
-        file = os.path.join(self.model.dirPath, 'SCRIPT')
-        fileBak = file + '.bakR'
-        import difflib
-        if not filecmp.cmp(file, fileBak):  # files are different so show differences.
-            with open(file) as ff:
-                fromlines = ff.readlines()
-            with open(fileBak) as tf:
-                tolines = tf.readlines()
-
-            delta = difflib.context_diff(fromlines, tolines, fromfile=file, tofile=fileBak)
-            for d in delta:
-                print(d[:-1])
-        else:
-            self.fail('Files %s & %s are the same ' % (file, fileBak))
+        # expected changes (from orginal creation) are:
+        # CJOBN, RUNID, JOBDIR, MY_DATADIR, 2 [NR]RUN+_TIME_LIMIT, ACCOUNT and 5 DATADIR/$RUNID
+        expect = 10
+        self.assertEqual(count, expect, msg=f'Expected {count}  {modifyStr} got {count}')
+        self.assertEqual(count, expect, 'Expected %d %s got %d' % (expect, modifyStr, count))
+        # expect a further  changes -- CRUN. Reference case has STEP = 1
+        expect = 1
+        self.assertEqual(mc, expect, msg=f'Expected {count}  {modifyStrCont} got {count}')
 
     def test_createWorkDir(self):
         """
@@ -505,8 +435,11 @@ class testHadCM3(unittest.TestCase):
         Rather trivial test.. 
         :return: 
         """
-        p = self.model.submit()
-        self.assertEqual(p, os.path.join(self.model.dirPath, 'SUBMIT'))
+        dir = pathlib.Path(self.model.dirPath)
+        p = pathlib.Path(self.model.submit())
+        self.assertEqual(p, dir / 'SUBMIT')
+        p2 = pathlib.Path(self.model.submit('continue'))
+        self.assertEqual(p2, dir / 'SUBMIT.cont')
 
     def test_perturb(self):
         """
@@ -514,11 +447,38 @@ class testHadCM3(unittest.TestCase):
           Need to look at namelists so a bit tricky...
         :return:
         """
-        self.model.perturb(verbose=True,  params=collections.OrderedDict(VF1=2.0))
+        self.model.perturb(verbose=True, params=collections.OrderedDict(VF1=2.0))
         # get the namelist values back in
-        values = self.model.readNameList(['VF1'],verbose=True)
-        expect  = collections.OrderedDict(VF1=2.0)
-        self.assertEqual(values,expect)
+        values = self.model.readNameList(['VF1'], verbose=True)
+        expect = collections.OrderedDict(VF1=2.0)
+        self.assertEqual(values, expect)
+
+    def test_createPostProcessFile(self):
+        """
+        Test that creation of post processing script works.
+
+        :return:
+        """
+        release_cmd = 'ssh login qrls 999999.1'
+        file = self.model.createPostProcessFile(release_cmd)
+        # expect file to exist
+        self.assertTrue(file.exists())
+        # and that it is as expected.
+        self.assertEqual(file, pathlib.Path(self.dirPath) / self.model.postProcessFile)
+        # need to check its contents...
+        # will check two things. 1) that SUBCONT is as expected 2) that the qrls cmd is in the file
+        submit_script = self.model.submit('continue')
+        cntSUBCONT = 0
+        cntqrls = 0
+        with open(file, 'r') as f:
+            for line in f:
+                if line.find(release_cmd) != -1:
+                    cntqrls += 1
+                elif line.find(f'SUBCONT={submit_script}') != -1:
+                    cntSUBCONT += 1
+
+        self.assertEqual(cntqrls, 1, 'Expected only 1 qrls cmd')
+        self.assertEqual(cntSUBCONT, 1, 'expected only 1 SUBMITCMD')
 
 
 if __name__ == "__main__":

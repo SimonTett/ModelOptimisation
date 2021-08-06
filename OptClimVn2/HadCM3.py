@@ -1,7 +1,12 @@
 """
-Class to support HadCM3 in optimisation (and other approaches) work
+Class to support HadCM3 in optimisation (and other approaches) work.
+
+
+
 
 """
+# TODO use pathlib.
+
 import fileinput
 # TODO -- now have version 1.0X of f90nml may not need to patch here.
 import functools  # std functools.
@@ -10,17 +15,24 @@ import math
 import os
 import re
 import shutil
-
-import \
-    f90nml  # NEEDED because f90nml.patch (as used in ModelSimulation) fails with RECONA. For the moment dealing with this here.
-import numpy as  np
+import pathlib
+import f90nml
+# NEEDED because f90nml.patch (as used in ModelSimulation) fails with RECONA. For the moment dealing with this here.
+import numpy as np
 
 import ModelSimulation
 from ModelSimulation import _namedTupClass
 
 # functions to generate parameter values given meta-parameters.
 # could   be class methods or functions..
+# I wonder if they should embed information about which namelists they want to change
+# then they return this information as a dict indexed by a named tuple. The named tuple provides
+# the information about the name list variable, name list name and file while the value is what gets set.
+# disadvantage is that functions then are very tightly bound into namelist functionality making it more difficult
+# to modify it. Advantage is that meta param fns deal with namelist complexity.
 
+
+# set of fns below are for converting parameters to multiple namelist values.
 
 # variables below are used in diffusion computations and are hardwired for HadAM3 N48 resolution
 # A change might be to pass them through with defaults or pull them out of the namelist??
@@ -65,7 +77,7 @@ def IDLinterpol(inyold, inxold, xnew):
 
 # functions below are used to convert meta parameters to namelist variables.
 # All should have an inverse optional argument. This is used when reading parameters back.
-# TODO -- convert functions below to methods. Then cam have access to resolution etc.
+# TODO -- convert functions below to methods. Then can have access to resolution etc.
 
 def diff_fn(dyndiff, dyndel=6, inverse=False):
     """
@@ -174,6 +186,7 @@ def initHist_nlcfiles(value='NoSuchFile.txt', inverse=False, namelist=False, par
 
 
 def startTime(time=[1965, 7, 4], inverse=False, namelist=False):
+    # TODO -- make time a string which can be processed using cftime string methods
     """
 
     :param time:  start time as 3 to 6 element list. Spcifiying in order year, month, day of month, hour, minute and second
@@ -182,12 +195,12 @@ def startTime(time=[1965, 7, 4], inverse=False, namelist=False):
     :param namelist: No computation just return the namelist info. 
     :return:  namelist info and values as array. (or if inverse set return the start time)
         Need to set MODEL_BASIS_TIME in CNTLALL/&NLSTCALL & CONTCNTL/&NLSTCALL but only the year part 
-    -- which reguires something clever. No make the specifiy the basis_time and then write it out. 
+    -- which requires something clever. No make the specify the basis_time and then write it out.
     fixhd(21) & fixhd(28) in RECONA/&HEADERS  -- this resets the year. (Presumably we could reset the month etc too.) 
 
     
     Just need to reset year => adding to tupple an indicator for which part of an array to change?? (Breaks existing stuff?)
-    ALas f90nml patch seems to fail for RECONA so will need to write it out explicitly. 
+    ALas f90nml patch seems to fail for RECONA so will need to write it out explicitly.  (This may be fixed now)
     """
 
     # verify that len of target is >= 3 and <= 6 and if not raise error.
@@ -202,7 +215,7 @@ def startTime(time=[1965, 7, 4], inverse=False, namelist=False):
     if namelist:
         return namelistData  # return the namelist info
     elif inverse:
-        return time[namelistData[0]]  # jsut return the value
+        return time[namelistData[0]]  # just return the value
     else:
         t = time[:]
         t.extend([0] * (len(t) - 6))  # add trailing zeros
@@ -211,6 +224,7 @@ def startTime(time=[1965, 7, 4], inverse=False, namelist=False):
 
 
 def runTarget(target=[0, 0, 0], inverse=False, namelist=False):
+    # TODO -- make target a str corresponding to ISO 8091 standard.
     """
     
     :param target:  run target time as [YYYY, MM, DD, HH, MM, SS] as used by the UM.   
@@ -411,7 +425,7 @@ def diffusion(diff_time=12.0, namelist=False, inverse=False):
                 diff_exp_q_nl: diff_exp_q}
 
 
-def iceDiff(OcnIceDiff=2.5e-5,namelist=False,inverse=False):
+def iceDiff(OcnIceDiff=2.5e-5, namelist=False, inverse=False):
     """
     Generate namelist for NH and SH ocean ice diffusion co-efficient.
     :param OcnIceDiff: Value wanted for ocean ice diffusion coefficient
@@ -424,11 +438,12 @@ def iceDiff(OcnIceDiff=2.5e-5,namelist=False,inverse=False):
     iceDiff_nlNH = _namedTupClass(var='EDDYDIFFN', namelist='SEAICENL', file='CNTLOCN')
     iceDiff_nlSH = _namedTupClass(var='EDDYDIFFS', namelist='SEAICENL', file='CNTLOCN')
     if namelist:
-        return [iceDiff_nlNH,iceDiff_nlSH]
+        return [iceDiff_nlNH, iceDiff_nlSH]
     elif inverse:
         return OcnIceDiff[iceDiff_nlNH]
-    else: # set values
-        return {iceDiff_nlNH:OcnIceDiff,iceDiff_nlSH:OcnIceDiff}
+    else:  # set values
+        return {iceDiff_nlNH: OcnIceDiff, iceDiff_nlSH: OcnIceDiff}
+
 
 def iceMaxConc(iceMaxConc=0.995, namelist=False, inverse=False):
     """
@@ -448,10 +463,10 @@ def iceMaxConc(iceMaxConc=0.995, namelist=False, inverse=False):
         return iceMaxConc[iceMax_nlNH]
     else:  # set values
         # SH value limited to 0.98
-        return {iceMax_nlNH: iceMaxConc, iceMax_nlSH: min(0.98,iceMaxConc)}
+        return {iceMax_nlNH: iceMaxConc, iceMax_nlSH: min(0.98, iceMaxConc)}
 
 
-def ocnIsoDiff(ocnIsoDiff=1e3,namelist=False,inverse=False):
+def ocnIsoDiff(ocnIsoDiff=1e3, namelist=False, inverse=False):
     """
     Generate namelist for changes to Ocean isopynical diffusion.
     :param ocnIsoDiff: Value for ocean ice diffusion. Will set two values AM0_SI & AM1_SI
@@ -461,7 +476,7 @@ def ocnIsoDiff(ocnIsoDiff=1e3,namelist=False,inverse=False):
     :return: Namelist info as a dict
     """
 
-    ocnDiff_AM0= _namedTupClass(var='AM0_SI', namelist='EDDY', file='CNTLOCN')
+    ocnDiff_AM0 = _namedTupClass(var='AM0_SI', namelist='EDDY', file='CNTLOCN')
     ocnDiff_AM1 = _namedTupClass(var='AM1_SI', namelist='EDDY', file='CNTLOCN')
     if namelist:
         return [ocnDiff_AM0, ocnDiff_AM1]
@@ -470,21 +485,15 @@ def ocnIsoDiff(ocnIsoDiff=1e3,namelist=False,inverse=False):
     else:  # set values -- both  to same value
         return {ocnDiff_AM0: ocnIsoDiff, ocnDiff_AM1: ocnIsoDiff}
 
+
 class HadCM3(ModelSimulation.ModelSimulation):
     """
     HadCM3 class. Sub-class of ModelSimulation.
     It overrides createModelSimulation & setParams.
+    It also handles cases where the simulation runs in multiple jobs. The post-processing will be submitted once the
+      job has finished. That took some quite hacky UM  engineering...
 
     """
-
-    ## functions below are for meta-parameters.
-    ## I wonder if they should embed information about which namelists they want to change
-    ## then they return this information as a dict indexed by a named tupple. The named tupple provides
-    ## the information about the name list variable, name list name and file while the value is what gets set.
-    ## disadvantage is that functions then are very tightly bound into namelist functionality making it more difficult
-    ## to modify it. Advantage is that meta param fns deal with namelist complexity.
-
-    # set of fns below are for converting parameters to multiple namelist values.
 
     def __init__(self, dirPath, obsNames=None,
                  create=False, refDirPath=None, name=None, ppExePath=None,
@@ -503,7 +512,7 @@ class HadCM3(ModelSimulation.ModelSimulation):
             These options should be specified when creating a new study otherwise they are optional and ignored
             :param refDirPath -- reference directory. Copy all files from here into dirPath
             :param name -- name of the model simulation. If not provided will be taken from dirPath
-            :param ppExePath --  path to post proessing executable
+            :param ppExePath --  path to post processing executable
             :param ppOutputFile -- File name of output of post processing executable. Default is observations.nc
             :param obsNames -- list of observations to be readin. (see readObs())
             :param runTime -- run time in seconds for UM job. If set to None nothing is changed. 
@@ -532,11 +541,17 @@ class HadCM3(ModelSimulation.ModelSimulation):
                                      ppOutputFile=ppOutputFile, parameters=parameters,  # options for creating new study
                                      update=update,  # options for updating existing study
                                      verbose=verbose)
+        # overwrite superclass values for start and continue scripts.
+        self.SubmitFiles['start'] = 'SUBMIT'
+        self.SubmitFiles['continue'] = 'SUBMIT.cont'
+        self.postProcessFile = 'optclim_finished' # name of post-processing file
+
         if create:  # want to create model instance so do creation.
-            self.fixClimFCG()  # fix the ClimFGC
+            self.fixClimFCG()  # fix the ClimFGC namelist
             self.modifySubmit(runTime=runTime, runCode=runCode)  # modify the Submit script
-            self.modifyScript()  # modify the script
+            self.modifyScript()  # modify Script
             self.createWorkDir(refDirPath)  # create the work dirctory (and fill it in)
+            self.genContSUBMIT()  # generate the continuation script.
 
         ## Set up namelist mappings. #TODO add documentation to parameters and have way of model instance reporting on known params.
         # easy case all variables in SLBC21 and which just set the values.
@@ -577,7 +592,7 @@ class HadCM3(ModelSimulation.ModelSimulation):
         self.registerMetaFn('START_TIME', startTime,
                             verbose=verbose)  # start_Time for run -- modifies several namelist vars
         self.registerMetaFn("SPHERICAL_ICE", sph_ice, verbose=verbose)  # Spherical ice (or not)
-        self.registerMetaFn("OcnIceDiff",iceDiff, verbose=verbose) # Ocean-Ice heat diffusion.
+        self.registerMetaFn("OcnIceDiff", iceDiff, verbose=verbose)  # Ocean-Ice heat diffusion.
         self.registerMetaFn("IceMaxConc", iceMaxConc, verbose=verbose)  # Maximum ice concentration.
         self.registerMetaFn("OcnIsoDiff", ocnIsoDiff, verbose=verbose)  # Maximum ice concentration.
         # add AINITIAL, OINITIAL, ASTART & OSTART in inithist
@@ -591,22 +606,18 @@ class HadCM3(ModelSimulation.ModelSimulation):
         if len(parameters) > 0 and (create or update):
             self.setReadOnly(False)  # allow modification
             self.setParams(parameters, verbose=verbose, fail=True)  # apply namelist etc
-            # deal with START_TIME -- f90nml.patch  fails... and f90nml.read doesn't work as it should
-            # need a temp files etc -- TODO: If need this functionality again then warp in a subroutine and try and fix f90nml!
+            # TODO check if START_TIME speicla hack  is still needed.
             #
             if 'START_TIME' in parameters:
                 RECONA_FILE = os.path.join(self.dirPath, 'RECONA')
                 recona = f90nml.read(RECONA_FILE)
-                # if f90nml.__version__ != '0.21': # version should be 0.21
-                #    raise Exception("Can only work with f90nml version 0.21. Version is %s"%(f90nml.__version__))
-                # f90nml is .20 then it appears to truncate the array
+                # f90nml  appears to truncate the array
                 # so fill it in, # general problem here is that array length varies in rather arbitrary ways.
-                # the only obvious reference point we have is 405 at fixhs[11] -- which means vn4.5 TODO fix this.
+                # the only obvious reference point we have is 405 at fixhs[11] -- which means vn4.5
                 fixhd = recona['headers']['FIXHD']
                 # f90nml (even at vn 0.21) has problems reading in nml in the following format
                 # fixhd(12)=xxx -- instead putting the value at posn 0.
                 offset = fixhd.index(405) - 11  # if 405 not found will trigger an error.
-                # print("patching fixhd in %s is " % RECONA_FILE, repr(fixhd))
                 # all this is done because f90nml seems to remember it starts at some posn.
                 fixhd[20 + offset] = parameters['START_TIME'][0]
                 fixhd[27 + offset] = parameters['START_TIME'][0]
@@ -616,7 +627,7 @@ class HadCM3(ModelSimulation.ModelSimulation):
 
     def createWorkDir(self, refDirPath, verbose=False):
         """
-        Create the workdir and if refDirPath has .astart a& .ostart copy those into created workDir
+        Create the workdir and if refDirPath has .astart & .ostart copy those into created workDir
         :param refDirPath -- name of reference directory
         :param (optional) verbobse -- default False. If True be verbose.
         :return: nada
@@ -640,21 +651,22 @@ class HadCM3(ModelSimulation.ModelSimulation):
          set ARCHIVE_DIR to runid/A -- not in SCRIPT??? WOnder where it comes from. Will look at modified script..
          set EXPTID to runid  --  first ^EXPTID=xhdi
          set JOBID to jobid  -- first ^JOBID
-         add hook for post-process jobs -- will have script as postProcess.sh # this should be generated by the module that
-           handles submission. HadCM3 module, in theory, doesn't really care what machine it is being submitted for. 
+
+          After . submitchk insert:
+         . $JOBDIR/optclim_finished ## run the check for job release and resubmission.
+            This will be modifed by the submission system
+
         :param name -- the name of the run. 
         :return: 
         """
-        # TODO seperate out name and runid.
+        # TODO separate out name and runid.
         runid = self.getParams().get('RUNID',
-                                     self.name())  # TODO fix this so that if params passed a strong it does sensible thing with it...
+                                     self.name())  # TODO fix this so that if params passed a string it does sensible thing with it...
         experID = runid[0:4]
         jobID = runid[4]
         modifystr = '## modified'
         with fileinput.input(os.path.join(self.dirPath, 'SCRIPT'), inplace=1, backup='.bak') as f:
             for line in f:
-                # TODO -- resubmission of crun seems to fail. Attempt to fix this vai removing line with
-                # . submitchk with ./SUBMIT -- just run the script again. (But
                 if re.search(modifystr, line):
                     raise Exception("Already modified Script")
                 elif re.match('^EXPTID=', line):
@@ -665,29 +677,13 @@ class HadCM3(ModelSimulation.ModelSimulation):
                     print('MESSAGE="Run %s#%s finished. Time=`date`"' % (experID, jobID))
                 elif re.match('MY_DATADIR=', line):  # fix MY_DATADIR
                     print("MY_DATADIR=%s %s" % (self.dirPath, modifystr))
-                # now find and replace all the DATADIR/$RUNID stuff.
-                elif r'DATADIR/$RUNID/' in line:
+                elif re.match('^. submitchk$', line):  # need to modify SCRIPT to call the postProcessFile.
+                    print(line[0:-1])  # print the line out stripping of the newline
+                    print(f'. $JOBDIR/{self.postProcessFile} {modifystr}')
+                elif r'DATADIR/$RUNID/' in line:  # replace all the DATADIR/$RUNID stuff.
                     line = line.replace('DATADIR/$RUNID/', 'DATADIR/')
                     print(line[0:-1], modifystr)
-
-                # put marker in for post process script
-                # this currently set up to go right at the end
-                # but really want it to go when run has finished -- which is sensitive to NRUN/CRUN.
-                #  SOmewhere near line 598
-                elif re.match(r'exit \$RCMASTER', line) and f.filelineno() > 500:  # near the end...
-                    ppModifyMark = '# =insert post-process script here= # '
-                    print("""
-                       if [ $RCMASTER -eq 0 ] {mark}
-                          then {mark}
-                          echo 'Worked so doing stuff..' {mark}
-                          {modifyMark} {mark} 
-                        fi # close block {mark} 
-                        """.format(mark=modifystr, modifyMark=ppModifyMark))
-                    print(line[0:-1])
-                    # store the mark and the file for use by later processing
-                    self.postProcessMark = ppModifyMark
-                    self.postProcessFile = os.path.join(self.dirPath, 'SCRIPT')
-                else:
+                else:  # default line
                     print(line[0:-1])  # remove newline
 
     def modifySubmit(self, runTime=None, runCode=None):
@@ -700,7 +696,7 @@ class HadCM3(ModelSimulation.ModelSimulation):
           set MY_DATADIR to dirPath
           set DATAW and DATAM to $MY_DATADIR/W & $MY_DATADIR/M respectively.
         :param runTime: default None -- if not None then specify time in seconds for model job. 
-        :param runCode: default None -- if not Note then this is the project code for the model job.
+        :param runCode: default None -- if not None then this is the project code for the model job.
         
         :return: nada
         """
@@ -767,7 +763,7 @@ class HadCM3(ModelSimulation.ModelSimulation):
         and modify the parameters in the current directory. Calls the superclass to do standard stuff first then
          uses existing code to modify parameters in HadCM3 namelists.
         :param params -- dictionary (or ordered dict or pd.Series) of the parameter values
-        :param addParam (default False) -- if True add to existing parameters
+        :param addParam (default True) -- if True add to existing parameters
         :param write (default True) -- if True update configuration file.
         :param verbose (default False) -- if True provide more verbose output
         :param fail (default True) -- if True fail if parameter not defined.
@@ -785,6 +781,7 @@ class HadCM3(ModelSimulation.ModelSimulation):
         # remove ensembleMember from the params -- we have no
         #  namelist for it. writeNameList complains if parameter provided 
         # and no translation function.
+        # TODO implement ensembleMember
         try:
             eM = params.pop('ensembleMember')
         except KeyError:
@@ -792,117 +789,93 @@ class HadCM3(ModelSimulation.ModelSimulation):
 
         self.writeNameList(verbose=verbose, fail=fail, **params)  # generate/update namelists.
 
-    def submit(self):
+    def genContSUBMIT(self):
         """
-        
-        :return: path to script to run to submit the model 
-        """
-
-        return os.path.join(self.dirPath, 'SUBMIT')
-
-    def scriptPostprocess(self,modifyStr = None):
-        """
-        add post process info to the script
-        :return:
+        Generate continuation script for model so that it is a CRUN and STEP=4
+        :return: script name of continue simulation.
         """
 
-        # Modify SCRIPT and remove some text near bottom..code comes from modifyScript.
-        replaceRCMASTER = True
-        nskip = 0
-        with fileinput.input(os.path.join(self.dirPath, 'SCRIPT'), inplace=1, backup='.bakR') as f:
-            for line in f:
-                line = line[0:-1]  # remove tr
-                # deal with need to put marker in for post process script -- see modifyScript
-                # where this code comes from.
-                if ('$RCMASTER -eq 0 ] ##' in line) and (
-                        f.filelineno() > 500) and replaceRCMASTER:  # near the end. Code VERY fragile
-                    replaceRCMASTER = False
-                    ppModifyMark = '# =insert post-process script here= # '
-                    print("""
-                                   if [ $RCMASTER -eq 0 ] {mark}
-                                      then {mark}
-                                      echo 'Worked so doing stuff..' {mark}
-                                      {modifyMark} {mark} 
-                                    fi # close block {mark} 
-                                    """.format(mark=modifyStr, modifyMark=ppModifyMark))
-                    # print above seems to replace multiple lines
-                    # store the mark and the file for use by later processing
-                    self.postProcessMark = ppModifyMark
-                    self.postProcessFile = os.path.join(self.dirPath, 'SCRIPT')
-                    nskip = 5  # want to skip some lines
-                elif nskip > 0:  # got some lines to skip so don't write them out
-                    nskip -= 1  # but decrement nskip.
-                else:
-                    print(line)  # print line without newline
-
-    def continueSimulation(self,minimal=False):
-        """
-        Update model so that it is a CRUN and STEP=4
-          also modify post-processing info
-        :param minimal -- do not **modify** post-processing info if True.
-        :return:
-        """
-        # modify submit
-        # modify SUBMIT
-
-        # call superclass continue method
-        super(HadCM3, self).continueSimulation(minimal=minimal)
+        # Copy self.SubmitFile to self.submit(=True) and then change it.
         modifyStr = '## modifiedContinue'
-        with fileinput.input(os.path.join(self.dirPath, 'SUBMIT'), inplace=1, backup='.bakR') as f:
-            for line in f:
-                line = line[0:-1]  # remove trailing newline
-                if re.match('^TYPE=NRUN', line):  # DEAL with NRUN
-                    line = line.replace('NRUN', 'CRUN', 1) + modifyStr
-                    print(line)
-                elif re.match('^STEP=1', line):  # Deal with STEP=1
-                    print(line.replace('STEP=1', 'STEP=4', 1) + modifyStr)
-                else:
-                    print(line)  # remove trailing newline
+        with fileinput.input(self.submit('start')) as f:  # file for input
+            with open(self.submit('continue'), mode='w') as fout:  # and where the output file is.
+                for line in f:
+                    line = line[0:-1]  # remove trailing newline
+                    if re.match('^TYPE=NRUN', line):  # DEAL with NRUN
+                        line = line.replace('NRUN', 'CRUN', 1) + modifyStr
+                        print(line, file=fout)
+                    elif re.match('^STEP=1', line):  # Deal with STEP=1
+                        print(line.replace('STEP=1', 'STEP=4', 1) + modifyStr, file=fout)
+                    else:
+                        print(line, file=fout)
 
-        if not minimal:
-           self.scriptPostprocess(modifyStr=modifyStr)
-
-    def restartSimulation(self,minimal=False):
-        """
-        Update model so that it is a NRUN and STEP=4
-          also modify post-processing info
-        :param minimal -- do not **modify** post-processing info if True.
-        :return:
-        """
-        # modify submit
-        # modify SUBMIT
-
-        # call superclass restart method
-        super(HadCM3, self).restartSimulation(minimal=minimal) # superclass does some stuff with config
-        modifyStr = '## modifiedRestart'
-        with fileinput.input(os.path.join(self.dirPath, 'SUBMIT'), inplace=1, backup='.bakR') as f:
-            for line in f:
-                line = line[0:-1]  # remove trailing newline
-                if re.match('^TYPE=CRUN', line):  # DEAL with NRUN
-                    line = line.replace('CRUN', 'NRUN', 1) + modifyStr
-                    print(line)
-                elif re.match('^STEP=1', line):  # Deal with STEP=1
-                    print(line.replace('STEP=1', 'STEP=4', 1) + modifyStr)
-                else:
-                    print(line)  # remove trailing newline
-
-        if not minimal:
-            self.scriptPostprocess(modifyStr=modifyStr)
-
+        return self.submit('continue')
 
     def perturb(self, verbose=False, params=None):
         """
         Perturb the model **namelist** so as to generate a small perturbation.
         :param verbose -- If True be verbose
         :params -- if not None then set those parameters in the namelist.
+        :return a list of all perturbed parameters.
         """
 
-
-
         perturbList = super(HadCM3, self).perturb(params=params, verbose=verbose)
-        # store that we actually perturbed something. Note that superclass runs restart
-        if params is not None: # got some parameters to perturb
+        # store that we actually perturbed something. Note that superclass does not change runSubmit  status.
+        if params is not None:  # got some parameters to perturb
             self.setReadOnly(readOnly=False)
             self.writeNameList(verbose=verbose, fail=True, **params)  # generate/update namelists.
             self.setReadOnly(readOnly=False)
         return perturbList
+
+    def createPostProcessFile(self, postProcessCmd):
+
+        """
+            Used by the submission system to allow the post-processing job to be submitted when the simulation
+            has completed. This code also modifies the UM so that when a NRUN is fnished it automatically runs the continuation case.
+            This HadCM3 implementation generates a file call optclim_finished which is sourced by SCRIPT.
+            SCRIPT needs to be modified to actually do this. (See modifySCRIPT).
+
+        """
+        import pathlib
+        outFile = pathlib.Path(
+            self.dirPath) / self.postProcessFile  # needs to be same as used in SCRIPT which actually calls it
+        with open(outFile, 'w') as fp:
+            print(
+                f"""#  script to be run in ksh from UM45 SCRIPT
+# it does two things:
+# 1) releases the post-processing script when the whole simulation has finished.
+# 2) When the job has finished (first time) submits a continuation run.
+# I (SFBT) suspect it is rather hard wired for eddie. But will see later.
+SSHCMD="ssh login01.ecdf.ed.ac.uk"
+export OUTPUT=$TEMP/output_test_finished.$$ # where the output goes
+export RSUB=$TEMP/rsub1.$$
+qshistprint $PHIST $RSUB # get the status info from the history file
+FLAG=$(grep 'FLAG' $RSUB|cut -f2 -d"=" | sed 's/ *//'g)
+if  [ $FLAG = 'N' ]
+  then # release the post processing job. 
+  {postProcessCmd} ## code inserted
+  echo "FINISHED releasing the post-processing"
+else 
+     echo "$TYPE: Still got work to do"
+fi
+
+# test for NRUN but not finished.
+SUBCONT={self.submit('continue')}
+if [ \( $FLAG = 'Y' \) -a \( $TYPE = 'NRUN' \) ]
+  then
+  if [ -n "$TESTING"  ] # for testing.
+  then
+	echo "Testing: Should run $SSHCMD $JOBDIR/$SUBCONT"
+	$SSHCMD ls -ltr $JOBDIR/$SUBCONT
+  else
+    echo "$SSHCMD $JOBDIR/$SUBCONT"
+     $SSHCMD $JOBDIR/$SUBCONT
+  fi
+fi
+echo "contents of $OUTPUT "
+echo "========================================="
+cat $OUTPUT
+echo "==================================="
+rm -f $RSUB $OUTPUT # remove temp file.
+                """, file=fp)
+            return outFile

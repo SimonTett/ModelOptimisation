@@ -492,19 +492,47 @@ class testModelSimulation(unittest.TestCase):
         model.set2(write=False, observations={'obs1': 2, 'obs3': 4})
         self.assertNotEqual(self.model, model)
 
-    def test_continueSumulation(self):
+    def test_runStatus(self):
+        """
+        Test that runStatus works
+        Will do the following
+            1) set nothing -- should return 'start'
+            2) set it to 'start' -- should return start
+            3) set it to 'continue' -- should return 'continue'
+            4) set it to 'fred' -- should raise an error.
+        :return: nada
+        """
+
+        self.assertEqual(self.model.runStatus(),'start') # case 1
+
+        # case 2
+        self.model.runStatus('start')
+        self.assertEqual(self.model.runStatus(), 'start')
+
+        # case 3
+        self.assertEqual(self.model.runStatus('continue'), 'continue')
+
+        # case 4
+        with self.assertRaises(ValueError):
+            self.model.runStatus('fred')
+
+
+
+
+
+    def test_continueSimulation(self):
         """
         Test continueSimulation method.
-         Test are that first time run get False back
-         the Second time get False, True back
+            test that number of values returned is as expected and that runStatus is 'continue'
         :return: nada
         """
 
         result = self.model.continueSimulation()
-        self.assertEqual(result, [False])
+        self.assertEqual(len(result), 1)
 
-        result = self.model.continueSimulation(minimal=True)
-        self.assertEqual(result, [False, True])
+        result = self.model.continueSimulation()
+        self.assertEqual(len(result), 2)
+        self.assertEqual(self.model.runStatus(),'continue')
 
     def test_perturb(self):
         """
@@ -541,6 +569,15 @@ class testModelSimulation(unittest.TestCase):
         modParams2 = self.model.perturbParams()
         self.assertEqual(len(modParams2), 2, 'Len of 2nd pertrubation  dict not 2')
         self.assertNotEqual(modParams1, modParams2, 'params the same..')
+
+    def test_submit(self):
+        """
+        Test submit
+        Following tests done:
+            1) no arguments and get the base run.
+
+        :return: nada
+        """
 
 
 if __name__ == "__main__":

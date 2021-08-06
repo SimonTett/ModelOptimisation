@@ -25,15 +25,7 @@ import sys
 if (sys.version_info.major < 3) or (sys.version_info.major == 3 and sys.version_info.minor < 7):
     raise Exception("Only works at 3.7+ as needs ordered dict only available at 3.7 or greater")
 
-__version__ = '0.5.0'
-# subversion properties TODO remove/modify as now using GIT
-subversionProperties = \
-    {
-        'Date': '$Date$',
-        'Revision': '$Revision$',
-        'Author': '$Author$',
-        'HeadURL': '$HeadURL$'
-    }
+__version__ = '0.6.0'
 
 
 # TODO:Current design fixed_params are special and fixed per instance of ModelSubmit
@@ -48,13 +40,13 @@ class ModelSubmit(object):
     """
 
     # so replacing modelDirs functionality. (rootDir & config would then be compulsory)
-    # TODO add a new argument -- restart which if set would remove all stuff in rootDir
+    # TODO add a new argument -- restart (or clean) which if set would remove all stuff in rootDir
     # wonder if submitFn can be extracted from config? I think not as very dependant on the
     # system in use.
 
     def __init__(self, config, modelFn, submitFn, fakeFn=None,
                  rootDir=None, ignoreKeys=None, verbose=False, readOnly=False, renameRefDir=None,
-                 keyFn=None, noObs='fail'):
+                 keyFn=None, noObs='fail', restart=False):
         """
         Create ModelSubmit instance
         :param config: configuration information
@@ -65,7 +57,7 @@ class ModelSubmit(object):
         :param fakeFn (optional = None): if provided then nothing will actually be submitted.
             Instead the fakeFunction will be ran which will generate fake values for the observations file.
         :param rootDir (optional = None): root dir where new directories are to be created.
-          If None will be current dir/config.name()
+          If None will be current dir/config.name(). This will not change if set_config method used.
         :param ignoreKeys: Model parameters to ignore for uniqueness -- default values are:
             runCode, runTime and RUNID
         :param verbose: be verbose (and  all methods will use this value)
@@ -76,6 +68,8 @@ class ModelSubmit(object):
           are functions that get applied to the string. Useful for testing
         :param noObs (default 'fail') WHat to do when observations are missing from a model directory.
             Stored in self. see readModelDir for description.
+
+        :param restart (default False).If True clean up use the clean method (see doc)
 
         :return: instance of ModelSubmit
 
@@ -91,7 +85,7 @@ class ModelSubmit(object):
 
         self.modelFn = modelFn
         self.fakeFn = fakeFn
-        self.config = config
+
         self.submitFn = submitFn
         self.noObs = noObs  # what to do when we have no observations
 
@@ -111,35 +105,57 @@ class ModelSubmit(object):
         else:
             self.ignoreKeys = ignoreKeys
 
-        self.refDir = pathlib.Path(config.referenceConfig())
-        if rootDir is None:
-            self.rootDir = pathlib.Path.cwd() / config.name()  # default path
-        else:
-            self.rootDir = pathlib.Path(rootDir)  # make sure it is a Path.
+        self._modelsToSubmit = dict()  # where we store models to be submitted.
+        self._modelsToRerun = dict()  # where we store models to be reran.
+        self.verbose = verbose
+        # store models.
+        self._models = dict()  # initialise ordered collection where models stored.
 
+        # would like to be able to (re)set the configuration.
+        # All config (related code is here).
+        self.config = config
+        self.refDir = pathlib.Path(config.referenceConfig())
         self._fixParams = self.config.fixedParams()
-        # add on refDir if defined
+        # include refDir in the _fixParams if defined
         if self.refDir is not None:
             self._fixParams.update(refDir=self.refDir)
 
-        self._modelsToSubmit = dict()  # where we store models to be submitted.
-        self._modelsToRerun = dict()  # where we store models to be reran.
-
-        self.verbose = verbose
-        # store models.
-
-        self._models = dict()  # initialise ordered collection where models stored.
-
-        if not self.rootDir.is_dir():  # dir does not exist so create it.
-            self.rootDir.mkdir(parents=True)
-        self.readDir(self.rootDir)  # read all directories.
+        if rootDir is None:  # no rootDir defined. Use the config.
+            self.rootDir = pathlib.Path.cwd() / config.name()  # default path
+        else:
+            self.rootDir = pathlib.Path(rootDir)  # make sure it is a Path.
+        self.rootDir.mkdir(parents=True, exist_ok=True)
+        # potentially clean up dir.
+        if restart:
+            self.clean() # that cleans up. Nothing to read either.
+        else:
+            self.readDir(self.rootDir)  # read all directories.
 
         return  # and all done
 
-    # methods that extract information from config. caching to avoid recomputation.
-    # suspect there is a more pythonic way to generate them.. And might be a bad idea to cache them too.
+    def clean(self):
+        """
+        Clean out rootDir by removing all files and directories in it.
+        However, .json files in the rootDir will not be removed and if rootDir.name is Configurations then
+         an error will be triggered. This is to avoid accidental deletion.
+        """
+        import stat  # used for chmod to make writable.
+        if self.rootDir.name == 'Configurations':
+            print("You will delete configurations -- aborting")
+            raise Exception("Attempted to delete configurations")
+        # go and clean all directories  by removing everything EXCEPT jsonFile
+        # algorithm -- iterate over all files in rootDir
+        # if file is a file and not a .json file delete it. If file is a dir delete it
+        for file in self.rootDir.iterdir():
+            if file.is_file() and file.suffix != '.json':
+                if self.verbose:
+                    print(f"Deleting {file}")
+                file.chmod(stat.S_IWRITE)
+                file.unlink()  # remove the file
+            elif file.is_dir():
+                if self.verbose: print(f"Deleting {file} and contents")
+                shutil.rmtree(file, onerror=optClimLib.errorRemoveReadonly)
 
-    @functools.lru_cache()
     def obsNames(self):
         """
 
@@ -155,7 +171,6 @@ class ModelSubmit(object):
 
         return copy.copy(self._fixParams)  ## return a *copy* of this
 
-    @functools.lru_cache()
     def paramNames(self):
         """
 
@@ -163,7 +178,6 @@ class ModelSubmit(object):
         """
         return self.config.paramNames()
 
-    @functools.lru_cache()
     def targets(self, scale=True):
         """
         get target values
@@ -173,7 +187,6 @@ class ModelSubmit(object):
 
         return self.config.targets(obsNames=self.obsNames(), scale=scale)
 
-    @functools.lru_cache()
     def scales(self):
         """
         Get scales from config
@@ -181,7 +194,6 @@ class ModelSubmit(object):
         """
         return self.config.scales(obsNames=self.obsNames())
 
-    @functools.lru_cache()
     def transMatrix(self, scale=True, dataFrame=True):
         """
         Return  transform matrix by calling StudyConfig.transMatrix
@@ -247,7 +259,7 @@ class ModelSubmit(object):
             key = self.genModelKey(model)
             if self.verbose:
                 print("Read Dir %s Key is:\n %s " % (dir, key))
-                if self._models.get(key) is not None: # warn if verbose on and got duplicate dir.
+                if self._models.get(key) is not None:  # warn if verbose on and got duplicate dir.
                     print("Got duplicate dir =  %s " % (dir) + "\n key = " + repr(key))
             # check model has observations and if not do something!
             obs = model.getObs()
@@ -255,18 +267,20 @@ class ModelSubmit(object):
                 # deal with noObs cases.
                 if self.noObs == 'fail':
                     raise Exception(f"Some observations for {dir} are none")
+                elif self.noObs == 'restart':  # mark for restart
+                    model.restartSimulation()
                 elif self.noObs == 'continue':  # mark for continuation.
-                    model.continueSimulation(minimal=True)
-                    self.rerunModels(model=model)
-                    # want to submit it too but that depends on system we are on so gets handled later.
-                elif self.noObs == 'perturb':  # perturb model
+                    model.continueSimulation()
+                elif (self.noObs == 'perturb' or self.noObs == 'perturbC'):  # perturb model
                     # tricky -- don't want to change the parameters.
                     # think this is a modelSimulation method. Though not very comfortable with config and state being
                     # inconsistent..
-                    # NEED a remove continue option...
                     param = model.perturbParams()
                     model.perturb(params=param)
-                    self.rerunModels(model=model)
+                    if self.noObs == 'perturbC':
+                        model.continueSimulation()  # mark for continue
+                    else:
+                        model.restartSimulation()  # mark for restart
                 elif self.noObs == 'clean':
                     # remove the directory
                     shutil.rmtree(model.dirPath, onerror=optClimLib.errorRemoveReadonly)
@@ -274,6 +288,10 @@ class ModelSubmit(object):
                     return None  # no model to return.
                 else:  # unknown noObs case.
                     raise Exception(f"Unknown noObs {self.noObs}")
+
+                # if we got to here then model needs to be added to the list of models to be resubmitted.
+                self.rerunModels(model=model)
+
             else:
                 self._models[key] = model  # store the model in modelRuns indexed by its key.
 
@@ -686,8 +704,6 @@ class ModelSubmit(object):
 
         return newConfig
 
-
-
     def paramObs(self, params=None, obs=None, clear=False):
         """
 
@@ -723,5 +739,3 @@ class ModelSubmit(object):
             return None
 
         return pd.DataFrame(list(self._paramObs.values()))  # name coming from obs series.
-
-

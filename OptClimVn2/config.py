@@ -111,7 +111,7 @@ def arcSubmit(model_list, config, rootDir, verbose=False, resubmit=None, *args, 
     This algorithm is not particularly robust to failure -- if anything fails the various jobs will be sitting around
     Releasing them will be quite tricky! You can always kill and run again!
     """
-
+    raise NotImplementedError("Needs to be updated")
     jobID = []
     for model in model_list:
         # put some dummy data in the ouput file
@@ -229,31 +229,6 @@ def eddieSubmit(model_list, config, rootDir, verbose=False, postProcess=True, re
         for indx in range(len(model_list)):
             model_list[indx].jid = postProcessJID + '.%d' % (indx + 1)
 
-    # Submit the models.
-
-    # submit the archive script which will be held until the post-processing scripts have all ran.
-    if archiveDir is not None:
-        # TODO add archiveDIR to json configuration. And then can pass it through to
-        # the submit function.
-        raise NotImplementedError("archiving is not yet implemented and tested")
-        jobName = 'Ar' + configName
-        archive_cmd = 'qsub  -e %s -o %s' % (outputDir, outputDir)
-        # put error and output into outputDir.
-        archive_cmd += '-hold_jid %s -V -N %s %s %s %s ' % (postProcessJID, jobName, 'archive.sh', rootDir, archiveDir)
-        # hold the job till postProcessing finished, name the job jobName and
-        # run archive.sh with rootDir and archiveDir as arguments.
-        if verbose:
-            print("archiving command is %s" % archive_cmd)
-        # now to actually submit it.
-        if Submit:
-            jid = subprocess.check_output(sshCmd + archive_cmd + '"', shell=True)
-            # submit the script. Good to remove shell=True and '"'
-            jid = jid.split()[2]  # extract the actual job id.
-        else:
-            jid = str(submitProcessCount)
-        submitProcessCount += 1
-        if verbose: print("Job ID for archving is %s" % jid)
-
     # now (re)submit this entire script so that the next iteration in the algorithm can be ran
     if (resubmit is not None) and postProcess:
         # submit the next job in the iteration. -hold_jid jid means the post processing job will only run after the
@@ -276,20 +251,13 @@ def eddieSubmit(model_list, config, rootDir, verbose=False, postProcess=True, re
     # now submit the models
     for m in model_list:
         if postProcess:
-            # need to put the post processing job release command in the model somehow. Depends on the model
-            # but we have a mark and a file. So will modify the file. The model should define this..
-            # and insert the mark into the file. Would I think be easier to keep the line no and goto that.
-            with fileinput.input(m.postProcessFile, inplace=1, backup='.bak2') as f:
-                for line in f:
-                    # if m.postProcessFile does not exist then  get an error which is what we want!
-                    # fix your model method!
-                    if m.postProcessMark in line:  # got the mark so add some text.
-                        print(sshCmd, 'qrls ', m.jid, '"')  # this releases the post processing job.
-                    else:
-                        print(line[0:-1])  # just print the line out.
-            # dealt with modifying main file.
-        modelSubmitName = m.submit()
-        if verbose: print("Submitting ", modelSubmitName)
+            # need to put the post processing job release command in the model. That is what postProcessFile does...
+            cmd = sshCmd + f' qrls {m.jid} ' + '"'
+            m.postProcessFile(cmd)
+
+        modelSubmitName = m.submit()  # this gives the script to submit.
+        if verbose:
+            print("Submitting ", modelSubmitName)
         if Submit:
             subprocess.check_output(sshCmd + modelSubmitName + '"', shell=True)  # submit the script
         submitProcessCount += 1
@@ -387,8 +355,6 @@ class testSubmit(unittest.TestCase):
         """
         # self.tmpDir.cleanup() # sadly fails because not all files in are writable.
         optClimLib.delDirContents(self.tmpDir.name)
-
-
 
 
 if __name__ == "__main__":

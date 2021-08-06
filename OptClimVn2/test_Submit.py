@@ -430,6 +430,36 @@ class testSubmit(unittest.TestCase):
         expect = np.sqrt((expect ** 2).sum(1) / len(obs.columns))
         nptest.assert_allclose(expect, fConfig.cost())
 
+    def test_clean(self):
+        """
+        Test clean works.
+        1) Test if tries to delete something ending in Configurations it barfs.
+        2) Cleans everything but json files in the top level directory.
+
+        """
+        import pathlib
+        # easy case --just run on ourselves..
+        # first add a dummy json file so we can test there is only that.
+        json_files = ['one', 'two']
+        pathD = pathlib.Path(self.dirPath)
+        for jsonF in json_files:
+            with open(pathD / (jsonF + '.json'), 'w') as fp:
+                print("Dummy JSON FILE", file=fp)
+        self.mSubmit.clean()
+        # and now check the dir. Expect there to be two json files.. (as we just made them)
+        fileCount = 0
+        for file in pathD.glob('*'):
+            self.assertTrue(file.is_file(), msg=f'{file} is not a file')
+            self.assertTrue(file.suffix == '.json', msg=f"{file} does not end in .json")
+            fileCount += 1
+        self.assertEqual(fileCount, 2)
+        # make a new Msubmit with Configurations in the name..
+        dir = pathlib.Path(self.dirPath) / 'Configurations'
+        mSubmit = Submit.ModelSubmit(self.config, ModelSimulation.ModelSimulation,
+                                     None, rootDir=dir, verbose=self.verbose)
+        with self.assertRaises(Exception):
+            mSubmit.clean()
+
 
 if __name__ == "__main__":
     print("Running Test Cases")
