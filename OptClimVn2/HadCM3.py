@@ -12,14 +12,14 @@ import fileinput
 import functools  # std functools.
 import glob
 import math
-import os
+import os 
 import re
 import shutil
 import pathlib
 import f90nml
 # NEEDED because f90nml.patch (as used in ModelSimulation) fails with RECONA. For the moment dealing with this here.
 import numpy as np
-
+import stat # needed to change file permission bits.
 import ModelSimulation
 from ModelSimulation import _namedTupClass
 
@@ -552,6 +552,9 @@ class HadCM3(ModelSimulation.ModelSimulation):
             self.modifyScript()  # modify Script
             self.createWorkDir(refDirPath)  # create the work dirctory (and fill it in)
             self.genContSUBMIT()  # generate the continuation script.
+            self.createPostProcessFile("# No job to release") 
+            # this means that the model can run without post-processing
+            # as this bit of code also allows the model to resubmit from an NRUN
 
         ## Set up namelist mappings. #TODO add documentation to parameters and have way of model instance reporting on known params.
         # easy case all variables in SLBC21 and which just set the values.
@@ -797,8 +800,9 @@ class HadCM3(ModelSimulation.ModelSimulation):
 
         # Copy self.SubmitFile to self.submit(=True) and then change it.
         modifyStr = '## modifiedContinue'
+        contScript = self.submit('continue')
         with fileinput.input(self.submit('start')) as f:  # file for input
-            with open(self.submit('continue'), mode='w') as fout:  # and where the output file is.
+            with open(contScript, mode='w') as fout:  # and where the output file is.
                 for line in f:
                     line = line[0:-1]  # remove trailing newline
                     if re.match('^TYPE=NRUN', line):  # DEAL with NRUN
@@ -808,8 +812,12 @@ class HadCM3(ModelSimulation.ModelSimulation):
                         print(line.replace('STEP=1', 'STEP=4', 1) + modifyStr, file=fout)
                     else:
                         print(line, file=fout)
-
-        return self.submit('continue')
+        # need to make the script +rx for all readers. Might not work on windows
+        fstat = contScript.stat().st_mode
+        fstat = fstat | stat.S_IRUSR|stat.S_IRGRP|stat.S_IROTH
+        fstat = fstat |stat.S_IXUSR|stat.S_IXGRP|stat.S_IXOTH
+        contScript.chmod(fstat)
+        return contScript
 
     def perturb(self, verbose=False, params=None):
         """
@@ -834,6 +842,8 @@ class HadCM3(ModelSimulation.ModelSimulation):
             has completed. This code also modifies the UM so that when a NRUN is fnished it automatically runs the continuation case.
             This HadCM3 implementation generates a file call optclim_finished which is sourced by SCRIPT.
             SCRIPT needs to be modified to actually do this. (See modifySCRIPT).
+
+        
 
         """
         import pathlib
@@ -865,11 +875,11 @@ if [ \( $FLAG = 'Y' \) -a \( $TYPE = 'NRUN' \) ]
   then
   if [ -n "$TESTING"  ] # for testing.
   then
-	echo "Testing: Should run $SSHCMD $JOBDIR/$SUBCONT"
-	$SSHCMD ls -ltr $JOBDIR/$SUBCONT
+	echo "Testing: Should run $SSHCMD $SUBCONT"
+	$SSHCMD ls -ltr $SUBCONT
   else
-    echo "$SSHCMD $JOBDIR/$SUBCONT"
-     $SSHCMD $JOBDIR/$SUBCONT
+    echo "$SSHCMD $SUBCONT"
+     $SSHCMD $SUBCONT
   fi
 fi
 echo "contents of $OUTPUT "

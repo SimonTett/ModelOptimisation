@@ -210,7 +210,7 @@ class runSubmit(Submit.ModelSubmit):
         obsSeries = modelFn(start.values)
         # should run ensemble avg etc as side effect...and if things don't exist raise modelError
         # now to set up information having done all cases.
-        finalConfig = self.runConfig()  # get final runInfo
+        finalConfig = self.runConfig(self.config)  # get final runInfo
         finalConfig.beginParam(start)  # setup the begin values!
         finalConfig.best_obs(obsSeries)
 

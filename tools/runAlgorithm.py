@@ -75,18 +75,20 @@ parser.add_argument("-t", "--test", action='store_true',
                     help='If set run fake codes rather than submitting models.')
 parser.add_argument("-m", "--monitor", action='store_true', help='Producing monitoring plot after running')
 
-parser.add_argument("-o", "--optimise", nargs=1,
+parser.add_argument("-o", "--optimise",
                     help='Name of JSON file providing configuration with optimisation. Used by runOptimised & '
                          'runJacobian')
 
 helpStr = """Behaviour for model with no observations. 
                          Choices are fail (default), continue (continue run and submit), 
-                         perturb (pertrub run, restart and submit), or clean (remove directory and continue as normal).
+                         perturb (pertrub run, restart and submit), 
+                         pertrubc (pertrub run, continue and submit),
+                         or clean (remove directory and continue as normal).
                          These are all passed into Submit but no "new" simulations will be submitted. 
                          Just the failed simulations."""
 parser.add_argument("--noobs", help=helpStr,
                     default='fail',
-                    choices=['fail', 'continue', 'perturb', 'clean'])
+                    choices=['fail', 'continue', 'perturb', 'perturbc','clean'])
 args = parser.parse_args()
 verbose = args.verbose
 resubmit = args.noresubmit

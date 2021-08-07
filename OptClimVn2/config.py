@@ -253,13 +253,13 @@ def eddieSubmit(model_list, config, rootDir, verbose=False, postProcess=True, re
         if postProcess:
             # need to put the post processing job release command in the model. That is what postProcessFile does...
             cmd = sshCmd + f' qrls {m.jid} ' + '"'
-            m.postProcessFile(cmd)
+            m.createPostProcessFile(cmd)
 
         modelSubmitName = m.submit()  # this gives the script to submit.
         if verbose:
             print("Submitting ", modelSubmitName)
         if Submit:
-            subprocess.check_output(sshCmd + modelSubmitName + '"', shell=True)  # submit the script
+            subprocess.check_output(sshCmd + str(modelSubmitName) + '"', shell=True)  # submit the script
         submitProcessCount += 1
 
     if verbose: print("Submitted %i jobs " % (submitProcessCount))
