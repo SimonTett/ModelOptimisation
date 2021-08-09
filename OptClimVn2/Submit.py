@@ -127,7 +127,7 @@ class ModelSubmit(object):
         self.rootDir.mkdir(parents=True, exist_ok=True)
         # potentially clean up dir.
         if restart:
-            self.clean() # that cleans up. Nothing to read either.
+            self.clean()  # that cleans up. Nothing to read either.
         else:
             self.readDir(self.rootDir)  # read all directories.
 
@@ -675,7 +675,7 @@ class ModelSubmit(object):
     def runConfig(self, config, filename=None):
         """
         **copy** config and add parameters and obs to it . Config is returned and maybe saved if filename provided.
-        :param self:
+        :param config: the configuration on which the run was based on
         :param filename (default None). If set then new config will be saved to this file.
 
         TODO: Move to runSubmit as it is really there for the "run" cases.

@@ -1010,7 +1010,7 @@ class testHadCM3(unittest.TestCase):
         # result d/VF1 should be 1.1 times larger than d/RHCRIT
         ratio = result[1, :] / result[0, :]
         npt.assert_allclose(ratio, 1.1, rtol=1e-4, atol=1e-4)
-        config = MODELRUN.runConfig()
+        config = MODELRUN.runConfig(Config)
         with pd.option_context('max_rows', None, 'max_columns', None, 'precision', 2,
                                'expand_frame_repr', True, 'display.width', 120):
             print("params \n", config.parameters(normalise=True).T)

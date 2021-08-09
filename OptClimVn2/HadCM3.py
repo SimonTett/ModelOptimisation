@@ -16,6 +16,7 @@ import os
 import re
 import shutil
 import pathlib
+import datetime # needed to parse strings
 import f90nml
 # NEEDED because f90nml.patch (as used in ModelSimulation) fails with RECONA. For the moment dealing with this here.
 import numpy as np
@@ -185,8 +186,8 @@ def initHist_nlcfiles(value='NoSuchFile.txt', inverse=False, namelist=False, par
         return {nl: st}
 
 
-def startTime(time=[1965, 7, 4], inverse=False, namelist=False):
-    # TODO -- make time a string which can be processed using cftime string methods
+def startTime(time_input=[1965, 7, 4], inverse=False, namelist=False):
+
     """
 
     :param time:  start time as 3 to 6 element list. Spcifiying in order year, month, day of month, hour, minute and second
@@ -202,10 +203,18 @@ def startTime(time=[1965, 7, 4], inverse=False, namelist=False):
     Just need to reset year => adding to tupple an indicator for which part of an array to change?? (Breaks existing stuff?)
     ALas f90nml patch seems to fail for RECONA so will need to write it out explicitly.  (This may be fixed now)
     """
+    # see if can parse time as a string. It would be really nice to use cftime rather than datetime
+    # but I don't think there is an fromisoformat method for cftime..
+    if isinstance(time_input,str): # it is a string -- so try and parse it.
+        time = datetime.datetime.fromisoformat(time_input)
+        time = [time.year,time.month,time.day, time.hour,time.minute,time.second]
+    else:
+        time = time_input
 
     # verify that len of target is >= 3 and <= 6 and if not raise error.
     if not (1 <= len(time) <= 6):
         raise Exception("start time  should have at >= 1 members and <= 6")
+
 
     # set up all the var/namelist/file info.
     namelistData = [_namedTupClass(var='MODEL_BASIS_TIME', namelist=nl, file=file) for
@@ -218,39 +227,85 @@ def startTime(time=[1965, 7, 4], inverse=False, namelist=False):
         return time[namelistData[0]]  # just return the value
     else:
         t = time[:]
-        t.extend([0] * (len(t) - 6))  # add trailing zeros
+        if len(t) < 3: # need to add M & d -- should be 1
+            t.extend([1]*(3-len(t)))
+        if len(t) < 6: # nee dto add hours, mins & secs
+            t.extend([0] * (6-len(t)))  # add trailing zeros
         result = {nl: t for nl in namelistData}
         return result  # return the namelist info.
 
 
-def runTarget(target=[0, 0, 0], inverse=False, namelist=False):
-    # TODO -- make target a str corresponding to ISO 8091 standard.
+def timeDelta(input=[0,0,0],inverse=False,namelist=False, runTarget=True):
+
     """
     
-    :param target:  run target time as [YYYY, MM, DD, HH, MM, SS] as used by the UM.   
-                             If list contains less than 6 elements then remaining values are set to 0.
+    :param input:  Duration as [YYYY, MM, DD, HH, MM, SS] as used by the UM.
+                             If list contains less than 6 elements then remaining values are set to 0
+              OR a string in ISO 8061 format (PnYnMnDTnHnMn.nnS)
     :param inverse: Do inverse calculation and return  6 element list as [YYYY, MM, DD, HH, MM, SS]
     :param namelist: Do no computation just return the namelist info 
-    :return:  namelist info and values as array. (or if inverse set return the run target )
+    :param runTarget: namelist info suitable for runTarget. (default). If False namelist info suitable for resubInterval
+    :return: namelist info and values as array. (or if inverse set return the run target )
+
     """
-    # verify that len of target is >= 3 and <= 6 and if not raise error.
-    if not (1 <= len(target) <= 6):
+    # try and parse target as a string
+
+    if isinstance(input,str):
+        durn = parse_isoduration(input)
+    else:
+        durn = input
+
+    # verify that len of target is >= 1 and <= 6 and if not raise error.
+
+
+    if not (1 <= len(durn) <= 6):
         raise Exception("target should have at >= 1 members and <= 6")
 
-    # set up all the var/namelist/file info. 
-    namelistData = [_namedTupClass(var='RUN_TARGET_END', namelist=nl, file=file) for
-                    file, nl in zip(['CNTLALL', 'CONTCNTL', 'RECONA', 'SIZES'],
-                                    ['NLSTCALL', 'NLSTCALL', 'STSHCOMP', 'STSHCOMP'])]
+    # set up all the var/namelist/file info.
+    if runTarget: # suitable for runTarget
+        namelistData = [_namedTupClass(var='RUN_TARGET_END', namelist=nl, file=file) for
+                        file, nl in zip(['CNTLALL', 'CONTCNTL', 'RECONA', 'SIZES'],
+                                        ['NLSTCALL', 'NLSTCALL', 'STSHCOMP', 'STSHCOMP'])]
+    else: # suitable for resubInterval
+        namelistData = [_namedTupClass(var='RUN_RESUBMIT_INC', namelist=nl, file=file) for
+                        file, nl in zip(['CNTLALL', 'CONTCNTL'],
+                                        ['NLSTCALL', 'NLSTCALL'])]
+
+
+
     if namelist:
         return namelistData  # return the namelist info
     elif inverse:
-        return target[namelistData[0]]  # jsut return the value
+        return durn[namelistData[0]]  # just return the value
     else:
-        tgt = target[:]
-        tgt.extend([0] * (len(tgt) - 6))  # add trailing zeros
+        tgt = durn[:]
+        tgt.extend([0] * (6-len(tgt)))  # add trailing zeros
         result = {nl: tgt for nl in namelistData}
         return result  # return the namelist info.
 
+
+def runTarget(target_input=[0, 0, 0], inverse=False, namelist=False):
+
+    """
+    set runTarget -- see timeDelta for documentation.
+
+    :param target_input:
+    :param inverse:
+    :param namelist:
+    :return: namelist info.
+    """
+    return  timeDelta(input=target_input, inverse=inverse,namelist=namelist)
+
+def resubInterval(interval_input=[0, 0, 0], inverse=False, namelist=False):
+    """
+    Set resubmit durations -- see timeDelta for documentation
+    :param interval_input:
+    :param inverse:
+    :param namelist:
+    :return: namelist info
+    """
+
+    return timeDelta(input=interval_input, inverse=inverse,namelist=namelist,runTarget=False)
 
 def runName(name='abcdz', inverse=False, namelist=False):
     """
@@ -485,6 +540,44 @@ def ocnIsoDiff(ocnIsoDiff=1e3, namelist=False, inverse=False):
     else:  # set values -- both  to same value
         return {ocnDiff_AM0: ocnIsoDiff, ocnDiff_AM1: ocnIsoDiff}
 
+def parse_isoduration(s):
+    """ Parse a str ISO-8601 Duration: https://en.wikipedia.org/wiki/ISO_8601#Durations
+    Originally copied from:
+    https://stackoverflow.com/questions/36976138/is-there-an-easy-way-to-convert-iso-8601-duration-to-timedelta
+    Though could use isodate library but trying to avoid dependencies and isodate does not look maintained.
+    :param s: str to be parsed. If not a string starting with "P" then ValueError will be raised
+    :return: 6 element list [YYYY,MM,DD,HH,mm,SS.ss] which is suitable for the UM namelists
+    """
+
+    def get_isosplit(s, split):
+        if split in s:
+            n, s = s.split(split, 1)
+        else:
+            n = '0'
+        return n.replace(',', '.'), s  # to handle like "P0,5Y"
+
+    if not isinstance(s,str):
+        raise ValueError("ISO 8061 demands a string")
+    if s[0] != 'P':
+        raise ValueError("ISO 8061 demands durations start with P")
+    s = s.split('P', 1)[-1]  # Remove prefix
+
+    split = s.split('T')
+    if len(split) == 1:
+        sYMD, sHMS = split[0], ''
+    else:
+        sYMD, sHMS = split  # pull them out
+
+    durn = []
+    for split_let in ['Y', 'M', 'D']:  # Step through letter dividers
+        d, sYMD = get_isosplit(sYMD, split_let)
+        durn.append(float(d))
+
+    for split_let in ['H', 'M', 'S']:  # Step through letter dividers
+        d, sHMS = get_isosplit(sHMS, split_let)
+        durn.append(float(d))
+
+    return durn
 
 class HadCM3(ModelSimulation.ModelSimulation):
     """
@@ -592,6 +685,8 @@ class HadCM3(ModelSimulation.ModelSimulation):
         self.registerMetaFn('DYNDIFF', diffusion, verbose=verbose)  # Dynamics Diffusion generates lots of arrays
         self.registerMetaFn('RUN_TARGET', runTarget,
                             verbose=verbose)  # length of simulation -- modifies several namelist vars
+        self.registerMetaFn('RESUBMIT_INTERVAL',resubInterval,verbose=verbose)
+        # resubmission interval -- modifies several namelist vars
         self.registerMetaFn('START_TIME', startTime,
                             verbose=verbose)  # start_Time for run -- modifies several namelist vars
         self.registerMetaFn("SPHERICAL_ICE", sph_ice, verbose=verbose)  # Spherical ice (or not)
@@ -609,7 +704,7 @@ class HadCM3(ModelSimulation.ModelSimulation):
         if len(parameters) > 0 and (create or update):
             self.setReadOnly(False)  # allow modification
             self.setParams(parameters, verbose=verbose, fail=True)  # apply namelist etc
-            # TODO check if START_TIME speicla hack  is still needed.
+            # TODO check if START_TIME special hack  is still needed.
             #
             if 'START_TIME' in parameters:
                 RECONA_FILE = os.path.join(self.dirPath, 'RECONA')

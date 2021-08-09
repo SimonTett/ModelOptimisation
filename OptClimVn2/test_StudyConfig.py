@@ -131,7 +131,7 @@ class testStudyConfig(unittest.TestCase):
         cov = config.Covariances(constraint=False, CovTotal=c, CovIntVar=c * 0.1, CovObsErr=c * 0.9)
 
         for k, scale in zip(covKeys, [1, 0.1, 0.9]):
-            self.assertTrue(cov[k].equals(c * scale),msg=f"{k} does not match")
+            self.assertTrue(cov[k].equals(c * scale), msg=f"{k} does not match")
 
     def test_version(self):
         """
@@ -159,7 +159,7 @@ class testStudyConfig(unittest.TestCase):
         # test we can set it
         expect = 'test'
         self.config.referenceConfig('test')
-        self.assertEqual(expect,self.config.referenceConfig())
+        self.assertEqual(expect, self.config.referenceConfig())
 
     def test_cacheFile(self):
         """
@@ -219,11 +219,11 @@ class testStudyConfig(unittest.TestCase):
 
         # and test changing steps adds values as expected.
 
-        steps = self.config.steps() # get the steps
-        steps.iloc[:-1] = steps.iloc[:-1]*2# double some of them
+        steps = self.config.steps()  # get the steps
+        steps.iloc[:-1] = steps.iloc[:-1] * 2  # double some of them
         expect = steps[:]
         steps.loc['scale_steps'] = False
-        self.config.steps(steps=steps) # write them back.
+        self.config.steps(steps=steps)  # write them back.
         got = self.config.steps()
         self.assertTrue(got.equals(expect))
 
@@ -388,7 +388,7 @@ class testStudyConfig(unittest.TestCase):
         """
 
         got = self.config.paramNames()  # should get them back..
-        begin = self.config.beginParam() #paramnames come from init valye
+        begin = self.config.beginParam()  # paramnames come from init valye
         expect = begin.index.tolist()
         self.assertEqual(expect, got, msg="params not as expected")
 
@@ -614,10 +614,9 @@ class testStudyConfig(unittest.TestCase):
             tMat = self.config.transMatrix(scale=scale)
             cov = self.config.Covariances(scale=scale)['CovTotal']
             got = tMat.dot(cov).dot(tMat.T)
-            expect = np.identity(got.shape[0]) # trans matrix might, in effect, truncate matrix.
+            expect = np.identity(got.shape[0])  # trans matrix might, in effect, truncate matrix.
             atol = 1e-7
             rtol = 1e-7
-
 
             nptest.assert_allclose(got, expect, atol=atol, rtol=rtol,
                                    err_msg=f' Scale {scale} Transform not giving I')
@@ -630,10 +629,8 @@ class testStudyConfig(unittest.TestCase):
         """
         import re
 
-
-
         # test case
-        dfols = { # cut-n-paste from setup
+        dfols = {  # cut-n-paste from setup
             "logging.save_poisedness": False,
             "logging.save_poisedness_comment": "whether or not  to calculate geometry statistics as part of diagnostic information",
             "init.random_initial_directions": True,
@@ -657,14 +654,14 @@ class testStudyConfig(unittest.TestCase):
         expect.update(randomParm=2)  # update expect
         self.assertEqual(dfolsConfig, expect, 'config not as expected')
         # check that updateParams works
-        expect.update(newV) # all new value
+        expect.update(newV)  # all new value
         self.config.DFOLS_userParams(updateParams=expect)
 
-        self.assertEqual(expect,self.config.DFOLS_userParams(),'user params not as expected')
+        self.assertEqual(expect, self.config.DFOLS_userParams(), 'user params not as expected')
 
         # check IDs are different for different calls to config
 
-        self.assertNotEqual(id(self.config.DFOLS_userParams()),id(self.config.DFOLS_userParams()))
+        self.assertNotEqual(id(self.config.DFOLS_userParams()), id(self.config.DFOLS_userParams()))
 
     def test_DFOLS_config(self):
         """
@@ -675,15 +672,13 @@ class testStudyConfig(unittest.TestCase):
         config = copy.deepcopy(self.config.DFOLS_config())
         # should be the same as the raw data
         dfols = self.config.optimise()['dfols']
-        self.assertEqual(config,dfols)
+        self.assertEqual(config, dfols)
         # modify dfols set it and check.
-        config['rhobeg']=0.1
+        config['rhobeg'] = 0.1
         # underlying data should be different
-        self.assertNotEqual(config,self.config.DFOLS_config())
-        self.config.DFOLS_config(config) # set it and now should be the same
-        self.assertEqual(config,self.config.DFOLS_config())
-
-
+        self.assertNotEqual(config, self.config.DFOLS_config())
+        self.config.DFOLS_config(config)  # set it and now should be the same
+        self.assertEqual(config, self.config.DFOLS_config())
 
     def test_dataFrameInfo(self):
 
@@ -691,20 +686,25 @@ class testStudyConfig(unittest.TestCase):
         Test can set/get dataFrameInfo.
 
         """
-
-        df = pd.DataFrame(np.random.uniform(0,1,[20,20]))
+        import string
+        df = pd.DataFrame(np.random.uniform(0, 1, [20, 20]))
         self.config.set_dataFrameInfo(randomMatrix=df)
         got = self.config.get_dataFrameInfo('randomMatrix')
         atol = 1e-10
-        nptest.assert_allclose(got,df,atol=atol) # round tripping losing some precision. (fp conversion does not quite go to full precision)
+        nptest.assert_allclose(got, df,
+                               atol=atol)  # round tripping losing some precision. (fp conversion does not quite go to full precision)
         # now add another two and get them all back.
-        self.config.set_dataFrameInfo(twoRandom=2*df,minusRandom=-df)
-        got1,got2,got3 = self.config.get_dataFrameInfo(['randomMatrix','twoRandom','minusRandom'])
-        nptest.assert_allclose(got1,df,atol=atol)
-        nptest.assert_allclose(got2, 2*df, atol=atol)
+        self.config.set_dataFrameInfo(twoRandom=2 * df, minusRandom=-df)
+        got1, got2, got3 = self.config.get_dataFrameInfo(['randomMatrix', 'twoRandom', 'minusRandom'])
+        nptest.assert_allclose(got1, df, atol=atol)
+        nptest.assert_allclose(got2, 2 * df, atol=atol)
         nptest.assert_allclose(got3, -df, atol=atol)
-
-
+        # and try with a pandas series.
+        nindex = 5
+        ser = pd.Series(np.arange(nindex), list(string.ascii_letters[0:nindex]))
+        self.config.set_dataFrameInfo(ser=ser)
+        get = self.config.get_dataFrameInfo('ser')
+        nptest.assert_allclose(ser,get)
 
     def test_transJacobian(self):
         """
@@ -712,8 +712,8 @@ class testStudyConfig(unittest.TestCase):
 
         """
 
-        jac=pd.DataFrame(np.identity(5))
-        jac.iloc[0,1]= 0.0001
+        jac = pd.DataFrame(np.identity(5))
+        jac.iloc[0, 1] = 0.0001
         self.config.transJacobian(jac)
         got = self.config.transJacobian()
         self.assertTrue(jac.equals(got))
@@ -730,7 +730,6 @@ class testStudyConfig(unittest.TestCase):
         got = self.config.jacobian()
         self.assertTrue(jac.equals(got))
 
-
     def test_hessian(self):
         """
         Test hessian method works
@@ -742,6 +741,7 @@ class testStudyConfig(unittest.TestCase):
         self.config.hessian(hessian)
         got = self.config.hessian()
         self.assertTrue(hessian.equals(got))
+
 
 if __name__ == "__main__":
     print("Running Test Cases")

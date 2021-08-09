@@ -64,7 +64,8 @@ class testHadCM3(unittest.TestCase):
         parameters = {"CT": 1e-4, "EACF": 0.5, "ENTCOEF": 3.0, "ICE_SIZE": 30e-6,
                       "RHCRIT": 0.7, "VF1": 1.0, "CW_LAND": 2e-4, "DYNDIFF": 12.0, "KAY_GWAVE": 2e4,
                       "ASYM_LAMBDA": 0.15, "CHARNOCK": 0.012, "G0": 10.0, "Z0FSEA": 1.3e-3, "ALPHAM": 0.5,
-                      'START_TIME': [1997, 12, 1], 'RUNID': 'a0101', 'ASTART': '$MYDUMPS/fred.dmp',
+                      'START_TIME': [1997, 12, 1], 'RESUBMIT_INTERVAL': 'P40Y',
+                      'RUNID': 'a0101', 'ASTART': '$MYDUMPS/fred.dmp',
                       'SPHERICAL_ICE': False, 'OcnIceDiff': 2.5e-5, 'IceMaxConc': 0.99, 'OcnIsoDiff': 800}
 
         tmpDir = tempfile.TemporaryDirectory()
@@ -116,7 +117,7 @@ class testHadCM3(unittest.TestCase):
         for k in ['temp@500_nhx', 'temp@500_tropics', 'temp@500_shx']: expectObs[k] = None
         expectParam = {"CT": 1e-4, "EACF": 0.5, "ENTCOEF": 3.0, "ICE_SIZE": 30e-6,
                        "RHCRIT": 0.7, "VF1": 1.0, "CW_LAND": 2e-4, "DYNDIFF": 12.0, "KAY_GWAVE": 2e4,
-                       "SPHERICAL_ICE": False, 'OcnIceDiff': 2.5e-5, 'IceMaxConc': 0.99, 'OcnIsoDiff': 800,
+                       "SPHERICAL_ICE": False, 'RESUBMIT_INTERVAL':'P40Y','OcnIceDiff': 2.5e-5, 'IceMaxConc': 0.99, 'OcnIsoDiff': 800,
                        "ASYM_LAMBDA": 0.15, "CHARNOCK": 0.012, "G0": 10.0, "Z0FSEA": 1.3e-3, "ALPHAM": 0.5,
                        'START_TIME': [1997, 12, 1], 'RUNID': 'a0101', 'ASTART': '$MYDUMPS/fred.dmp'}
         self.assertEqual(self.model.get(['name']), 'a0101')
@@ -168,7 +169,7 @@ class testHadCM3(unittest.TestCase):
 
     def test_readMetaParams(self):
         """
-        Test that HadCM3 specific meta functions all work..by runnign the inverse function and checking we got
+        Test that HadCM3 specific meta functions all work..by running the inverse function and checking we got
           what we put in.
         :return:
         """
@@ -179,7 +180,8 @@ class testHadCM3(unittest.TestCase):
                          "ASYM_LAMBDA": 0.15, "CHARNOCK": 0.012, "G0": 10.0, "Z0FSEA": 1.3e-3, "ALPHAM": 0.5,
                          "OcnIceDiff": 2.5e-5, 'IceMaxConc': 0.99, 'OcnIsoDiff': 800,
                          'RUN_TARGET': [180, 0, 0, 0, 0, 0],
-                         'START_TIME': [1997, 12, 1], 'RUNID': 'a0101',
+                         'START_TIME': [1997, 12, 1, 0, 0, 0], 'RUNID': 'a0101',
+                         'RESUBMIT_INTERVAL': [40, 0, 0, 0, 0, 0],
                          'OSTART': '$DATAW/$RUNID.ostart', 'ASTART': '$MYDUMPS/fred.dmp',
                          'AINITIAL': '$MY_DUMPS/aeabra.daf4c10', 'OINITIAL': '$MY_DUMPS/aeabro.daf4c10'}
         got_values = {}
@@ -479,6 +481,61 @@ class testHadCM3(unittest.TestCase):
 
         self.assertEqual(cntqrls, 1, 'Expected only 1 qrls cmd')
         self.assertEqual(cntSUBCONT, 1, 'expected only 1 SUBMITCMD')
+
+    def test_parse_isoduration(self):
+        """
+        Test parse_isoduration
+
+        :return: Nada. Just runs tests.
+        """
+
+        strings = ['P1Y1M1DT1H1M1.11S', 'P2Y', 'PT1M', 'PT1M2.22S', 'P-1Y']
+        expected = [[1, 1, 1, 1, 1, 1.11], [2, 0, 0, 0, 0, 0], [0, 0, 0, 0, 1, 0], [0, 0, 0, 0, 1, 2.22],
+                    [-1, 0, 0, 0, 0, 0]]
+
+        for s, e in zip(strings, expected):
+            got = HadCM3.parse_isoduration(s)
+            self.assertEqual(e, got)
+
+        # should fail without a leading P or not a string
+        for fail_case in ['12Y', [1, 0, 0, 0, 0, 0]]:
+            with self.assertRaises(ValueError):
+                got = HadCM3.parse_isoduration(fail_case)
+            #
+
+    def test_startTime(self):
+        """
+        Tests startTime to see if it works
+        :return:
+        """
+        tests = [[2020, 1, 1], [1990], [1999, 9, 9, 1, 1, 1],
+                 '2020-01-01', '1990-01-01', '1999-09-09 01:01:01']
+        expect = [[2020, 1, 1, 0, 0, 0], [1990, 1, 1, 0, 0, 0], [1999, 9, 9, 1, 1, 1],
+                  [2020, 1, 1, 0, 0, 0], [1990, 1, 1, 0, 0, 0], [1999, 9, 9, 1, 1, 1]]
+
+        for t, e in zip(tests, expect):  # loop over tests
+            got = HadCM3.startTime(t)  # got is a dict so iterate over keys
+            for k, v in got.items():
+                self.assertEqual(v, e, msg=f"Failed for {t} in nl info {k}")
+
+    def test_timeDelta_fns(self):
+        """
+        Tests timeDelta, runTarget & resubInterval  to check they all work
+
+        :return: nada
+        """
+
+        tests = [[6], [6, 1], [6, 1, 1], [6, 1, 1, 1, 1, 1],
+                 'P7Y', 'P7Y1M', 'P7Y1M1D', 'P7Y1M1DT1H1M1S']
+        expect = [[6, 0, 0, 0, 0, 0], [6, 1, 0, 0, 0, 0], [6, 1, 1, 0, 0, 0], [6, 1, 1, 1, 1, 1],
+                  [7, 0, 0, 0, 0, 0], [7, 1, 0, 0, 0, 0], [7, 1, 1, 0, 0, 0], [7, 1, 1, 1, 1, 1]]
+
+        for t, e in zip(tests, expect):  # loop over tests
+            for fn in [HadCM3.timeDelta, HadCM3.runTarget, HadCM3.resubInterval]:
+                got = fn(t)  # got is a dict so iterate over keys
+
+                for k, v in got.items():
+                    self.assertEqual(v, e, msg=f"Failed for {t} in nl info {k} using fn {fn}")
 
 
 if __name__ == "__main__":

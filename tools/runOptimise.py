@@ -248,7 +248,7 @@ try:
             raise Exception("Problem with dfols")
 
         # need to wrap best soln.
-        finalConfig = MODELRUN.runConfig()  # get final runInfo
+        finalConfig = MODELRUN.runConfig(Config)  # get final runInfo
         best = pd.Series(solution.x, index=varParamNames).rename(finalConfig.name())
         best_obs = solution.resid
         best_obs = pd.Series(best_obs,index=range(0,len(best_obs))).rename(finalConfig.name())
@@ -328,7 +328,7 @@ try:
         nf = len(controller.fevals)
 
         # need to wrap best soln xmin.
-        finalConfig = MODELRUN.runConfig()  # get final runInfo
+        finalConfig = MODELRUN.runConfig(Config)  # get final runInfo
         best = pd.Series(xmin, index=varParamNames)
         finalConfig.optimumParams(**(best.to_dict()))  # write the optimum params
         print("PYSOT completed")
@@ -348,7 +348,7 @@ try:
                                                   np.zeros(nObs), optimise,
                                                   cov=np.identity(nObs), cov_iv=intCov, trace=verbose)
 
-        finalConfig = MODELRUN.runConfig()  # get final runInfo
+        finalConfig = MODELRUN.runConfig(Config)  # get final runInfo
         jacobian = finalConfig.GNjacobian(info['jacobian'])
         hessian = finalConfig.GNhessian(info['hessian'])
         params = finalConfig.GNparams(info['bestParams'])
@@ -373,7 +373,7 @@ try:
                                         configData.paramRanges(paramNames=varParamNames),
                                         obsNames=configData.obsNames(), returnVar=True)
         # store  result
-        finalConfig = MODELRUN.runConfig()  # get final runInfo
+        finalConfig = MODELRUN.runConfig(Config)  # get final runInfo
         jacobian = finalConfig.runJacobian(jacobian)
         print("All done running Jacobian")
     elif algorithmName == 'RUNOPTIMISED': # run optimised case through configuration in JSON file.

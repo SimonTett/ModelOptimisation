@@ -267,9 +267,9 @@ class testRunSubmit(unittest.TestCase):
             pass in an optimum config. Should run with those values.
         """
         configData = self.config
-
+        fake_fn = functools.partial(config.fake_fn)
         rSubmit = runSubmit.runSubmit(configData, self.Model,
-                                      None, rootDir=self.testDir, verbose=self.verbose)
+                                      None, rootDir=self.testDir, verbose=self.verbose, fakeFn=fake_fn)
         # case 1 -- want to not set nensemble but do modify baseRunId and maxDigits
 
         configData.baseRunID('test1')
@@ -297,13 +297,21 @@ class testRunSubmit(unittest.TestCase):
 
         optConfig = copy.deepcopy(configData)
         opt = optConfig.optimumParams()
-        opt *= 1.1 # multiply everything by 1.1
-        optConfig.optimumParams(**opt.to_dict()) #TODO change optimumParams to get a series.
+        opt *= 1.1  # multiply everything by 1.1
+        optConfig.optimumParams(**opt.to_dict())  # TODO change optimumParams to get a series.
         with self.assertRaises(exceptions.runModelError):
             rSubmit.runOptimized(optConfig=optConfig)
-        nmodels = len(rSubmit.modelSubmit()) # should generate another 4 runs to do. Making 8.
+        nmodels = len(rSubmit.modelSubmit())  # should generate another 4 runs to do. Making 8.
         expect = 8
         self.assertEqual(nmodels, expect, msg=f'Expected {expect} got {nmodels}')
+        # let's run the fake stuff and then a final run of runOptimized.
+
+        status, nModels, finalConfig = rSubmit.submit(restartCmd=None, verbose=self.verbose, cost=True,
+                                                      scale=False)
+        # need to read the dirs.
+        rSubmit = runSubmit.runSubmit(configData, self.Model,
+                                      None, rootDir=self.testDir, verbose=self.verbose, fakeFn=fake_fn)
+        endConfig = rSubmit.runOptimized(optConfig=optConfig)
 
     def test_runDFOLS(self):
         """
@@ -312,7 +320,7 @@ class testRunSubmit(unittest.TestCase):
         Note that "noise" is tricky and you need to be careful...
         The noise scaling matters. Can estimate it from the covariance of internal
         var in a climate model. Test case has no noise (though that depends on fake_fn defined in setup for test.
-        If wanted not it is tricky and needs care!
+        If wanted note it is tricky and needs care!
 
         """
         import dfols
@@ -445,7 +453,7 @@ class testRunSubmit(unittest.TestCase):
         print("All done with result\n", df)
         info, transJac = finalConfig.get_dataFrameInfo(['diagnostic_info', 'transJacobian'])
         print("Info\n", info)
-        nptest.assert_allclose(finalConfig.get_dataFrameInfo('transJacobian', type=float), solution.jacobian,
+        nptest.assert_allclose(finalConfig.get_dataFrameInfo('transJacobian', dtype=float), solution.jacobian,
                                atol=1e-10)  # check Jacobian as stored is right
         #    expect to be within 0.01% of the expected soln. If random covariance done then this will be a
         # lot bigger
@@ -527,13 +535,18 @@ class testRunSubmit(unittest.TestCase):
         opt = optConfig.optimumParams()
         opt *= 0.9
         optConfig.optimumParams(**opt.to_dict())
-        try:
-            finalConfig = rSubmit.runJacobian(optConfig)  # run Jacobian
-
-        except exceptions.runModelError:  # Need to run some models.
-            status, nModels, finalConfig = rSubmit.submit(restartCmd=None, verbose=self.verbose)
-            # expect nparam+1 models
-            self.assertEqual(nparam + 1, nModels, f'Expected to have {nparam + 1} models ran on iteration#1')
+        done = False
+        while done:
+            try:
+                finalConfig = rSubmit.runJacobian(optConfig)  # run Jacobian
+                done = True
+            except exceptions.runModelError:  # Need to run some models.
+                status, nModels, finalConfig = rSubmit.submit(restartCmd=None, verbose=self.verbose)
+                # expect nparam+1 models
+                self.assertEqual(nparam + 1, nModels, f'Expected to have {nparam + 1} models ran on iteration#1')
+        # now check jac is what we expect...
+        jac_run = finalConfig.transJacobian()
+        nptest.assert_allclose(jac_run, jac_bare, atol=1e-10)
 
     def test_runGaussNewton(self):
         """
@@ -677,7 +690,7 @@ class testRunSubmit(unittest.TestCase):
         expect = pd.Series(expect, index=paramNames).rename('expect')
         print(pd.DataFrame([best, expect]))
         nptest.assert_allclose(best, expect, rtol=5e-4)
-        nptest.assert_allclose(finalConfig.get_dataFrameInfo('transJacobian', type=float), jac,
+        nptest.assert_allclose(finalConfig.get_dataFrameInfo('transJacobian', dtype=float), jac,
                                atol=1e-10)  # check Jacobian as stored is right
 
 

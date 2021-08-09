@@ -1163,9 +1163,11 @@ class OptClimConfig(dictFile):
         # raise NotImplementedError("Write self test")
         alg_info = self.alg_info()
         for k, v in setargs.items():
+            alg_info['__'+k+'_type'] = str(type(v)) # store the type
             alg_info[k] = v.to_json(orient='split')  # set it
 
-    def get_dataFrameInfo(self, input_keys, type=None):
+
+    def get_dataFrameInfo(self, input_keys, dtype=None):
 
         """
         Return pandas dataframes from alg_info
@@ -1173,22 +1175,27 @@ class OptClimConfig(dictFile):
         :param keys a *list* of variables to return or a string. If a string then this is interpreted as a key.
         If list then each element is a key.
         returns a tuple containing dataframes. If tuple has one element then a dataframe is returned.
-        :param type If not None the type to convert the dataframe to using astype method.
+        :param dtype If not None the type to convert the dataframe to using astype method.
         Example: config.get_dataFrameInfo(['transJacobian','Flames'])
+        :param series. If True return pandas series rather than a dataframe.
 
 
         """
         alg_info = self.alg_info()
         result = []
+        typ_lookup={"<class 'pandas.core.frame.DataFrame'>":"frame",
+                    "<class 'pandas.core.series.Series'>":"series"}
+
         if isinstance(input_keys, str):
             keys = [input_keys]
         else:
             keys = input_keys
         for arg in keys:  # get back the value
             try:
-                df = pd.read_json(alg_info[arg], orient='split')
-                if type is not None:
-                    df = df.astype(type)
+                typ = alg_info['__'+arg+'_type'] # get the type(series or dataframe)
+                df = pd.read_json(alg_info[arg], orient='split', typ=typ_lookup[typ])
+                if dtype is not None:
+                    df = df.astype(dtype)
             except KeyError:  # failed to find so set to None
                 df = None
             result.append(df)
@@ -1200,7 +1207,7 @@ class OptClimConfig(dictFile):
     def diagnosticInfo(self, diagnostic=None):
         """
 
-        :param diagnosticInfo: A pandas dataframe. If set add this to the configuration
+        :param diagnostic: A pandas dataframe. If set add this to the configuration
         :return: the values as a  dataframe
         """
 
@@ -1219,7 +1226,7 @@ class OptClimConfig(dictFile):
         if jacobian is not None:
             self.set_dataFrameInfo(jacobian=jacobian)
 
-        return self.get_dataFrameInfo('jacobian', type=float)
+        return self.get_dataFrameInfo('jacobian', dtype=float)
 
     def transJacobian(self, transJacobian=None):
         """
@@ -1233,7 +1240,7 @@ class OptClimConfig(dictFile):
         if transJacobian is not None:
             self.set_dataFrameInfo(transJacobian=transJacobian)
 
-        return self.get_dataFrameInfo('transJacobian', type=float)
+        return self.get_dataFrameInfo('transJacobian', dtype=float)
 
     def hessian(self, hessian=None):
         """
@@ -1244,7 +1251,7 @@ class OptClimConfig(dictFile):
         if hessian is not None:
             self.set_dataFrameInfo(hessian=hessian)
 
-        return self.get_dataFrameInfo('hessian', type=float)
+        return self.get_dataFrameInfo('hessian', dtype=float)
 
     def paramErrCovar(self, normalise=True, useCov=False):
         r"""
@@ -1284,11 +1291,13 @@ class OptClimConfig(dictFile):
         """
 
         if best_obs is not None:
-            self.dataFrameInfo(best_obs=best_obs.to_json(orient='split'))
+            # self.set_dataFrameInfo(best_obs=best_obs.to_json(orient='split'))
+            self.set_dataFrameInfo(best_obs=best_obs)
 
-        return pd.read_json(self.alg_info().get('best_obs'), orient='split',
-                            typ='series')  # magic because it is a series not a dataframe.
-
+        b = self.get_dataFrameInfo('best_obs')
+        #return pd.read_json(self.alg_info().get('best_obs'), orient='split',
+        #                    typ='series')  # magic because it is a series not a dataframe.
+        return b
     def DFOLSinfo(self, diagnosticInfo=None):
         """
 
@@ -1308,7 +1317,7 @@ class OptClimConfig(dictFile):
         :return: the configuration which (like most python is a ptr tothe data. If you change
         """
         if dfolsConfig is not None:
-             self.optimise()['dfols'] = copy.deepcopy(dfolsConfig)  # copy input.
+            self.optimise()['dfols'] = copy.deepcopy(dfolsConfig)  # copy input.
         return self.optimise().get('dfols', {})
 
     def DFOLS_userParams(self, userParams=None, updateParams=None):
@@ -1412,7 +1421,7 @@ class OptClimConfig(dictFile):
             # probably need similar for parameters and obs to it is more generic.
             self.setv('costd', cost.to_dict())
 
-        cost = pd.Series(self.getv('costd'),dtype=float)
+        cost = pd.Series(self.getv('costd'), dtype=float)
         cost.name = 'Cost'
         bestEval = self.getv('bestEval')
         if best:
@@ -1779,16 +1788,16 @@ class OptClimConfigVn2(OptClimConfig):
         try:  # now to plot
             nx = len(cost)
             costAx.plot(np.arange(0, nx), cost.values)
-            a=costAx.set_xlim(-0.5, nx)
+            a = costAx.set_xlim(-0.5, nx)
             minv = cost.min()
             minp = cost.values.argmin()  # use location in array (as that is what we plot)
             costAx.set_title("Cost", fontsize='small')
-            a=costAx.plot(minp, minv, marker='o', ms=12, alpha=0.5)
+            a = costAx.plot(minp, minv, marker='o', ms=12, alpha=0.5)
             costAx.axhline(minv, linestyle='dotted')
-            a=costAx.set_yscale('log')
+            a = costAx.set_yscale('log')
             yticks = [1, 2, 5, 10, 20, 50]
-            a=costAx.set_yticks(yticks)
-            a=costAx.set_yticklabels([str(y) for y in yticks])
+            a = costAx.set_yticks(yticks)
+            a = costAx.set_yticklabels([str(y) for y in yticks])
             # plot params
 
             parm = self.parameters(normalise=True)
@@ -1796,10 +1805,10 @@ class OptClimConfigVn2(OptClimConfig):
             X = np.arange(-0.5, parm.shape[1])
             Y = np.arange(-0.5, parm.shape[0])  # want first iteration at 0.0
             cm = paramAx.pcolormesh(Y, X, parm.T.values, cmap=cmap, vmin=0.0, vmax=1.)  # make a colormesh
-            a=paramAx.set_yticks(np.arange(0, len(parm.columns)))
-            a=paramAx.set_yticklabels(parm.columns)
-            a=paramAx.set_title("Normalised Parameter")
-            a=paramAx.axvline(minp, linestyle='dashed', linewidth=2, color='gray')
+            a = paramAx.set_yticks(np.arange(0, len(parm.columns)))
+            a = paramAx.set_yticklabels(parm.columns)
+            a = paramAx.set_title("Normalised Parameter")
+            a = paramAx.axvline(minp, linestyle='dashed', linewidth=2, color='gray')
 
             # plot norm obs
 
@@ -1813,12 +1822,12 @@ class OptClimConfigVn2(OptClimConfig):
             X = np.arange(-0.5, normObs.shape[1])
             Y = np.arange(-0.5, normObs.shape[0])
             cmO = obsAx.pcolormesh(Y, X, normObs.T.values, vmin=-4, vmax=4, cmap=cmap)
-            a=obsAx.set_yticks(np.arange(0, len(normObs.columns)))
-            a=obsAx.set_yticklabels(normObs.columns, fontsize='x-small')
+            a = obsAx.set_yticks(np.arange(0, len(normObs.columns)))
+            a = obsAx.set_yticklabels(normObs.columns, fontsize='x-small')
             obsAx.set_xlabel("Iteration")
             xticks = np.arange(0, nx // 5 + 1) * 5
-            a=obsAx.set_xticks(xticks)
-            a=obsAx.set_xticklabels(xticks)
+            a = obsAx.set_xticks(xticks)
+            a = obsAx.set_xticklabels(xticks)
             obsAx.axvline(minp, linestyle='dashed', linewidth=2, color='gray')
 
             obsAx.set_title("Normalised Observations")

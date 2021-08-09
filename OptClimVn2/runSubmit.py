@@ -551,7 +551,7 @@ class runSubmit(Submit.ModelSubmit):
 
         # need to wrap best soln xmin.
         finalConfig = self.runCost(self.config, scale=scale)
-        finalConfig = self.runConfig(finalConfig)  # get final runInfo
+        finalConfig = self.runConfig(Config, finalConfig)  # get final runInfo
         best = pd.Series(xmin, index=paramNames)
         finalConfig.optimumParams(**(best.to_dict()))  # write the optimum params
         print("PYSOT completed")
