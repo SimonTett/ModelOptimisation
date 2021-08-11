@@ -528,7 +528,7 @@ class testRunSubmit(unittest.TestCase):
         finalConfig = rSubmit.runJacobian()  # run Jacobian to get the final answer
         # now check jac is what we expect...
         jac_run = finalConfig.transJacobian()
-        nptest.assert_allclose(jac_run, jac_bare, atol=1e-10)  # round trip through json removes some precision.
+        nptest.assert_allclose(jac_run, jac_bare, atol=1e-9)  # round trip through json removes some precision.
 
         # check that passing in optConfig works and that have nparam +1 cases.
         optConfig = copy.deepcopy(self.config)
@@ -546,7 +546,7 @@ class testRunSubmit(unittest.TestCase):
                 self.assertEqual(nparam + 1, nModels, f'Expected to have {nparam + 1} models ran on iteration#1')
         # now check jac is what we expect...
         jac_run = finalConfig.transJacobian()
-        nptest.assert_allclose(jac_run, jac_bare, atol=1e-10)
+        nptest.assert_allclose(jac_run, jac_bare, atol=1e-9)
 
     def test_runGaussNewton(self):
         """
