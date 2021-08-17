@@ -21,7 +21,7 @@ os.environ['OPTCLIMTOP'] = os.path.curdir
 
 class testStudyConfig(unittest.TestCase):
     """
-    Test cases for StudyConfig. Currently partial so as timee passes more tests should be written. 
+    Test cases for StudyConfig. Currently partial so as time passes more tests should be written.
     Ideally >1 for each method
     """
 
