@@ -32,6 +32,23 @@ from ModelSimulation import _namedTupClass
 # disadvantage is that functions then are very tightly bound into namelist functionality making it more difficult
 # to modify it. Advantage is that meta param fns deal with namelist complexity.
 
+"""
+How to add a new parameter when a namelist needs to be changed. There are two cases:
+1) Simple: one variable in the framework matches to one namelist variable which has one value  
+  Then use simpleNameList(var_name) which does most of the work for you. 
+    This actually calls the genVarToNameList method with sensible defaults for HadCM3 Perturbed Physics framework
+    
+2) Complex: one variable in the framework matches to multiple values in the namelist. Either an array for a variable
+  or multiple variables.  
+   In that case you need to write a function which takes a variable with a single default value and the following arguments:
+      namelist (default False) which will return the namelist information, inverse (default False) which will query the 
+        input namelist information and return the frame variable value.  To create the namelist info use
+         _namedTupClass function which is inherited from ModelSimulation. 
+         You need to specify the var, namelist name and file.  These named tuples are keys into a dict which you 
+          use for the inverse function or need to create the dict for the forward function. See code below for 
+          examples. 
+  Then register the function with the registerMetaFn method. This method ties framework variable names to the function.
+"""
 
 # set of fns below are for converting parameters to multiple namelist values.
 

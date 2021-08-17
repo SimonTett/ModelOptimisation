@@ -601,7 +601,9 @@ class ModelSimulation(object):
 
     def genVarToNameList(self, param, nameListVar, nameListName, nameListFile, verbose=False):
         """
-        Generate a conversion list for use in converting model parameter names to namelist values
+        Generate a conversion list for use in converting model parameter names to namelist values.
+         Recommended approach if have a easy case with one framework variable matching directly to
+         one namelist variable.
         :param param: the name of the parameter (as a string)
         :param nameListVar  :  variable name in the namelist
         :param nameListName: name of namelist
