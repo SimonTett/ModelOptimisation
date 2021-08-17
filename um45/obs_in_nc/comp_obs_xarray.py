@@ -2,7 +2,7 @@
 
 """ Compute simulated observables using xarray.
 Xarray appears to be a lot faster than iris!
- Based on comp_obs. Hopefully faster (iris
+ Based on comp_obs. Hopefully faster 
 Observations are:
 Global mean, Northern Hemisphere Extratropical average (30N-90N), Southern Hemisphere Extra-tropical (90S-30S) mean and 
 Tropical (30S - 30N) mean for:
@@ -189,7 +189,7 @@ def do_work():
     # now fix the MSLP values. Need to remove the global mean from values and the drop the SHX value.
     results.pop('MSLP_SHX')
     for k in ['MSLP_NHX', 'MSLP_TROPICS']:
-        results[k + '_DGM'] = results.pop(k) - results['MSLP_GLOBAL']
+        results[k + 'DGM'] = results.pop(k) - results['MSLP_GLOBAL']
 
     if verbose:  # print out the summary data for all created values
         for name, value in results.items():

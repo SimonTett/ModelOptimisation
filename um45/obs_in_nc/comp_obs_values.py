@@ -56,6 +56,7 @@ if verbose:
 results = dict()  # where we store results
 for file in files:
     ds = xarray.open_dataset(file).sel(time=slice(start_time, end_time))
+    file_result = dict() # collect up by file
     # iterate over data variables.
     for v in ds.data_vars:
         try:
@@ -69,13 +70,15 @@ for file in files:
                 print("Scaling ERA5 precip to kg/second from m/day")
             var *= 1000/(24*60*60.)
         if unit == 'mm/month':
-            var *= var.time.dt.days_in_month/(24*60*60) # convert to kg/sec
+            var /= var.time.dt.days_in_month*24*60*60 # convert to kg/sec
+        if unit == "degrees Celsius": # convert to K
+            var += 273.16
         try:
             latitude_coord = list(var.coords.dims)[2]
             latitude_coord = 'latitude'
         except IndexError:
             continue
-        name = f"{file}:{v}"
+        name = v
         mn_values = means(var, name, latitude_coord=latitude_coord)
         # now potentially deal with pressure
         if v in ['msl','mslp']:
@@ -83,10 +86,13 @@ for file in files:
                 print(f"Sorting pressure for {file}")
             mn_values.pop(f'{name}_SHX')
             for k in [f'{name}_NHX', f'{name}_TROPICS']:
-                mn_values[k + '_DGM'] = mn_values.pop(k) - mn_values[f'{name}_GLOBAL']
+                mn_values[k + 'DGM'] = mn_values.pop(k) - mn_values[f'{name}_GLOBAL']
         if verbose:
             print(mn_values)
-        results.update(mn_values)
+        file_result.update(mn_values)
+        # end loop over vars
+    results[str(file)]=file_result
+    # end loop over files
 
 # now to write out the values.
 
