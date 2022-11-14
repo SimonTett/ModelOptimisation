@@ -1847,6 +1847,78 @@ class OptClimConfigVn2(OptClimConfig):
             fig.savefig(str(monitorFile))  # save the figure
         return fig, (costAx, paramAx, obsAx)
 
+    def extractDoc(self):
+        """
+        Extract documentation from configuration. Done through finding any key that ends in "_comment"
+        :return: configuration with key -- the name and doc the doc string
+        """
+        def extract_doc_list(inputList,tgt_end='_comment'):
+            """
+            Ecxtract comments from list or list like things
+            :param inputList: input list
+            :param tgt_end:  what is a comment (anythoing ending in this)
+            :return: extract list.
+            """
+
+            doc=list()
+            for v in inputList:
+                if isinstance(v, (dict, collections.OrderedDict)):
+                    ddoc = extract_doc_dict(v,tgt_end=tgt_end)
+
+                    if ddoc is not None:
+                        doc.append(ddoc)
+
+                elif isinstance(v,list):
+                    ddoc = extract_doc_list(v,tgt_end=tgt_end)
+                    if ddoc is not None:
+                        doc.append(ddoc)
+
+            #breakpoint()
+            #raise NotImplementedError("No support yet for lists")
+            if len(doc)==0:
+                doc=None
+            return doc
+
+        def extract_doc_dict(inputDict,tgt_end='_comment'):
+
+            doc = dict()
+
+            for key,v in inputDict.items():
+                if isinstance(v, (dict, collections.OrderedDict)):
+                    ddoc = extract_doc_dict(v,tgt_end=tgt_end)
+                    # see if have a comment key and if so add it in with name k_doc
+                    if v.get('comment'):
+                        doc[key+"_doc"]=v.get('comment')
+                    if ddoc is not None:
+                        doc[key] = ddoc
+                elif isinstance(v,list):
+                    ddoc = extract_doc_list(v,tgt_end=tgt_end)
+                    if ddoc is not None:
+                        doc[key]=ddoc
+                elif key.endswith(tgt_end): # a comment
+                    new_key = key[0:-len(tgt_end)]
+                    doc[new_key]=v
+
+            if len(doc)==0:
+                doc=None
+
+            return doc
+
+
+        return extract_doc_dict(self.Config)
+
+    def printDoc(self,stream=None,width=120):
+        """
+        Print out documentation within a study configuration. Uses extractDoc and pretty print.
+        :param stream -- stream to print to -- see print.pprint for details
+        :param width: -- width of screen for printing. Default is 120.
+        :return: Nada
+        """
+        import pprint
+
+        pprint.pprint(self.extractDoc(),stream=stream,width=width,compact=True,sort_dicts=False)
+
+
 
 class OptClimConfigVn3(OptClimConfigVn2):
     """
