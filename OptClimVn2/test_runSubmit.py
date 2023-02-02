@@ -598,7 +598,8 @@ class testRunSubmit(unittest.TestCase):
 
         def fn_opt(params):
             result = config.bare_fn(params, config=configData, var_scales=var_scales)
-            result -= tgt  # remove tgt TODO consider if needed?
+            print(len(result),len(tgt))
+            result -= tgt.values
             result *= scales  # scale
             result = result @ Tmat.T.values  # apply transformation.
             return result
@@ -623,6 +624,7 @@ class testRunSubmit(unittest.TestCase):
         paramNames = configData.paramNames()
         nObs = Tmat.shape[0]  # could be less than the "raw" obs depending on Tmat.
         start = configData.beginParam()
+        print("start",len(start))
         best, status, info = Optimise.gaussNewton(fn_opt, start.values,
                                                   configData.paramRanges(paramNames=paramNames).values.T,
                                                   configData.steps(paramNames=paramNames).values,

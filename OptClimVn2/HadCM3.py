@@ -557,6 +557,30 @@ def ocnIsoDiff(ocnIsoDiff=1e3, namelist=False, inverse=False):
     else:  # set values -- both  to same value
         return {ocnDiff_AM0: ocnIsoDiff, ocnDiff_AM1: ocnIsoDiff}
 
+def scavengefn(scavenge=1.0,namelist=False,inverse=False):
+    """
+    change scavenge meta parameter which changes L0 & L1 in the aerosol scheme
+    :param scavenge: scales L0/L1
+    :param namelist: If True return the namelist information
+    :param inverse:  If True invert the relationship from the supplied namelist
+    :return: Namelist info as dict
+    """
+    L0_default, L1_default = (6.5e-5,2.995e-5)
+    l0_nl = _namedTupClass(var='L0', namelist='SLBC21', file='CNTLATM')
+    l1_nl = _namedTupClass(var='L1', namelist='SLBC21', file='CNTLATM')
+    if namelist:
+        return [l0_nl,l1_nl]
+    elif inverse:
+        res = scavenge[l0_nl]/L0_default
+        print("scav ",scavenge[l0_nl],L0_default,res)
+        return res
+    else:
+        print(L0_default*scavenge,L0_default,scavenge,L1_default,L1_default*scavenge)
+        result= {l0_nl: L0_default*scavenge, l1_nl: L1_default*scavenge}
+        print(result)
+        return result
+
+
 def parse_isoduration(s):
     """ Parse a str ISO-8601 Duration: https://en.wikipedia.org/wiki/ISO_8601#Durations
     Originally copied from:
@@ -595,6 +619,8 @@ def parse_isoduration(s):
         durn.append(float(d))
 
     return durn
+
+
 
 class HadCM3(ModelSimulation.ModelSimulation):
     """
@@ -669,10 +695,10 @@ class HadCM3(ModelSimulation.ModelSimulation):
         ## Set up namelist mappings. #TODO add documentation to parameters and have way of model instance reporting on known params.
         # easy case all variables in SLBC21 and which just set the values.
         for var in ['VF1', 'ICE_SIZE', 'ENTCOEF', 'CT', 'ASYM_LAMBDA', 'CHARNOCK', 'G0', 'Z0FSEA',  # atmos stuff
-                    'N_DROP_MIN', 'IA_AERO_POWER', 'IA_AERO_SCALE',  # indirect aerosol stuff
-                    # model here is n_drop = IA_AERO_SCALE*(1-exp(IA_AERO_POWER*N_AERO)) where N_AERO is no of aerosol drops and n_drop is no of cld drolets.
-                    # default values are 'N_DROP_MIN': 3.5E7, 'IA_AERO_POWER': -2.5e-9, 'IA_AERO_SCALE': 3.75E8
-                    'CLOUDTAU', 'NUM_STAR', 'L0', 'L1', 'OHSCA', 'VOLSCA', 'ANTHSCA', 'RAD_AIT', 'RAD_ACC'
+                    'IA_N_DROP_MIN', 'IA_N_INFTY', 'IA_KAPPA_SCALE', #, "L0",'L1', # indirect aerosol stuff
+                    # model here is n_drop = IA_N_INFTY*(1-exp(IA_KAPPA_SCALE*N_AERO/IA_N_INFTY)) where N_AERO is no of aerosol drops and n_drop is no of cld drolets.
+                    # default values are 'N_DROP_MIN': 3.5E7, 'IA_KAPPA_SCALE':0.9375 , 'IA_N_INFTY': 3.75E8
+                    'CLOUDTAU', 'NUM_STAR', 'OHSCA', 'VOLSCA', 'ANTHSCA', 'RAD_AIT', 'RAD_ACC'
                     # sulphate params.  CLOUDTAU (1.08E4)  air parcel lifetime in cloud, NUM_STAR (1.0E6) threshold concn of accu mode particles
                     # L0=6.5E-5, Scavenging parameter when S < S_threshold
                     # L1=2.955E-5, Scavenging parameter when S > S_threshold
@@ -700,6 +726,7 @@ class HadCM3(ModelSimulation.ModelSimulation):
         self.registerMetaFn('RHCRIT', cloudRHcrit, verbose=verbose)  # RHCRIT meta-param generates array
         self.registerMetaFn('EACF', cloudEACF, verbose=verbose)  # EACF meta-param generates array
         self.registerMetaFn('DYNDIFF', diffusion, verbose=verbose)  # Dynamics Diffusion generates lots of arrays
+        self.registerMetaFn('SCAVENGE',scavengefn,verbose=verbose) # Scavenge param for aerosol model
         self.registerMetaFn('RUN_TARGET', runTarget,
                             verbose=verbose)  # length of simulation -- modifies several namelist vars
         self.registerMetaFn('RESUBMIT_INTERVAL',resubInterval,verbose=verbose)

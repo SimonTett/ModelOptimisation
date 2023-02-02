@@ -66,6 +66,7 @@ class testHadCM3(unittest.TestCase):
                       "ASYM_LAMBDA": 0.15, "CHARNOCK": 0.012, "G0": 10.0, "Z0FSEA": 1.3e-3, "ALPHAM": 0.5,
                       'START_TIME': [1997, 12, 1], 'RESUBMIT_INTERVAL': 'P40Y',
                       'RUNID': 'a0101', 'ASTART': '$MYDUMPS/fred.dmp',
+                      "SCAVENGE": 2.0,'IA_N_DROP_MIN':4E7, 'IA_KAPPA_SCALE':0.5 , 'IA_N_INFTY': 3.75E89,
                       'SPHERICAL_ICE': False, 'OcnIceDiff': 2.5e-5, 'IceMaxConc': 0.99, 'OcnIsoDiff': 800}
 
         tmpDir = tempfile.TemporaryDirectory()
@@ -119,6 +120,7 @@ class testHadCM3(unittest.TestCase):
                        "RHCRIT": 0.7, "VF1": 1.0, "CW_LAND": 2e-4, "DYNDIFF": 12.0, "KAY_GWAVE": 2e4,
                        "SPHERICAL_ICE": False, 'RESUBMIT_INTERVAL':'P40Y','OcnIceDiff': 2.5e-5, 'IceMaxConc': 0.99, 'OcnIsoDiff': 800,
                        "ASYM_LAMBDA": 0.15, "CHARNOCK": 0.012, "G0": 10.0, "Z0FSEA": 1.3e-3, "ALPHAM": 0.5,
+                       "SCAVENGE": 2.0,'IA_N_DROP_MIN':4E7, 'IA_KAPPA_SCALE':0.5 , 'IA_N_INFTY': 3.75E89,
                        'START_TIME': [1997, 12, 1], 'RUNID': 'a0101', 'ASTART': '$MYDUMPS/fred.dmp'}
         self.assertEqual(self.model.get(['name']), 'a0101')
         self.assertEqual(self.model.get(['ppExePath']), 'postProcess.sh')
@@ -177,6 +179,7 @@ class testHadCM3(unittest.TestCase):
         expect_values = {"CT": 1e-4, "EACF": 0.5, "ENTCOEF": 3.0, "ICE_SIZE": 30e-6,
                          "RHCRIT": 0.7, "VF1": 1.0, "CW_LAND": 2e-4, "DYNDIFF": 12.0, "KAY_GWAVE": 2e4,
                          'SPHERICAL_ICE': False,
+                         "SCAVENGE":2.0,'IA_N_DROP_MIN':4E7, 'IA_KAPPA_SCALE':0.5 , 'IA_N_INFTY': 3.75E89,
                          "ASYM_LAMBDA": 0.15, "CHARNOCK": 0.012, "G0": 10.0, "Z0FSEA": 1.3e-3, "ALPHAM": 0.5,
                          "OcnIceDiff": 2.5e-5, 'IceMaxConc': 0.99, 'OcnIsoDiff': 800,
                          'RUN_TARGET': [180, 0, 0, 0, 0, 0],
@@ -200,12 +203,13 @@ class testHadCM3(unittest.TestCase):
 
         # tests that namelists are as expected -- per function...
         # IceMaxConc  NH 00.99, SH 0.98
-        cases = self.model.readNameList(['IceMaxConc', "CW_LAND", "OcnIceDiff", 'OcnIsoDiff'], verbose=verbose,
+        names =dict(IceMaxConc=[0.99, 0.98], CW_LAND=[2e-4, 5e-5], OcnIceDiff=[2.5e-5, 2.5e-5],
+                    OcnIsoDiff=[800, 800],SCAVENGE=[1.3e-4, 5.99e-5]) # name of var + expected value for what it sets
+        # read in namelists
+        cases = self.model.readNameList(names.keys(), verbose=verbose,
                                         full=True)
-        self.assertEqual(list(cases['IceMaxConc'].values()), [0.99, 0.98])
-        self.assertEqual(list(cases['CW_LAND'].values()), [2e-4, 5e-5])
-        self.assertEqual(list(cases['OcnIceDiff'].values()), [2.5e-5, 2.5e-5])
-        self.assertEqual(list(cases['OcnIsoDiff'].values()), [800, 800])
+        for k,expected in names.items(): # test all cases.
+            self.assertEqual(list(cases[k].values()), expected,msg=f'failed to compare for {k} ')
 
     def test_setParams(self):
         """
@@ -214,21 +218,18 @@ class testHadCM3(unittest.TestCase):
         """
         # will test that can set namelist variables, that setting something that doesn't exist fails.
         self.model.setReadOnly(False)  # want to modify model.
-        # param is dict of parmaetrs that map directly to namelist variables.
+        # param is dict of parmaters that map directly to namelist variables.
         param = {'VF1': 1.5, 'ICE_SIZE': 32e-6, 'ENTCOEF': 0.6, 'CT': 2e-4, 'ASYM_LAMBDA': 0.2,
                  'CHARNOCK': 0.015, 'G0': 20.0, 'Z0FSEA': 1.5e-3, 'AINITIAL': 'fred.dmp', 'OINITIAL': 'james.dmp',
-                 'CLOUDTAU': 1.08E4, 'NUM_STAR': 1.0e6, 'L0': 6.5E-5, 'L1': 2.955E-5, 'OHSCA': 1.0, 'VOLSCA': 1.0,
+                 'CLOUDTAU': 1.08E4, 'NUM_STAR': 1.0e6,  'OHSCA': 1.0, 'VOLSCA': 1.0,
                  'ANTHSCA': 1.0,  # Aerosol params
                  'RAD_AIT': 24E-9, 'RAD_ACC': 95E-9,
-                 'N_DROP_MIN': 3.5E7, 'IA_AERO_POWER': 2.5e-9, 'IA_AERO_SCALE': 3.75E8}  # aerosol impact on clouds
+                 'IA_N_DROP_MIN': 3.5E7, 'IA_N_INFTY':3.75e8, 'IA_KAPPA_SCALE':0.9375}  # aerosol impact on clouds
         metaParam = {'KAY_GWAVE': 2e4, 'ALPHAM': 0.65, 'CW_LAND': 1e-3, 'RHCRIT': 0.666, 'EACF': 0.777,
                      'DYNDIFF': 11.98, 'RUN_TARGET': [2, 1, 1, 0, 0, 0],
-                     'OcnIceDiff': 3.0e-5, 'IceMaxConc': 0.99, 'OcnIsoDiff': 800}
-        un = collections.OrderedDict()
-        for k, v in param.items():
-            un[k] = v
+                     'OcnIceDiff': 3.0e-5, 'IceMaxConc': 0.99, 'OcnIsoDiff': 800,'SCAVENGE':2}
+        un = param.copy()
         expect = un.copy()
-        # got problem here.
         for k, v in metaParam.items():
             un[k] = v
             if type(v) == np.ndarray: v = v.round(3)
