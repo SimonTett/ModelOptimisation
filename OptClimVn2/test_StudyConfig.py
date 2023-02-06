@@ -133,6 +133,14 @@ class testStudyConfig(unittest.TestCase):
         for k, scale in zip(covKeys, [1, 0.1, 0.9]):
             self.assertTrue(cov[k].equals(c * scale), msg=f"{k} does not match")
 
+    def test_readCovariances(self):
+        """
+        Test that readCovariances fails when obs are bad. (and any other tests that seem reasonable)
+        :return: nada
+        """
+
+        raise NotImplementedError("Implement tests for readCovariances")
+
     def test_version(self):
         """
         Test the version is 2 as expected

@@ -138,7 +138,7 @@ class runSubmit(Submit.ModelSubmit):
                         print("Need new model with params", pDict)
                     obs = empty.rename(ensembleMember).rename(f'missing{missCount}')
                     missCount += 1
-                    ensObs.append(obs)
+                ensObs.append(obs)
             # end of loop over ensemble members.
             ensObs = pd.DataFrame(ensObs)
             # compute ensemble-mean if needed
@@ -148,8 +148,7 @@ class runSubmit(Submit.ModelSubmit):
                 ensObs = ensObs.mean(axis=0)
             else:
                 ensObs = ensObs.iloc[0, :]  # 1 row so extract the series...
-            if verbose:
-                print("ensObs is ",ensObs)
+
             result.append(ensObs)  # add to list for result
         # end of loop over simulations to be done.
         result = pd.DataFrame(result)  # convert to a dataframe
@@ -158,13 +157,10 @@ class runSubmit(Submit.ModelSubmit):
 
         if raiseError and np.any(result.isnull()):
             # want to raise error and any of result is nan.
-            if verbose:
-                print("Raising runModelError")
             raise exceptions.runModelError
         if not df:  # want it as values not  a dataframe
             result = np.squeeze(result.values)
-        if verbose:
-            print("Done and returning ",result)
+
         return result
 
     def genOptFunction(self, **kwargs):

@@ -836,9 +836,10 @@ class HadCM3(ModelSimulation.ModelSimulation):
           set DATAW and DATAM to $MY_DATADIR/W & $MY_DATADIR/M respectively.
         :param runTime: default None -- if not None then specify time in seconds for model job. 
         :param runCode: default None -- if not None then this is the project code for the model job.
-        
+
         :return: nada
         """
+        #TODO Check that step is 4. Decide if fix (i.e. set STEP=4) or fail with a sensible error message.
         # first work out runID
         runid = self.getParams().get('RUNID',
                                      self.name())  # TODO fix this so that if params passed a string it does sensible thing with it...

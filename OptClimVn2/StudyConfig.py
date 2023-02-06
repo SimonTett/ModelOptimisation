@@ -781,7 +781,7 @@ class OptClimConfig(dictFile):
             if cov.isnull().sum().sum() > 0:  # got some missing
                 print(f"Covariance from {use_covFile} contains missing data after sampling. Do fix")
                 print(cov)
-                raise Exception(f'cov {use_covFile} after sampling has missing data')
+                raise ValueError(f'cov {use_covFile} after sampling has missing data')
 
 
         return cov
