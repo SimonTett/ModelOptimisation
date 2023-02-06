@@ -763,7 +763,7 @@ class OptClimConfig(dictFile):
             cov = pd.read_csv(use_covFile)  # read the covariance
             cov.set_index(cov.columns, drop=False, inplace=True,
                           verify_integrity=True)  # provide index
-            # verify covariance is sensible.. Should nto have any missing data
+            # verify covariance is sensible.. Should not have any missing data
             if cov.isnull().sum().sum() > 0:  # got some missing
                 print(f"Covariance from {use_covFile} contains missing data. Do fix")
                 print(cov)
@@ -778,6 +778,11 @@ class OptClimConfig(dictFile):
             if cov.shape != expect_shape:  # trigger error if missing
                 print("Sub-sampled covariance shape = ", cov.shape, "And expected = ", expect_shape)
                 raise ValueError
+            if cov.isnull().sum().sum() > 0:  # got some missing
+                print(f"Covariance from {use_covFile} contains missing data after sampling. Do fix")
+                print(cov)
+                raise Exception(f'cov {use_covFile} after sampling has missing data')
+
 
         return cov
 

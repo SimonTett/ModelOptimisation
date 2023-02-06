@@ -572,12 +572,9 @@ def scavengefn(scavenge=1.0,namelist=False,inverse=False):
         return [l0_nl,l1_nl]
     elif inverse:
         res = scavenge[l0_nl]/L0_default
-        print("scav ",scavenge[l0_nl],L0_default,res)
         return res
     else:
-        print(L0_default*scavenge,L0_default,scavenge,L1_default,L1_default*scavenge)
         result= {l0_nl: L0_default*scavenge, l1_nl: L1_default*scavenge}
-        print(result)
         return result
 
 

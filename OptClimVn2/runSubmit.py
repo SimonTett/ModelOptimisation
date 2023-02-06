@@ -99,10 +99,15 @@ class runSubmit(Submit.ModelSubmit):
 
         # column names affected by transform so use that if provided
         if transform is not None:
+            if len(transform.index) == 0:
+                print("Transform is \n", transform)
+                raise ValueError("Transform has 0 len index. Fix your covariance. Exiting")
             obsNames = transform.index
         else:
             obsNames = self.obsNames()
         nObs = len(obsNames)  # How many observations are we expecting?
+        if nObs == 0:# Got zero. Something gone wrong
+            raise ValueError("No observations found. Check your configuration file ")
         # result = np.full((nsim, nObs), np.nan)  # array of np.nan for result
         result = []  # empty list. Will fill with series from analysis and then make into a dataframe.
         nEns = self.config.ensembleSize()  # how many ensemble members do we want to run.
@@ -133,14 +138,18 @@ class runSubmit(Submit.ModelSubmit):
                         print("Need new model with params", pDict)
                     obs = empty.rename(ensembleMember).rename(f'missing{missCount}')
                     missCount += 1
-                ensObs.append(obs)
+                    ensObs.append(obs)
+            # end of loop over ensemble members.
             ensObs = pd.DataFrame(ensObs)
             # compute ensemble-mean if needed
             if ensObs.shape[0] > 1:
+                if verbose:
+                    print("Computing ensemble average")
                 ensObs = ensObs.mean(axis=0)
             else:
                 ensObs = ensObs.iloc[0, :]  # 1 row so extract the series...
-
+            if verbose:
+                print("ensObs is ",ensObs)
             result.append(ensObs)  # add to list for result
         # end of loop over simulations to be done.
         result = pd.DataFrame(result)  # convert to a dataframe
@@ -149,10 +158,13 @@ class runSubmit(Submit.ModelSubmit):
 
         if raiseError and np.any(result.isnull()):
             # want to raise error and any of result is nan.
+            if verbose:
+                print("Raising runModelError")
             raise exceptions.runModelError
         if not df:  # want it as values not  a dataframe
             result = np.squeeze(result.values)
-
+        if verbose:
+            print("Done and returning ",result)
         return result
 
     def genOptFunction(self, **kwargs):
@@ -359,7 +371,7 @@ class runSubmit(Submit.ModelSubmit):
         # update the user parameters from the configuration.
         userParams = configData.DFOLS_userParams(userParams=userParams)
         tMat = configData.transMatrix(scale=scale)  # scaling on transform matrix and in optfn  needs to be the same.
-        optFn = self.genOptFunction(transform=tMat, residual=True, raiseError=False, scale=scale)
+        optFn = self.genOptFunction(transform=tMat, residual=True, raiseError=False, scale=scale,verbose=False)
 
         try:
             with warnings.catch_warnings():  # catch the complaints from DFOLS about NaNs encountered..
