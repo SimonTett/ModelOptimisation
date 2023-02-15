@@ -222,11 +222,12 @@ class Study(object):
         paramsDF = pd.DataFrame(p, index=indx)
         return paramsDF
 
-    def obs(self, scale=True):
+    def obs(self, scale=True,remove_missing=False):
         """
         Extract the Obs used in the *individual* simulations
         No ensemble averaging is done and you need the param data to work out which ensemble is which.
         :param scale If True data will be scaled.
+        :param remove_missing. If True remove any obs with missing data.
         :return: pandas dataframe of observations
 
 
@@ -235,20 +236,15 @@ class Study(object):
         for key, model in self.allModels():
             obs = model.getObs(series=True)
             obs = obs.reindex(self.obsNames())
-            #if scale:  # scale obs.
-            #    scales = self.config.scales()
-            #    name = obs.name
-            #                obs = scales * obs
-            #    obs = (obs*scales).rename(name)
-            #    # need to reset name
             o.append(obs)
         if len(o) == 0:  # empty list
             return None
 
         obsDF = pd.DataFrame(o)
         if scale:
-            breakpoint()
             obsDF *= self.config.scales()
+        if remove_missing:
+            obsDF=obsDF.dropna() # drop row with any missing data.
         return obsDF
         
     def cost(self,scale=True):
@@ -260,12 +256,11 @@ class Study(object):
         """
         
         config = self.config
-        obs = self.obs(scale=scale)  # get params & obs
+        obs = self.obs(scale=scale,remove_missing=True)  # get params & obs
         if obs is None:  # no data
             return None
-        obs = obs.loc[:, config.obsNames()]  # extract the obs.
         tMat = self.transMatrix(scale=scale)  # which puts us into space where totalError is Identity matrix.
-
+        
         nObs = len(obs.columns)
         resid = (obs - self.targets(scale=scale)) @ tMat.T
         cost = np.sqrt((resid ** 2).sum(1).astype(float) / nObs)
