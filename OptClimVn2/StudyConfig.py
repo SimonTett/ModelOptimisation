@@ -311,8 +311,21 @@ class OptClimConfig(dictFile):
         else:
             self.getv('study', {})['ObsList'] = obsNames[:]  # need to copy not have a reference.
             obs = obsNames
+        
         if add_constraint and self.constraint():  # adding constraint and its defined.
-            obs.append(self.constraintName())
+            if self.constraintName() not in  obs:
+                obs.append(self.constraintName())
+#            else:
+#                print("Warning have constraint",self.constraintName(),'In Obs')
+
+
+        # check for duplicates
+        dup_obs = set([ob for ob in obs if obs.count(ob) >1])
+
+        if len(dup_obs) > 0:
+            msg="Have duplicate observations for :"+" ".join(dup_obs)
+            raise ValueError(msg)
+
         return obs
 
     def paramRanges(self, paramNames=None):
@@ -529,6 +542,7 @@ class OptClimConfig(dictFile):
         if obsNames is None: obsNames = self.obsNames()
         scales = pd.Series([scalings.get(k, 1.0) for k in obsNames], index=obsNames).rename(self.name())
         # get scalings -- if not defined set to 1.
+        # TODO raise error if any of the scalings are not in obsNames
         return scales
 
     def maxFails(self):

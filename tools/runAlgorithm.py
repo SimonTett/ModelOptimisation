@@ -146,6 +146,7 @@ monitorFile = rootDir / (rootDiagFiles + "_monitor.png")
 
 doRun = True  # keep runnign until done. If no fake fn will breakout from this loop to finish.
 iterCount = 0  # for testing print out iterCount
+nModels = 0
 
 while doRun:
     np.random.seed(123456)  # init RNG though probably should go to the runXXX methods.
