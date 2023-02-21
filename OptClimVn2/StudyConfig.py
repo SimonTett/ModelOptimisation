@@ -15,7 +15,7 @@ Provides classes and methods suitable for manipulating study configurations.  In
 
 
 """
-import collections  # TODO remove as collections no longer needed as dict are ordered from 3.7+
+
 import copy
 import datetime
 import json
@@ -102,9 +102,9 @@ class NumpyEncoder(json.JSONEncoder):
         """
         if isinstance(obj, np.ndarray):
             data_list = obj.tolist()
-            return collections.OrderedDict(__ndarray__=data_list, dtype=str(obj.dtype), shape=obj.shape)
+            return dict(__ndarray__=data_list, dtype=str(obj.dtype), shape=obj.shape)
         elif 'dtype' in dir(obj):
-            return collections.OrderedDict(__npdatum__=str(obj), dtype=str(obj.dtype))
+            return dict(__npdatum__=str(obj), dtype=str(obj.dtype))
         # Let the base class default method raise the TypeError
         return json.JSONEncoder(self, obj)
 
@@ -124,7 +124,7 @@ def decode(dct):
         data = dct['__npdatum__']
         return data
 
-    return collections.OrderedDict(dct)
+    return dict(dct)
 
 
 class dictFile(dict):
@@ -147,14 +147,14 @@ class dictFile(dict):
             try:
                 with path.open(mode='r') as fp:
                     if ordered:
-                        dct = json.load(fp, object_pairs_hook=collections.OrderedDict)
+                        dct = json.load(fp)#, object_pairs_hook=collections.OrderedDict)
                     else:
                         dct = json.load(fp, object_hook=decode)  ##,object_pairs_hook=collections.OrderedDict)
             except IOError:  # I/O problem
-                dct = collections.OrderedDict()
+                dct = dict()
 
         else:
-            dct = collections.OrderedDict()  # make it empty ordered dict.
+            dct = dict()  # make it empty ordered dict.
 
         self.Config = dct
         self._filename = path
@@ -356,7 +356,7 @@ class OptClimConfig(dictFile):
         if values is not None:
             # check have Parameters and if not create it.
             if 'standardModel' not in self.Config:
-                self.Config["standardModel"] = collections.OrderedDict()  # create it as an empty ordered dict.
+                self.Config["standardModel"] = dict()  # create it as an empty ordered dict.
 
             self.Config["standardModel"]['paramValues'] = values
         else:
@@ -501,10 +501,10 @@ class OptClimConfig(dictFile):
        
         """
         # TODO: Consider just using mu -- if it is set then use it.
-        opt = self.getv('optimise', {})  # get optimisation block
+        opt = self.optimise()  # get optimisation block
         if value is not None:  # want to set it
-            opt['sigma'] = value
-            self.setv('optimise', opt)  # store it back
+            opt = self.optimise(sigma=value)
+
 
         constraint = opt.get('sigma', False)
         return constraint
@@ -545,15 +545,19 @@ class OptClimConfig(dictFile):
         # TODO raise error if any of the scalings are not in obsNames
         return scales
 
-    def maxFails(self):
+    def maxFails(self,value=None):
         """
+        :param value. If not None set maxFails to this.
 
-        :return: the maximum number of fails allowed. If nothign set then return 0.
+        :return: the maximum number of fails allowed. If nothing set then return 0.
         """
-        optimise = self.Config.get('optimise', {})
+        if value is None:
+            optimize = self.optimise(maxFails=value)
+        else:
+            optimise=self.optimise()
 
         maxFails = optimise.get('maxFails', 0)
-        if maxFails is None: maxFails = 0
+
         return maxFails
 
     def Covariances(self, obsNames=None, trace=False, dirRewrite=None, scale=False, constraint=None, read=False,
@@ -841,14 +845,18 @@ class OptClimConfig(dictFile):
             modelConfigDir = os.path.expanduser(os.path.expandvars(modelConfigDir))
         return modelConfigDir
 
-    def optimise(self):
+    def optimise(self,**kwargs):
         """
         Extract and package all optimisation information into one directory
         Note this is not a copy
+        :param optimise_values -- if not None
         :return: a dict
         """
-        # TODO deal with case when optimise does not exist by creating it.
-        return self.Config['optimise']
+        optimise=self.getv('optimise',{})
+        if kwargs: # Got some values. Update the optimise dict and put them back in
+            optimise.update(kwargs)
+            self.setv('optimise',optimise)
+        return optimise
 
     def fixedParams(self):
         """
@@ -940,7 +948,7 @@ class OptClimConfig(dictFile):
         GNinfo = self.getv('GNinfo', None)
 
         if GNinfo is None:  # no GNinfo so create it.
-            GNinfo = collections.OrderedDict()
+            GNinfo = dict()
             GNinfo['comment'] = 'Gauss-Newton Algorithm information'
 
         if variable is None:
@@ -1373,7 +1381,7 @@ class OptClimConfig(dictFile):
         :return: the vlues as a  dataframe
         """
         BOBYQAinfo = self.getv('BOBYQA',
-                               collections.OrderedDict())  # should modify to use GNgetset but that assumes numpy array.
+                               dict())  # should modify to use GNgetset but that assumes numpy array.
         if diagnosticInfo is not None:
             BOBYQAinfo['diagnostic'] = diagnosticInfo.to_json(orient='split')
 
@@ -1606,7 +1614,7 @@ class OptClimConfigVn2(OptClimConfig):
         if values is not None:
             # check have Parameters and if not create it.
             if 'Parameters' not in self.Config:
-                self.Config['Parameters'] = collections.OrderedDict()  # create it as an empty ordered dict.
+                self.Config['Parameters'] = dict()  # create it as an empty ordered dict.
 
             self.Config['Parameters']['defaultParams'] = values
         else:
@@ -1881,7 +1889,7 @@ class OptClimConfigVn2(OptClimConfig):
 
             doc=list()
             for v in inputList:
-                if isinstance(v, (dict, collections.OrderedDict)):
+                if isinstance(v, dict):
                     ddoc = extract_doc_dict(v,tgt_end=tgt_end)
 
                     if ddoc is not None:
@@ -1903,7 +1911,7 @@ class OptClimConfigVn2(OptClimConfig):
             doc = dict()
 
             for key,v in inputDict.items():
-                if isinstance(v, (dict, collections.OrderedDict)):
+                if isinstance(v, dict):
                     ddoc = extract_doc_dict(v,tgt_end=tgt_end)
                     # see if have a comment key and if so add it in with name k_doc
                     if v.get('comment'):

@@ -747,6 +747,9 @@ def gaussNewton(function, startParam, paramRange, paramStep, target, optimise, c
     """
 
     # stage 0 -- setup
+    maxIterations = optimise.get("maxIterations")
+    if maxIterations is not None:
+        print("Max Iterations is ",maxIterations)
     nrandom = optimise.get('nrandom', None)
     deterministicPerturb = optimise.get('deterministicPertub', True)
     statusInfo = 'Continue'
@@ -796,6 +799,13 @@ def gaussNewton(function, startParam, paramRange, paramStep, target, optimise, c
         infoLS['obsValues'] = obsValuesLS
         statusList.append({'gaussNewton': infoGN, 'lineSearch': infoLS})
         iterCount += 1  # increase iteration count
+        print("iterCount ",iterCount,maxIterations)
+        if (maxIterations is not None) and (iterCount >= maxIterations):
+            if trace:
+                print(f"Done {iterCount} iterations which is > {maxIterations}. Stopping.")
+            if statusInfo is 'Continue':
+                statusInfo='Failed'
+                break
         if trace:
             print("LS: statusInfo %s Iter: %d Err_constraint" % (statusInfo, iterCount), err_constraint)
 
@@ -822,7 +832,7 @@ def gaussNewton(function, startParam, paramRange, paramStep, target, optimise, c
 
     # rearrange the info array
     # start with the err_constraint from lineSearch
-    if nrandom != None:
+    if nrandom is not None:
         raise NotImplementedError(
             "Need to make info code work with random algorithm...If you don't care switch this off")
 

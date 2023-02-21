@@ -408,7 +408,7 @@ class runSubmit(Submit.ModelSubmit):
         print(f"DFOLS completed: Solution status: {solution.msg}")
         return finalConfig
 
-    def runGaussNewton(self, verbose=None, scale=True):
+    def runGaussNewton(self, verbose=False, scale=True):
         """
 
         param: verbose if True produce more verbose output.
@@ -429,7 +429,7 @@ class runSubmit(Submit.ModelSubmit):
 
         """
         import Optimise
-        warnings.warn("No testing done for Gauss-Newton")
+
         # extract internal covariance and transform it.
         configData = self.config
         optimise = configData.optimise().copy()  # get optimisation info
@@ -442,9 +442,7 @@ class runSubmit(Submit.ModelSubmit):
         optimise['sigma'] = False  # wrapped optimisation into cost function.
         optimise['deterministicPerturb'] = True  # deterministic perturbations.
         paramNames = configData.paramNames()
-        obsNames = configData.obsNames()
-        nObs = tMat.shape[
-            0]  # might be a smaller because some evals in the covariance matrix are close to zero (or -ve)
+        nObs = tMat.shape[0]  # might be a smaller because some evals in the covariance matrix are close to zero (or -ve)
         start = configData.beginParam()
         optFn = self.genOptFunction(transform=tMat, scale=scale, verbose=verbose, residual=True)
         best, status, info = Optimise.gaussNewton(optFn, start.values,

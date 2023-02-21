@@ -621,6 +621,7 @@ class testRunSubmit(unittest.TestCase):
         # This is correct-- it is the internal covariance transformed
         optimise['sigma'] = False  # wrapped optimisation into cost function.
         optimise['deterministicPerturb'] = True  # deterministic perturbations.
+        optimise['maxIterations'] = 10 # no more than 10 iterations.
         paramNames = configData.paramNames()
         nObs = Tmat.shape[0]  # could be less than the "raw" obs depending on Tmat.
         start = configData.beginParam()
@@ -668,12 +669,12 @@ class testRunSubmit(unittest.TestCase):
         nptest.assert_allclose(got_fn_opt, got.iloc[0, :])
         # first clean up testDir by deleteting everything in it.
         optClimLib.delDirContents(self.testDir)
-        while run:
+        while True:
             rSubmit = runSubmit.runSubmit(configData, self.Model,
                                           None, rootDir=self.testDir, fakeFn=fake_fn, verbose=self.verbose)
             try:
                 finalConfig = rSubmit.runGaussNewton(verbose=self.verbose, scale=scale)
-                run = False  # done with running
+                break # done with running
             except exceptions.runModelError:
                 status, nModels, finalConfig = rSubmit.submit(restartCmd=None, verbose=self.verbose, cost=True,
                                                               scale=scale)
@@ -694,6 +695,23 @@ class testRunSubmit(unittest.TestCase):
         nptest.assert_allclose(best, expect, rtol=5e-4)
         nptest.assert_allclose(finalConfig.get_dataFrameInfo('transJacobian', dtype=float), jac,
                                atol=1e-10)  # check Jacobian as stored is right
+
+        # check that setting maxIterations to 1 only has 1 iteration.
+        optClimLib.delDirContents(self.testDir)
+        configData.optimise(maxIterations=1) # limit to 1 iteration
+        while True:
+            rSubmit = runSubmit.runSubmit(configData, self.Model,
+                                          None, rootDir=self.testDir, fakeFn=fake_fn, verbose=self.verbose)
+            try:
+                finalConfig = rSubmit.runGaussNewton(verbose=self.verbose, scale=scale)
+                break # done with running
+            except exceptions.runModelError:
+                status, nModels, finalConfig = rSubmit.submit(restartCmd=None, verbose=self.verbose, cost=True,
+                                                              scale=scale)
+                print("submitting ",status,nModels)
+
+
+        self.assertEqual(finalConfig.GNparams().Iteration.size,1,msg=f"Expected 1 iteration got {iterCount}")
 
 
 if __name__ == "__main__":

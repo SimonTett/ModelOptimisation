@@ -750,6 +750,19 @@ class testStudyConfig(unittest.TestCase):
         got = self.config.hessian()
         self.assertTrue(hessian.equals(got))
 
+    def test_optimise(self):
+        """
+        Test can get back the whole optimise object (and set it)
+        :return:
+        """
+
+        opt = self.config.optimise() # should be a dict
+        self.assertEqual(type(opt),dict)
+        # set a value
+        opt2 = self.config.optimise(maxIterations=10)
+        self.assertEqual(opt2['maxIterations'],10) # value as expected
+        opt3 = self.config.optimise() # get it back. Should have changed.
+        self.assertEqual(opt2['maxIterations'], 10)
 
 if __name__ == "__main__":
     print("Running Test Cases")
