@@ -12,15 +12,15 @@ import fileinput
 import functools  # std functools.
 import glob
 import math
-import os 
+import os
 import re
 import shutil
 import pathlib
-import datetime # needed to parse strings
+import datetime  # needed to parse strings
 import f90nml
 # NEEDED because f90nml.patch (as used in ModelSimulation) fails with RECONA. For the moment dealing with this here.
 import numpy as np
-import stat # needed to change file permission bits.
+import stat  # needed to change file permission bits.
 import ModelSimulation
 from ModelSimulation import _namedTupClass
 
@@ -204,7 +204,6 @@ def initHist_nlcfiles(value='NoSuchFile.txt', inverse=False, namelist=False, par
 
 
 def startTime(time_input=[1965, 7, 4], inverse=False, namelist=False):
-
     """
 
     :param time:  start time as 3 to 6 element list. Spcifiying in order year, month, day of month, hour, minute and second
@@ -222,16 +221,15 @@ def startTime(time_input=[1965, 7, 4], inverse=False, namelist=False):
     """
     # see if can parse time as a string. It would be really nice to use cftime rather than datetime
     # but I don't think there is an fromisoformat method for cftime..
-    if isinstance(time_input,str): # it is a string -- so try and parse it.
+    if isinstance(time_input, str):  # it is a string -- so try and parse it.
         time = datetime.datetime.fromisoformat(time_input)
-        time = [time.year,time.month,time.day, time.hour,time.minute,time.second]
+        time = [time.year, time.month, time.day, time.hour, time.minute, time.second]
     else:
         time = time_input
 
     # verify that len of target is >= 3 and <= 6 and if not raise error.
     if not (1 <= len(time) <= 6):
         raise Exception("start time  should have at >= 1 members and <= 6")
-
 
     # set up all the var/namelist/file info.
     namelistData = [_namedTupClass(var='MODEL_BASIS_TIME', namelist=nl, file=file) for
@@ -244,16 +242,15 @@ def startTime(time_input=[1965, 7, 4], inverse=False, namelist=False):
         return time[namelistData[0]]  # just return the value
     else:
         t = time[:]
-        if len(t) < 3: # need to add M & d -- should be 1
-            t.extend([1]*(3-len(t)))
-        if len(t) < 6: # nee dto add hours, mins & secs
-            t.extend([0] * (6-len(t)))  # add trailing zeros
+        if len(t) < 3:  # need to add M & d -- should be 1
+            t.extend([1] * (3 - len(t)))
+        if len(t) < 6:  # nee dto add hours, mins & secs
+            t.extend([0] * (6 - len(t)))  # add trailing zeros
         result = {nl: t for nl in namelistData}
         return result  # return the namelist info.
 
 
-def timeDelta(input=[0,0,0],inverse=False,namelist=False, runTarget=True):
-
+def timeDelta(input=[0, 0, 0], inverse=False, namelist=False, runTarget=True):
     """
     
     :param input:  Duration as [YYYY, MM, DD, HH, MM, SS] as used by the UM.
@@ -267,28 +264,25 @@ def timeDelta(input=[0,0,0],inverse=False,namelist=False, runTarget=True):
     """
     # try and parse target as a string
 
-    if isinstance(input,str):
+    if isinstance(input, str):
         durn = parse_isoduration(input)
     else:
         durn = input
 
     # verify that len of target is >= 1 and <= 6 and if not raise error.
 
-
     if not (1 <= len(durn) <= 6):
         raise Exception("target should have at >= 1 members and <= 6")
 
     # set up all the var/namelist/file info.
-    if runTarget: # suitable for runTarget
+    if runTarget:  # suitable for runTarget
         namelistData = [_namedTupClass(var='RUN_TARGET_END', namelist=nl, file=file) for
                         file, nl in zip(['CNTLALL', 'CONTCNTL', 'RECONA', 'SIZES'],
                                         ['NLSTCALL', 'NLSTCALL', 'STSHCOMP', 'STSHCOMP'])]
-    else: # suitable for resubInterval
+    else:  # suitable for resubInterval
         namelistData = [_namedTupClass(var='RUN_RESUBMIT_INC', namelist=nl, file=file) for
                         file, nl in zip(['CNTLALL', 'CONTCNTL'],
                                         ['NLSTCALL', 'NLSTCALL'])]
-
-
 
     if namelist:
         return namelistData  # return the namelist info
@@ -296,13 +290,12 @@ def timeDelta(input=[0,0,0],inverse=False,namelist=False, runTarget=True):
         return durn[namelistData[0]]  # just return the value
     else:
         tgt = durn[:]
-        tgt.extend([0] * (6-len(tgt)))  # add trailing zeros
+        tgt.extend([0] * (6 - len(tgt)))  # add trailing zeros
         result = {nl: tgt for nl in namelistData}
         return result  # return the namelist info.
 
 
 def runTarget(target_input=[0, 0, 0], inverse=False, namelist=False):
-
     """
     set runTarget -- see timeDelta for documentation.
 
@@ -311,7 +304,9 @@ def runTarget(target_input=[0, 0, 0], inverse=False, namelist=False):
     :param namelist:
     :return: namelist info.
     """
-    return  timeDelta(input=target_input, inverse=inverse,namelist=namelist)
+    return timeDelta(input=target_input, inverse=inverse, namelist=namelist)
+
+
 
 def resubInterval(interval_input=[0, 0, 0], inverse=False, namelist=False):
     """
@@ -322,7 +317,9 @@ def resubInterval(interval_input=[0, 0, 0], inverse=False, namelist=False):
     :return: namelist info
     """
 
-    return timeDelta(input=interval_input, inverse=inverse,namelist=namelist,runTarget=False)
+    return timeDelta(input=interval_input, inverse=inverse, namelist=namelist, runTarget=False)
+
+
 
 def runName(name='abcdz', inverse=False, namelist=False):
     """
@@ -557,7 +554,8 @@ def ocnIsoDiff(ocnIsoDiff=1e3, namelist=False, inverse=False):
     else:  # set values -- both  to same value
         return {ocnDiff_AM0: ocnIsoDiff, ocnDiff_AM1: ocnIsoDiff}
 
-def scavengefn(scavenge=1.0,namelist=False,inverse=False):
+
+def scavengefn(scavenge=1.0, namelist=False, inverse=False):
     """
     change scavenge meta parameter which changes L0 & L1 in the aerosol scheme
     :param scavenge: scales L0/L1
@@ -565,16 +563,16 @@ def scavengefn(scavenge=1.0,namelist=False,inverse=False):
     :param inverse:  If True invert the relationship from the supplied namelist
     :return: Namelist info as dict
     """
-    L0_default, L1_default = (6.5e-5,2.995e-5)
+    L0_default, L1_default = (6.5e-5, 2.995e-5)
     l0_nl = _namedTupClass(var='L0', namelist='SLBC21', file='CNTLATM')
     l1_nl = _namedTupClass(var='L1', namelist='SLBC21', file='CNTLATM')
     if namelist:
-        return [l0_nl,l1_nl]
+        return [l0_nl, l1_nl]
     elif inverse:
-        res = scavenge[l0_nl]/L0_default
+        res = scavenge[l0_nl] / L0_default
         return res
     else:
-        result= {l0_nl: L0_default*scavenge, l1_nl: L1_default*scavenge}
+        result = {l0_nl: L0_default * scavenge, l1_nl: L1_default * scavenge}
         return result
 
 
@@ -594,7 +592,7 @@ def parse_isoduration(s):
             n = '0'
         return n.replace(',', '.'), s  # to handle like "P0,5Y"
 
-    if not isinstance(s,str):
+    if not isinstance(s, str):
         raise ValueError("ISO 8061 demands a string")
     if s[0] != 'P':
         raise ValueError("ISO 8061 demands durations start with P")
@@ -616,7 +614,6 @@ def parse_isoduration(s):
         durn.append(float(d))
 
     return durn
-
 
 
 class HadCM3(ModelSimulation.ModelSimulation):
@@ -677,22 +674,23 @@ class HadCM3(ModelSimulation.ModelSimulation):
         # overwrite superclass values for start and continue scripts.
         self.SubmitFiles['start'] = 'SUBMIT'
         self.SubmitFiles['continue'] = 'SUBMIT.cont'
-        self.postProcessFile = 'optclim_finished' # name of post-processing file
-
+        self.postProcessFile = 'optclim_finished'  # name of post-processing file
+        # TODO separate object creation from putting stuff on disk
         if create:  # want to create model instance so do creation.
             self.fixClimFCG()  # fix the ClimFGC namelist
             self.modifySubmit(runTime=runTime, runCode=runCode)  # modify the Submit script
             self.modifyScript()  # modify Script
             self.createWorkDir(refDirPath)  # create the work dirctory (and fill it in)
             self.genContSUBMIT()  # generate the continuation script.
-            self.createPostProcessFile("# No job to release") 
+            self.createPostProcessFile("# No job to release")
             # this means that the model can run without post-processing
             # as this bit of code also allows the model to resubmit from an NRUN
 
-        ## Set up namelist mappings. #TODO add documentation to parameters and have way of model instance reporting on known params.
+        ## Set up namelist mappings.
+        #TODO add documentation to parameters and have way of model instance reporting on known params.
         # easy case all variables in SLBC21 and which just set the values.
         for var in ['VF1', 'ICE_SIZE', 'ENTCOEF', 'CT', 'ASYM_LAMBDA', 'CHARNOCK', 'G0', 'Z0FSEA',  # atmos stuff
-                    'IA_N_DROP_MIN', 'IA_N_INFTY', 'IA_KAPPA_SCALE', #, "L0",'L1', # indirect aerosol stuff
+                    'IA_N_DROP_MIN', 'IA_N_INFTY', 'IA_KAPPA_SCALE',  # , "L0",'L1', # indirect aerosol stuff
                     # model here is n_drop = IA_N_INFTY*(1-exp(IA_KAPPA_SCALE*N_AERO/IA_N_INFTY)) where N_AERO is no of aerosol drops and n_drop is no of cld drolets.
                     # default values are 'N_DROP_MIN': 3.5E7, 'IA_KAPPA_SCALE':0.9375 , 'IA_N_INFTY': 3.75E8
                     'CLOUDTAU', 'NUM_STAR', 'OHSCA', 'VOLSCA', 'ANTHSCA', 'RAD_AIT', 'RAD_ACC'
@@ -723,10 +721,10 @@ class HadCM3(ModelSimulation.ModelSimulation):
         self.registerMetaFn('RHCRIT', cloudRHcrit, verbose=verbose)  # RHCRIT meta-param generates array
         self.registerMetaFn('EACF', cloudEACF, verbose=verbose)  # EACF meta-param generates array
         self.registerMetaFn('DYNDIFF', diffusion, verbose=verbose)  # Dynamics Diffusion generates lots of arrays
-        self.registerMetaFn('SCAVENGE',scavengefn,verbose=verbose) # Scavenge param for aerosol model
+        self.registerMetaFn('SCAVENGE', scavengefn, verbose=verbose)  # Scavenge param for aerosol model
         self.registerMetaFn('RUN_TARGET', runTarget,
                             verbose=verbose)  # length of simulation -- modifies several namelist vars
-        self.registerMetaFn('RESUBMIT_INTERVAL',resubInterval,verbose=verbose)
+        self.registerMetaFn('RESUBMIT_INTERVAL', resubInterval, verbose=verbose)
         # resubmission interval -- modifies several namelist vars
         self.registerMetaFn('START_TIME', startTime,
                             verbose=verbose)  # start_Time for run -- modifies several namelist vars
@@ -839,7 +837,7 @@ class HadCM3(ModelSimulation.ModelSimulation):
 
         :return: nada
         """
-        #TODO Check that step is 4. Decide if fix (i.e. set STEP=4) or fail with a sensible error message.
+        # TODO Check that step is 4. Decide if fix (i.e. set STEP=4) or fail with a sensible error message.
         # first work out runID
         runid = self.getParams().get('RUNID',
                                      self.name())  # TODO fix this so that if params passed a string it does sensible thing with it...
@@ -951,8 +949,8 @@ class HadCM3(ModelSimulation.ModelSimulation):
                         print(line, file=fout)
         # need to make the script +rx for all readers. Might not work on windows
         fstat = contScript.stat().st_mode
-        fstat = fstat | stat.S_IRUSR|stat.S_IRGRP|stat.S_IROTH
-        fstat = fstat |stat.S_IXUSR|stat.S_IXGRP|stat.S_IXOTH
+        fstat = fstat | stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH
+        fstat = fstat | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
         contScript.chmod(fstat)
         return contScript
 
