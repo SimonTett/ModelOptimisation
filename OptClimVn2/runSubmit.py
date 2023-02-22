@@ -452,6 +452,7 @@ class runSubmit(Submit.ModelSubmit):
                                                   cov=np.identity(nObs), cov_iv=intCov, trace=verbose)
 
         finalConfig = self.runCost(self.config, scale=scale)
+        finalConfig.GNstatus(status)
         finalConfig = self.runConfig(finalConfig)  # get final runInfo
         # Store the GN specific stuff. TODO consider removing these and just store the info.
         finalConfig.GNparams(info['bestParams'])
@@ -468,6 +469,7 @@ class runSubmit(Submit.ModelSubmit):
         best = pd.Series(best, index=finalConfig.paramNames(),
                          name=finalConfig.name())  # wrap best result as pandas series
         finalConfig.optimumParams(**(best.to_dict()))  # write the optimum params
+        print("status",status)
 
         return finalConfig
 

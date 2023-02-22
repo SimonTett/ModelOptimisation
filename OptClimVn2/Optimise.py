@@ -804,6 +804,7 @@ def gaussNewton(function, startParam, paramRange, paramStep, target, optimise, c
             if trace:
                 print(f"Done {iterCount} iterations which is > {maxIterations}. Stopping.")
             if statusInfo is 'Continue':
+                print("Trace is ",trace," Ran out of iterations")
                 statusInfo='Failed'
                 break
         if trace:

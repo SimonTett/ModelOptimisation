@@ -183,8 +183,8 @@ def eddieSubmit(model_list, config, rootDir, verbose=False, postProcess=True, re
         modelDirFile = os.path.join(rootDir, 'tempDirList.txt')
         # name of file containing list of directories for post processing stage
         with open(modelDirFile, 'w') as f:
-            for m in model_list:
-                text = m.dirPath + ',' + m.ppExePath() + ',' + m.ppOutputFile() + '\n'
+            for m in model_list: #TODO make this use pathlib.PATH
+                text = str(m.dirPath) + ',' + m.ppExePath() + ',' + m.ppOutputFile() + '\n'
                 f.write(text)  # write out info for post processing job.
         # submit the following.. Need path to postProcess.sh
         jobName = 'PP' + config.name()

@@ -954,9 +954,13 @@ class OptClimConfig(dictFile):
         if variable is None:
             variable = GNinfo.get(name, None)
             if variable is None: return None  # no variable so return None
-            variable = np.array(variable)  # extract variable from GNinfo and convert to numpy array
+            if isinstance(variable,list):
+                variable = np.array(variable)  # extract variable from GNinfo and convert to numpy array
         else:  # got variable so put it in the GNinfo
-            GNinfo[name] = variable.tolist()
+            try:
+                GNinfo[name] = variable.tolist()
+            except AttributeError:
+                GNinfo[name] = variable
             self.setv('GNinfo', GNinfo)  # store it.
 
         return variable
@@ -1041,6 +1045,14 @@ class OptClimConfig(dictFile):
         cost.index.rename('Iteration', inplace=True)
 
         return cost
+
+    def GNstatus(self,status=None):
+        """
+        Return and optionally set the the status of the Gauss-Newton aglorithm
+        :param status: if not None should be a string which will stored.
+        """
+        status=self.GNgetset('status',status)
+        return status
 
     def GNalpha(self, alpha=None):
         """
