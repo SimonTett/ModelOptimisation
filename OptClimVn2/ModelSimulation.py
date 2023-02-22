@@ -937,10 +937,11 @@ class ModelSimulation(object):
 
     def submit(self, runStatus=None):
         """
-        Provides full path to submit script.
-        :param runStatus (default None)-- If 'start' return path to new submit script (defined in self.SubmitFile)
-                                      If 'continue' return path to continuation submit script (defined in self.SubmitFile)
+        Provides full path to submit script AND makes it executable if it exists.
+        :param runStatus -- If 'start' return path to new submit script 
+                            If 'continue' return path to continuation submit script (defined in self.SubmitFile)
                             If None then use value from runStatus method to chose.
+         new submit and continue submit are both defined in self.SubmitFile
         :return: path to appropriate submit script that should be ran to submit the model
         """
 
@@ -949,13 +950,17 @@ class ModelSimulation(object):
         else:
             newSubmit = runStatus
         script = pathlib.Path(self.dirPath)/self.SubmitFiles[newSubmit]
+        # if it exists make it executable.
+        if script.exists():
+            mode=script.stat().st_mode | stat.S_IXUSR
+            script.chmod(mode)
 
         return script
 
     def createPostProcessFile(self, postProcessCmd):
 
         """
-        Used by the submission system to allow teh post-processing job to be submitted when the simulation
+        Used by the submission system to allow the post-processing job to be submitted when the simulation
         has completed. As needs to be implemented for each model  this abstract version just raises an
         NotImplementedError with message to create version for your model.
 
