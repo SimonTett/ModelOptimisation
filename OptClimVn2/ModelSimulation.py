@@ -126,11 +126,13 @@ class ModelSimulation(object):
 
         postProcessFile = ppOutputFile
         if postProcessFile is None:
-            postProcessFile = 'observations.nc'
+            postProcessFile = 'observations.nc' # TODO -- this not actuall used
         # verify not got create and update both set
         if create and update:
             raise Exception("Don't specify create and update")
-        # create new model Simulation ?
+        # create new model Simulation
+        # TODO move this outside  object creation. Which implies some changes to rest of system.
+
         if create:
             self.createModelSimulation(parameters=parameters, ppExePath=ppExePath, obsNames=obsNames, name=name,
                                        ppOutputFile=ppOutputFile, refDirPath=refDirPath, verbose=verbose)
