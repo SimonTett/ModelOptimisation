@@ -120,15 +120,19 @@ class runSubmit(Submit.ModelSubmit):
                 pDict.update(ensembleMember=ensembleMember)
                 mc = self.model(pDict, update=True, verbose=self.verbose)
                 if mc is not None:  # got a model
-                    obs = mc.getObs(series=True)  # get obs from the modelConfig
+                    obsNames = self.obsNames()
+                    obs = mc.readObs(series=True,fill=False)  # get obs from the model
+                    missing_obs = set(obsNames) - set(obs.index)
+                    if len(missing_obs) >0: # trigger error as missing obs
+                        raise ValueError(f"Missing {' '.join(missing_obs)} from model {mc.name()}")
                     # force fixed order.
-                    obs = obs.reindex(
-                        self.obsNames())  # note using obsNames as specified. transform (if supplied) can change names.
+                    obs = obs.reindex(obsNames)  # note using obsNames as specified. transform (if supplied) can change names.
                     self.paramObs(pd.Series(pDict), obs)  # store the params and obs. Note raw!
                     if scale:  # scale sim obs.
                         obs *= self.scales()
                     if residual:  # difference from target obs
-                        obs -= self.targets(scale=scale)
+                        tgt = self.targets(scale=scale)
+                        obs -= tgt
                     if transform is not None:  # apply transform if required.
                         obs = obs @ transform.T  # obs in nsim x nobs; transform  is nev x nobs.
                 else:

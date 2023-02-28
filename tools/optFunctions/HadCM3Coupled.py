@@ -5,6 +5,7 @@ TOCONSIDER: Convert these into methods -- they could inherit from Submit (which 
   pass MODELRUN in.
 TODO: Find some way of stuffing values back into model.
 TODO: Now have continue handled automatically this may no longer be needed.
+TODO: fix test failures which are arising from further development of OptClimVn2. Though perhaps developing OptCClimVn2 to cope with multiple simulations is a better way!
 """
 import functools
 import os
@@ -21,11 +22,14 @@ import iris.util
 import numpy as np
 import numpy.testing as npt
 import pandas as pd
+import pathlib
+import tempfile
 
 import HadCM3
 import StudyConfig
 import Submit
 import optClimLib
+from OptClimVn2 import exceptions
 
 
 
@@ -403,10 +407,10 @@ def annDir(model):
     :param model: a model like object for which the directories are searched.
     :return:
     """
-    obs = model.getObs(justRead=True)
+    obs = model.readObs(fill=True)
     if obs is None:
         # not actually run anything so raise appropriate error
-        raise Submit.runModelError
+        raise exceptions.runModelError
     kAnn = [k for k in obs.keys() if '.000100' in k]
     if len(kAnn) != 1:
         raise ValueError("Got %i keys", len(kAnn))
@@ -433,10 +437,10 @@ def monDir(model):
     :param model: a model like object for which the directories are searched.
     :return: the name of the directory and the
     """
-    obs = model.getObs(justRead=True)
+    obs = model.readObs(fill=True)
     if obs is None:
         # not actually run anything so raise appropriate error
-        raise Submit.runModelError
+        raise exceptions.runModelError
     kMon = [k for k in obs.keys() if '.000001' in k]
     if len(kMon) != 1:
         raise ValueError("Got %i keys", len(kMon))
@@ -697,7 +701,7 @@ def fakeTCR(model, studyCfg, verbose=False):
     name = os.path.basename(model.refDirPath())
     monDir = os.path.join(os.environ['OPTCLIMTOP'], 'Configurations', 'time_cache', umMonOut[name])
     param = model.getParams(series=True)  # read in the params
-    obs = model.getObs(justRead=True, verbose=False)  # read obs
+    obs = model.readObs(fill=True, verbose=False)  # read obs
     # print("Obs is ",model.name(),obs)
     if (obs is None) or (len(obs) == 0):  # no obs so make some.
         obs = {}
@@ -751,7 +755,7 @@ def fakeEQ4(model, studyCfg, verbose=False):
     name = os.path.basename(model.refDirPath())
     monDir = os.path.join(os.environ['OPTCLIMTOP'], 'Configurations', 'time_cache', umMonOut[name])
     param = model.getParams(series=True)  # read in the params
-    obs = model.getObs(justRead=True, verbose=False)  # read obs
+    obs = model.readObs(fill=True, verbose=False)  # read obs
     if (obs is None) or (len(obs) == 0):  # no obs so make some.
         obs = {}
 
@@ -822,7 +826,7 @@ class testHadCM3(unittest.TestCase):
                 self.assertEqual(entry.name, rootname + str(len(dirs)))
                 # read it in as a model and then get obs
                 m = HadCM3.HadCM3(mdir)
-                obs = m.getObs(justRead=True)
+                obs = m.readObs(fill=True)
                 # verify that obs year is 41
                 for k, v in obs.items():
                     self.assertEqual(v, tgtYear, 'Failed for dir %s got year %i expected %i' % (k, v, tgtYear))
@@ -863,7 +867,7 @@ class testHadCM3(unittest.TestCase):
                               'time_cache', 'xhivd') + '.000100'
         fileName = os.path.join(monDir, 'ts_rtoalwu.pp')
         # fileName = os.path.join(monDir, 'ts_sst.pp')
-        outFile = os.path.join('c://', 'users', 'stett2', 'tmp.nc')
+        handle,outFile = tempfile.mkstemp(suffix='.nc')
         ts = readFile(monDir, 'ts_rtoalwu')
         iris.save(ts, outFile)
         ts2 = iris.load_cube(outFile)
@@ -897,7 +901,7 @@ class testHadCM3(unittest.TestCase):
         # now check values are as expected.
 
         for m in models:
-            obs = m.getObs()
+            obs = m.readObs(fill=False)
             refDir = m.refDirPath()
             expectYr = 41
             if 'xnmed' in refDir:
@@ -918,7 +922,10 @@ class testHadCM3(unittest.TestCase):
         """
         configFile = os.path.join(os.environ['OPTCLIMTOP'], 'Configurations', 'example_coupledJac.json')
         self.Config = StudyConfig.readConfig(configFile)
-        MODELRUN = Submit.ModelSubmit(self.Config, HadCM3.HadCM3, None, EQ4,
+        #TODO fix configuration file for testing. This has the path to the reference model set to null. Which then causes a failure.
+
+
+        MODELRUN = Submit.ModelSubmit(self.Config, HadCM3.HadCM3, EQ4,
                                       fakeFn=fakeEQ4, rootDir=self.testDir, verbose=False)
         # now run EQ4 twice with different parameter sets.
         paramsRef = self.Config.beginParam()
@@ -930,7 +937,7 @@ class testHadCM3(unittest.TestCase):
             params.loc[k] = v
             arr[indx, :] = params.values
 
-        with self.assertRaises(Submit.runModelError):
+        with self.assertRaises(exceptions.runModelError):
             result = EQ4(arr, MODELRUN=MODELRUN)  # should fail.
 
         # now fakeSubmit the models
@@ -943,7 +950,7 @@ class testHadCM3(unittest.TestCase):
         # now run again. Should have 4 directories and all times should be 80.
         MODELRUN = Submit.ModelSubmit(self.Config, HadCM3.HadCM3, None, EQ4, modelDirs=dirs,
                                       fakeFn=fakeEQ4, rootDir=self.testDir, verbose=False)
-        with self.assertRaises(Submit.runModelError):
+        with self.assertRaises(exceptions.runModelError):
             result = EQ4(arr, MODELRUN=MODELRUN)  # should fail.
         # TODO add code to verify that ASTART & OSTART works...
         # now fakeSubmit the models
@@ -968,7 +975,7 @@ class testHadCM3(unittest.TestCase):
         """
         configFile = os.path.join(os.environ['OPTCLIMTOP'], 'Configurations', 'example_coupledJacTCR.json')
         self.Config = StudyConfig.readConfig(configFile)
-        MODELRUN = Submit.ModelSubmit(self.Config, HadCM3.HadCM3, None, TCR,
+        MODELRUN = Submit.ModelSubmit(self.Config, HadCM3.HadCM3,  TCR,
                                       fakeFn=fakeTCR, rootDir=self.testDir, verbose=False)
         # now run TCR twice with different parameter sets.
         paramsRef = self.Config.beginParam()
@@ -980,7 +987,7 @@ class testHadCM3(unittest.TestCase):
             params.loc[k] = v
             arr[indx, :] = params.values
 
-        with self.assertRaises(Submit.runModelError):
+        with self.assertRaises(exceptions.runModelError):
             result = TCR(arr, MODELRUN=MODELRUN)  # should fail.
 
         # now fakeSubmit the models
@@ -999,7 +1006,7 @@ class testHadCM3(unittest.TestCase):
             MODELRUN = Submit.ModelSubmit(self.Config, HadCM3.HadCM3, None, TCR,
                                           fakeFn=fakeTCR, rootDir=self.testDir, verbose=False, modelDirs=modelDirs)
             expectYr += 40
-            with self.assertRaises(Submit.runModelError):
+            with self.assertRaises(exceptions.runModelError):
                 result = TCR(arr, MODELRUN=MODELRUN)  # should fail.
             MODELRUN.submit()  # run it.
             dirs = self.checkDir(MODELRUN.rootDir, expectYr, rootname='jt00')
@@ -1010,12 +1017,5 @@ class testHadCM3(unittest.TestCase):
         # result d/VF1 should be 1.1 times larger than d/RHCRIT
         ratio = result[1, :] / result[0, :]
         npt.assert_allclose(ratio, 1.1, rtol=1e-4, atol=1e-4)
-        config = MODELRUN.runConfig(Config)
-        with pd.option_context('max_rows', None, 'max_columns', None, 'precision', 2,
-                               'expand_frame_repr', True, 'display.width', 120):
-            print("params \n", config.parameters(normalise=True).T)
-            print("simObs \n", config.simObs().T)
-
-if __name__ == "__main__":
-    print("Running Test Cases")
-    unittest.main()  # actually run the test cases
+        config = MODELRUN.runConfig(self.Config)
+        #with pd.option_

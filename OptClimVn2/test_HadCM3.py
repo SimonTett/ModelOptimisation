@@ -138,8 +138,8 @@ class testHadCM3(unittest.TestCase):
 
         # self.assertEqual(self.model.config['refDir'], None)
         self.assertEqual(m.get(['ppOutputFile']), 'obs.nc')
-        self.assertListEqual(list(m.getObs().keys()), list(expectObs.keys()))
-        self.assertNotEqual(m.getObs(), expectObs)
+        self.assertListEqual(list(m.readObs().keys()), list(expectObs.keys()))
+        self.assertNotEqual(m.readObs(), expectObs)
         # test that consistency checks work
 
         with self.assertRaises(NameError):
@@ -166,8 +166,8 @@ class testHadCM3(unittest.TestCase):
         self.assertDictEqual(m.get(['parameters']), expectParam)
         # self.assertEqual(self.model.config['refDir'], None)
         self.assertEqual(m.get(['ppOutputFile']), 'obs.nc')
-        self.assertListEqual(list(m.getObs().keys()), list(expectObs.keys()))
-        self.assertNotEqual(m.getObs(), expectObs)
+        self.assertListEqual(list(m.readObs().keys()), list(expectObs.keys()))
+        self.assertNotEqual(m.readObs(), expectObs)
 
     def test_readMetaParams(self):
         """

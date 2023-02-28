@@ -152,7 +152,7 @@ class ModelSimulation(object):
         try:
             equal = equal and (self.refDirPath() == other.refDirPath())  # same refDir
             equal = equal and (self.getParams() == other.getParams())  # same params
-            equal = equal and (self.getObs() == other.getObs())  # same obs.
+            equal = equal and (self.readObs() == other.readObs())  # same obs.
         except AttributeError:  # when other doesn't have methods
             equal = False
 
@@ -197,11 +197,13 @@ class ModelSimulation(object):
         # if ObsNames set use it
 
         if obsNames is not None:
+            #raise FutureWarning("Passing obsNames to readModelSimulation is deprecated")
             if verbose:
                 print("Setting Obsnames")
             obs = {k: None for k in obsNames}
             config['observations'] = obs
-            # TODO -- not sure why I do this. the config was pickled so round now is just an ordered collection.
+            # TODO -- not sure why I do this. the config was pickled so right now is just an ordered collection.
+            #  And probably should not be using obsNames anyhow -- when we read the obs we read what ever is there.
         if ppOutputFile is not None:
             postProcess = config.get('postProcess', {})
             postProcess['outputPath'] = ppOutputFile
@@ -398,21 +400,20 @@ class ModelSimulation(object):
 
         return self.get(['ppExePath'])
 
-    def readObs(self, verbose=False, justRead=False, series=False):
+    def readObs(self, verbose=False, fill=True, series=False):
         """
         Read the post processed data.
          This default implementation reads netcdf, json or csv data and
          stores it in the configuration
         :param verbose (default False). If true print out helpful information
-        :param justRead (default False). Just read the observations and return them. (do not use names of observations in model)
+        :param fill. Fill in missing observations with None/np.nan.
         :param series (default False), If true return a pandas series containing the values.
         :return: a ordered dict of observations (or pandas series) wanted. Values not found when requested will be set to None.
         """
 
         obsFile = os.path.join(self.dirPath, self.ppOutputFile())
-        obs = collections.OrderedDict()
-        varsWant = self.get(['observations']).keys()  # extract keys from current obs
-        # TODO -- should read all obs values in rather than just the ones we want..
+        obs = dict()
+        varsWant = self.get(['observations']).keys()  # extract keys from current obs.Needed as netcdf file has plenty of extra stuff we do not want
         # see if obs file exists or json file exists. If not return dict with Nones.
         if not os.path.exists(obsFile):
             if verbose: print("File %s not found. Returning None " % (obsFile))
@@ -428,38 +429,32 @@ class ModelSimulation(object):
                 print("For: ", obs.keys())
 
             with netCDF4.Dataset(obsFile, "r") as ofile:  # open it up for reading
-                # get depreciation warnings because netCDF4 needs to update as numpy no longer use np.bool (which I guess it does)
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    if verbose: print(f"nc file {obsFile}  got {ofile.variables.keys()}")
-                    if justRead: raise NotImplementedError("Implement justRead with netcdf4")
-                    for var in varsWant:  # loop over variables
-                        if var in ofile.variables:  # got it?
-                            obs[var] = float(ofile.variables[var][0])
-                            # this  will break if obs is not a scalar and masked
-                        else:
-                            obs[var] = None  # set to None if we don't have it.
+                if verbose: print(f"nc file {obsFile}  got {ofile.variables.keys()}")
+                for var in varsWant:  # loop over variables
+                    if var in ofile.variables:  # got it?
+                        obs[var] = float(ofile.variables[var][0])
+                        # this  will break if obs is not a scalar and masked
+
         elif fileType == '.json':
             # this should just be a json file.
             with open(obsFile, 'r') as fp:
                 obs = json.load(fp, object_pairs_hook=collections.OrderedDict)
             if verbose: print("json file got ", obs.keys())
-            if not justRead:  # add in None for variables not present
-                for var in varsWant:  # loop over variables that we def want.
-                    obs[var] = obs.get(var, None)  # get variable returning None if not defined.
+
 
         elif fileType == '.csv':  # data is a csv file.
             obsdf = pd.read_csv(obsFile, header=None, index_col=False)
             obs = obsdf.to_dict()
-            if not justRead:
-                for k in varsWant:  # loop overs vars we def want
-                    obs[k] = obsdf.loc[k].values
+
         else:  # don't know what to do. So raise an error
             raise NotImplementedError("Do not recognize %s" % fileType)
         self.set({'observations': obs}, write=False)
 
+        if fill:  # add in None for variables not present
+            for var in varsWant:  # loop over variables that we def want.
+                obs[var] = obs.get(var, None)  # get variable returning None if not defined.
         if series:
-            obs = pd.Series(obs)  # convert to series.
+            obs = pd.Series(obs).rename(self.name())  # convert to series.
         return obs  # return the obs.
 
     def writeObs(self, obs, verbose=False):
@@ -504,16 +499,16 @@ class ModelSimulation(object):
         # have read the obs. We should set the obs
         self.set({'observations': obs}, write=False)
 
-    def getObs(self, verbose=False, series=False, justRead=False):
+    def getObs(self, verbose=False, series=False, fill=True):
         """
         Extract the observations
         :param verbose (optional -- default False) If True print out information
-        :param justRead (optional --default False). Passed through to readObs
+        :param fill. If True fill in missing observations with None/Nan
         :param series optional -- default is False). If True return as a pandas series
         :return: an ordered  dict of the observations
         """
-        obs = self.readObs(verbose=verbose, justRead=justRead)  # force read of data.
-        # obs = self.get("observations", verbose=verbose)
+        raise ValueError("No Need to call getObs.Just call readObs instead")
+        obs = self.readObs(verbose=verbose, justRead=not fill)  # force read of data.
         if series:  # wrap it as a series.
             obs = pd.Series(obs).rename(self.name())
 

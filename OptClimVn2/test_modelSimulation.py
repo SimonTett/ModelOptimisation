@@ -97,8 +97,8 @@ class testModelSimulation(unittest.TestCase):
         self.assertEqual(m.get(['parameters']), expectParm)
         # self.assertEqual(self.model.config['refDir'], None)
         self.assertEqual(m.get(['ppOutputFile']), 'obs.nc')
-        self.assertListEqual(list(m.getObs().keys()), list(expectObs.keys()))
-        self.assertNotEqual(m.getObs(), expectObs)
+        self.assertListEqual(list(m.readObs().keys()), list(expectObs.keys()))
+        self.assertNotEqual(m.readObs(), expectObs)
         # updating parameters should trigger an error as we are read only
         with self.assertRaises(Exception):
             m.setParams({'aaa': 99.9}, addParam=True)
@@ -112,8 +112,8 @@ class testModelSimulation(unittest.TestCase):
         self.assertEqual(m.get(['parameters']), expectParm)
         # self.assertEqual(self.model.config['refDir'], None)
         self.assertEqual(m.get(['ppOutputFile']), 'obs.nc')
-        self.assertListEqual(list(m.getObs().keys()), list(expectObs.keys()))
-        self.assertNotEqual(m.getObs(), expectObs)
+        self.assertListEqual(list(m.readObs().keys()), list(expectObs.keys()))
+        self.assertNotEqual(m.readObs(), expectObs)
         m.setParams({'aaa': 99.9}, addParam=True)
 
     def test_get(self):
@@ -125,12 +125,7 @@ class testModelSimulation(unittest.TestCase):
         self.assertEqual(self.model.get('fbf'), 1.0)
         self.assertEqual(self.model.get(['fbf', 'fbg']), [1.0, 2.0])
 
-    def test_getObs(self):
-        """
-        Test that getObs works. Not really needed as init test checks this but we'll do it anyhow.
-        :return:
-        """
-        self.assertEqual(self.model.getObs(), self.model.get('observations'))
+
 
     def test_getParams(self):
         """
@@ -173,21 +168,22 @@ class testModelSimulation(unittest.TestCase):
         :return:
         """
         # do by changing the observations and then rereading..
-        obs = self.model.getObs()
-        self.assertEqual(type(obs), collections.OrderedDict)
+        obs = self.model.readObs()
+        self.assertEqual(type(obs), dict)
         obs['rh@500_nhx'] = False
         self.model.set({'observations': obs}, write=False)
-        self.model.readObs(verbose=self.verbose)
-        mobs = self.model.getObs()
+        #self.model.readObs(verbose=self.verbose)
+        mobs = self.model.readObs()
         self.assertEqual(mobs.keys(), obs.keys())
         self.assertNotEqual(mobs, obs)
-        # verify justRead fails for netcdf.
-        with self.assertRaises(NotImplementedError):
-            self.model.readObs(justRead=True)
+        #self.model.readObs(justRead=True)
+        obs = self.model.readObs(verbose=self.verbose, fill=False)
+        self.assertEqual(obs, mobs)
+
 
         # test that reading json file works. So create a dummy one!
         obsfile = os.path.join(self.dirPath, 'obs.json')
-        # add an extra obs which should be ignored unless justRead set.
+        # add an extra obs which should be ignored unless fill set.
         mobs2 = mobs.copy()
         mobs2['fred'] = 2
         # strip out all the numpy stuff! 
@@ -200,19 +196,18 @@ class testModelSimulation(unittest.TestCase):
         # hack the model to test json reading works
         self.model.setReadOnly(False)
         self.model.set({'ppOutputFile': 'obs.json'})
-        self.model.readObs(verbose=self.verbose)
-        obs = self.model.getObs(verbose=self.verbose)
+        obs = self.model.readObs(verbose=self.verbose)
         self.assertEqual(obs, mobs2)
 
-        # verify that justRead works
-        self.model.readObs(justRead=True)
-        obs = self.model.getObs(verbose=self.verbose, justRead=True)
+        # verify that fill works
+        #self.model.readObs(fill=True) # in effect flush cache.
+        obs = self.model.readObs(verbose=self.verbose, fill=True)
         self.assertEqual(obs, mobs2)
 
         # verify that series works...
 
-        expect = pd.Series(self.model.getObs())
-        obs = self.model.getObs(verbose=self.verbose,series=True)
+        expect = pd.Series(self.model.readObs())
+        obs = self.model.readObs(verbose=self.verbose,series=True)
         self.assertTrue(expect.equals(obs),msg='series not as expected')
     def test_writeObs(self):
         """
@@ -223,8 +218,7 @@ class testModelSimulation(unittest.TestCase):
         obs = collections.OrderedDict([(key, number) for number, key in enumerate(self.obsNames)])
         self.model.writeObs(obs, verbose=self.verbose)
         # read it back in.
-        self.model.readObs(verbose=self.verbose)
-        obsGet = self.model.getObs(verbose=self.verbose)
+        obsGet= self.model.readObs(verbose=self.verbose)
         self.assertEqual(obsGet, obs)
 
         # now make it write to a json file.
@@ -242,7 +236,7 @@ class testModelSimulation(unittest.TestCase):
         model.writeObs(obs, verbose=self.verbose)
         # read it back in.
         model.readObs(verbose=self.verbose)
-        obsGet = model.getObs(verbose=self.verbose)
+        obsGet = model.readObs(verbose=self.verbose)
         self.assertEqual(obsGet, obs)
 
         # now test we can write a series to a json file

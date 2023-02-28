@@ -189,10 +189,10 @@ while doRun:
     # end of try/except. Now clean up.
     finalConfig.save(filename=finalJsonFile)  # save the (updated) configuration file.
     if fakeFn is None:  # no fake fn so time to exit. This is "normal" behaviour.
-        break  # exit the run for ever loop as no more runs should be submitted on this go.
+        break  # exit the run forever loop as no more runs should be submitted on this go.
     else:  # we have a fake function so keep going-- this is test mode
         iterCount += 1
-        print(f"On iteration {iterCount} submitted {nModels} models")
+        print(f"Faking -- on iteration {iterCount} submitted {nModels} models")
 
 # optionally produce monitoring picture. Only doing at the end even when fakeFn active.
 if args.monitor:
