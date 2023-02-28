@@ -14,9 +14,7 @@ echo "going to post process using  $JsonFile in $PWD from $DirListFile"
 echo "Array ID $SGE_TASK_ID"
 if [[ $SGE_TASK_ID -gt 0 ]] ; then
     if [[  ! -f $DirListFile ]] ;  then
-       pwd
-       echo "in wrong place?"
-       echo "not found $DirListFile"
+       echo "in $PWD and not found $DirListFile"
        exit 1
     fi
     # extract directory and name of output file.
