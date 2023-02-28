@@ -341,7 +341,10 @@ class testRunSubmit(unittest.TestCase):
 
         obs = configData.obsNames()
         nobs = len(begin)
-        configData.obsNames(obs[0:nobs], add_constraint=False)
+        obs=obs[0:nobs]
+        scales= configData.scales()
+        configData.scales(scales[0:nobs])
+        configData.obsNames(obs, add_constraint=False)
         # truncate the obsNames. (does not have to be the same as params but makes life easier if so)
         configData.constraint(False)  # no constraint
         obs = configData.obsNames()
@@ -570,7 +573,10 @@ class testRunSubmit(unittest.TestCase):
 
         obs = configData.obsNames()
         nobs = len(begin)
-        configData.obsNames(obs[0:nobs], add_constraint=False)
+        obs=obs[0:nobs]
+        scales= configData.scales()
+        configData.scales(scales[0:nobs])
+        configData.obsNames(obs, add_constraint=False)
         # truncate the obsNames. (does not have to be the same as params but makes life easier if so)
         configData.constraint(False)  # no constraint
         obs = configData.obsNames()
