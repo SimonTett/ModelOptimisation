@@ -284,7 +284,6 @@
     "lprecip_nhx": 86400.0,
     "lprecip_tropics": 86400.0,
     "lprecip_shx": 86400.0,
-    "mslp_gm": 0.01,
     "mslp_nhx_dgm": 0.01,
     "mslp_tropics_dgm": 0.01
   },

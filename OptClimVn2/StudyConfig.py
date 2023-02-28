@@ -309,14 +309,14 @@ class OptClimConfig(dictFile):
         if obsNames is None:
             obs = self.getv('study', {}).get('ObsList', [])[:]  # return a copy of the array.
         else:
-            self.getv('study', {})['ObsList'] = obsNames[:]  # need to copy not have a reference.
-            obs = obsNames
+            self.getv('study', {})['ObsList'] = list(obsNames)[:]  # need to copy not have a reference.
+            #TODO -- decide what to do with scales at this point
+            obs = list(obsNames)
         
         if add_constraint and self.constraint():  # adding constraint and its defined.
             if self.constraintName() not in  obs:
                 obs.append(self.constraintName())
-#            else:
-#                print("Warning have constraint",self.constraintName(),'In Obs')
+
 
 
         # check for duplicates
@@ -476,22 +476,26 @@ class OptClimConfig(dictFile):
 
     def targets(self, targets=None, obsNames=None, scale=False):
         """
-        Get (or set) the target values for specific obs names
-        :param targets -- tgt values as pandas array. Note that this does not change the obsNames which
-                                        which should be set using obsNames()
-        :param obsNames: optional list of observations to use
-        :param scale: optional if True (default is False) scale target values by scaling
+        Get (or set) the target values for specific obs names. If some obsNames not present in target then a ValueError is raised
+        :param targets -- tgt values as pandas array or None.
+         Note that this does not change the obsNames which should be set using obsNames()
+        :param obsNames: list of observations to use. If not None the self.obsNames() will be used.
+        :param scale: if True  scale target values by scaling
         :return: target values as a pandas series
         """
-        if obsNames is None:  obsNames = self.obsNames()
+        if obsNames is None:
+            obsNames = self.obsNames()
         if targets is None:
             tgt = self.getv('targets')
         else:
             tgt = targets.to_dict().copy()  # make sure we make a copy.
             self.setv('targets', tgt)
-            # and also need to set the obSNames to match but that is best done elsewhere.
-        tvalues = pd.Series([tgt.get(k, np.nan) for k in obsNames], index=obsNames)
-        if scale: tvalues = tvalues * self.scales(obsNames=obsNames)
+        missing = set(obsNames) - set(tgt.keys())
+        if len(missing):
+            raise ValueError("Missing some obs = "," ".join(missing))
+        tvalues = pd.Series({obs:tgt[obs] for obs in obsNames}) # extract the required obsNames
+        if scale:
+            tvalues = tvalues * self.scales(obsNames=obsNames)
         return tvalues.rename(self.name())
 
     def constraint(self, value=None):
@@ -532,17 +536,27 @@ class OptClimConfig(dictFile):
         return self.targets(obsNames=[constraintName],
                             scale=scale)  # wrap name as list and use targets method to get value
 
-    def scales(self, obsNames=None):
+    def scales(self, scalings=None, obsNames=None):
         """
-        Get the scales for specified obsnamaes
-        :param obsNames: optional list of observations to use
+        Get the scales for specified obsNames
+        :param scalings If not None then set scales to these values. Should be dict like.
+            Any value of 1 will not be stored.
+        :param obsNames: list of observations to use. If None then self.obsNames will be used
         :return: scales as a pandas series
         """
+        if scalings is not None:
+            self.Config['scalings']= {key:value for key,value in scalings.items() if value != 1.0}
         scalings = self.Config.get('scalings', {})
-        if obsNames is None: obsNames = self.obsNames()
+        if obsNames is None:
+            obsNames = self.obsNames()
+        # TODO raise error if any of the scaling names are not in obsNames as a consistency check.
+        missing = {k for k in scalings.keys() if not k.endswith("comment")} - set(obsNames) # removing any keys that end with "comment"
+
+        if missing:
+            raise ValueError("Following scaling keys are not in obsNames: "+" ".join(missing))
         scales = pd.Series([scalings.get(k, 1.0) for k in obsNames], index=obsNames).rename(self.name())
         # get scalings -- if not defined set to 1.
-        # TODO raise error if any of the scalings are not in obsNames
+
         return scales
 
     def maxFails(self,value=None):
@@ -758,7 +772,7 @@ class OptClimConfig(dictFile):
     def readCovariances(self, covFile, obsNames=None, trace=False, dirRewrite=None):
         """
         :param covFile: Filename for the covariance matrix. Env variables and ~ expanded
-        :param olist: (optional) List of Observations wanted from covariance file
+        :param obsNames: List of Observations wanted from covariance file. If None then self.obsNames() will be used though constraint name will be omitted.
         :param trace: (optional) if set True then some handy trace info will be printed out.
         :param dirRewrite (optional) if set to something then the first key in dirRewrite that matches in covFile
               will be replaced with the element.
@@ -767,9 +781,10 @@ class OptClimConfig(dictFile):
         Returns a covariance matrix from file optionally sub-sampling to named observations.
         Note if obsName is not specified ordering will be as in the file.
         """
-
+        if obsNames is None:
+            obsNames=self.obsNames(add_constraint=False) # do not include constraint here. It gets added on later.
         use_covFile = os.path.expanduser(os.path.expandvars(covFile))
-        if dirRewrite is not None:
+        if dirRewrite is not None: #TODO consider removing this.
             use_covFile = self.rewriteDir(use_covFile, dirRewrite)
             if trace: print("use_covFile is ", use_covFile)
 
@@ -781,26 +796,18 @@ class OptClimConfig(dictFile):
             cov = pd.read_csv(use_covFile)  # read the covariance
             cov.set_index(cov.columns, drop=False, inplace=True,
                           verify_integrity=True)  # provide index
-            # verify covariance is sensible.. Should not have any missing data
-            if cov.isnull().sum().sum() > 0:  # got some missing
-                print(f"Covariance from {use_covFile} contains missing data. Do fix")
-                print(cov)
-                raise Exception(f'cov {use_covFile} has missing data')
-
-
         except ValueError:  # now likely have index
             cov = pd.read_csv(use_covFile, index_col=0)
-        if obsNames is not None:  # deal with olist
-            cov = cov.reindex(index=obsNames, columns=obsNames)  # extract the values comparing to olist
-            expect_shape = (len(obsNames), len(obsNames))
-            if cov.shape != expect_shape:  # trigger error if missing
-                print("Sub-sampled covariance shape = ", cov.shape, "And expected = ", expect_shape)
-                raise ValueError
-            if cov.isnull().sum().sum() > 0:  # got some missing
-                print(f"Covariance from {use_covFile} contains missing data after sampling. Do fix")
-                print(cov)
-                raise ValueError(f'cov {use_covFile} after sampling has missing data')
 
+        # verify covariance is sensible. Should not have any missing data
+        if cov.isnull().sum().sum() > 0:  # got some missing
+            raise ValueError(f'cov {use_covFile} has missing data. Do fix')
+        # check have required obsNames.
+        missing = set(obsNames) - set(cov.index)
+        if len(missing):
+            raise ValueError("Missing some obs = "," ".join(missing))
+
+        cov = cov.reindex(index=obsNames, columns=obsNames)  # extract the values comparing to olist
 
         return cov
 
