@@ -264,7 +264,7 @@ class ModelSubmit(object):
                 if self._models.get(key) is not None:  # warn if verbose on and got duplicate dir.
                     print("Got duplicate dir =  %s " % (dir) + "\n key = " + repr(key))
             # check model has observations and if not do something!
-            obs = model.readObs(fill=False)
+            obs = model.readObs(obsNames=obsWant)
             if (obs is None) or any([v is None for v in obs.values()]):  # Obs is None or any  obs are None.
                 # deal with noObs cases.
                 if self.noObs == 'fail':
@@ -617,7 +617,7 @@ class ModelSubmit(object):
         """
         o = []
         for key, model in self.allModels():
-            obs = model.readObs(series=True)
+            obs = model.readObs(series=True,obsNames=self.config.obsNames())
             if scale:  # scale obs.
                 scales = self.config.scales()
                 name = obs.name

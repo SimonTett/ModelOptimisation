@@ -10,12 +10,13 @@ import os
 import shutil
 import tempfile
 import unittest
-
+import logging
 import f90nml
+import numpy as np
 import pandas as pd
-
-from HadCM3 import iceAlbedo
 from OptClimVn2 import optClimLib, ModelSimulation
+from HadCM3 import iceAlbedo
+
 
 __author__ = 'stett2'
 
@@ -31,9 +32,11 @@ class testModelSimulation(unittest.TestCase):
         Standard setup for all test cases
         :return:
         """
-
+        logging.basicConfig(level=logging.INFO)
+        console = logging.StreamHandler()
+        console.setLevel(logging.INFO)
         self.verbose = False  # verbose if True
-        parameters = collections.OrderedDict()
+        parameters =dict()
         parameters['one'] = 1.0
         parameters['two'] = 2.0
         self.parameters = parameters
@@ -74,8 +77,7 @@ class testModelSimulation(unittest.TestCase):
         :return:
         """
         # using implicit run of setup.
-        expectObs = collections.OrderedDict()
-        for k in ['temp@500_nhx', 'temp@500_tropics', 'temp@500_shx']: expectObs[k] = None
+        expectObs={k:None for k in ['temp@500_nhx', 'temp@500_tropics', 'temp@500_shx']}
 
         expectParm = collections.OrderedDict()
         expectParm['one'] = 1.0
@@ -83,22 +85,21 @@ class testModelSimulation(unittest.TestCase):
 
         self.assertEqual(self.model.get(['name']), 'test')
         self.assertEqual(self.model.get(['ppExePath']), 'postProcess.sh')
-        self.assertEqual(self.model.get(['observations']), expectObs)
+        self.assertEqual(self.model.get(['observations']), None)
         self.assertEqual(self.model.get(['parameters']), expectParm)
         self.assertEqual(self.model.get(['ppOutputFile']), 'obs.nc')
-        self.assertListEqual(list(self.model.get(['observations']).keys()), list(expectObs.keys()))
-        # test that read works. Works means no failures and have observations..
+
+        # test that read works. Works means no failures and have observations...
 
         m = ModelSimulation.ModelSimulation(self.dirPath, verbose=self.verbose)
         # observations should have changed but nothing else.
         self.assertEqual(m.get(['name']), 'test')
         self.assertEqual(m.get(['ppExePath']), 'postProcess.sh')
-        # self.assertEqual(m.get(['observations']),expectObs)
         self.assertEqual(m.get(['parameters']), expectParm)
-        # self.assertEqual(self.model.config['refDir'], None)
         self.assertEqual(m.get(['ppOutputFile']), 'obs.nc')
-        self.assertListEqual(list(m.readObs().keys()), list(expectObs.keys()))
-        self.assertNotEqual(m.readObs(), expectObs)
+        obs = m.readObs(obsNames=expectObs.keys())
+        self.assertEqual(set(obs.keys()), set(expectObs.keys()))
+        self.assertNotEqual(obs, expectObs)
         # updating parameters should trigger an error as we are read only
         with self.assertRaises(Exception):
             m.setParams({'aaa': 99.9}, addParam=True)
@@ -112,8 +113,9 @@ class testModelSimulation(unittest.TestCase):
         self.assertEqual(m.get(['parameters']), expectParm)
         # self.assertEqual(self.model.config['refDir'], None)
         self.assertEqual(m.get(['ppOutputFile']), 'obs.nc')
-        self.assertListEqual(list(m.readObs().keys()), list(expectObs.keys()))
-        self.assertNotEqual(m.readObs(), expectObs)
+        o=m.readObs(obsNames=expectObs.keys())
+        self.assertListEqual(list(o.keys()), list(expectObs.keys()))
+        self.assertNotEqual(o, expectObs)
         m.setParams({'aaa': 99.9}, addParam=True)
 
     def test_get(self):
@@ -168,17 +170,31 @@ class testModelSimulation(unittest.TestCase):
         :return:
         """
         # do by changing the observations and then rereading..
-        obs = self.model.readObs()
-        self.assertEqual(type(obs), dict)
+        Initobs = self.model.readObs()
+        self.assertEqual(type(Initobs), dict)
+
+        # modify values
+        obs= Initobs.copy()
         obs['rh@500_nhx'] = False
+        obs['NOOBS'] = 2.0
         self.model.set({'observations': obs}, write=False)
-        #self.model.readObs(verbose=self.verbose)
+
+        # now read from cache so values should be the same
         mobs = self.model.readObs()
-        self.assertEqual(mobs.keys(), obs.keys())
-        self.assertNotEqual(mobs, obs)
-        #self.model.readObs(justRead=True)
-        obs = self.model.readObs(verbose=self.verbose, fill=False)
-        self.assertEqual(obs, mobs)
+        self.assertEqual(mobs, obs) # reading from cache.
+        # read from filesystem (flush cache)
+        mobs= self.model.readObs(flush=True) # force reread
+        self.assertNotEqual(mobs,obs) # different from mod obs
+        self.assertEqual(mobs,Initobs) # but should be the same as initial values
+        mobs = self.model.readObs() # read using cache
+        self.assertEqual(mobs, Initobs)
+        # read with specified keys (that do not exist)
+
+        obs = self.model.readObs(obsNames=['Missing_1','Missing_2'])
+        expect=dict(Missing_1=None,Missing_2=None)
+        self.assertEqual(obs, expect)
+
+
 
 
         # test that reading json file works. So create a dummy one!
@@ -196,19 +212,16 @@ class testModelSimulation(unittest.TestCase):
         # hack the model to test json reading works
         self.model.setReadOnly(False)
         self.model.set({'ppOutputFile': 'obs.json'})
-        obs = self.model.readObs(verbose=self.verbose)
-        self.assertEqual(obs, mobs2)
+        obs = self.model.readObs(flush=True) # and flush the cache.
+        self.assertTrue(np.all(pd.Series(obs)==pd.Series(mobs2)))
 
-        # verify that fill works
-        #self.model.readObs(fill=True) # in effect flush cache.
-        obs = self.model.readObs(verbose=self.verbose, fill=True)
-        self.assertEqual(obs, mobs2)
 
         # verify that series works...
 
         expect = pd.Series(self.model.readObs())
-        obs = self.model.readObs(verbose=self.verbose,series=True)
-        self.assertTrue(expect.equals(obs),msg='series not as expected')
+        obs = self.model.readObs(series=True)
+        self.assertTrue(np.all(obs == expect))
+
     def test_writeObs(self):
         """
         Test that write obs works.
@@ -218,7 +231,7 @@ class testModelSimulation(unittest.TestCase):
         obs = collections.OrderedDict([(key, number) for number, key in enumerate(self.obsNames)])
         self.model.writeObs(obs, verbose=self.verbose)
         # read it back in.
-        obsGet= self.model.readObs(verbose=self.verbose)
+        obsGet= self.model.readObs()
         self.assertEqual(obsGet, obs)
 
         # now make it write to a json file.
@@ -235,8 +248,8 @@ class testModelSimulation(unittest.TestCase):
         obs[self.obsNames[0]] = 4.0
         model.writeObs(obs, verbose=self.verbose)
         # read it back in.
-        model.readObs(verbose=self.verbose)
-        obsGet = model.readObs(verbose=self.verbose)
+        model.readObs()
+        obsGet = model.readObs()
         self.assertEqual(obsGet, obs)
 
         # now test we can write a series to a json file
@@ -462,11 +475,11 @@ class testModelSimulation(unittest.TestCase):
 
     def test_cmp(self):
         """
-        test cases for comparision operators
+        test cases for comparison operators
         :return:
         """
         import copy
-        # create a modelSimulation by copying and compare. The check that changes work
+        # create a modelSimulation by copying and compare. Then check that changes work
 
         model = copy.deepcopy(self.model)
         self.assertEqual(self.model, model)

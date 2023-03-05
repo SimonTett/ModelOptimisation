@@ -121,7 +121,7 @@ class runSubmit(Submit.ModelSubmit):
                 mc = self.model(pDict, update=True, verbose=self.verbose)
                 if mc is not None:  # got a model
                     obsNames = self.obsNames()
-                    obs = mc.readObs(series=True,fill=False)  # get obs from the model
+                    obs = mc.readObs(series=True)  # get obs from the model
                     missing_obs = set(obsNames) - set(obs.index)
                     if len(missing_obs) >0: # trigger error as missing obs
                         raise ValueError(f"Missing {' '.join(missing_obs)} from model {mc.name()}")

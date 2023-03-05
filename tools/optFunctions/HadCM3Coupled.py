@@ -407,7 +407,7 @@ def annDir(model):
     :param model: a model like object for which the directories are searched.
     :return:
     """
-    obs = model.readObs(fill=True)
+    obs = model.readObs()
     if obs is None:
         # not actually run anything so raise appropriate error
         raise exceptions.runModelError
@@ -701,7 +701,7 @@ def fakeTCR(model, studyCfg, verbose=False):
     name = os.path.basename(model.refDirPath())
     monDir = os.path.join(os.environ['OPTCLIMTOP'], 'Configurations', 'time_cache', umMonOut[name])
     param = model.getParams(series=True)  # read in the params
-    obs = model.readObs(fill=True, verbose=False)  # read obs
+    obs = model.readObs()  # read obs
     # print("Obs is ",model.name(),obs)
     if (obs is None) or (len(obs) == 0):  # no obs so make some.
         obs = {}
@@ -755,7 +755,7 @@ def fakeEQ4(model, studyCfg, verbose=False):
     name = os.path.basename(model.refDirPath())
     monDir = os.path.join(os.environ['OPTCLIMTOP'], 'Configurations', 'time_cache', umMonOut[name])
     param = model.getParams(series=True)  # read in the params
-    obs = model.readObs(fill=True, verbose=False)  # read obs
+    obs = model.readObs()  # read obs
     if (obs is None) or (len(obs) == 0):  # no obs so make some.
         obs = {}
 
@@ -826,7 +826,7 @@ class testHadCM3(unittest.TestCase):
                 self.assertEqual(entry.name, rootname + str(len(dirs)))
                 # read it in as a model and then get obs
                 m = HadCM3.HadCM3(mdir)
-                obs = m.readObs(fill=True)
+                obs = m.readObs()
                 # verify that obs year is 41
                 for k, v in obs.items():
                     self.assertEqual(v, tgtYear, 'Failed for dir %s got year %i expected %i' % (k, v, tgtYear))
