@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd  # pandas
 import warnings  # so we can turn of warnings..
 import pathlib  # TODO slowly move to use this rather than os.path
+import logging # TODO replace prints with logging.info/logging.debug
 
 import optClimLib  # provide std routines
 
@@ -974,6 +975,33 @@ class ModelSimulation(object):
 
         file= 'notImplimented'
         return file
+
+    def nl_info(self,params):
+        """
+        Work out namelists etc to be changed
+        Returns dict indexed by filename with nl info as values.
+        TODO add test for this case
+        :return:
+        """
+        files = dict()  # list of files to be modified.
+        for param,value in params.items():  # Iterate over parameters and thier values
+            # search functions first
+            if param in self._metaFn:  # got a meta function.
+                logging.info(f"Running function {self._metaFn[param].__name__}")
+                metaFnValues = self._metaFn[param](value)  # call the meta param function which returns a dict
+                for conv, v in metaFnValues.items():  # iterate over result of fn.
+                    if conv.file not in files:
+                        files[conv.file] = []  # if not come across the file set it to empty list
+                    files[conv.file].append((v, conv))  # append the  value  & conversion info.
+            elif param in self._convNameList:  # got it in convNameList ?
+                for conv in self._convNameList[param]:
+                    if conv.file not in files:
+                        files[conv.file] = []  # if not come across the file set it to empty list
+                    files[conv.file].append((value, conv))  # append the value  & conversion
+            else:
+                raise KeyError("Failed to find %s in metaFn or convNameList " % param)
+
+        return files
 ##I don't think code below is used or necessary
 class EddieModel(ModelSimulation):
     """
