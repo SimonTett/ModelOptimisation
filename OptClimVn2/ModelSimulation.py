@@ -22,17 +22,6 @@ import xarray
 
 import optClimLib  # provide std routines
 
-__version__ = '0.2.0'
-# subversion properties
-
-
-subversionProperties = \
-    {
-        'Date': '$Date$',
-        'Revision': '$Revision$',
-        'Author': '$Author$',
-        'HeadURL': '$HeadURL$'
-    }
 
 
 # import stdRoutines # provide standard routines.
@@ -65,6 +54,7 @@ _namedTupClass = collections.namedtuple('TupClassxx',
 
 
 # TODO -- make this a class function which is available not private.
+# or make it a dataclass with methods to handle namelists.
 class ModelSimulation(object):
     """
     Class to define Model Simulations. This class is top class that

@@ -19,7 +19,7 @@ import sys
 class Study(object):
     """
     Class to support a study. Idea is that eventually modelSubmit 
-    sub-classes this. This class proides support for reading info 
+    sub-classes this. This class provides support for reading info
     from a study -- both in progress or completed. But does not 
     handle submitting models or realising that a new one needs to be generated.
     TODO: generate test cases based on Submit.py.
