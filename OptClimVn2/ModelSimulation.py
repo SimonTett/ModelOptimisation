@@ -426,6 +426,7 @@ class ModelSimulation(object):
             elif fileType == '.csv':  # data is a csv file.
                 obsdf = pd.read_csv(obsFile, header=None, index_col=False)
                 obs = obsdf.to_dict()
+                logging.info("csv file got " + " ".join(obs.keys()))
 
             else:  # don't know what to do. So raise an error
                 raise NotImplementedError(f"Do not recognize {fileType}")
@@ -483,20 +484,7 @@ class ModelSimulation(object):
         # have read the obs. We should set the obs
         self.set({'observations': obs.copy()}, write=False)
 
-    def getObs(self, verbose=False, series=False, fill=True):
-        """
-        Extract the observations
-        :param verbose (optional -- default False) If True print out information
-        :param fill. If True fill in missing observations with None/Nan
-        :param series optional -- default is False). If True return as a pandas series
-        :return: an ordered  dict of the observations
-        """
-        raise ValueError("No Need to call getObs.Just call readObs instead")
-        obs = self.readObs(verbose=verbose, justRead=not fill)  # force read of data.
-        if series:  # wrap it as a series.
-            obs = pd.Series(obs).rename(self.name())
 
-        return obs
 
     def setParams(self, params, addParam=False, write=True, verbose=False):
         """
