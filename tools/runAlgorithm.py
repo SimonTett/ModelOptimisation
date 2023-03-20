@@ -81,8 +81,8 @@ parser.add_argument("-o", "--optimise",
 
 helpStr = """Behaviour for model with no observations. 
                          Choices are fail (default), continue (continue run and submit), 
-                         perturb (pertrub run, restart and submit), 
-                         pertrubc (pertrub run, continue and submit),
+                         perturb (perturb run, restart and submit), 
+                         perturbc (perturb run, continue and submit),
                          or clean (remove directory and continue as normal).
                          These are all passed into Submit but no "new" simulations will be submitted. 
                          Just the failed simulations."""
@@ -144,11 +144,10 @@ monitorFile = rootDir / (rootDiagFiles + "_monitor.png")
 # common stuff across all algorithms
 
 
-doRun = True  # keep runnign until done. If no fake fn will breakout from this loop to finish.
 iterCount = 0  # for testing print out iterCount
 nModels = 0
 
-while doRun:
+while True:
     np.random.seed(123456)  # init RNG though probably should go to the runXXX methods.
     # setup MODELRUN
     MODELRUN = runSubmit.runSubmit(configData,
@@ -159,6 +158,7 @@ while doRun:
     restart = False  # subsequently do not want to restart (i.e. clean up dir)
 
     try:
+        wantCost=True # want cost function in model output
         minModels = MODELRUN.rerunModels()
         if len(minModels) > 0:  # got some minimal models to run so trigger error
             raise exceptions.runModelError(
@@ -174,25 +174,32 @@ while doRun:
             finalConfig = MODELRUN.runGaussNewton(scale=True)
         elif algorithmName == 'JACOBIAN':
             # compute the Jacobian.
+            wantCost=False
             finalConfig = MODELRUN.runJacobian(optConfig=optConfig)
         elif algorithmName == 'RUNOPTIMISED':  # run optimised case through configuration in JSON file.
+            wantCost=False
             finalConfig = MODELRUN.runOptimized(optConfig=optConfig)
         else:
             raise Exception(f"Don't know what to do with Algorithm: {algorithmName}")
 
-        doRun = False  # we have finished so can exit. Though only makes sense when have a fake fn.
+        break # we have finished so can exit. Though only makes sense when have a fake fn.
     except exceptions.runModelError:  # error which triggers need to run more models.
         # run more models
-        status, nModels, finalConfig = MODELRUN.submit(resubmit=restartCMD, dryRun=dryRun)
+        status, nModels, finalConfig = MODELRUN.submit(resubmit=restartCMD, dryRun=dryRun,
+                                                       cost=wantCost)
         if not status:
             raise Exception(f"Some problem. status = {status}")
     # end of try/except. Now clean up.
     finalConfig.save(filename=finalJsonFile)  # save the (updated) configuration file.
     if fakeFn is None:  # no fake fn so time to exit. This is "normal" behaviour.
-        break  # exit the run forever loop as no more runs should be submitted on this go.
+        break  # exit the run for ever loop as no more runs should be submitted on this go.
     else:  # we have a fake function so keep going-- this is test mode
         iterCount += 1
-        print(f"Faking -- on iteration {iterCount} submitted {nModels} models")
+        print(f"On iteration {iterCount} submitted {nModels} models")
+        try:
+            print("Last cost is ",finalConfig.cost()[-1])
+        except IndexError:
+            pass
 
 # optionally produce monitoring picture. Only doing at the end even when fakeFn active.
 if args.monitor:
