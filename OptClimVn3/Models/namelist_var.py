@@ -36,14 +36,17 @@ class namelist_var(model_base):
             return f"{self.Name()}: {self.filepath}&{self.namelist} {self.nl_var}"
 
     _file_cache = dict()  # where we cache files
-    def read_value(self, dirpath=pathlib.Path.cwd(), clean=False):
+    def read_value(self, dirpath=pathlib.Path.cwd(), clean=False,default=None):
         """ Read  value from disk file containing namelists. Files will be cached to speed up subsequent reads.
         :param dir: Directory where namelist is.
         :param clean -- If True clean the cache before reading.
 
         """
         namelists = self.file_cache(dirpath / self.filepath, clean=clean)
-        return namelists[self.namelist][self.nl_var]
+        value = namelists[self.namelist].get(self.nl_var,default)
+        if value is None:
+            raise KeyError(f"{self} not found")
+        return value
 
     def to_dict(self):
         """ Return a dictionary representation, suitable to conversion to JSON,  of namelist-var.  """

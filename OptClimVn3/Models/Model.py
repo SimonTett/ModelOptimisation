@@ -15,11 +15,12 @@ import time
 import xarray
 import pandas as pd
 
-import genericLib
+
 import generic_json
 from Models.model_base import model_base
 from Models.namelist_var import namelist_var
 from Models.param_info import param_info
+
 
 
 # code from David de Klerk 2023-04-13
@@ -649,20 +650,30 @@ class Model(ModelBaseClass):
 
         return obs  # return the obs.
 
-    def read_values(self, parameters: str | typing.List[str]) -> dict:
+    def read_values(self, parameters: str | typing.List[str]|None,fail: bool =True) -> dict:
         """
         Read parameter values from self.model_dir
-        :param parameters: list of parameters OR parameter to read
+        :param parameters: list of parameters OR parameter to read. If None all known parameters will be read.
+        :param fail. If true fail if namelist file is not found.
         :return: dict of parameter/value tuples
         """
         result = dict()
         if isinstance(parameters, str):
             parameters = [parameters]  # make it a list.
+        if parameters is None:
+            parameters = self.param_info.known_parameters()  # get all parameters
 
         for parameter in set(parameters):  # set means we iterate over unique parameters
-            result[parameter] = self.param_info.read_param(self, parameter)
+            try:
+                result[parameter] = self.param_info.read_param(self, parameter)
+            except (KeyError,FileNotFoundError):
+                if fail:
+                    raise
+                logging.warning(f"Parameter {parameter} not found in {self.name}")
+                result[parameter] = None
 
         return result
 
 
 Model.register_class(Model)  # register ourselves!
+

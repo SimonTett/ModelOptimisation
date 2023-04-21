@@ -285,3 +285,10 @@ class param_info(model_base):
             if len(values) > 0:  # got something?
                 obj.param_constructors[key] = values
         return obj
+
+    def known_parameters(self):
+        """
+        Return a list of all parameters that have been registered.
+        :return:
+        """
+        return list(self.param_constructors.keys())
