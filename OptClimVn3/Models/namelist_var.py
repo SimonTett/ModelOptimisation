@@ -14,26 +14,29 @@ from Models.model_base import model_base
 @dataclasses.dataclass(frozen=True)
 class namelist_var(model_base):
     """
-    Class to handle namelist variables. Provides several **class** methods. Uses concept of nl_dict
-    This is dictionary indexed by namelist_var instances with values.
+    Class to handle namelist variables. Provides several **class** methods.
     """
     filepath: pathlib.Path
     namelist: str
     nl_var: str
     name: str = None
+    default: any = None
 
-    def Name(self):
+    """def Name(self):
         name = self.name
         if name is None:
             name = f"{str(self.filepath)}&{self.namelist} {self.nl_var}"
-        return name
+        return name"""
 
     def __repr__(self):
         """ Representation -- the name and the cpts"""
-        if self.name is None:
-            return f"{self.Name()}"
-        else:
-            return f"{self.Name()}: {self.filepath}&{self.namelist} {self.nl_var}"
+        r = f"{self.filepath}&{self.namelist} {self.nl_var}"
+        if self.default is not None:
+            r += f" default:{self.default}"
+        if self.name is not None:
+            r = f"{self.name}: "+r
+
+        return r
 
     _file_cache = dict()  # where we cache files
     def read_value(self, dirpath=pathlib.Path.cwd(), clean=False,default=None):
@@ -128,14 +131,16 @@ class namelist_var(model_base):
         return file_dict
 
     @classmethod
-    def nl_patch(cls, nl_info: iter, dirpath=pathlib.Path.cwd()):
+    def nl_modify(cls, nl_info: iter, dirpath=pathlib.Path.cwd()):
         """
-        Patch a directory for the list of variables.
+        Modifiy namelist files. Sadly f90nml.patch() is a bit flaky.
+          So, for each file we read in the entire contents. Update using the changes, write to a temp file, remove the input file
+            and move the temp file to the original location.
         :param nl_info: iterable of namelist_var, value pairs,
-          will also clear cache after all patching done.
-        :return: nada though all files used will be patched.
+          will also clear cache after all modification done.
+        :return: nada though all files used will be modified.
 
-        Example usage namelist_var.nl_patch({VF1_nl:0.5,ENTCOEF_nl:[0.8,0.8,0.85,...0.9,0.95])
+        Example usage namelist_var.nl_modify({VF1_nl:0.5,ENTCOEF_nl:[0.8,0.8,0.85,...0.9,0.95])
         """
 
         namelists = cls.modify_namelists(nl_info, dirpath=dirpath)
@@ -144,17 +149,19 @@ class namelist_var(model_base):
             shutil.copy2(filepath, bak_file, follow_symlinks=False)  # keep symlinks as symlinks.
             logging.debug(f" {filepath} copied to {bak_file}")
             with tempfile.NamedTemporaryFile(dir=dirpath, delete=False, mode='w') as tmpNL:
-                # control how it all gets output.
+                # control how namelist is output.
                 nl_patch.end_comma = True
                 nl_patch.uppercase = True
-                nl_patch.logical_repr = ('.FALSE.', '.TRUE.')  # how to reprsetn false and true
-                f90nml.patch(str(filepath),nl_patch,tmpNL)  # needs to be converted to str as f90nml deep down does not know about paths!
+                nl_patch.logical_repr = ('.FALSE.', '.TRUE.')  # how to represent false and true
+                full_nl = f90nml.read(filepath)
+                full_nl.update(**nl_patch)
+                f90nml.write(full_nl,tmpNL)
                 tmpNL.close()
-            filepath.unlink()
-            pathlib.Path(tmpNL.name).rename(filepath)
-            logging.info(f"Patched {filepath}")
+            filepath.unlink() # remove the input file
+            pathlib.Path(tmpNL.name).rename(filepath) # move temp file to original location.
+            logging.info(f"Modified {filepath}")
         cls.clean_cache()  # cache now "dirty" (been modified) and so needs to  be cleaned.
-        return True  # patch succeeded
+        return True  # modification succeeded
 
 
 

@@ -82,9 +82,9 @@ class namelist_var_TestCase(unittest.TestCase):
         for nl in self.namelist:
             self.assertEqual(file_dict[self.dirPath/nl.filepath][nl.namelist][nl.nl_var],nl.read_value(dirpath=self.dirPath)*2,msg=f"Failed for {nl}")
 
-    def test_nl_patch(self):
+    def test_nl_modify(self):
         """
-        Test namelist patching
+        Test namelist modification
         Patch the values. Should have expected bak files and values as expected
         :return:
         """
@@ -96,7 +96,7 @@ class namelist_var_TestCase(unittest.TestCase):
             else:
                 values.append(v+1)
         nl_items =list(zip(self.namelist, values))
-        patch = namelist_var.nl_patch(nl_items,dirpath=self.dirPath)
+        patch = namelist_var.nl_modify(nl_items,dirpath=self.dirPath)
         self.assertTrue(patch) # worked
         # check namelists are as expected
         for nl,value in nl_items:
@@ -130,12 +130,26 @@ class namelist_var_TestCase(unittest.TestCase):
             self.assertEqual(got,v,msg=f"Failed for {nl}")
 
 
-    def test_nl_name(self):
-        """ Test nl_Name is as expected"""
-        nl = namelist_var(filepath=pathlib.Path('../test.nl'),namelist='BIG_NL',nl_var='small_var',name='TINY')
-        self.assertEqual(nl.Name(),'TINY')
+    # def test_nl_name(self):
+    #     """ Test nl_Name is as expected"""
+    #     nl = namelist_var(filepath=pathlib.Path('../test.nl'),namelist='BIG_NL',nl_var='small_var',name='TINY')
+    #     self.assertEqual(nl.Name(),'TINY')
+    #     nl = namelist_var(filepath=pathlib.Path('../test.nl'),namelist='BIG_NL',nl_var='small_var')
+    #     self.assertEqual(nl.Name(),f'{str(nl.filepath)}&BIG_NL small_var')
+
+    def test_repr(self):
+        """
+        Test representation is as expected.
+        :return:
+        """
         nl = namelist_var(filepath=pathlib.Path('../test.nl'),namelist='BIG_NL',nl_var='small_var')
-        self.assertEqual(nl.Name(),f'{str(nl.filepath)}&BIG_NL small_var')
+        self.assertEqual(nl.__repr__(),f'{str(nl.filepath)}&BIG_NL small_var')
+
+        nl = namelist_var(filepath=pathlib.Path('../test.nl'),namelist='BIG_NL',nl_var='small_var',default=2)
+        self.assertEqual(nl.__repr__(),f'{str(nl.filepath)}&BIG_NL small_var default:2')
+
+        nl = namelist_var(filepath=pathlib.Path('../test.nl'),namelist='BIG_NL',nl_var='small_var',default=2,name='TEST')
+        self.assertEqual(nl.__repr__(),f'TEST: {str(nl.filepath)}&BIG_NL small_var default:2')
 
 
 

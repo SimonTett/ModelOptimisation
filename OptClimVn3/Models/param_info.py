@@ -33,7 +33,7 @@ class param_info(model_base):
         """
         Initialise the params instance by setting param_constructors to an empty dict
         """
-        self.param_constructors = dict()  # information on parameters 0-- currently namelist_var or functions
+        self.param_constructors = dict()  # information on parameters -- currently namelist_var or functions
         self.got_vars = set()  # set of the known variables (namelist or functions)
         self.known_functions = dict()  # known functions indexed by __qualname__
 
@@ -79,7 +79,7 @@ class param_info(model_base):
                 pass
 
         if var_to_set in self.got_vars:
-            raise ValueError(f"Already got var {var_to_set}. No duplicates allowed")
+           raise ValueError(f"Already got var {var_to_set}. No duplicates allowed")
         self.got_vars.add(var_to_set)
         existing = self.param_constructors.pop(parameter, [])
         existing.append(var_to_set)
@@ -105,7 +105,7 @@ class param_info(model_base):
             raise KeyError(f"Parameter {parameter} not found.\n Allowed parameters are: "+
                            " ".join(list(self.param_constructors.keys())))
         if callable(stuff):  # is it a callable
-            result = stuff(model,None, inverse=True)  # callable. Run it in inverse mode.
+            result = stuff(model,None)  # callable. Run it in inverse mode.
             logging.debug(f"Called {stuff.__qualname__} with inverse and got {result} ")
 
         elif isinstance(stuff, namelist_var):

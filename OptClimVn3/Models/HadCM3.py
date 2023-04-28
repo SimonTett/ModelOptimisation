@@ -9,46 +9,10 @@ import importlib.resources
 from Models.namelist_var import namelist_var
 import pathlib
 import datetime
-
-
-def parse_isoduration(s):
-    """ Parse a str ISO-8601 Duration: https://en.wikipedia.org/wiki/ISO_8601#Durations
-    Originally copied from:
-    https://stackoverflow.com/questions/36976138/is-there-an-easy-way-to-convert-iso-8601-duration-to-timedelta
-    Though could use isodate library but trying to avoid dependencies and isodate does not look maintained.
-    :param s: str to be parsed. If not a string starting with "P" then ValueError will be raised
-    :return: 6 element list [YYYY,MM,DD,HH,mm,SS.ss] which is suitable for the UM namelists
-    """
-
-    def get_isosplit(s, split):
-        if split in s:
-            n, s = s.split(split, 1)
-        else:
-            n = '0'
-        return n.replace(',', '.'), s  # to handle like "P0,5Y"
-
-    if not isinstance(s, str):
-        raise ValueError("ISO 8061 demands a string")
-    if s[0] != 'P':
-        raise ValueError("ISO 8061 demands durations start with P")
-    s = s.split('P', 1)[-1]  # Remove prefix
-
-    split = s.split('T')
-    if len(split) == 1:
-        sYMD, sHMS = split[0], ''
-    else:
-        sYMD, sHMS = split  # pull them out
-
-    durn = []
-    for split_let in ['Y', 'M', 'D']:  # Step through letter dividers
-        d, sYMD = get_isosplit(sYMD, split_let)
-        durn.append(float(d))
-
-    for split_let in ['H', 'M', 'S']:  # Step through letter dividers
-        d, sHMS = get_isosplit(sHMS, split_let)
-        durn.append(float(d))
-
-    return durn
+import fileinput
+import shutil
+import re
+import stat
 
 
 def IDLinterpol(inyold, inxold, xnew):
@@ -81,14 +45,7 @@ def IDLinterpol(inyold, inxold, xnew):
     return ynew
 
 
-
 import math
-
-
-
-
-
-
 
 
 class HadCM3(Model):
@@ -98,6 +55,266 @@ class HadCM3(Model):
       Which, by definition, are specific to HadCM3
     """
 
+    def __init__(self, *args, **kwargs):
+        """"
+        HadCM3 Init -- calls super().__init__(*args,**kwargs)
+        then sets submit_script to "SUBMIT" and continue script to SUBMIT.cont
+        """
+        super().__init__(*args, **kwargs)  # call super class init and then override
+        # modify submit_script & continue_script
+
+        self.submit_script = 'SUBMIT'
+        self.continue_script = 'SUBMIT.cont'
+        self.post_process_file = 'post_process.sh'
+        self.runInfo=dict()
+
+    def Name(self):
+        """
+
+        :return: The name checking length is 5
+        """
+        name = self.name
+        if len(name) != 5:
+            raise ValueError(f"For HadCM3 Name must be 5 characters and is {name} ")
+        return name
+
+    def instantiate(self) -> None:
+
+        runTime = self.parameters.pop('runTime', None)  # remove runTime from the parameter list
+        runCode = self.parameters.pop('runCode', None)  # remove runCode
+        self.runInfo = dict(runCode=runCode, runTime=runTime) # put them in the object itself.
+        super().instantiate()  # run super class instantiate.
+
+        self.fixClimFCG()  # fix the ClimFGC namelist
+        # TODO set  runTime and runCode using a function. Because this involves editing SUBMIT
+        # we really want to do this once???
+        # Step 1 --  copy SUBMIT & SCRIPT to SUBMIT.bak & SCRIPT.bak so we have the originals
+        # Then modify SUBMIT & SCRIPT in place
+        #  Have fns to set runTime and runCode. Or just pop them off the parameters. Last is better (and more generic)
+        self.modifySubmit(runTime=runTime, runCode=runCode)  # modify Submit script
+        self.modifyScript()  # modify Script
+        self.createWorkDir()  # create the work directory (and fill it in)
+        self.genContSUBMIT()  # generate the continuation script.
+        self.createPostProcessFile("# No job to release")
+
+    def perturb(self):
+        """
+        Perturb HadCM3 model. Default works through up to 6 parameters then gives up!
+        :return: nothing
+        """
+        parameters_to_perturb = ['VF1', 'ICE_SIZE', 'ENTCOEF', 'CT', 'ASYM_LAMBDA', 'CHARNOCK']
+        if self.perturb_count >= len(parameters_to_perturb):
+            raise ValueError(
+                f"HadCM3 perturbation count is {len(parameters_to_perturb)}"
+                f"but only {len(self.parameters)} parameters are available")
+
+        parameter = parameters_to_perturb[self.perturb_count]
+        parameters = self.read_values(parameter)
+        parameters[parameter] *= (1 + 1e-6)  # small parameter perturbation
+        return super().perturb(parameters)
+
+    def createPostProcessFile(self, postProcessCmd):
+        """
+        Used by the submission system to allow the post-processing job to be submitted when the simulation has
+        completed. This code also modifies the UM so that when a NRUN is finished it automatically runs the
+        continuation case. This HadCM3 implementation generates a file call optclim_finished which is sourced by
+        SCRIPT. SCRIPT needs to be modified to actually do this. (See modifySCRIPT).
+
+        """
+        # postProcessCmd is the command that gets run when the model has finished. It should release the post-processing!  
+        outFile = self.model_dir / self.post_process_file  # needs to be same as used in SCRIPT which actually calls it
+        # TODO postProcessCmd should become the script that gets run to update the state.
+        # Eddie does not require login in to a login node to subvbmit jobs
+        # that means (I think) we can drop all the ssh nonsense. Might be needed for other
+        # machines but cross that bridge if and when we come to it!
+        with open(outFile, 'w') as fp:
+            print(
+                f"""#  script to be run in ksh from UM45 SCRIPT
+    # it does two things:
+    # 1) releases the post-processing script when the whole simulation has finished.
+    # 2) When the job has finished (first time) submits a continuation run.
+    # I (SFBT) suspect it is rather hard wired for eddie. But will see later.
+    export OUTPUT=$TEMP/output_test_finished.$$ # where the output goes
+    export RSUB=$TEMP/rsub1.$$
+    qshistprint $PHIST $RSUB # get the status info from the history file
+    FLAG=$(grep 'FLAG' $RSUB|cut -f2 -d"=" | sed 's/ *//'g)
+    if  [ $FLAG = 'N' ]
+      then # release the post processing job. 
+      {postProcessCmd} ## code inserted
+      echo "FINISHED releasing the post-processing"
+    else 
+         echo "$TYPE: Still got work to do"
+    fi
+
+    # test for NRUN but not finished.
+    SUBCONT={self.continue_script}
+    if [ \( $FLAG = 'Y' \) -a \( $TYPE = 'NRUN' \) ]
+      then
+      if [ -n "$TESTING"  ] # for testing.
+      then
+    	echo "Testing: Should run $SSHCMD $SUBCONT"
+    	ls -ltr $SUBCONT
+      else
+        echo "$SSHCMD $SUBCONT"
+        $SUBCONT
+      fi
+    fi
+    echo "contents of $OUTPUT "
+    echo "========================================="
+    cat $OUTPUT
+    echo "==================================="
+    rm -f $RSUB $OUTPUT # remove temp file.
+                    """, file=fp)
+            return outFile
+
+    def createWorkDir(self):
+        """
+        Create the workdir and if self.reference/W has .astart & .ostart copy those into created workDir
+        :return: nada
+        """
+
+        workDir = self.model_dir / 'W'
+        workDir.mkdir(parents=True, exist_ok=True)
+        ref_workDir = self.reference / 'W'
+        for f in ['*.astart', '*.ostart']:  # possible start files
+            files = ref_workDir.glob(f)
+            for file in files:
+                try:
+                    shutil.copy(file, workDir)
+                    logging.debug(f"Copied {file} to {workDir}")
+                except IOError:
+                    logging.warning(f"Failed to copy {file} to {workDir}")
+
+    def modifyScript(self):
+        """
+        modify script.
+         set ARCHIVE_DIR to runid/A -- not in SCRIPT??? WOnder where it comes from. Will look at modified script..
+         set EXPTID to runid  --  first ^EXPTID=xhdi
+         set JOBID to jobid  -- first ^JOBID
+
+          After . submitchk insert:
+         . $JOBDIR/optclim_finished ## run the check for job release and resubmission.
+            This will be modified by the submission system
+         :return:
+        """
+        runid = self.Name()
+        experID = runid[0:4]
+        jobID = runid[4]
+        modifystr = '## modified'
+        with fileinput.input(self.model_dir / 'SCRIPT', inplace=True, backup='.bak') as f:
+            for line in f:
+                if re.search(modifystr, line):
+                    raise Exception("Already modified Script")
+                elif re.match('^EXPTID=', line):
+                    print("EXPTID=%s %s" % (experID, modifystr))
+                elif re.match('^JOBID=', line):
+                    print("JOBID=%s %s" % (jobID, modifystr))
+                elif re.match('MESSAGE="Run .* finished. Time=`date`"', line):
+                    print('MESSAGE="Run %s#%s finished. Time=`date`"' % (experID, jobID))
+                    # TODO run self.finished here.
+                elif re.match('MY_DATADIR=', line):  # fix MY_DATADIR
+                    print("MY_DATADIR=%s %s" % (self.model_dir, modifystr))
+                elif re.match('^. submitchk$', line):  # need to modify SCRIPT to call the postProcessFile.
+                    print(line[0:-1])  # print the line out stripping of the newline
+                    print(f'. $JOBDIR/{self.post_process_file} {modifystr}')
+                    # TODO run self.succeeded here. Self postProcessFile is run the succeeded thingie!
+                elif r'DATADIR/$RUNID/' in line:  # replace all the DATADIR/$RUNID stuff.
+                    line = line.replace('DATADIR/$RUNID/', 'DATADIR/')
+                    print(line[0:-1], modifystr)
+                else:  # default line
+                    print(line[0:-1])  # remove newline
+
+    def modifySubmit(self, runTime=None, runCode=None):
+        """
+        Modify  Submit script for HadCM3
+        Changes to SUBMIT
+          set RUNID to runid in SUBMIT   == first ^export RUNID=
+          set JOBDIR to dirPath   -- first ^JOBDIR=
+          set CJOBN to runid in SUBMIT  -- first ^CJOBN=
+          set MY_DATADIR to dirPath
+          set DATAW and DATAM to $MY_DATADIR/W & $MY_DATADIR/M respectively.
+        :param runTime: default None -- if not None then specify time in seconds for model job.
+        :param runCode: default None -- if not None then this is the project code for the model job.
+
+        :return: nada
+        """
+        # TODO Check that step is 4. Decide if fix (i.e. set STEP=4) or fail with a sensible error message.
+        # first work out runID
+        runid = self.Name()
+        # modify submit
+        maxLineNo = 75  # maximum lines to modify
+        # modify SUBMIT
+        modifyStr = '## modified'
+        # check SUBMIT.bakR does not exist. Error if it does.
+        if (self.model_dir / 'SUBMIT.bakR').exists():
+            raise ValueError(f"Already got backup for SUBMIT = {self.model_dir / 'SUBMIT.bakR'}")
+        with fileinput.input(self.model_dir / 'SUBMIT', inplace=True, backup='.bakR') as f:
+            for line in f:
+                # need to make these changes only once...
+                if re.search(modifyStr, line):
+                    raise Exception("Already modified SUBMIT")
+                elif re.match('export RUNID=', line) and f.filelineno() < maxLineNo:
+                    print("export RUNID=%s %s" % (runid, modifyStr))
+                elif re.match('MY_DATADIR=', line) and f.filelineno() < maxLineNo:
+                    print("MY_DATADIR=%s %s" % (self.model_dir, modifyStr))
+                # now find and replace all the DATADIR/$RUNID stuff.
+                elif r'DATADIR/$RUNID/' in line:
+                    line = line.replace('DATADIR/$RUNID/', 'DATADIR/')
+                    print(line[0:-1], modifyStr)
+                elif re.match('JOBDIR=', line) and f.filelineno() < maxLineNo:
+                    print("JOBDIR=%s %s" % (self.model_dir, modifyStr))
+                elif re.match('CJOBN=', line) and f.filelineno() < maxLineNo:
+                    print("CJOBN=%s %s" % (runid + '000', modifyStr))
+                elif (runTime is not None) and re.match('[NC]RUN_TIME_LIMIT=', line):  # got a time specified
+                    l2 = line.split('=')[0]  # split line at =
+                    print(l2 + '=%d ' % (runTime) + modifyStr)  # add on the time
+                elif (runCode is not None) and re.match('ACCOUNT=', line):  # got a project code specified
+                    l2 = line.split('=')[0]  # split line at =
+                    print(l2 + '=%s ' % (runCode) + modifyStr)  # add on the time
+                else:
+                    print(line[0:-1])  # remove trailing newline
+
+    def fixClimFCG(self):
+        """
+        Fix problems with the CLIM_FCG_* namelists so they can be parsed by f90nml.
+        Generates CNTLATM.bak and modifies CNTLATM
+        TODO -- might now longer need. CHECK
+        :return: None
+        """
+
+        with fileinput.input(self.model_dir / 'CNTLATM', inplace=True, backup='.bakR') as f:
+            for line in f:
+                if re.search(r'CLIM_FCG_.*\(1,', line):
+                    line = line.replace('(1,', '(:,')  # replace the leading 1 with :
+                print(line[0:-1])  # remove trailing newline.
+
+    def genContSUBMIT(self):
+        """
+        Generate continuation script for model so that it is a CRUN and STEP=4
+        Must run *after* the modifyScript method has ran as the contine script needs those changes too!
+        :return: script name of continue simulation.
+        """
+        # Copy self.submit_script to self.continue_script and then change it.
+        modifyStr = '## modifiedContinue'
+        submit_script = self.model_dir / self.submit_script
+        contScript = self.model_dir / self.continue_script
+        with fileinput.input(submit_script) as f:  # file for input
+            with open(contScript, mode='w') as fout:  # and where the output file is.
+                for line in f:
+                    line = line[0:-1]  # remove trailing newline
+                    if re.match('^TYPE=NRUN', line):  # DEAL with NRUN
+                        line = line.replace('NRUN', 'CRUN', 1) + modifyStr
+                        print(line, file=fout)
+                    elif re.match('^STEP=1', line):  # Deal with STEP=1
+                        print(line.replace('STEP=1', 'STEP=4', 1) + modifyStr, file=fout)
+                    else:
+                        print(line, file=fout)
+        # need to make the script +rx for all readers. Might not work on windows
+        fstat = contScript.stat().st_mode
+        fstat = fstat | stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH
+        fstat = fstat | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+        contScript.chmod(fstat)
+        return contScript
 
     ### Stuff for Namelists.
 
@@ -108,27 +325,27 @@ class HadCM3(Model):
         """
         timestep_nl = namelist_var(filepath=pathlib.Path('CNTLATM'), namelist='NLSTCATM', nl_var='A_ENERGYSTEPS')
         steps_per_day = timestep_nl.read_value(dirpath=self.model_dir)
-        timestep = 3600.0*24/steps_per_day
+        timestep = 3600.0 * 24 / steps_per_day
         return timestep
 
-    def dx_dy(self, expect=None,units=None):
+    def dx_dy(self, expect=None, units=None):
         """
         Work out the dx and dy values for the model (in radians).
         :param expect: two element np.array of expected values. First element is dx, and second element is dy
         :param units: units to return dx and dy in. None (radians), 'degrees' or 'meters'.
         :return: dx and dy values in specified units.
         """
-        dx_nl,dy_nl = (namelist_var(filepath=pathlib.Path('SIZES'), nl_var=var,namelist='NLSIZES')
-                       for var in ['ROW_LENGTH', 'P_ROWS'])
-        result = np.array([2/dx_nl.read_value(dirpath=self.model_dir),
-                           1/(dy_nl.read_value(dirpath=self.model_dir)-1)])*np.pi
+        dx_nl, dy_nl = (namelist_var(filepath=pathlib.Path('SIZES'), nl_var=var, namelist='NLSIZES')
+                        for var in ['ROW_LENGTH', 'P_ROWS'])
+        result = np.array([2 / dx_nl.read_value(dirpath=self.model_dir),
+                           1 / (dy_nl.read_value(dirpath=self.model_dir) - 1)]) * np.pi
 
         # do some unit conversions
         RADIUS = 6.37123e06  # radius of earth
         if units is None:
             pass
         elif units == 'degrees':
-            result=np.rad2deg(result)
+            result = np.rad2deg(result)
         elif units == 'meters':
             result *= RADIUS
         else:
@@ -139,7 +356,7 @@ class HadCM3(Model):
 
     def nlev(self, expect=None):
         """
-        Work out the number of levels by reading the p_levels
+        Work out the number of levels by reading  p_levels
         :param expect If not None if nlev does not equal expect an error will be raised
         :return: the number of levels.
         """
@@ -151,21 +368,31 @@ class HadCM3(Model):
 
         return no_levels
 
+    # functions that are registered.
+    # Generically these all take one parameter which is the value to be set.
+    # The function then works out what values actually get set.
+    # Function returns either a namelist_var, value pair or a list of such.
+    # If value is None then the inverse calculation is done by reading the namelist from the model config
+    #  and doing the inverse! Consistency checks are also **sometimes** made.
+    # Functions have access to the model state via self.
+
     @register_param('EACF')
-    def cloudEACF(self, eacf, inverse=False):
+    def cloudEACF(self, eacf):
         """
         Compute array of eacf values for each model level. If inverse set work out what meta-parameter is from array.
         :param eacf: meta-parameter value for eacf. If None then inverse will be assumed regardless of actual value
-        :param inverse: compute inverse relationship.  If namelist value not found then default value of 0.5 will be returned.
+            inverse relationship.  If namelist value not found then default value of 0.5 will be returned.
         """
 
-        self.nlev(expect=19)  # test have 19 levels
+        nlev = self.nlev(expect=19)  # test have 19 levels
         eacf_nl = namelist_var(filepath=pathlib.Path('CNTLATM'), namelist='SLBC21', nl_var='EACF')
-        if (inverse or (eacf is None)):
+        inverse = eacf is None
+        if inverse:
             eacf_val = eacf_nl.read_value(dirpath=self.model_dir, default=0.5)
+            if len(eacf_val) != nlev:
+                raise ValueError("EA CF namelist {eacf_nl} has len {len(eacf_val)} not {nlev}")
             return eacf_val[0]
         else:
-            # add check for number of levels here.
             assert eacf >= 0.5, "eacf seed must be ge 0.5, according to R code but it is %f\n" % eacf
             eacfbl = [0.5, 0.7, 0.8]
             eacftrp = [0.5, 0.6, 0.65]
@@ -177,11 +404,10 @@ class HadCM3(Model):
             return eacf_nl, cloud_eacf.tolist()
 
     @register_param("SPHERICAL_ICE")
-    def sph_ice(self, sphIce=True, inverse=False):
+    def sph_ice(self, sphIce: None | bool = True):
         """
         Set/read namelists for spherical/non-spherical ice.
-        :param sphIce: True if want spherical ice (which is default)
-        :param inverse: Return (from namelists) if spherical ice.SPAHERICAL
+        :param sphIce: True if want spherical ice (which is default). If None inverse calc is done
         :return:  returns nl/tuple pair or, if inverse, the value of sphIce
         """
         nl = [namelist_var(nl_var='I_CNV_ICE_LW', namelist='R2LWCLNL', filepath=pathlib.Path('CNTLATM')),
@@ -189,13 +415,13 @@ class HadCM3(Model):
               namelist_var(nl_var='I_ST_ICE_LW', namelist='R2LWCLNL', filepath=pathlib.Path('CNTLATM')),
               # default 1, perturb 7
               namelist_var(nl_var='I_CNV_ICE_SW', namelist='R2SWCLNL', filepath=pathlib.Path('CNTLATM')),
-              # defaault 3, perturb 7
+              # default 3, perturb 7
               namelist_var(nl_var='I_ST_ICE_SW', namelist='R2SWCLNL', filepath=pathlib.Path('CNTLATM')),
               # default 2, perturb 7
               ]
         values_sph = [1, 1, 3, 2]
         values_nonSph = [7, 7, 7, 7]
-
+        inverse = sphIce is None
         if inverse:  # inverse -- so  extract value and test for consistency
             # check all is OK
             sph = (nl[0].read_value(dirpath=self.model_dir, default=1) == 1)
@@ -205,8 +431,9 @@ class HadCM3(Model):
                 values = values_nonSph
             # check  namelist values are consistent
             for n, v in zip(nl, values):
-                if n.read_value(dirpath=self.model_dir, default=v) != v:
-                    raise Exception("Got %d when expected %d" % (sphIce[n], v))
+                vr=n.read_value(dirpath=self.model_dir, default=v)
+                assert vr == v,f"Got {vr} but expected {v} for nl {n}"
+
             return sph
 
         # set values
@@ -218,10 +445,9 @@ class HadCM3(Model):
         return result
 
     @register_param("START_TIME")
-    def start_time(self, time_input: str | list, inverse=False):
+    def start_time(self, time_input: str |None):
         """
-        :param time:  start time as ISO format  string.
-        :param inverse: Do inverse calculation and return as ISO format string
+        :param time_input:  start time as ISO format  string. If None inverse will be done
         :return:  namelist info and values as array. (or if inverse set return the start time)
         """
         # It would be really nice to use cftime rather than datetime
@@ -232,6 +458,7 @@ class HadCM3(Model):
         namelistData = [namelist_var(nl_var='MODEL_BASIS_TIME', namelist=nl, filepath=pathlib.Path(file)) for
                         file, nl in zip(['CNTLALL', 'CONTCNTL'],
                                         ['NLSTCALL', 'NLSTCALL'])]
+        inverse = time_input is None
         if inverse:
             time = namelistData[0].read_value(dirpath=self.model_dir)  # read the first one!
             # check times are the same
@@ -248,12 +475,12 @@ class HadCM3(Model):
             result = [(nl, time) for nl in namelistData]
             return result  # return the namelist info.
 
-    def time_delta(self, duration, inverse=False, runTarget=True):
+    def time_delta(self, duration, runTarget=True):
         """
-        :param input:  Duration as string in ISO 8061 format (PnYnMnDTnHnMn.nnS)
-        :param inverse: Do inverse calculation and return  Duration as string in ISO 8061 format (PnYnMnDTnHnMn.nnS)
+        :param duration:  Duration as string in ISO 8061 format (PnYnMnDTnHnMn.nnS)
         :param runTarget: namelist info suitable for runTarget. (default). If False namelist info suitable for resubInterval
         :return: namelist info and values as array. (or if inverse set return the run target )
+             return  Duration as 6 element array  TIODO: string in ISO 8061 format (PnYnMnDTnHnMn.nnS)
         """
         # set up all the var/namelist/file info.
         if runTarget:  # suitable for runTarget
@@ -264,18 +491,19 @@ class HadCM3(Model):
             namelistData = [namelist_var(nl_var='RUN_RESUBMIT_INC', namelist=nl, filepath=pathlib.Path(file)) for
                             file, nl in zip(['CNTLALL', 'CONTCNTL'],
                                             ['NLSTCALL', 'NLSTCALL'])]
-
+        inverse = duration is None
         if inverse:
             durn = namelistData[0].read_value(dirpath=self.model_dir)
-            logging.warning("No inverse conversion to ISO timedelta notation")
             # check rest are OK
             for nl in namelistData[1:]:
                 d2 = nl.read_value(dirpath=self.model_dir)
                 if d2 != durn:
                     raise ValueError(f"Durations differ between {nl} and {namelistData[0]}")
+            # convert to string
+            durn = self.parse_isoduration(durn)
             return durn  # just return the value as a 6 element list.
         else:
-            durn = parse_isoduration(duration)
+            durn = self.parse_isoduration(duration)
             # verify that len of target is >= 1 and <= 6 and if not raise error.
             if len(durn) != 6:
                 raise Exception(f"Durn {durn} should have 6 elements. Computed from {duration} ")
@@ -283,32 +511,28 @@ class HadCM3(Model):
             return result  # return the namelist info.
 
     @register_param("RUN_TARGET")
-    def run_target(self, target_input, inverse=False):
+    def run_target(self, target_input):
         """
         set runTarget -- see timeDelta for documentation.
         :param target_input: target length of run as ISO string
-        :param inverse: Return run_target
         :return: Return list of nl,value pairs or run_target
         """
-        return self.time_delta(target_input, inverse=inverse)
+        return self.time_delta(target_input)
 
-    @register_param('RESUB_INTERVAL')
-    def resub_interval(self, interval_input, inverse=False):
+    @register_param('RESUBMIT_INTERVAL')
+    def resub_interval(self, interval_input):
         """
         Set resubmit durations -- see timeDelta for documentation
         :param interval_input:
-        :param inverse:
         """
-        return self.time_delta(interval_input, inverse=inverse, runTarget=False)
+        return self.time_delta(interval_input, runTarget=False)
 
     @register_param("NAME")
-    def run_name(self, name, inverse=False):
+    def run_name(self, name: None | str):
         """
         Compute experiment and job id.
-        :param name: 5-character UM name
-        :param inverse: Default value False. If True compute name from input directory.
-        :param namelist: return the namelist used and do no computation.
-        :return: experiment and job id from name or name from name['experID']+name['jobID']+name
+        :param name: 5-character UM name. If None inverse (read file) calculation is done
+        :return: namalises and values to set. unless name is None. Then name will be returned
         """
         # make namelist information.
         jobname_nl = namelist_var(nl_var='RUN_JOB_NAME', namelist='NLCHISTO', filepath=pathlib.Path('INITHIS'))
@@ -316,28 +540,31 @@ class HadCM3(Model):
         jobid_nl = namelist_var(nl_var='JOB_ID', namelist='NLSTCALL', filepath=pathlib.Path('CNTLALL'))
         exper2_nl = namelist_var(nl_var='EXPT_ID', namelist='NLSTCALL', filepath=pathlib.Path('CONTCNTL'))
         jobid2_nl = namelist_var(nl_var='JOB_ID', namelist='NLSTCALL', filepath=pathlib.Path('CONTCNTL'))
+        inverse = (name is None)
         if inverse:
-            return exper_nl.read_value(self.model_dir) + jobid_nl.read_value(
-                self.model_dir)  # wrap experID & jobID to make name
+            name = exper_nl.read_value(self.model_dir) + jobid_nl.read_value(self.model_dir)
+            name2 = exper_nl.read_value(self.model_dir) + jobid_nl.read_value(self.model_dir)
+            if name != name2:
+                raise ValueError(f"Name1 {name} and name2 {name} differ")
+            return name  #
         else:
-            sname = str(name)  # convert to string
-            if len(sname) != 5:
-                raise ValueError("HadCM3 expects 5 character names not {sname}")
-            result = [(exper_nl, sname[0:4]), (jobid_nl, sname[4]),
-                      (exper2_nl, sname[0:4]), (jobid2_nl, sname[4]),
-                      (jobname_nl, sname + "000")]  # split name to make experID, jobID and jobname
+            if len(name) != 5:
+                raise ValueError("HadCM3 expects 5 character names not {name}")
+            result = [(exper_nl, name[0:4]), (jobid_nl, name[4]),
+                      (exper2_nl, name[0:4]), (jobid2_nl, name[4]),
+                      (jobname_nl, name + "000")]  # split name to make experID, jobID and jobname
             return result
 
     @register_param("CW")
-    def cloud_water(self, cw_land, inverse=False):
+    def cloud_water(self, cw_land):
         """
         Compute cw_sea from  cw_land
-        :param cw_land: value of cw_land
-        :param inverse -- if true do inverse calculation and return cw_land
+        :param cw_land: value of cw_land. If None then inverse calculation is done
         :return: returns dict containing cloud_cw_land and cloud_cw_sea values.
         """
         cw_land_nl = namelist_var(nl_var='CW_LAND', namelist='RUNCNST', filepath=pathlib.Path('CNTLATM'))
         cw_sea_nl = namelist_var(nl_var='CW_SEA', namelist='RUNCNST', filepath=pathlib.Path('CNTLATM'))
+        inverse = (cw_land is None)
         if inverse:
             return cw_land_nl.read_value(dirpath=self.model_dir)
         else:
@@ -347,18 +574,17 @@ class HadCM3(Model):
             return [(cw_land_nl, cw_land), (cw_sea_nl, cw_sea)]
 
     @register_param("KAY_GWAVE")
-    def gravity_wave(self, kay, inverse=False):
+    def gravity_wave(self, kay):
         """
         Compute gravity wave parameters given kay parameter.
-        :param kay: value of kay
-        :param inverse:  invert calculation
+        :param kay: value of kay. If None then inverse calculation is done.
         :return: list  containing kay_gwave and kay_lee_gwave parameters. (or value of kay if inverse set)
         """
 
         # name list info
         gwave, lee_gwave = (namelist_var(nl_var=var, namelist='RUNCNST', filepath=pathlib.Path('CNTLATM'))
                             for var in ['KAY_GWAVE', 'KAY_LEE_GWAVE'])
-
+        inverse = (kay is None)
         if inverse:
             v = gwave.read_value(dirpath=self.model_dir)
             return v
@@ -369,16 +595,17 @@ class HadCM3(Model):
             return [(gwave, kay), (lee_gwave, lee)]
 
     @register_param("ALPHAM")
-    def ice_albedo(self, alpham, inverse=False):
+    def ice_albedo(self, alpham):
         """
-        Compute ice albedo values given alpham
-        :param alpham: value of alpham (if forward)
-        :param inverse: default is False -- compute alpham
+        Compute ice albedo values (alpham & dtice) given alpham
+        :param alpham: value of alpham (if forward). If None inverse calculation will be done.
+
         :return:
         """
         # namelist information
-        alpham_nl, dtice_nl = (namelist_var(nl_var=var, namelist='RUNCNST', filepath=pathlib.Path('CNTLATM')) for var in
-                               ['ALPHAM', 'DTICE'])
+        alpham_nl, dtice_nl = (namelist_var(nl_var=var, namelist='RUNCNST', filepath=pathlib.Path('CNTLATM'))
+                               for var in ['ALPHAM', 'DTICE'])
+        inverse = (alpham is None)
         if inverse:
             return alpham_nl.read_value(dirpath=self.model_dir)
         else:
@@ -387,14 +614,13 @@ class HadCM3(Model):
             dtice = IDLinterpol(maxs, mins, alpham)  # from Mike's code.
             return [(dtice_nl, dtice), (alpham_nl, alpham)]
 
-    ## STuff for diffusion calculation. Rather ugly code. Probably not worth doing much with as diffusion does
-    ## not seem that important!
-    def diff_fn(self,dyndiff, dyndel=6,  inverse=False):
+    # Stuff for diffusion calculation. Rather ugly code. Probably not worth doing much with as diffusion does
+    # not seem that important!
+    def diff_fn(self, dyndiff, dyndel=6,inverse=False):
         """
         Support Function to compute diff  coefficient
-        :param dyndiff: diffusion value in hours.
+        :param dyndiff: diffusion value in hours. If None inverse calculation will be done
         :param dyndel: order of diffusion. 6 is default corresponding to 3rd order.
-        :param inverse (default False) If True return inverse calculation.
         :return:
         """
         timestep = self.atmos_time_step()
@@ -403,6 +629,7 @@ class HadCM3(Model):
         assert dyndel == 6 or dyndel == 4, "invalid dyndel %d" % dyndel
         # DPHI = dlat * Pi / 180.
         D2Q = 0.25 * (RADIUS * RADIUS) * (DPHI * DPHI)
+
         if inverse:
             diff_time = (dyndiff / D2Q) ** (dyndel / 2) * timestep
             diff_time = -1 / math.log(1 - diff_time)
@@ -436,11 +663,10 @@ class HadCM3(Model):
         return DIFF_COEFF, DIFF_COEFF_Q, DIFF_EXP, DIFF_EXP_Q
 
     @register_param("DYNDIFF")
-    def diffusion(self, diff_time, inverse=False):
+    def diffusion(self, diff_time):
         """
         Compute arrays of diffusion co-efficients for all   levels.
-        :param diff_time: time in hours for diffusion
-        :param inverse: If True invert relationship to work our diffusion time
+        :param diff_time: time in hours for diffusion. If None inverse calculation will be done
         :return: if inverse set compute diffusion timescale otherwise compute diffusion coefficients.
              returns them as a list
              diff_coeff -- diffusion coefficient, diff_coeff_q -- diffusion coefficient for water vapour
@@ -454,35 +680,36 @@ class HadCM3(Model):
         )
         timestep = self.atmos_time_step()
         DPHI = self.dx_dy()[1]
+        inverse = (diff_time is None)
         if inverse:
             powerDiff = diff_exp_nl.read_value(dirpath=self.model_dir)[0] * 2
             diff_time_hrs = self.diff_fn(diff_coeff_nl.read_value(dirpath=self.model_dir)[0], dyndel=powerDiff,
-                                    inverse=inverse)
+                                         inverse=inverse)
+            # round to 3 dps
+            diff_time_hrs = round(diff_time_hrs,3)
             return diff_time_hrs
         else:
-            diff_pwr = 6 # assuming 3rd order.
+            diff_pwr = 6  # assuming 3rd order.
             diff_coeff, diff_coeff_q, diff_exp, diff_exp_q = \
                 self.metaDIFFS(dyndiff=diff_time, dyndel=diff_pwr)
             return [(diff_coeff_nl, diff_coeff), (diff_coeff_q_nl, diff_coeff_q),
                     (diff_exp_nl, diff_exp), (diff_exp_q_nl, diff_exp_q)]
 
     @register_param("RHCRIT")
-    def cloudRHcrit(self, rhcrit, inverse=False):
+    def cloudRHcrit(self, rhcrit):
         """
         Compute rhcrit on multiple model levels
-        :param rhcrit: meta parameter for rhcrit
-        :param inverse: default False. If True return current value of rhcrit
+        :param rhcrit: meta parameter for rhcrit. If None inverse calculation  will be done.
         :return: namelist, value.
-
         """
-
         self.nlev(expect=19)
         rhcrit_nl = namelist_var(nl_var='RHCRIT', namelist='RUNCNST', filepath=pathlib.Path('CNTLATM'))
+        inverse = (rhcrit is None)
         if inverse:
             cloud_rh_crit = rhcrit_nl.read_value(dirpath=self.model_dir, default=0.7)
-            rhcrit= cloud_rh_crit[3]
+            rhcrit = cloud_rh_crit[3]
             expected = 19 * [rhcrit]
-            for it,v in enumerate([0.95,0.9,0.85]):
+            for it, v in enumerate([0.95, 0.9, 0.85]):
                 expected[it] = max(v, rhcrit)
             if expected != cloud_rh_crit:
                 raise ValueError(f"Expected rhcrit {np.array(expected)} but got {np.array(cloud_rh_crit)}")
@@ -495,16 +722,16 @@ class HadCM3(Model):
             return rhcrit_nl, cloud_rh_crit
 
     @register_param("ICE_DIFF")
-    def iceDiff(self, OcnIceDiff, inverse=False):
+    def iceDiff(self, OcnIceDiff):
         """
         Generate namelist for NH and SH ocean ice diffusion coefficients.
         :param OcnIceDiff: Value wanted for ocean ice diffusion coefficient
-            Same value will be used for northern and southern hemispheres
-        :param inverse:  If True return the diffusion coefficient in the namelist.
+            Same value will be used for northern and southern hemispheres. If None inverse calculation will be done.
         :return: (by default) the namelist/value information as list
         """
         iceDiff_nlNH, iceDiff_nlSH = (namelist_var(nl_var=var, namelist='SEAICENL', filepath=pathlib.Path('CNTLOCN'))
                                       for var in ['EDDYDIFFN', 'EDDYDIFFS'])
+        inverse = (OcnIceDiff is None)
         if inverse:
             v = iceDiff_nlNH.read_value(dirpath=self.model_dir, default=2.5e-5)
             v_sh = iceDiff_nlSH.read_value(dirpath=self.model_dir, default=2.5e-5)
@@ -516,16 +743,17 @@ class HadCM3(Model):
             return [(iceDiff_nlNH, OcnIceDiff), (iceDiff_nlSH, OcnIceDiff)]
 
     @register_param("MAX_ICE")
-    def ice_max_conc(self, iceMaxConc, inverse=False):
+    def ice_max_conc(self, iceMaxConc):
         """
         Generate namelist for NH and SH ocean ice maximum concentration
         :param iceMaxConc: Value wanted for ocean max concentration
-            Same value will be used for northern and southern hemispheres with SH maximum being 0.98
-        :param inverse:  If True return the diffusion coefficient in the namelist.
+            Same value will be used for northern and southern hemispheres with SH maximum being 0.98.
+            If None inverse condition will be done
         :return: nl/values to set the values, if inverse return the NH value.
         """
         iceMax_nlNH, iceMax_nlSH = (namelist_var(nl_var=var, namelist='SEAICENL', filepath=pathlib.Path('CNTLOCN'))
                                     for var in ['AMXNORTH', 'AMXSOUTH'])
+        inverse = (iceMaxConc is None)
         if inverse:
             v = iceMax_nlNH.read_value(dirpath=self.model_dir, default=0.995)
             v2 = iceMax_nlSH.read_value(dirpath=self.model_dir, default=0.995)
@@ -537,16 +765,16 @@ class HadCM3(Model):
             return [(iceMax_nlNH, iceMaxConc), (iceMax_nlSH, min(0.98, iceMaxConc))]
 
     @register_param("OCN_ISODIFF")
-    def ocnIsoDiff(self, ocnIsoDiff, inverse=False):
+    def ocnIsoDiff(self, ocnIsoDiff):
         """
         Generate namelist for changes to Ocean isopycnal diffusion.
         :param ocnIsoDiff: Value for ocean ice diffusion. Will set two values AM0_SI & AM1_SI
-           Note these picked by examining Lettie Roach's generated files.
-        :param inverse:  If True invert the relationship from the supplied namelist
+           Note these picked by examining Lettie Roach's generated files. If None then inverse calculation will be done
         :return: namelist/values to be set or the namelist value.
         """
         ocnDiff_AM0, ocnDiff_AM1 = (namelist_var(nl_var=var, namelist='EDDY', filepath=pathlib.Path('CNTLOCN'))
                                     for var in ['AM0_SI', 'AM1_SI'])
+        inverse = (ocnIsoDiff is None)
         if inverse:
             v = ocnDiff_AM0.read_value(dirpath=self.model_dir, default=1e3)
             v2 = ocnDiff_AM1.read_value(dirpath=self.model_dir, default=1e3)
@@ -555,6 +783,122 @@ class HadCM3(Model):
             return v
         else:  # set values -- both  to same value
             return [(ocnDiff_AM0, ocnIsoDiff), (ocnDiff_AM1, ocnIsoDiff)]
+
+    ## class methods now!
+    @classmethod
+    def parse_isoduration(cls, s: str | list):
+        """ Parse a str ISO-8601 Duration: https://en.wikipedia.org/wiki/ISO_8601#Durations
+          OR convert a 6 element list (y m, d, h m s) into a ISO duration.
+        Originally copied from:
+        https://stackoverflow.com/questions/36976138/is-there-an-easy-way-to-convert-iso-8601-duration-to-timedelta
+        Though could use isodate library but trying to avoid dependencies and isodate does not look maintained.
+        :param s: str to be parsed. If not a string starting with "P" then ValueError will be raised.
+        :return: 6 element list [YYYY,MM,DD,HH,mm,SS.ss] which is suitable for the UM namelists
+        """
+
+        def get_isosplit(s, split):
+            if split in s:
+                n, s = s.split(split, 1)
+            else:
+                n = '0'
+            return n.replace(',', '.'), s  # to handle like "P0,5Y"
+
+        if isinstance(s, str):
+            logging.debug("Parsing {str}")
+            if s[0] != 'P':
+                raise ValueError("ISO 8061 demands durations start with P")
+            s = s.split('P', 1)[-1]  # Remove prefix
+
+            split = s.split('T')
+            if len(split) == 1:
+                sYMD, sHMS = split[0], ''
+            else:
+                sYMD, sHMS = split  # pull them out
+
+            durn = []
+            for split_let in ['Y', 'M', 'D']:  # Step through letter dividers
+                d, sYMD = get_isosplit(sYMD, split_let)
+                durn.append(float(d))
+
+            for split_let in ['H', 'M', 'S']:  # Step through letter dividers
+                d, sHMS = get_isosplit(sHMS, split_let)
+                durn.append(float(d))
+        elif isinstance(s, list) and len(s) == 6:  # invert list
+            durn = 'P'
+            logging.debug("Converting {s} to string")
+            for element, chars in zip(s, ['Y', 'M', 'D', 'H', 'M', 'S']):
+                if element != 0:
+                    if isinstance(element, float) and element.is_integer():
+                        element=int(element)
+                    durn += f"{element}{chars}"
+                if chars == 'D':  # days want to add T as into the H, M, S cpt.
+                    if np.any(np.array(s[3:]) != 0):
+                        durn += 'T'
+            if durn == 'P':  # everything = 0
+                durn += '0S'
+        else:
+            raise ValueError(f"Do not know what to do with {s} of type {type(s)}")
+
+        return durn
+
+    ## generic function for ASTART/AINITIAL/OSTART/OINITIAl/
+    def initHist_nlcfiles(self,value:str|None, nl_var:str =None):
+        """
+
+        :param value: value to be set -- typically the name of a file. If None then the inverse calculation will be done.
+        :param nl_var: namelist variable to be set.
+        :return:namlelist/value tupple to be set or whatever "value" is in the model namelist.
+        """
+        nl = namelist_var(nl_var=nl_var, namelist='NLCFILES', filepath=pathlib.Path('INITHIS'))
+
+        inverse = (value is None)
+        if inverse:
+            value = nl.read_value(dirpath=self.model_dir)
+            return value.split(':')[1].lstrip()  # extract value from passed in name list removing space when doing so.
+        else:
+            # read existing value to get the parameter name and then re-order
+            value_nml = nl.read_value(dirpath=self.model_dir)
+
+            parameter =value_nml.split(':')[0]
+            st = f"{parameter}: {value}"
+            return (nl, st)
+
+    @register_param("ASTART")
+    def astart(self, astartV):
+        """
+
+        :param astartV: value of ASTART
+        :return: nl/tuple (if astartV is not None) to be set or whatever astart is in the models namelist.
+        """
+        return self.initHist_nlcfiles(astartV,nl_var='ASTART')
+
+    @register_param("AINITIAL")
+    def ainitial(self, ainitialV):
+        """
+
+        :param ainitialV: value of ASTART
+        :return: nl/tuple (if ainitialV is not None) to be set or whatever ainitial is in the models namelist.
+        """
+        return self.initHist_nlcfiles(ainitialV, nl_var='AINITIAL')
+    @register_param("OSTART")
+    def ostart(self, ostartV):
+        """
+
+        :param ostartV: value of OSTART
+        :return: nl/tuple (if ostartV is not None) to be set or whatever ostart is in the models namelist.
+        """
+        return self.initHist_nlcfiles(ostartV, nl_var='OSTART')
+
+    @register_param("OINITIAL")
+    def oinitial(self, oinitialV):
+        """
+
+        :param oinitialV: value of OSTART
+        :return: nl/tuple (if oinitialV is not None) to be set or whatever oinitial is in the models namelist.
+        """
+        return self.initHist_nlcfiles(oinitialV, nl_var='OINITIAL')
+
+
 
 
 traverse = importlib.resources.files("Models")

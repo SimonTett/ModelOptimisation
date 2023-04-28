@@ -110,8 +110,8 @@ class model_base:
         logging.info(f"Wrote to {config_path}")
         return result
 
-    @staticmethod
-    def expand(filestr: str) -> pathlib.Path:
+    @classmethod
+    def expand(cls,filestr: str) -> pathlib.Path:
         """
         Expand any env vars, convert to path and then expand any user constructs.
         :param filestr: path like string

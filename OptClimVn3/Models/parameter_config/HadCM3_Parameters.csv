@@ -13,3 +13,4 @@ ANTHSCA,namelist_var,CNTLATM,SLBC21,anthsca,,
 IA_N_DROP_MIN,namelist_var,CNTLATM,SLBC21,ia_n_drop_min,,
 IA_N_INFTY,namelist_var,CNTLATM,SLBC21,ia_n_infty,,
 IA_KAPPA_SCALE,namelist_var,CNTLATM,SLBC21,ia_kappa_scale,,
+

@@ -5,6 +5,7 @@ import tempfile
 import unittest
 import unittest.mock
 
+import numpy as np
 import pandas as pd
 import pandas.testing as pdtest
 
@@ -39,16 +40,23 @@ class TestParamInfo(unittest.TestCase):
             OCDIFF=[nl_var3]
         )
 
-        expected_df1 = pd.DataFrame([['VF1', 'namelist_var', 'fred.nl', 'atmos', 'VF1', 'VF1'],
-                                     ['VF1', 'namelist_var', 'fred.nl', 'atmos', 'VF2', 'VF2'],
-                                     ['OCDIFF', 'namelist_var', 'fred.nl', 'ocean', 'OCDIFF', 'OCDIFF']],
-                                    columns=['parameter', 'type', 'filepath', 'namelist', 'nl_var', 'name'])
+        expected_df1 = pd.DataFrame([['VF1', 'namelist_var', 'fred.nl', 'atmos', 'VF1', 'VF1', np.NAN],
+                                     ['VF1', 'namelist_var', 'fred.nl', 'atmos', 'VF2', 'VF2',np.NAN],
+                                     ['OCDIFF', 'namelist_var', 'fred.nl', 'ocean', 'OCDIFF', 'OCDIFF',np.NAN]],
+                                    columns=['parameter', 'type', 'filepath', 'namelist', 'nl_var', 'name','default'])
         expected_df2 = pd.DataFrame([['FN', 'function', self.fn.__qualname__]],
                                     columns=['parameter', 'type', 'function_name'])
         self.expected_df = pd.concat([expected_df2, expected_df1], ignore_index=True)
         # reindex so as expected
-        self.expected_df = self.expected_df.reindex(
-            columns=['parameter', 'type', 'filepath', 'namelist', 'nl_var', 'name','function_name'])
+        cols = list(expected_df1.columns)
+        cols2 = list(expected_df2.columns)
+        for c in cols:
+            try:
+                cols2.remove(c)
+            except ValueError:
+                pass
+        cols.extend(cols2)
+        self.expected_df = self.expected_df.reindex(columns=cols)
 
     def test_register(self):
         # Test registered a namelist (well a list of anything)
@@ -251,7 +259,7 @@ FN [function: {fn.__qualname__} ]
         """
         class myModel(Model.Model):
             @Model.register_param('RHCRIT')
-            def rhcrit(self, rhcrit, inverse=False):
+            def rhcrit(self, rhcrit):
                 """
                 Compute rhcrit on multiple model levels
                 :param rhcrit: meta parameter for rhcrit
@@ -265,7 +273,7 @@ FN [function: {fn.__qualname__} ]
                 curr_rhcrit = rhcrit_nl.read_value(dirpath=self.model_dir)
                 if len(curr_rhcrit) != 19:
                     raise ValueError("Expect 19 levels")
-
+                inverse = rhcrit is None
                 if inverse:
                     return rhcrit_nl.read_value(dirpath=self.model_dir)[3]
                 else:
@@ -274,7 +282,11 @@ FN [function: {fn.__qualname__} ]
                     cloud_rh_crit[1] = max(0.9, rhcrit)
                     cloud_rh_crit[2] = max(0.85, rhcrit)
                     return (rhcrit_nl, cloud_rh_crit)
-        myModel.update_from_file(myModel.expand("$OPTCLIMTOP/OptClimVn3/Models/tests/example_Parameters.csv"),duplicate=False)
+        import importlib
+        traverse = importlib.resources.files("Models")
+        with importlib.resources.as_file(traverse.joinpath("parameter_config/example_Parameters.csv")) as pth:
+            myModel.update_from_file(pth,duplicate=True)
+        #myModel.update_from_file(myModel.expand("$OPTCLIMTOP/OptClimVn3/Models/tests/example_Parameters.csv"),duplicate=False)
         parameters = 'VF1'
         model = myModel() # depends on myModel
         model.model_dir =model.expand("$OPTCLIMTOP/Configurations/xnmea")

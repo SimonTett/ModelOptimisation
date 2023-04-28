@@ -10,6 +10,7 @@ import filecmp
 import datetime
 import subprocess
 import os
+import importlib
 
 import f90nml
 import numpy as np
@@ -17,6 +18,7 @@ import numpy.testing as nptest
 import pandas as pd
 import pandas.testing as pdtest
 
+import Models.Model
 import genericLib
 from Models.Model import Model
 from Models.namelist_var import namelist_var
@@ -24,10 +26,13 @@ from Models.Model import register_param
 
 
 # To get log info set --log-cli-level WARNING in "additional arguments " in pycharm config
-
+# rempve any registered classes **except** Model.
+for k in Model.known_models():
+    if k != "Model":
+        Model.remove_class(k)
 class myModel(Model):
     @register_param('RHCRIT')
-    def cloudRHcrit(self, rhcrit, inverse=False):
+    def cloudRHcrit(self, rhcrit):
         """
         Compute rhcrit on multiple model levels
         :param rhcrit: meta parameter for rhcrit
@@ -41,7 +46,7 @@ class myModel(Model):
         curr_rhcrit = rhcrit_nl.read_value(dirpath=self.model_dir)
         if len(curr_rhcrit) != 19:
             raise ValueError("Expect 19 levels")
-
+        inverse = rhcrit is  None
         if inverse:
             return rhcrit_nl.read_value(dirpath=self.model_dir)[3]
         else:
@@ -54,8 +59,10 @@ class myModel(Model):
     print('hello')
 
 
-myModel.update_from_file(myModel.expand("$OPTCLIMTOP/OptClimVn3/Models/tests/example_Parameters.csv"), duplicate=False)
-
+#myModel.update_from_file(myModel.expand("$OPTCLIMTOP/OptClimVn3/Models/tests/example_Parameters.csv"), duplicate=False)
+traverse = importlib.resources.files("Models")
+with importlib.resources.as_file(traverse.joinpath("parameter_config/example_Parameters.csv")) as pth:
+    myModel.update_from_file(pth)
 
 class ModelTestCase(unittest.TestCase):
     def fake_fn(self):
@@ -86,7 +93,7 @@ class ModelTestCase(unittest.TestCase):
         post_process = dict(script='$OPTCLIMTOP/OptClimVn2/comp_obs.py', outputPath='obs.json')
         self.model = myModel(name='test_model', reference=refDir,
                              model_dir=testDir, post_process=post_process,
-                             parameters=dict(RHCRIT=2, VF1=2.5))
+                             parameters=dict(RHCRIT=2, VF1=2.5,CT=2))
         self.tmpDir = tmpDir
         self.testDir = testDir  # for clean up!
         self.refDir = refDir
@@ -215,7 +222,8 @@ class ModelTestCase(unittest.TestCase):
                             post_process_output=None,
                             post_process_script=None, post_process_script_interp=None, fake=False, simulated_obs=None,
                             perturb_count=0,config_path=self.testDir/"test_model.mcfg",
-                            status='CREATED', history=model.history)
+                            status='CREATED', history=model.history,
+                            run_count=0,submission_count=0)
         dct = model.to_dict()
         self.assertEqual(expected_dct, dct)
 
@@ -520,8 +528,8 @@ class ModelTestCase(unittest.TestCase):
 
         model.instantiate()  # now instantiated
         model.status = 'FAILED'
-        v = model.read_values('G0')
-        v['G0'] *= (1 + 1e-7)  # small perturb
+        v = model.read_values('VF1')
+        v['VF1'] *= (1 + 1e-7)  # small perturb
         with self.assertLogs(level='DEBUG') as log:
             test_now = datetime.datetime(2023, 4, 16, 17, 24, 50)
             with unittest.mock.patch('datetime.datetime', wraps=datetime.datetime) as dt:
@@ -530,7 +538,7 @@ class ModelTestCase(unittest.TestCase):
         self.assertEqual(log.output[-1], f"DEBUG:root:set parameters to {v}")
         self.assertEqual(len(model.history),
                          3)  # expect 3 bits of history. Created, Instantiated, the  perturbed using and setting status
-        p = model.read_values('G0')
+        p = model.read_values('VF1')
         self.assertEqual(p, v)
         self.assertEqual(model.perturb_count, 1)  # perturbed it once.
         self.assertEqual(model.status, 'PERTURBED')
@@ -658,7 +666,7 @@ class ModelTestCase(unittest.TestCase):
         cfg = self.testDir / 'model0002.mcfg'
         model = myModel(name='test_model02', reference=self.refDir, model_dir=self.testDir,
                         config_path=cfg,
-                        parameters=dict(VF1=1, RHCRIT=0.7, G0=11),
+                        parameters=dict(VF1=1, RHCRIT=0.7, G0=11,CT=1e-5),
                         post_process=post_process)  # create the model.
         time.sleep(0.01)
         model.instantiate()  # instantiate the model.
