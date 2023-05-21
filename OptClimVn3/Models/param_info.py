@@ -4,7 +4,6 @@ import logging
 import pathlib
 import typing
 
-
 import pandas as pd
 
 from Models.model_base import model_base
@@ -37,7 +36,7 @@ class param_info(model_base):
         self.got_vars = set()  # set of the known variables (namelist or functions)
         self.known_functions = dict()  # known functions indexed by __qualname__
 
-    def update(self,other_param_info):
+    def update(self, other_param_info):
         """
         Update param info by merging in other_param_info.
         Does by iterating over other_param_info.param_constructors.items() and
@@ -46,14 +45,11 @@ class param_info(model_base):
         :return: nada. Modifies param info in place
         """
 
-        for key,lst in other_param_info.param_constructors.items():
-            duplicate=False # start of not allowing duplicates
+        for key, lst in other_param_info.param_constructors.items():
+            duplicate = False  # start of not allowing duplicates
             for v in lst:
-                self.register(key,v,duplicate=duplicate)
-                duplicate=True # anything else adds to existing list
-
-
-
+                self.register(key, v, duplicate=duplicate)
+                duplicate = True  # anything else adds to existing list
 
     def register(self, parameter: str, var_to_set: [typing.Callable | typing.Any], duplicate=False):
         """
@@ -73,13 +69,13 @@ class param_info(model_base):
                 logging.warning(f"Overwriting {parameter} and removing {var}")
                 for v in var:
                     self.got_vars.remove(v)  # remove v from set of things we already have.
-                    if callable(v): # remove the function info.
+                    if callable(v):  # remove the function info.
                         self.known_functions.pop(v.__qualname__, None)
             except KeyError:
                 pass
 
         if var_to_set in self.got_vars:
-           raise ValueError(f"Already got var {var_to_set}. No duplicates allowed")
+            raise ValueError(f"Already got var {var_to_set}. No duplicates allowed")
         self.got_vars.add(var_to_set)
         existing = self.param_constructors.pop(parameter, [])
         existing.append(var_to_set)
@@ -92,7 +88,7 @@ class param_info(model_base):
         else:
             logging.debug(f"Set {parameter} to {var_to_set}")
 
-    def read_param(self,model,parameter:str):
+    def read_param(self, model, parameter: str):
         """
         Read parameter value from model instance.
         :param model: model instance. Only used if method first element in parameter defn,
@@ -100,12 +96,12 @@ class param_info(model_base):
         :return: value. Depends on what is in the model...
         """
         try:
-            stuff = self.param_constructors[parameter][0] # just want first element of list.
+            stuff = self.param_constructors[parameter][0]  # just want first element of list.
         except KeyError:
-            raise KeyError(f"Parameter {parameter} not found.\n Allowed parameters are: "+
+            raise KeyError(f"Parameter {parameter} not found.\n Allowed parameters are: " +
                            " ".join(list(self.param_constructors.keys())))
         if callable(stuff):  # is it a callable
-            result = stuff(model,None)  # callable. Run it in inverse mode.
+            result = stuff(model, None)  # callable. Run it in inverse mode.
             logging.debug(f"Called {stuff.__qualname__} with inverse and got {result} ")
 
         elif isinstance(stuff, namelist_var):
@@ -154,8 +150,6 @@ class param_info(model_base):
 
         return result
 
-
-
     def gen_parameters(self, model, **kwargs):
         """
         Generate parameter settings.
@@ -184,7 +178,7 @@ class param_info(model_base):
                     d.update(function_name=value.__qualname__)
                     series.append(pd.Series(d))
                 elif isinstance(value, namelist_var):
-                    d = dict(parameter=param,type='namelist_var')
+                    d = dict(parameter=param, type='namelist_var')
                     d.update(value.to_dict())
                     d['filepath'] = str(d['filepath'])
                     series.append(pd.Series(d))
@@ -193,9 +187,10 @@ class param_info(model_base):
         df = pd.DataFrame(series)
         # want fixed ordering of columns in df.
         ordering = ['parameter', 'type']
-        ordering.extend(namelist_var.__dataclass_fields__.keys()) # namelist_var is a dataclass so that is how we get the keys
+        ordering.extend(
+            namelist_var.__dataclass_fields__.keys())  # namelist_var is a dataclass so that is how we get the keys
         ordering.append('function_name')
-        df=df.reindex(columns=pd.Index(ordering))
+        df = df.reindex(columns=pd.Index(ordering))
         return df
 
     def update_from_file(self, filepath: pathlib.Path, duplicate: bool = False, **kwargs):
@@ -212,12 +207,13 @@ class param_info(model_base):
 
         parameter_df = pd.read_csv(self.expand(filepath), **kwargs)
         for indx, row in parameter_df.iterrows():
-            param, typ = row.loc[['parameter','type']]
+            param, typ = row.loc[['parameter', 'type']]
             if typ == 'namelist_var':
                 name = row.loc['name']
-                if pd.isnull(name): # no name defined set it to param.
-                    name=param
-                nl= namelist_var(filepath=pathlib.Path(row.loc['filepath']),namelist=row.loc['namelist'],nl_var=row.loc['nl_var'],name=name)
+                if pd.isnull(name):  # no name defined set it to param.
+                    name = param
+                nl = namelist_var(filepath=pathlib.Path(row.loc['filepath']), namelist=row.loc['namelist'],
+                                  nl_var=row.loc['nl_var'], name=name)
                 self.register(param, nl, duplicate=duplicate)
                 logging.debug(f"Registered {nl} for parameter {param}")
             elif typ == 'function':
@@ -246,8 +242,6 @@ class param_info(model_base):
                 else:
                     print(value, end=" ")
             print("]")
-
-
 
     def to_dict(self):
         """
@@ -280,7 +274,7 @@ class param_info(model_base):
                     logging.debug(f"{key} is function = {value[1]}")
                     continue
                 values.append(value)
-                obj.got_vars.add(value) # list of things we have.
+                obj.got_vars.add(value)  # list of things we have.
                 logging.debug(f"{key} set to {value}")
             if len(values) > 0:  # got something?
                 obj.param_constructors[key] = values

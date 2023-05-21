@@ -90,8 +90,9 @@ def loads(s, *args, **kwargs):
 class obj_to_from_dict:
     """
     Provides JSON encoding and decoding for subsequent use.
-    """
 
+    """
+    #TODO: Make this support tuples and also keys that are not strings.
     FROM_VALUE = dict(ndarray=np.array,
                       DataFrame=pd.read_json,
                       Series=lambda x: pd.read_json(x,typ='series'),
@@ -104,7 +105,9 @@ class obj_to_from_dict:
     TO_VALUE = dict(ndarray=np.ndarray.tolist,
                     DataFrame=pd.DataFrame.to_json,
                     Series=pd.Series.to_json,
-                    Path = str,WindowsPath=str,PosixPath=str,set=list) # functions to convert object to serializable object.
+                    Path = str,WindowsPath=str,
+                    PosixPath=str,
+                    set=list) # functions to convert object to serializable object.
     #TODO when needed add support for datetime
 
     @classmethod

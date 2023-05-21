@@ -1,0 +1,1 @@
+{"a": {"__cls__name__": "ndarray", "object": [1, 2, 3]}, "b": {"__cls__name__": "DataFrame", "object": "{\"col1\":{\"0\":1,\"1\":2},\"col2\":{\"0\":3,\"1\":4}}"}, "c": {"__cls__name__": "Series", "object": "{\"0\":1,\"1\":2,\"2\":3}"}, "d": {"__cls__name__": "WindowsPath", "object": "test.py"}}

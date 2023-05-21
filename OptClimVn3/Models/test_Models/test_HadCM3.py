@@ -74,7 +74,7 @@ class testHadCM3(unittest.TestCase):
         testDir = pathlib.Path(tmpDir.name)  # used throughout.
         refDir = pathlib.Path('Configurations') / 'xnmea'  # need a coupled model.
         simObsDir = HadCM3.expand('$OPTCLIMTOP/test_in')
-        self.dirPath = testDir
+        #self.dirPath = testDir
         self.refPath = refDir
         self.tmpDir = tmpDir  # really a way of keeping in context
         self.testDir = testDir
@@ -244,14 +244,14 @@ class testHadCM3(unittest.TestCase):
 
         modifyStr = '## modified$'
         shutil.copy2(self.refDir / 'SUBMIT', self.model.model_dir)
-        self.model.modifySubmit(runTime=1200, runCode='geos_optclim')
+        self.model.modifySubmit()
         file = self.model.model_dir / 'SUBMIT'
         count = 0
         with open(file, 'r') as f:
             for line in f:
                 if re.search(modifyStr, line): count += 1
-        # expected changes are CJOBN, RUNID, JOBDIR, MY_DATADIR, 2 [NR]RUN+_TIME_LIMIT, ACCOUNT and 5 DATADIR/$RUNID
-        expect = 10
+        # expected changes are CJOBN, RUNID, JOBDIR, MY_DATADIR,  and 5 DATADIR/$RUNID
+        expect = 7
         self.assertEqual(count, expect, f'Expected {expect} {modifyStr} got {count}')
 
         self.assertRaises(Exception, self.model.modifySubmit)  # run modify a 2nd time and get an error.
@@ -270,7 +270,7 @@ class testHadCM3(unittest.TestCase):
         modifyStrCont = r'## modifiedContinue\s*$'
         if runType == 'NRUN':
             modifyStrCont = r'## modifiedRestart\s*$'
-        file = os.path.join(self.model.dirPath, 'SUBMIT')
+        file = self.model.mdoel_dir/'SUBMIT'
         count = 0
         countMC = 0
         with open(file, 'r') as f:
@@ -301,7 +301,7 @@ class testHadCM3(unittest.TestCase):
         modifyStrCont = r'## modifiedContinue\s*$'
         if runType == 'NRUN':
             modifyStrCont = r'## modifiedRestart\s*$'
-        file = os.path.join(self.model.dirPath, 'SCRIPT')
+        file = self.model.model_dir/'SCRIPT'
         countMC = 0
         count = 0
         line_count = 0
@@ -374,6 +374,66 @@ class testHadCM3(unittest.TestCase):
             for line in f:
                 if re.search(r'\(1\w*,\w*[0-9]*\w\)=\w*[0-9]*,', line): self.fail("Found bad namelist %s" % line)
 
+    def test_set_time_code(self):
+        # test that set_time_code works
+        model = self.model
+        model.instantiate() # actually create the model,
+        # two checks. If nothing requests then nothing changes.
+        # runTime -- two changes (With runTime value as expected
+        # runCode -- one change (with runCode as expected)
+        file = model.submit_script
+        pth = model.model_dir/file
+        bak_path = model.model_dir/'SUBMIT_backup'
+        shutil.copy2(pth,bak_path)
+        time = pth.stat().st_mtime
+        model.set_time_code("SUBMIT", None, None)
+        time2 = pth.stat().st_mtime
+        self.assertEqual(time,time2)
+        # now change runTime
+        model.set_time_code("SUBMIT",runTime=3000)
+        time2 = pth.stat().st_mtime
+        self.assertNotEqual(time, time2) # times should be different.
+        modifyStr = r'## modified time/code\s*$'
+        count = 0
+        with open(pth, 'r') as f:
+            for line in f:
+                line = line[0:-1]  # strip newline
+                if re.search('[NC]RUN_TIME_LIMIT.*'+modifyStr, line):
+                    count += 1
+
+        self.assertEqual(count,2) # should be two cases
+        shutil.copy2(bak_path,pth) # copy nbackup back in!
+        # runCode set
+        time = pth.stat().st_mtime
+        model.set_time_code("SUBMIT", runCode="someRunCode")
+        time2 = pth.stat().st_mtime
+        self.assertNotEqual(time, time2)  # times should be different.
+        count = 0
+        with open(pth, 'r') as f:
+            for line in f:
+                line = line[0:-1]  # strip newline
+                if re.search(r'ACCOUNT\w*=\w*someRunCode.*' + modifyStr, line):
+                    count += 1
+
+        self.assertEqual(count, 1)  # should be one case
+        shutil.copy2(bak_path,pth) # copy backup back in!
+        # both set
+        time = pth.stat().st_mtime
+        model.set_time_code("SUBMIT", runTime=3000,runCode="someRunCode")
+        time2 = pth.stat().st_mtime
+        self.assertNotEqual(time, time2)  # times should be different.
+        count = 0
+        with open(pth, 'r') as f:
+            for line in f:
+                line = line[0:-1]  # strip newline
+                if re.search(r'ACCOUNT\w*=\w*someRunCode.*' + modifyStr, line):
+                    count += 1
+                elif re.search(r'[NC]RUN_TIME_LIMIT.*' + modifyStr, line):
+                    count += 1
+                else:
+                    pass
+
+        self.assertEqual(count, 3)  # should be three  cases
 
 
     def test_perturb(self):
@@ -451,7 +511,7 @@ class testHadCM3(unittest.TestCase):
         Tests startTime to see if it works
         :return:
         """
-        model = HadCM3()
+        model = HadCM3(name='aa001',reference=self.refDir)
         tests = [ '2020-01-01', '1990-01-01', '1999-09-09 01:01:01']
         expect = [[2020, 1, 1, 0, 0, 0], [1990, 1, 1, 0, 0, 0], [1999, 9, 9, 1, 1, 1]]
 
@@ -466,7 +526,7 @@ class testHadCM3(unittest.TestCase):
 
         :return: nada
         """
-        model = HadCM3()
+        model = HadCM3(name='aa001',reference=self.refDir)
         tests = [  'P7Y', 'P7Y1M', 'P7Y1M1D', 'P7Y1M1DT1H1M1S']
         expect = [[7, 0, 0, 0, 0, 0], [7, 1, 0, 0, 0, 0], [7, 1, 1, 0, 0, 0], [7, 1, 1, 1, 1, 1]]
 

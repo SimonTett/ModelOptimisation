@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import typing # TODO add type hints to all functions/methods.
 
 import numpy as np
 
@@ -52,15 +53,20 @@ class HadCM3(Model):
     """
     HadCM3 class.
       Not much different from Model except defines  a bunch of parameters and functions used to modify namelists.
-      Which, by definition, are specific to HadCM3
+      Which, by definition, are specific to HadCM3.
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, name:str, reference:pathlib.Path, **kwargs):
         """"
         HadCM3 Init -- calls super().__init__(*args,**kwargs)
         then sets submit_script to "SUBMIT" and continue script to SUBMIT.cont
+        See Model for documentation on key word parameters
+        :param name -- name of the model. Should be 5 characters or less
+        :param reference -- where reference config lives.
         """
-        super().__init__(*args, **kwargs)  # call super class init and then override
+        if len(name) > 5:
+            raise ValueError("HadXM3 limited to 5 character names")
+        super().__init__(name,reference, **kwargs)  # call super class init and then override
         # modify submit_script & continue_script
 
         self.submit_script = 'SUBMIT'
@@ -91,7 +97,7 @@ class HadCM3(Model):
         # Step 1 --  copy SUBMIT & SCRIPT to SUBMIT.bak & SCRIPT.bak so we have the originals
         # Then modify SUBMIT & SCRIPT in place
         #  Have fns to set runTime and runCode. Or just pop them off the parameters. Last is better (and more generic)
-        self.modifySubmit(runTime=runTime, runCode=runCode)  # modify Submit script
+        self.modifySubmit()  # modify Submit script
         self.modifyScript()  # modify Script
         self.createWorkDir()  # create the work directory (and fill it in)
         self.genContSUBMIT()  # generate the continuation script.
@@ -224,7 +230,34 @@ class HadCM3(Model):
                 else:  # default line
                     print(line[0:-1])  # remove newline
 
-    def modifySubmit(self, runTime=None, runCode=None):
+    def set_time_code(self, script: str,
+                      runTime: typing.Optional[int]=None,
+                      runCode: typing.Optional[str]=None) -> bool:
+        """
+        :param script: Name of script file to modify to set runTime and runCode
+        :param runTime: Time in seconds model should run for
+        :param runCode:  Code to use to do the run.
+        :return: True if succeeded. False if failed.
+        """
+        if (runTime is None) and (runCode is None):
+            return True # nothign to be done.
+        logging.debug(f"Setting runTime to {runTime} and runCode to {runCode} for model {self}")
+        modifyStr = '## modified time/code'
+        # no try/except here. If it fails then all will fail!
+        with fileinput.input(self.model_dir / script, inplace=True) as f:
+            for line in f:
+                if (runTime is not None) and re.match(r'[NC]RUN_TIME_LIMIT\w*=', line):  # got a time specified
+                    l2 = line.split('=')[0]  # split line at = and keep stuff to the left
+                    print(f'{l2}={runTime:d} {modifyStr}')  # Change the time
+                elif (runCode is not None) and re.match(r'ACCOUNT\w*=', line):  # got a project code specified
+                    l2 = line.split('=')[0]  # split line at = and keep stuff to the left.
+                    print(f"{l2}={runCode} {modifyStr}")  # Chnage the runCode
+                else:
+                    print(line[0:-1])  # remove trailing newline
+
+        return True
+
+    def modifySubmit(self):
         """
         Modify  Submit script for HadCM3
         Changes to SUBMIT
@@ -265,12 +298,7 @@ class HadCM3(Model):
                     print("JOBDIR=%s %s" % (self.model_dir, modifyStr))
                 elif re.match('CJOBN=', line) and f.filelineno() < maxLineNo:
                     print("CJOBN=%s %s" % (runid + '000', modifyStr))
-                elif (runTime is not None) and re.match('[NC]RUN_TIME_LIMIT=', line):  # got a time specified
-                    l2 = line.split('=')[0]  # split line at =
-                    print(l2 + '=%d ' % (runTime) + modifyStr)  # add on the time
-                elif (runCode is not None) and re.match('ACCOUNT=', line):  # got a project code specified
-                    l2 = line.split('=')[0]  # split line at =
-                    print(l2 + '=%s ' % (runCode) + modifyStr)  # add on the time
+
                 else:
                     print(line[0:-1])  # remove trailing newline
 

@@ -41,9 +41,9 @@ class TestParamInfo(unittest.TestCase):
         )
 
         expected_df1 = pd.DataFrame([['VF1', 'namelist_var', 'fred.nl', 'atmos', 'VF1', 'VF1', np.NAN],
-                                     ['VF1', 'namelist_var', 'fred.nl', 'atmos', 'VF2', 'VF2',np.NAN],
-                                     ['OCDIFF', 'namelist_var', 'fred.nl', 'ocean', 'OCDIFF', 'OCDIFF',np.NAN]],
-                                    columns=['parameter', 'type', 'filepath', 'namelist', 'nl_var', 'name','default'])
+                                     ['VF1', 'namelist_var', 'fred.nl', 'atmos', 'VF2', 'VF2', np.NAN],
+                                     ['OCDIFF', 'namelist_var', 'fred.nl', 'ocean', 'OCDIFF', 'OCDIFF', np.NAN]],
+                                    columns=['parameter', 'type', 'filepath', 'namelist', 'nl_var', 'name', 'default'])
         expected_df2 = pd.DataFrame([['FN', 'function', self.fn.__qualname__]],
                                     columns=['parameter', 'type', 'function_name'])
         self.expected_df = pd.concat([expected_df2, expected_df1], ignore_index=True)
@@ -241,15 +241,15 @@ FN [function: {fn.__qualname__} ]
         orig = param_info()
         new = param_info()
         orig.update(new)
-        self.assertTrue(len(orig.param_constructors)==0) # update empty from empty gives empty
-        new.register('cf1','nl_cf1')
-        self.assertTrue(len(orig.param_constructors)==0) # changing new did not change orig
-        orig.update(new) # update empty should have identical
-        self.assertEqual(vars(orig),vars(new))
-        orig.register('cf2','nl_cf2') # put something into orig
-        orig.update(new) # update it from new.
-        new.register('cf2','nl_cf2') # do same for new
-        self.assertEqual(vars(orig), vars(new)) # should be identical
+        self.assertTrue(len(orig.param_constructors) == 0)  # update empty from empty gives empty
+        new.register('cf1', 'nl_cf1')
+        self.assertTrue(len(orig.param_constructors) == 0)  # changing new did not change orig
+        orig.update(new)  # update empty should have identical
+        self.assertEqual(vars(orig), vars(new))
+        orig.register('cf2', 'nl_cf2')  # put something into orig
+        orig.update(new)  # update it from new.
+        new.register('cf2', 'nl_cf2')  # do same for new
+        self.assertEqual(vars(orig), vars(new))  # should be identical
 
     def test_read_param(self):
         """
@@ -257,6 +257,7 @@ FN [function: {fn.__qualname__} ]
         Need to create a model instance and then use that!
         :return:
         """
+
         class myModel(Model.Model):
             @Model.register_param('RHCRIT')
             def rhcrit(self, rhcrit):
@@ -282,15 +283,21 @@ FN [function: {fn.__qualname__} ]
                     cloud_rh_crit[1] = max(0.9, rhcrit)
                     cloud_rh_crit[2] = max(0.85, rhcrit)
                     return (rhcrit_nl, cloud_rh_crit)
+
         import importlib
         traverse = importlib.resources.files("Models")
+        #myModel.remove_param() # clean it up!
+        #myModel.register_functions()
         with importlib.resources.as_file(traverse.joinpath("parameter_config/example_Parameters.csv")) as pth:
-            myModel.update_from_file(pth,duplicate=True)
-        #myModel.update_from_file(myModel.expand("$OPTCLIMTOP/OptClimVn3/Models/tests/example_Parameters.csv"),duplicate=False)
-        parameters = 'VF1'
-        model = myModel() # depends on myModel
-        model.model_dir =model.expand("$OPTCLIMTOP/Configurations/xnmea")
-        self.assertEqual(model.param_info.read_param(model,'VF1'),1)
-        self.assertEqual(model.param_info.read_param(model,'RHCRIT'),0.7)
+            myModel.update_from_file(pth)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            p=pathlib.Path(tmpdir)
+            model = myModel('fred',reference=myModel.expand("$OPTCLIMTOP/Configurations/xnmea"),model_dir=p)  # depends on myModel
+            model.instantiate()
+            self.assertEqual(model.param_info.read_param(model, 'VF1'), 1)
+            self.assertEqual(model.param_info.read_param(model, 'RHCRIT'), 0.7)
+
+
 if __name__ == '__main__':
     unittest.main()
