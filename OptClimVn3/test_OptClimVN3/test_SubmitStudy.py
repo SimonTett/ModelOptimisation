@@ -184,13 +184,11 @@ class MyTestCase(unittest.TestCase):
         # and increase it to 36
         self.submit.name_values = [35,0,0]
         name = self.submit.gen_name()
-        self.assertEqual(name, 'ZZ00A')
-        self.submit.name_values = [60,0,0]
+        self.assertEqual(name, 'ZZ010')
+
+        self.submit.name_values = [34,35,35]
         name = self.submit.gen_name()
-        self.assertEqual(name, 'ZZ00Z')
-        self.submit.name_values = [60,61,61]
-        name = self.submit.gen_name()
-        self.assertEqual(name, 'ZZZZZ')
+        self.assertEqual(name, 'ZZzzz')
 
 
 

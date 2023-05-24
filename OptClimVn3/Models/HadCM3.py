@@ -5,7 +5,8 @@ import typing # TODO add type hints to all functions/methods.
 
 import numpy as np
 
-from Models.Model import Model, register_param
+from Model import  register_param
+import Model # note this seems to be quite important. Import Model from Model means the registration does not happen..
 import importlib.resources
 from Models.namelist_var import namelist_var
 import pathlib
@@ -49,7 +50,7 @@ def IDLinterpol(inyold, inxold, xnew):
 import math
 
 
-class HadCM3(Model):
+class HadCM3(Model.Model):
     """
     HadCM3 class.
       Not much different from Model except defines  a bunch of parameters and functions used to modify namelists.
@@ -925,6 +926,23 @@ class HadCM3(Model):
         :return: nl/tuple (if oinitialV is not None) to be set or whatever oinitial is in the models namelist.
         """
         return self.initHist_nlcfiles(oinitialV, nl_var='OINITIAL')
+
+
+    @register_param("ensembleMember")
+    def ens_member(self,ensMember:typing.Optional[int]) -> None:
+        """
+        Do nothing as for HadCM3 random perturb is from name.
+        :param ensMember: ensemble member. The ensemble member wanted.
+        :return: None (for now) as nothing done.
+        """
+
+        inverse = (ensMember is None)
+        if inverse:
+            logging.warning("Can not invert ensMember")
+            return None
+
+
+        return None
 
 
 

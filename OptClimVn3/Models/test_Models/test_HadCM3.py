@@ -153,7 +153,9 @@ class testHadCM3(unittest.TestCase):
         # check we have got all known parameters.
         expect_params = set(self.model.param_info.known_parameters())
         expect_params -= set(expect_values.keys())  # remove the ones we have.
-        self.assertEqual(len(expect_params), 0, msg='Missing following parameters' + " ".join(expect_params))
+        # and remove ensembleMember which is "special"
+        expect_params -= set(['ensembleMember'])
+        self.assertEqual(len(expect_params), 0, msg='Missing following parameters: ' + ", ".join(expect_params))
         # test can set and read.
         shutil.copytree(self.refDir, self.model.model_dir, symlinks=True, dirs_exist_ok=True)
         self.model.set_params(expect_values)

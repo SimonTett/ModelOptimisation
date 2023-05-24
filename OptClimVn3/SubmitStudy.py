@@ -302,7 +302,7 @@ class SubmitStudy(Study, journal):
                  refDir: Optional[pathlib.Path] = None,
                  models: Optional[List[Model]] = None,
                  model_name: Optional[str] = None,
-                 fakeFn: Optional[fn_type] = None,
+                 #fakeFn: Optional[fn_type] = None,
                  computer: Optional[str] = None):
         """
         Create ModelSubmit instance
@@ -330,7 +330,7 @@ class SubmitStudy(Study, journal):
         self.refDir = refDir
 
         if model_name is None:
-            model_name = self.config.get("modelName")
+            model_name = self.config.getv("modelName")
         self.model_name = model_name
 
         if computer is None:
@@ -338,7 +338,7 @@ class SubmitStudy(Study, journal):
         self.computer = computer  # really needed for dumping/loading.
         self.engine, self.submit_fn = self.submission_engine(computer)  # engine & submit_fn for this computer.
 
-        self.fake_fn = fakeFn
+        #self.fake_fn = fakeFn
         self.runTime = self.config.runTime()  # extract time
         self.runCode = self.config.runCode()  # extract code
         self.fix_params = self.config.fixedParams()  # parameters that are fixed for all cases.
@@ -393,13 +393,13 @@ class SubmitStudy(Study, journal):
         :param   params: dictionary of "variable" parameters which are generated algorithmically.
          The following parameters are special and handled differently:
            * reference -- the reference directory. If not there (or None) then self.refDir is used.
-           * model_name -- the model type to be created. If not then then then self.model_name is used.
+           * model_name -- the model type to be created. If not in params then then self.model_name is used.
            These support more complex algorithms where multiple models need to be ran.
         These will be augmented by fixedParams
         If you need functionality beyond this you may want to inherit from SubmitStudy and
           override create_model to meet your needs
         :param dump: If True dump model (using model.dump_model method) and self (using self.dump_config method)
-        :return: model. The created model. self.model_index will be updated.
+        :return: A model but self.model_index will be updated.
         """
 
         name = self.gen_name()
@@ -416,7 +416,7 @@ class SubmitStudy(Study, journal):
         post_process = self.config.get('post_process')
         model = ModelBaseClass.model_init(model_name, name=name,
                                           reference=reference, model_dir=model_dir, config_path=config_path,
-                                          fake=(self.fake_fn is not None), parameters=params, post_process=post_process
+                                          parameters=params, post_process=post_process
                                           )
         key = self.key_for_model(model)
         if key in self.model_index:
@@ -468,6 +468,7 @@ class SubmitStudy(Study, journal):
         Replaces submit_fn with function names. from_dict will replace these.
         :return: a dict. Keys are attributes.
         """
+        import functools
         dct = super().to_dict()
         # deal with functions in engine and submit_fn
         if callable(dct['submit_fn']):
@@ -506,7 +507,7 @@ class SubmitStudy(Study, journal):
 
     def gen_name(self,reset=False):
         """
-        generate the next name .  Will be self.config.baseRunID() + maxDigit chars. Chars are 0-9,a-z,A-Z
+        generate the next name .  Will be self.config.baseRunID() + maxDigit chars. Chars are 0-9,a-z
         and will increment every time called. First time it is called then internal counter will be reset
           to zero. Counter is incremented before name is generated.
         :param reset: Reset internal counter to zero so starting sequence again.
@@ -517,7 +518,7 @@ class SubmitStudy(Study, journal):
 
         base = self.config.baseRunID()  # get the baserun
         maxDigits = self.config.maxDigits()  # get the maximum length of string for model.
-        chars = string.digits + string.ascii_letters
+        chars = string.digits + string.ascii_lowercase # windows does not case distinguish. Silly windows.
         radix = len(chars)
         # increment counter or restart
         if (reset is True) or (self.name_values is None): # reset the counter

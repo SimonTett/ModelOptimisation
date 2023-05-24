@@ -316,7 +316,7 @@ class Study(model_base):
     def runConfig(self, filename:typing.Optional[pathlib.Path]=None,
                   scale:bool=True,add_cost:bool=True) -> OptClimConfigVn2|OptClimConfigVn3:
         """
-        **copy** config and add parameters and obs to it. Config is returned
+        **copy** self.config and add parameters and obs to it. Modified config is returned
         :param filename - pathlib to file (or None). Will override filepath in new config
         :param scale -- passed to self.cost to compute cost when add_cost is True
         :param add_cost -- add cost to the returned configuration

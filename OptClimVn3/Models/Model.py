@@ -105,6 +105,7 @@ class ModelBaseClass(model_base):
         logging.info(f"Registering class {newcls.__name__}")
         ModelBaseClass.class_registry[newcls.__name__] = newcls
 
+
     @classmethod
     def remove_class(cls, name: str | None = None):
         """
@@ -324,6 +325,7 @@ class Model(ModelBaseClass, journal):
             parameters = {}
         else:
             parameters = copy.deepcopy(parameters)
+        # TODO check that parameters exist in lookup.
 
         if post_process is None:
             post_process = {}
@@ -445,9 +447,12 @@ class Model(ModelBaseClass, journal):
         Example: model.gen_param_set()
         """
         if parameters is None:
-            parameters = self.parameters
+            parameters = copy.deepcopy(self.parameters)
         else:
             self.update_history(f"Setting parameters using parameters {parameters} rather than self.parameters")
+
+
+
         param_set_info = self.param_info.gen_parameters(self, **parameters)
         # expecting a list of namelist/something, value pairs
         for (nl, value) in param_set_info:
@@ -455,7 +460,7 @@ class Model(ModelBaseClass, journal):
                 raise NotImplementedError(f"Implement code for {type(nl)}  or override gen_params")
         return param_set_info  # checked we have only namelists.
 
-    def set_params(self, parameters: dict | None = None):
+    def set_params(self, parameters: typing.Optional[dict] = None):
 
         """
         Set parameters by patching namelist. Override if you want more than namelists.
@@ -463,7 +468,6 @@ class Model(ModelBaseClass, journal):
         :param parameters -- dict(or None) of parameters to use.
         :return: Nothing
         """
-
         nl = self.gen_params(parameters=parameters)
         namelist_var.nl_modify(nl, dirpath=self.model_dir)  # patch the namelists.
 
@@ -792,6 +796,24 @@ class Model(ModelBaseClass, journal):
         :return:None
         """
         raise NotImplementedError("Implement archive for your model")
+
+    @register_param("ensembleMember")
+    def ens_member(self,ensMember:typing.Optional[int]) -> None:
+        """
+        Do nothing as perturbing initial conditions is model specific. But needed
+         for test cases.
+        :param ensMember: ensemble member. The ensemble member wanted.
+        :return: None (for now) as nothing done.
+        """
+
+        inverse = (ensMember is None)
+        if inverse:
+            logging.warning("Can not invert ensMember")
+            return None
+
+        logging.warning(f"Nothing set for {ensMember}. Override in your own model")
+
+        return None
 
 
 Model.register_class(Model)  # register ourselves!

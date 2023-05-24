@@ -28,8 +28,8 @@
             "ICE_SIZE": 3e-05,
             "RHCRIT": 0.7,
             "VF1": 1.0,
-            "CW_LAND": 0.0002,
-            "CW_LAND_comment": "Seed parameter which also affects CW_SEA",
+            "CW": 0.0002,
+            "CW_comment": "Seed parameter which  affects CW_SEA & CW_LAND",
             "DYNDIFF": 12.0,
             "DYNDIFF_comment": "Seed parameter which affects DIFF_COEFF, DIFF_COEFF_Q, DIFF_EXP & DIFF_EXP_Q",
             "KAY_GWAVE": 20000.0,
@@ -54,7 +54,7 @@
             "ENTCOEF": 1.0,
             "EACF": 0.0,
             "CT": 1.0,
-            "CW_LAND": 1.0,
+            "CW": 1.0,
             "DYNDIFF": 1.0,
             "KAY_GWAVE": 1.0,
             "ASYM_LAMBDA": 0.0,
@@ -98,7 +98,7 @@
                 0.5,
                 2.0
             ],
-            "CW_LAND": [
+            "CW": [
                 0.0001,
                 0.002
             ],
@@ -139,7 +139,7 @@
             "ICE_SIZE": 1.5e-06,
             "RHCRIT": 0.01,
             "VF1": 0.1,
-            "CW_LAND": 0.0002,
+            "CW": 0.0002,
             "DYNDIFF": 2.0,
             "KAY_GWAVE": 400000.0,
             "ASYM_LAMBDA": 0.15,
@@ -155,7 +155,7 @@
             "ENTCOEF": 4.026044577119166,
             "EACF": 0.6497809616335941,
             "CT": 0.0004,
-            "CW_LAND": 0.0001,
+            "CW": 0.0001,
             "DYNDIFF": 19.911893529100187,
             "KAY_GWAVE": 20000.0,
             "ASYM_LAMBDA": 0.5,
