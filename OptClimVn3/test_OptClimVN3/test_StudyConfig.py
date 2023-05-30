@@ -12,8 +12,10 @@ import unittest
 import numpy as np
 import numpy.testing as nptest
 import pandas as pd
+import pandas.testing as pdtest
 import xarray
 import copy
+import importlib.resources
 
 import StudyConfig
 
@@ -31,16 +33,11 @@ class testStudyConfig(unittest.TestCase):
         Standard setup for all test cases
         :return:
         """
-
-        configFile = os.path.join('Configurations', 'example.json')
+        root = importlib.resources.files("OptClimVn3")
+        configFile = root / 'configurations' / 'dfols14param_opt3.json'
         self.config = StudyConfig.readConfig(configFile, ordered=True)
         # generate fake -lookup tables
-        self.fnLookup = {
-            'modelFunction': {'HadCM3': os.getcwd},
-            'submitFunction': {'eddie': os.getcwd},
-            'optimiseFunction': {'default': os.getcwd},
-            'fakeFunction': {'default': os.getcwd}
-        }
+
         # add in some DFOLS info
         dfols = {
             "logging.save_poisedness": False,
@@ -60,26 +57,33 @@ class testStudyConfig(unittest.TestCase):
         :return: 
         """
         version = self.config.version()
-        self.assertEqual(version, 2, msg='Expected version = 2 got %s' % version)
+        self.assertEqual(version, 3, msg='Expected version = 3 got %s' % version)
 
     def test_begin(self):
         """
         Test that begin returns expected values
         :return: 
         """
-
-        expect = pd.Series({"CT": 1.1e-4, "EACF": 0.51, "ENTCOEF": 3.1, "ICE_SIZE": 31e-6, "RHCRIT": 0.71,
-                            "VF1": 1.0, "CW_LAND": 2.1e-4})  # values from example.json.
+        expect = pd.Series(
+            dict(VF1=1.0, RHCRIT=0.0, ICE_SIZE=0.0, ENTCOEF=1.0, EACF=0.0, CT=1.0, CW=1.0, DYNDIFF=1.0, KAY_GWAVE=1.0,
+                 ASYM_LAMBDA=0.0, CHARNOCK=1.0, G0=0.0, Z0FSEA=0.0,
+                 ALPHAM=0.0))  # values from config file which has scaling.
+        self.assertTrue(self.config.Config['Parameters'].get("initScale"))
+        ranges = self.config.paramRanges(paramNames=expect.index)
+        expect = expect * ranges.loc['rangeParam', :] + ranges.loc['minParam', :]  # scale parameters
+        expect = expect.rename(self.config.name())
         # first test the parameters are as we expect:
         params = self.config.paramNames()
         params.sort()
         expectKeys = list(expect.keys())
         expectKeys.sort()
-        self.assertListEqual(params, expectKeys, msg='Paramters differ')
+        self.assertListEqual(params, expectKeys, msg='Parameters differ')
+        # may need to scale expect.
+
         got = self.config.beginParam()
         got.sort_values(inplace=True)
         expect.sort_values(inplace=True)
-        self.assertEqual(expect.equals(got), True, msg='Differences in beginParam')
+        pdtest.assert_series_equal(expect, got)
 
         # add test case to deal with scaling within beginParam & nulls (which get standard values)
         Params = self.config.getv('Parameters')  # get the parameters block.
@@ -91,8 +95,8 @@ class testStudyConfig(unittest.TestCase):
         self.assertTrue(getParams.equals(stdParams), msg='getParams not stdParams as expected')
 
         # test that setting works...
-        setp = expect * 1.1  # 10% increase
-        p = self.config.beginParam(values=setp)
+        setp = ranges.loc['maxParam', :]
+        p = self.config.beginParam(begin=setp)
         self.assertTrue(setp.equals(p), msg='getParams not  as expected')
         self.assertFalse(self.config.Config['Parameters']["initScale"])
 
@@ -140,14 +144,12 @@ class testStudyConfig(unittest.TestCase):
         :return: nada
         """
         # verify we can read a file OK.
-        covInfo =  self.config.getv('study', {}).get('covariance')
-        covFile=covInfo['CovObsErr']
-        cov=self.config.readCovariances(covFile)
+        covInfo = self.config.getv('study', {}).get('covariance')
+        covFile = covInfo['CovObsErr']
+        cov = self.config.readCovariances(covFile)
         # now with obsNames not in covariance index.
         with self.assertRaises(ValueError):
-            got = self.config.readCovariances(covFile,obsNames=['one','two'])
-
-
+            got = self.config.readCovariances(covFile, obsNames=['one', 'two'])
 
     def test_version(self):
         """
@@ -156,7 +158,7 @@ class testStudyConfig(unittest.TestCase):
         """
 
         vn = self.config.version()
-        self.assertEqual(vn, 2, msg='Got vn = %d expected %d' % (vn, 2))
+        self.assertEqual(vn, 3, msg='Got vn = %d expected %d' % (vn, 3))
 
     def test_referenceConfig(self):
         """
@@ -165,27 +167,15 @@ class testStudyConfig(unittest.TestCase):
         """
 
         ref = self.config.referenceConfig()
-        # expect=os.path.expandvars("$OPTCLIMTOP/Configurations/HadAM3_ed3_SL7_15m")
-        expect = os.path.join("Configurations", "HadAM3_ed3_SL7_15m")
-        # example json set up for unix so convert any / to \
-        if platform.system() == 'Windows':
-            ref = ref.replace('/', '\\')
-        self.assertEqual(ref, expect, msg='expected %s got %s' % (expect, ref))
+        expect = self.config.expand("$OPTCLIMTOP/Configurations/HadAM3_ed3_SL7_15m")
+        self.assertEqual(ref, expect)
 
         # test we can set it
-        expect = 'test'
+        expect = pathlib.Path('test')
         self.config.referenceConfig('test')
         self.assertEqual(expect, self.config.referenceConfig())
 
-    def test_cacheFile(self):
-        """
-        Test that cacheFile method works
-        :return: 
-        """
 
-        expect = 'cache_file.json'
-        got = self.config.cacheFile()
-        self.assertEqual(got, expect, msg='cache_file different got %s expected %s' % (got, expect))
 
     def test_ranges(self):
         """
@@ -194,10 +184,14 @@ class testStudyConfig(unittest.TestCase):
         """
         # pNames=self.config.paramNames()
         minP = pd.Series(
-            {'CT': 5e-5, 'EACF': 0.5, 'ENTCOEF': 0.6, 'ICE_SIZE': 2.5e-5, 'RHCRIT': 0.6, 'VF1': 0.5, 'CW_LAND': 1e-4},
+            {'CT': 5e-5, 'EACF': 0.5, 'ENTCOEF': 0.6, 'ICE_SIZE': 2.5e-5, 'RHCRIT': 0.6, 'VF1': 0.5, 'CW': 1e-4,
+             "DYNDIFF": 6.0, "KAY_GWAVE": 10000.0, "ASYM_LAMBDA": 0.05, "CHARNOCK": 0.012, "G0": 5.0, "Z0FSEA": 0.0002,
+             "ALPHAM": 0.5},
             name='minParam')
         maxP = pd.Series(
-            {'CT': 4e-4, 'EACF': 0.7, 'ENTCOEF': 9.0, 'ICE_SIZE': 4e-5, 'RHCRIT': 0.9, 'VF1': 2.0, 'CW_LAND': 2e-3},
+            {'CT': 4e-4, 'EACF': 0.7, 'ENTCOEF': 9.0, 'ICE_SIZE': 4e-5, 'RHCRIT': 0.9, 'VF1': 2.0, 'CW': 2e-3,
+             "DYNDIFF": 24.0, "KAY_GWAVE": 20000.0, "ASYM_LAMBDA": 0.5, "CHARNOCK": 0.02, "G0": 20.0, "Z0FSEA": 0.005,
+             "ALPHAM": 0.65},
             name='maxParam')
         rng = (maxP - minP).rename('rangeParam', inplace=True)
         got = self.config.paramRanges(minP.index.values)
@@ -211,9 +205,10 @@ class testStudyConfig(unittest.TestCase):
         :return: 
         """
 
-        step = pd.Series({'CT': 1e-5, 'EACF': 0.02, 'ENTCOEF': 0.15, 'ICE_SIZE': 1.5e-6, 'RHCRIT': 0.01, 'VF1': 0.1,
-                          'CW_LAND': 2e-4},
-                         name='steps')
+        step = pd.Series(
+            dict(CT=1e-5, EACF=0.02, ENTCOEF=0.15, ICE_SIZE=1.5e-6, RHCRIT=0.01, VF1=0.1, CW=2e-4, DYNDIFF=2.0,
+                 KAY_GWAVE=400000.0, ASYM_LAMBDA=0.15, CHARNOCK=0.003, G0=4.0, Z0FSEA=0.002, ALPHAM=0.06),
+            name='steps')
         got = self.config.steps(step.index.values)
         self.assertEqual(got.equals(step), True, msg='Step values differ')
         # test that 10% part works -- note that test is specific to vn 2.
@@ -286,16 +281,15 @@ class testStudyConfig(unittest.TestCase):
         self.assertTrue(set_tgt.equals(got), 'Target differs when passed in')
 
         # test that missing an ob causes problems.
-        self.config.obsNames(['RSR','olr','olrc'])
+        self.config.obsNames(['RSR', 'olr', 'olrc'])
         with self.assertRaises(ValueError):
             got = self.config.targets()
 
-
     def test_check_obs(self):
         """ test that check_obs works/fails as expected"""
-        self.config.check_obs() # should work.
+        self.config.check_obs()  # should work.
         with self.assertRaises(ValueError):
-            self.config.check_obs(obsNames=['fred1','fred2']) # should fail
+            self.config.check_obs(obsNames=['fred1', 'fred2'])  # should fail
 
     def test_Fixed(self):
         """
@@ -304,17 +298,17 @@ class testStudyConfig(unittest.TestCase):
         """
 
         fix = self.config.fixedParams()
-        expect = collections.OrderedDict([(u'START_TIME', [1998, 12, 1]), (u'RUN_TARGET', [6, 3, 0])])
+        expect = dict(START_TIME="1998-12-01", RUN_TARGET='P6Y4M')
         self.assertEqual(expect, fix, msg='fix not as expected')
         # test cases with none work.
         values = self.config.Config['Parameters']['fixedParams']
         values['VF1'] = None  # should overwrite values in array.
-        values['CW_LAND'] = None  # as above
+        values['CW'] = None  # as above
         values['ALPHAM'] = None
         values['NoSuchParam'] = None
         fix = self.config.fixedParams()
         self.assertEqual(fix['VF1'], 1.0, msg='VF1 not as expected')  # should be set to default value
-        self.assertEqual(fix['CW_LAND'], 2e-4, msg='CW_LAND not as expected')  # should be set to default value
+        self.assertEqual(fix['CW'], 2e-4, msg='CW_LAND not as expected')  # should be set to default value
         self.assertEqual(fix['ALPHAM'], 0.5, msg='ALPHAM not as expected')  # should be set to default value
         self.assertIsNone(fix['NoSuchParam'], msg='NoSuchParam should be None')  # should be None
         # set values['VF1'] to 2 and check it is still 2.
@@ -324,39 +318,26 @@ class testStudyConfig(unittest.TestCase):
 
     def test_runTime(self):
         """
-        Test that runtime is None
+        Test that runtime is 10000
         :return: 
         """
-        self.assertIsNone(self.config.getv("runTime"))
-
-    def test_modelFunction(self):
-        """
-        test the modelFunction works as expected
-        :return:
-        """
-
-        fn = self.config.modelFunction(self.fnLookup['modelFunction'])
-        expect = self.fnLookup['modelFunction']['HadCM3']
-        self.assertEqual(fn, expect)
-
-
-
+        self.assertEqual(self.config.getv("runTime"), 10000)
 
     def test_optimumParam(self):
         """
         Test that optimum param works.
         :return:
         """
-        # nothing there to start with so should get array of nans back.
+        # nothing there to start with so should get None back.
 
         optParam = self.config.optimumParams()
-        self.assertEqual(np.sum(optParam.isnull()), len(optParam), msg='optParam should  be all Nan')
+        self.assertIsNone(optParam, msg='optParam should  be None')
         # now set it
         # need to set parameter list.
-        res = self.config.optimumParams(RHCRIT=2.1, VF1=2.005, ENTCOEF=3.2)
-        expect = pd.Series(
-            {'VF1': 2.005, 'ENTCOEF': 3.2, 'RHCRIT': 2.1, 'CT': 1e-4, 'EACF': 0.5, 'ICE_SIZE': 30e-6, 'CW_LAND': 2e-4})
-        expect = expect[self.config.paramNames()]
+        opt = pd.Series(dict(RHCRIT=2.1, VF1=2.005, ENTCOEF=3.2))
+        res = self.config.optimumParams(
+            optimum=opt)  # this is a merge with the default values coming where not specified.
+        expect = res.combine_first(self.config.standardParam())
         self.assertTrue(res.equals(expect))
 
     def test_obsNames(self):
@@ -377,7 +358,7 @@ class testStudyConfig(unittest.TestCase):
         # and set names.
         newNames = ['obs1', 'obs2', 'obs3']
         got = self.config.obsNames(obsNames=newNames)
-        got = self.config.obsNames() # got will include the constraint name here
+        got = self.config.obsNames()  # got will include the constraint name here
         newNames.append(self.config.constraintName())
         self.assertEqual(got, newNames)  # we should get the names back
 
@@ -514,18 +495,19 @@ class testStudyConfig(unittest.TestCase):
 
         :return:
         """
-        expect = pd.Series({"CT": 1e-4, "EACF": 0.5, "ENTCOEF": 3.0, "ICE_SIZE": 30e-6, "RHCRIT": 0.7,
-                            "VF1": 1.0, "CW_LAND": 2e-4})
 
-        expect = pd.Series(collections.OrderedDict(
-            (("CT", 1e-4), ("EACF", 0.5), ("ENTCOEF", 3.0), ("ICE_SIZE", 30e-6), ("RHCRIT", 0.7),
-             ("VF1", 1.0), ("CW_LAND", 2e-4))))
+        expect = pd.Series(
+            dict(CT=0.0001, EACF=0.5, ENTCOEF=3.0, ICE_SIZE=3e-05, RHCRIT=0.7, VF1=1.0, CW=0.0002, DYNDIFF=12.0,
+                 KAY_GWAVE=20000.0, ASYM_LAMBDA=0.15, CHARNOCK=0.012, G0=10.0, Z0FSEA=0.0013, ALPHAM=0.5))
+        expect = expect.reindex(self.config.paramNames()).rename(self.config.name())
+
         params = self.config.standardParam()
-        self.assertTrue(params.equals(expect), msg='Params not as expected')
+        pdtest.assert_series_equal(expect, params)
+
         # test set value works as expected..
         expect.CT = 2.0
         params = self.config.standardParam(expect)
-        self.assertTrue(params.equals(expect), msg='Params not as expected when setting')
+        pdtest.assert_series_equal(expect, params)
 
     def test_ensembleSize(self):
         """
@@ -558,7 +540,7 @@ class testStudyConfig(unittest.TestCase):
         :return:
         """
 
-        self.assertEqual(self.config.baseRunID(), 'zz')  # get what we expect
+        self.assertEqual(self.config.baseRunID(), 'dr')  # get what we expect
         self.config.baseRunID('xx')  # set it
         self.assertEqual(self.config.baseRunID(), 'xx')  # and check it set.
 
@@ -574,7 +556,7 @@ class testStudyConfig(unittest.TestCase):
         """
 
         got = self.config.maxDigits()
-        self.assertEqual(got,3 ,'Expected 3')
+        self.assertEqual(got, 3, 'Expected 3')
         self.config.maxDigits(2)
         expect = 2
         got = self.config.maxDigits()
@@ -704,7 +686,7 @@ class testStudyConfig(unittest.TestCase):
         ser = pd.Series(np.arange(nindex), list(string.ascii_letters[0:nindex]))
         self.config.set_dataFrameInfo(ser=ser)
         get = self.config.get_dataFrameInfo('ser')
-        nptest.assert_allclose(ser,get)
+        nptest.assert_allclose(ser, get)
 
     def test_transJacobian(self):
         """
@@ -748,12 +730,12 @@ class testStudyConfig(unittest.TestCase):
         :return:
         """
 
-        opt = self.config.optimise() # should be a dict
-        self.assertEqual(type(opt),dict)
+        opt = self.config.optimise()  # should be a dict
+        self.assertEqual(type(opt), dict)
         # set a value
         opt2 = self.config.optimise(maxIterations=10)
-        self.assertEqual(opt2['maxIterations'],10) # value as expected
-        opt3 = self.config.optimise() # get it back. Should have changed.
+        self.assertEqual(opt2['maxIterations'], 10)  # value as expected
+        opt3 = self.config.optimise()  # get it back. Should have changed.
         self.assertEqual(opt2['maxIterations'], 10)
 
     def test_scales(self):
@@ -765,25 +747,57 @@ class testStudyConfig(unittest.TestCase):
             :return:nada
         """
 
-        expected =pd.Series({key:self.config.Config['scalings'].get(key,1.0) for key in self.config.obsNames()})
+        expected = pd.Series({key: self.config.Config['scalings'].get(key, 1.0) for key in self.config.obsNames()})
         got = self.config.scales()
-        nptest.assert_array_equal(expected,got)
+        nptest.assert_array_equal(expected, got)
         # set some values
-        test_scales = dict(one=2,two=1,three=4)
-        obsNames= test_scales.keys()
+        test_scales = dict(one=2, two=1, three=4)
+        obsNames = test_scales.keys()
         expect = pd.Series(test_scales)
         # get an error because obsNames differ.
         with self.assertRaises(ValueError):
             scales = self.config.scales(test_scales)
-        scales = self.config.scales(test_scales,obsNames=obsNames)
-        nptest.assert_array_equal(scales,expect)
-        scales = self.config.scales(dict(one=2,three=4),obsNames=obsNames)
+        scales = self.config.scales(test_scales, obsNames=obsNames)
+        nptest.assert_array_equal(scales, expect)
+        scales = self.config.scales(dict(one=2, three=4), obsNames=obsNames)
         nptest.assert_array_equal(scales, expect)
 
-    def test_to_dict(self):
-        dct=self.config.to_dict()
-        self.assertEqual(dct,vars(self.config)) # not a very hard test.#
 
+    def test_save_load(self):
+        """
+        test saving and loading works.
+        :return:
+        """
+
+
+        tfile = tempfile.NamedTemporaryFile(suffix='.scfg',delete=False)
+        tfile.close()
+        pth = pathlib.Path(tfile.name)
+        dumpConfig = self.config.copy(filename=pth)
+        dumpConfig.save()
+        newConfig = StudyConfig.readConfig(pth)
+        print(newConfig == dumpConfig) # equality does a lot of magic!
+        self.assertEqual(newConfig,dumpConfig)
+        tfile.delete
+
+    def test_dfols_soln(self):
+        # test that dfols_soln works.
+        # wil avoid runnign dfols as that involves a lot of hassle!
+        # instead will set up some variables
+
+        from dfols.solver import OptimResults
+        import numpy as np
+        test_soln = OptimResults(*[indx*12+0.1 for indx in range(0,9)])
+        df=pd.DataFrame(np.ones((3,3))*1.111,index=['a','b','c'],columns=['x','y','z'])
+        test_soln.diagnostic_info=df
+        self.config.dfols_solution(solution=test_soln)
+        new_soln=self.config.dfols_solution() # get the new soln
+        # test for equality!
+        for (kn,vn),(k,v) in zip(vars(new_soln).items(),vars(test_soln).items()):
+            self.assertEqual(kn,k)
+            self.assertEqual(type(vn),type(v))
+            if isinstance(vn,pd.DataFrame):
+                pdtest.assert_frame_equal(vn,v)
 
 
 

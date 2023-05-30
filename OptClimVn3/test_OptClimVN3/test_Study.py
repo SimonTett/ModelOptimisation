@@ -150,7 +150,7 @@ class TestStudy(unittest.TestCase):
         # now replace models!
         expected_dict['model_index'] = {k: m.config_path for k, m in expected_dict['model_index'].items()}
         # and evil hack for config
-        expected_dict['config'] = expected_dict['config'].to_dict()
+        expected_dict['config'] = vars(expected_dict['config'])
         self.assertEqual(study_dict, expected_dict)
 
     def test_load_dump(self):

@@ -1,7 +1,7 @@
 {
     "history": "Reference config for DFOLS algorithm and Vn3 of OptClim. Perturbing all 14 parameters ",
     "Developer_comment": "StudyConfig.py provides methods that work with this configuration file. Remember to change them if you change structure of this.",
-    "version": 2,
+    "version": 3,
     "version_comment": "Version ID",
     "Name": "dfols_r",
     "Name_comment": "Study Name",
@@ -42,9 +42,9 @@
             "ALPHAM": 0.5,
             "ALPHAM_comment": "Seed parameter which affects DTICE and ALPHAM",
             "START_TIME": null,
-            "START_TIME_comment": "Start_time as 3 to 6 element array [YYYY,MM,DD,hh,mm,mm]",
+            "START_TIME_comment": "Start_time as ISO string (YYYY-MM-DD)",
             "RUN_TARGET": null,
-            "RUN_TARGET_comment": "Run target -- time as 3 to 6 element array to run for. "
+            "RUN_TARGET_comment": "Run target -- as an ISO period string "
         },
         "initParams": {
             "comment": "Intial values for parameters to be optimised. Set to null to use default values. Values below are for HadAM3-14#1 ",
@@ -99,8 +99,8 @@
                 2.0
             ],
             "CW": [
-                0.0001,
-                0.002
+                1e-4,
+                2e-3
             ],
             "DYNDIFF": [
                 6.0,
@@ -147,22 +147,6 @@
             "G0": 4.0,
             "Z0FSEA": 0.002,
             "ALPHAM": 0.06
-        },
-        "optimumParams": {
-            "VF1": 1.8976063845156457,
-            "RHCRIT": 0.7817307179979658,
-            "ICE_SIZE": 3.441283082448739e-05,
-            "ENTCOEF": 4.026044577119166,
-            "EACF": 0.6497809616335941,
-            "CT": 0.0004,
-            "CW": 0.0001,
-            "DYNDIFF": 19.911893529100187,
-            "KAY_GWAVE": 20000.0,
-            "ASYM_LAMBDA": 0.5,
-            "CHARNOCK": 0.017881913422340627,
-            "G0": 5.0,
-            "Z0FSEA": 0.0031231521381503294,
-            "ALPHAM": 0.65
         }
     },
     "study": {

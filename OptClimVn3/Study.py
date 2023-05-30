@@ -266,7 +266,7 @@ class Study(model_base):
             m2[key] = model.config_path
         dct['model_index'] = m2
         logging.debug(f"Running to_dict on config. FIXME")
-        dct['config']= self.config.to_dict()
+        dct['config']= vars(self.config)
         return dct
 
     @classmethod

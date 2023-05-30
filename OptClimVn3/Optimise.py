@@ -5,7 +5,7 @@ Module that provides optimisation functions. Functions here are Scientific which
   Currently provides:
     doGaussNewtown: Does Gauss Newton calculation working out LineSearch values
     doLineSearch: Decides to terminate or not and returns next set of doGaussNewton cases
-    doDFBOLS: Stub for DFBOLS
+
    And a bunch of support routines
 See individual functions for documentation. 
 Test cases for this module can be found in test_Optimise.py
@@ -18,15 +18,9 @@ import numpy as np
 import logging
 import xarray
 from scipy.stats import chi2
-
-version = '$Id: Optimise.py 700 2018-08-18 11:48:09Z stett2 $'  # subversion magic
-revision = '$Rev: 700 $'
-svnURL = '$URL: https://svn.ecdf.ed.ac.uk/repo/geos/OptClim/trunk/OptClimVn2/Optimise.py $'
+import typing
 
 
-# see http://svnbook.red-bean.com/en/1.4/svn.advanced.props.special.keywords.html
-
-# from optClimLib import get_default
 def get_default(dct, key, default):
     """
     :param dct: dictionary to read value from
@@ -56,6 +50,7 @@ def scale_data(scales, obs, simObs, *covariances):
     # make up result array
     result = [obs * scales, simObs * scales[np.newaxis, :]]
     result.extend(scaled_cov)
+    #logging.warning("Calling scale_data. Probably should not! ")
     return result
 
 
@@ -76,7 +71,7 @@ def rangeAwarePerturbations(baseVals, parLimits, steps, nrandom=None,
          parLimits: max,min as read from JSON into 2-D array,
                     and passed through to here unaltered
 
-         steps: array of stepsizess for each parameter.
+         steps: array of stepsizes for each parameter.
 
          nrandom: perturb nrandom parameters rather than the full set.
          deterministic: optional argument with default value True -- make random choice of parameters deterministic.
@@ -124,12 +119,20 @@ def rangeAwarePerturbations(baseVals, parLimits, steps, nrandom=None,
             y[j + 1, j] += abs(float(steps[j]))
         else:
             y[j + 1, j] -= abs(float(steps[j]))
-
+    # check in range and fail if not
+    bad = (y < parLimits[:,0]) | (y > parLimits[:,1])
+    if np.any(bad):
+        raise ValueError("Parameters out of range")
     # possibly perturb the array
     if nrandom is not None:
         y, randIndx = randSelect(y, nrandom, deterministic=deterministic, trace=trace)
     else:
         randIndx = None
+
+    # check in range and fail if not
+    bad = (y < parLimits[:,0]) | (y > parLimits[:,1])
+    if np.any(bad):
+        raise ValueError("Parameters out of range")
 
     if trace:
         print("leaving rangeAwarePerturbations with derived perturbed runs:")
@@ -438,11 +441,14 @@ def doGaussNewton(param_value, param_range, UM_value, obs, cov=None,
     searchVect = s / param_scale[paramIndex]  # rescale search vector
     linesearch[:, paramIndex] += np.outer(alphas, searchVect)
     linesearch = np.maximum(param_range[:, 0], np.minimum(linesearch, param_range[:, 1]))  # deal with boundaries
+    bad = (linesearch < param_range[:,0]) | (linesearch > param_range[:,1]) # outside range
+    if np.any(bad):
+        raise ValueError("Have linesearch params outside param_range")
 
     # wrap diagnostics up.
     info = dict(jacobian=Jacobian, hessian=hessian, condnum=con, searchVect=searchVect,
                 InvCov=InvCov,
-                software_vn=version, revision=revision, SvnURL=svnURL,
+                #software_vn=version, revision=revision, SvnURL=svnURL,
                 scalings=use_scalings, params=params, paramIndex=paramIndex)
     # TODO include in the info dict the parameter names and their values. That might need to
     # happen in the framework. This will make subsequent data processing much easier.
@@ -668,7 +674,7 @@ def doLineSearch(param_value, param_range, UM_value, obs, step, cov=None, cov_iv
     nextIterValue = use_UM_value[index, :]
     nextIterParam = use_param_value[index, :]
     info = dict(bestrun=index, cov=use_cov, cov_iv=use_cov_iv, scalings=scalings,
-                params=params, software_vn=version, revision=revision, SvnURL=svnURL)
+                params=params)#, software_vn=version, revision=revision, SvnURL=svnURL)
     # decide if continue (or not)
     # Will go through tests computing various diagnostics
     # then we test to see if we should go on and if not why not.
@@ -697,6 +703,10 @@ def doLineSearch(param_value, param_range, UM_value, obs, step, cov=None, cov_iv
     else:  ## generate new paramters as continuing
         NewParam, randIndex = rangeAwarePerturbations(nextIterParam, param_range, step,
                                                       nrandom, deterministic=deterministicPerturb)
+        # check new param are in range
+        bad = (NewParam < param_range[:,0]) | (NewParam > param_range[:,1])  # outside range
+        if np.any(bad):
+            raise ValueError("Have NewParm params outside param_range")
         info['randIndex'] = randIndex  # store the random index if we had them.
         StatusInfo = 'Continue'
 
@@ -720,16 +730,24 @@ def run_fn(function, params, npt, constraint_target=None):
     if params is None:
         raise Exception
 
-
-    #obsValues = np.zeros([params.shape[0], npt])
+    # obsValues = np.zeros([params.shape[0], npt])
     obsValues = function(params)
     if np.any(np.isnan(obsValues)):
         # got some nan -- trigger error.
         raise ValueError
     return obsValues
 
-def gaussNewton(function, startParam, paramRange, paramStep, target, optimise, cov=None, cov_iv=None,
-                scalings=None, constraint_target=None, trace=False):
+
+def gaussNewton(function: typing.Callable,
+                startParam: np.ndarray,
+                paramRange: np.ndarray,
+                paramStep: np.ndarray,
+                target: np.ndarray,
+                optimise: typing.Mapping,
+                cov: typing.Optional[np.ndarray] = None,
+                cov_iv: typing.Optional[np.ndarray] = None,
+                scalings: typing.Optional[np.ndarray] = None, constraint_target: typing.Optional[float] = None,
+                trace: bool = False):
     """
     Apply guassNewton/Linesearch algorithm to specified function.
     :param function: function to be optimised. Should take a numpy array of N values and return a M length array of observations
@@ -749,7 +767,7 @@ def gaussNewton(function, startParam, paramRange, paramStep, target, optimise, c
     # stage 0 -- setup
     maxIterations = optimise.get("maxIterations")
     if maxIterations is not None:
-        print("Max Iterations is ",maxIterations)
+        print("Max Iterations is ", maxIterations)
     nrandom = optimise.get('nrandom', None)
     deterministicPerturb = optimise.get('deterministicPertub', True)
     statusInfo = 'Continue'
@@ -768,17 +786,17 @@ def gaussNewton(function, startParam, paramRange, paramStep, target, optimise, c
         # obsValuesGN, constraintGN = run_fn(function, paramsGN, npt,
         #                                   constraint_target=constraint_target)  # run the functions.
         obsValuesGN = run_fn(function, paramsGN, npt,
-                                           constraint_target=constraint_target)  # run the functions.
+                             constraint_target=constraint_target)  # run the functions.
         optStatus, paramsLS, err, err_constraint, infoGN = \
             doGaussNewton(paramsGN, paramRange, obsValuesGN, target, cov=cov, scalings=scalings,
-                          #constraint=constraintGN, constraint_target=constraint_target,
+                          # constraint=constraintGN, constraint_target=constraint_target,
                           studyJSON=optimise, trace=trace)  # run GN
         # add some more information to the info dict.
         infoGN['err_constraint'] = err_constraint
         infoGN['obsValues'] = obsValuesGN
         infoGN['paramValues'] = paramsGN
         if trace:  # print(out some information)
-            print("GN: paramValues: ", paramsLS)  # , " err_constraint", err_constraint[0])
+            print("GN: paramValues: \n", paramsLS)  # , " err_constraint", err_constraint[0])
 
         # run the functions on the linesearch values
         # obsValuesLS, constraintLS = run_fn(function, paramsLS, npt, constraint_target=constraint_target)
@@ -786,7 +804,7 @@ def gaussNewton(function, startParam, paramRange, paramStep, target, optimise, c
         # need to merge paramsGS and paramsLS, obsValesGN & obsValuesGN & constraintGN and constraintLS
         params = np.vstack((paramsGN, paramsLS))
         obsValues = np.vstack((obsValuesGN, obsValuesLS))
-        #constraint = np.hstack((constraintGN, constraintLS))
+        # constraint = np.hstack((constraintGN, constraintLS))
         statusInfo, err, err_constraint, paramsGN, index, bestParam, infoLS = \
             doLineSearch(params, paramRange, obsValues, target, paramStep, cov=cov, cov_iv=cov_iv,
                          scalings=scalings,
@@ -799,13 +817,13 @@ def gaussNewton(function, startParam, paramRange, paramStep, target, optimise, c
         infoLS['obsValues'] = obsValuesLS
         statusList.append({'gaussNewton': infoGN, 'lineSearch': infoLS})
         iterCount += 1  # increase iteration count
-        print("iterCount ",iterCount,maxIterations)
+        print("iterCount ", iterCount, maxIterations)
         if (maxIterations is not None) and (iterCount >= maxIterations):
             if trace:
                 print(f"Done {iterCount} iterations which is > {maxIterations}. Stopping.")
             if statusInfo is 'Continue':
-                print("Trace is ",trace," Ran out of iterations")
-                statusInfo='Failed'
+                print("Trace is ", trace, " Ran out of iterations")
+                statusInfo = 'Failed'
                 break
         if trace:
             print("LS: statusInfo %s Iter: %d Err_constraint" % (statusInfo, iterCount), err_constraint)
@@ -868,138 +886,6 @@ def gaussNewton(function, startParam, paramRange, paramStep, target, optimise, c
     return prevBestParam, statusInfo, statusList  # would also like to return a bunch of info to help trace the performance of the algorithm.
 
 
-# TODO delete doDFBOLS -- runOptimise approach no longer needs it.
-def doDFBOLS(param_value, param_range, UM_value, obs, cov=None,
-             scalings=None, olist=None,
-             constraint=None, constraint_target=None, studyJSON={}, trace=False):
-    """
-    the function doDFBOLS computes status, err, err_constraint, v_err for use by Fortran code.
-    (SFBT thinks it should call the Fortran code itself...and then return the next set of parameters)
-    Current code is a stub as it doesn't actually call DFBOLS.
-
-    :param param_value: numpy array of parameter values.
-    :param param_range: 2D numpy  array of min/max of range for each parameter.
-      param_range[:,0] is the min value, param_range[:,1] the maximum value.
-      Q: Should this be passed through studyJSON as property of optimisation rather than framework?
-    :param UM_value: array of simulated observables
-    :param obs: array of target values -- should contain same number of elements as columns in UM_value
-
-     param_value & UM_value are ordered such that rows correspond to different simulations and
-     columns to parameters and simulated observations respectively.
-
-    :keyword  cov: covariance array
-                    Default is identity matrix
-    :keyword scalings: observables are related arrays get scaled before statistical analysis
-                Default value is 1.
-    :keyword olist: name of the observables. Default values are obs1..obsN where N is number of oBs.
-    :keyword constraint: Value of simulated constraint. Should be
-       present if studyJSON has sigma True
-    :keyword constraint_target: Value of target value for simulated constraint. Should be present if studyJson has sigma True
-    :keyword studyJSON The optimisation control specified as a dict. Contains the following values:
-        sigma         -- If true then constraint is used.
-        mu            -- weighting on constraint. (wt is sqrt(1/2mu)). Default is 1.
-        covar_cond    -- if specified used by regularize_cov (qv) to regularize covariance
-
-
-    :keyword trace: turn on/off trace of what happening. Default is False. Set True to get some tracing.
-
-    :returns status: Status of calculation
-    :returns v_err -- errors scaled by 1/diagonal of covariance matrix.
-    :returns err: Error values for each simulation.
-    :returns err_constraint: Constrained error for each simulation
-    :returns info: dictionary of data destined for json file.
-       diag: Diagonal values
-       software_vn sofware version
-       revision  software revision,
-       SvnURL URL to SVN repository
-       scalings: Scalings applied to data.
-       olist: names of variables
-       params: A dictionary of the  actual parameters (or defaults used) from studyJSON
-
-    """
-    fn_label = 'doDFBOLS'  # anem of function for tracing purpose
-    nObs = len(obs)
-    nParam = len(param_value[0, :])
-    # Set up default values
-    if scalings is None:
-        use_scalings = np.repeat(1.0, nObs)
-    else:
-        use_scalings = scalings.copy()
-
-    if cov is None:
-        use_cov = np.identity(nObs)
-    else:
-        use_cov = cov.copy()
-
-    if olist is None:
-        use_olist = ['obs' + str(x) for x in range(nObs)]
-    else:
-        use_olist = olist[:]
-
-    # get constants from JSON's directory giving them a default value if not present
-    sigma = get_default(studyJSON, 'sigma', False)  # default is no constraint
-    mu = get_default(studyJSON, 'mu', 1.0)  # mu if we have it otherwise default value of 1.
-    covar_cond = get_default(studyJSON, 'covar_cond', None)
-    # store them in params
-    params = dict(sigma=sigma, constraint_target=constraint_target, mu=mu)  # parameters as actually used.
-
-    use_obs, use_UM_value, use_cov = scale_data(use_scalings, obs, UM_value, use_cov)
-    # Deal with constraint
-    if sigma:
-        # got constraint so check have constraint_target and constraint not none
-        if constraint_target is None or constraint is None:
-            print("sigma true but constraint_target not provided or constraint not set")
-            raise ValueError()
-            return "Fail"  # return failure
-
-        if constraint.ndim == 2:
-            use_UM_value = np.hstack([use_UM_value, constraint])  # add constraint value to end of UM value
-        else:
-            use_UM_value = np.hstack(
-                [use_UM_value, constraint[:, np.newaxis]])  # add constraint value to end of UM value
-
-        use_obs = np.hstack((obs, constraint_target))  # add constraint target to end of obs
-        use_cov2 = np.zeros((nObs + 1, nObs + 1))  # generate bigger matrix to put modified covariance in,
-        use_cov2[0:-1, 0:-1] = use_cov[:, :]  # std one
-        use_cov2[-1, -1] = 2 * mu  ## include constraint in the covariance.
-        use_cov = use_cov2
-        del use_cov2
-        nObs += 1  # one more observation
-
-    optStatus = "Continue"  # default optStatus
-    # Possible regularize covariance matrix
-    if covar_cond is not None:  # specified a condition number for the covariance matrix?
-        use_cov = regularize_cov(use_cov, covar_cond, trace=trace)
-
-    # verify parameters in sensible range
-    if np.any(param_range[:, 0] > param_range[:, 1]):
-        print("minimum param > maximum param")
-        raise ValueError()
-    ## Compute V-Err for all cases.
-    v_err = np.zeros(use_UM_value.shape)  # make an empty array
-    diag_cov = np.diag(use_cov)
-    for i in range(use_UM_value.shape[0]):  # iterate over rows
-        v_err[i, :] = (use_UM_value[i, :] - use_obs) ** 2 / diag_cov
-    # err & constrained err
-    err_constraint = calcErr(use_UM_value, use_obs, cov=use_cov)  # compute error (which might include constraint)
-    # now deal with constraint (in hacky way)
-    if sigma:  # Need to compute unconstrained error.
-        err = calcErr(use_UM_value[:, 0:-1], use_obs[0:-1], cov=use_cov[0:-1, 0:-1])  # without constraint
-    else:
-        err = err_constraint  # error and constrained error the same by defn.
-
-    #################################
-    ### CAL DFBOLS CODE HERE -- SFBT thinks that f2py would be a good way of doing it.
-    #################################
-    ## NOW have python implementation so call that version. Use a generic function that gets data out of a dict
-    ## and raises exception runModel or similar that retruns and runs model for next iteration.
-    ## can't see any obvious way of running them in parallel as would need to understand algorithm.
-    ## implies hacking algorithm to pass independant info back.
-    ## wrap diagnostics up.
-    info = dict(software_vn=version, revision=revision, SvnURL=svnURL,
-                scalings=use_scalings, ObsNames=olist, params=params, diag_cov=diag_cov)
-    return optStatus, v_err, err, err_constraint, info
-## end of doDFBOLS
 # new Jacobian support stuff.
 def rangeAwarePerturbations2(baseVals, parLimits, steps, nrandom=None,
                              deterministic=True, trace=False):

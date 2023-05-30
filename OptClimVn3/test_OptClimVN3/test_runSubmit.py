@@ -3,68 +3,70 @@ Place to put tests for Submit.
 """
 
 import copy
-import os
+import functools  # want the partial!
+import logging
+import pathlib  # make working with file paths easier.
 import shutil
 import tempfile
 import typing
-import unittest
 import unittest.mock
-import pandas as pd
-import pathlib  # make working with file paths easier. TODO make universal.
-import functools  # want the partial!
+import unittest
+
 import numpy as np
 import numpy.testing as nptest
+import pandas as pd
+import pandas.testing as pdtest
+
+import StudyConfig
 import exceptions
 import runSubmit
-import SubmitStudy
-import StudyConfig
-import genericLib
-from Model import Model
-from HadCM3 import HadCM3
+import HadCM3  # used because test case is HadCM3 model.
 
 
-def fake_fn(params: dict,
-            config: typing.Optional[StudyConfig.OptClimConfigVn2] = None,
-            var_scales: typing.Optional[pd.Series] = None,
-            rng=None):
+def fake_fn(config, params: dict):
     """
     Wee test fn for trying out things.
     :param params -- dict of parameter values
-    :param config -- configuration -- default is None. If not available then fn will crash.
-    :param var_scales -- scales to apply to variables.
         Should be a pandas series. If not provided no scaling will be done
-    :param rng -- random number generator. Default None
-      If provided than random multivariate noise  based on the internal variance covariance will be added.
-
-    for everything but params given design of optimisation algorithms you will need to find a way of getting
-      the extra params in. One way is to make a lambda fn. Another is to wrap it in a function.
-
     returns  "fake" data as a pandas Series
     """
-    import logging
+
     logging.debug("faking with params: " + str(params))
-    tgt = config.targets()
+    # remove ensembleMember param.
+    params.pop('ensembleMember', None) # remove ensembleMember as a key.
+
     pranges = config.paramRanges()
+    tgt = config.targets()
     min_p = pranges.loc['minParam', :]
     max_p = pranges.loc['maxParam', :]
     scale_params = max_p - min_p
     pscale = (pd.Series(params) - min_p) / scale_params
     pscale -= 0.5  # tgt is at params = 0.5
-    result = 10 * (pscale + pscale ** 2)
+    result = 100 * (pscale + pscale ** 2)
     # this fn has one minima and  no maxima between the boundaries and the minima. So should be easy to optimise.
+    result = result.to_numpy()
     delta_len = len(tgt) - result.shape[-1]
     if delta_len > 0:
-        result = np.append(result, np.zeros(delta_len), axis=-1)  # increase result
-    result = pd.Series(result.values[0:len(tgt)], index=tgt.index)  # brutal conversion to obs space.
-    if var_scales is not None:
-        result /= var_scales  # make sure changes are roughly comparable size after scaling.
+        result = np.append(result, result[0:delta_len], axis=-1)  # increase result
+    result = pd.Series(result, index=tgt.index)  # brutal conversion to obs space.
+    var_scales = 10.0 ** np.round(np.log10(config.scales()))
+    result /= var_scales  # make sure changes are roughly right scales.
 
     result += tgt
-    if rng is not None:
-        intVar = config.Covariances()['CovIntVar']
-        result += rng.multivariate_normal(tgt.values, intVar)  # add in some noise usually not needed for testing
-
     return result
+
+
+def fake_run(rSubmit: runSubmit, scale: bool = True) -> typing.Callable:
+    """ Instantiate and  run fake fns.
+    :return the function used to fake.
+    """
+    config = rSubmit.config
+    fake_function = lambda pDict: fake_fn(config,pDict)
+
+    rSubmit.instantiate()
+    rSubmit.submit_all_models(fake_fn=fake_function)
+    return fake_function
+
 
 
 class testRunSubmit(unittest.TestCase):
@@ -73,25 +75,32 @@ class testRunSubmit(unittest.TestCase):
 
     """
 
+
     def setUp(self):
         """
         Standard setup for all test cases
         :return:
         """
 
-        self.tmpDir = tempfile.TemporaryDirectory()
+        tmpDir = tempfile.TemporaryDirectory()
         cpth = runSubmit.runSubmit.expand("$OPTCLIMTOP/OptClimVn3/configurations/dfols14param_opt3.json")
         config = StudyConfig.readConfig(cpth)
-        self.tmpDir = tempfile.TemporaryDirectory()
-        testDir = pathlib.Path(self.tmpDir.name)
+        # "fix" config in various ways
+        config.postProcessOutput('obs.nc')  # make output netcdf to give increased precision though I think some
+        # precision is lost.
+        config.constraint(False)  # no constraint
+        obs = config.obsNames()
+        var_scales = 10.0 ** np.round(np.log10(config.scales()))
+        covTotal = pd.DataFrame(np.diag(1.0/var_scales**2), index=obs, columns=obs) *1e-5  # small random error..
+        config.Covariances(CovTotal=covTotal)  # set total covar.
+        rootDir = pathlib.Path(tmpDir.name)
         refDir = runSubmit.runSubmit.expand("$OPTCLIMTOP/Configurations/xnmea")
+        self.rSubmit = runSubmit.runSubmit(config, 'test',
+                            rootDir=rootDir, refDir=refDir)
 
         self.refDir = refDir  # where the default reference configuration lives.
-        self.rootDir = testDir  # where
-
-        # generate a runSubmit object with some data in it.
-        #self.rSubmit = SubmitStudy.SubmitStudy(config, name='test_study', rootDir=self.rootDir,
-        #                                       model_name='HadCM3', computer='SGE', refDir=self.refDir)
+        self.rootDir = rootDir  # where the config info will go.
+        self.tmpDir = tmpDir
         self.config = copy.deepcopy(config)  # make a COPY of the config.
 
     def tearDown(self):
@@ -126,65 +135,50 @@ class testRunSubmit(unittest.TestCase):
             Should be 6 models to run. The four models generated here + 2 models from case 2
         """
         # setup
-        configData = self.config
+        configData = copy.deepcopy(self.config)
         begin = configData.beginParam()
         rSubmit = self.rSubmit  # setup runSubmit for ease of use.
         nparam = len(configData.paramNames())
         nobs = len(configData.obsNames())
-        params = np.repeat(1, nparam)
-
+        params = np.ones(nparam)
         params2 = np.vstack([params, np.repeat(0, nparam)])
-        # test 0 -- find existing case.
+        # test 0 -- run 1 model
 
-        p = rSubmit.params().drop(columns='ensembleMember')
-        p = p.iloc[0, :]  # parameters we want.
-        nobs = len(rSubmit.obsNames())
-        data = rSubmit.stdFunction(p.values)
-        expect = rSubmit.obs(scale=False).iloc[0, :]
-        nptest.assert_allclose(data, expect.values)
+        data = rSubmit.stdFunction(params,raiseError=False) # do not raise error.
+        expect = np.repeat(np.nan,nobs)
+        nptest.assert_equal(data,expect)
+        # no of models to run should be 1.
+        models = rSubmit.model_index.values()
+        self.assertEqual(len(models), 1, "Expect only 1 model to submit")
 
-        # test 1
+        # test 1 # run same model and should raise runModelError.
         rSubmit.config.ensembleSize(1)  # 1 member ensemble
-        with self.assertRaises(exceptions.runModelError) as context:
+        with self.assertRaises(exceptions.runModelError): # shgould also get a warning.
             result = rSubmit.stdFunction(params)  # should get runModelError exception.
+        # no of models to run should be 1. (as we already have it just asked for it twice)
+        models = rSubmit.model_index.values()
+        self.assertEqual(len(models), 1, "Expect only 1 model to submit")
 
-        # no of models to run should be 1.
-        models = rSubmit.modelSubmit()
-        self.assertEqual(len(models), 1, "Expect only 1 model to submit")
-        # and then test with out exception
-        result = rSubmit.stdFunction(params, raiseError=False)
-        # only 1 model  so should be a nObs element vector
-        self.assertEqual(result.shape, (nobs,), 'Expected only 1 result')
-        self.assertTrue(np.all(np.isnan(result)), 'ALl values should be Nan')
-        # no of models to run should be 1.
-        models = rSubmit.modelSubmit()
-        self.assertEqual(len(models), 1, "Expect only 1 model to submit")
+
 
         # test 2. Set ensemble size to 2.
         rSubmit.config.ensembleSize(2)  # 1 member ensemble
-        with self.assertRaises(exceptions.runModelError) as context:
+        with self.assertRaises(exceptions.runModelError):
             result = rSubmit.stdFunction(params)
 
         # no of models to run should be 2
-        models = rSubmit.modelSubmit()
+        models = rSubmit.model_index.values()
         self.assertEqual(len(models), 2, "Expect only 2 model to submit")
 
-        result = rSubmit.stdFunction(params, raiseError=False)
-        # only 1 result so should be a nobs vector
-        self.assertEqual(result.shape, (nobs,), 'Expected one element vector')
-        self.assertTrue(np.all(np.isnan(result)), 'ALl values should be Nan')
-        # no of models to run should be 1.
-        models = rSubmit.modelSubmit()
-        self.assertEqual(len(models), 2, "Expect 2 models to submit")
 
         # test 3. Have multiple params
 
         rSubmit.config.ensembleSize(2)  # 2 member ensemble
-        with self.assertRaises(exceptions.runModelError) as context:
+        with self.assertRaises(exceptions.runModelError):
             result = rSubmit.stdFunction(params2)
 
         # no of models to run should be 4.. (ensemble member * param2)
-        models = rSubmit.modelSubmit()
+        models = rSubmit.model_index.values()
         nmodel = len(models)
         self.assertEqual(nmodel, 4, f"Expect 4 models to submit. Got {nmodel}")
         # test without raising exception.
@@ -196,18 +190,19 @@ class testRunSubmit(unittest.TestCase):
         self.assertEqual(result.shape, (2, nobs), 'size not as expected')
 
         # no of models to run should be 4.. (ensemble member * param2)
-        models = rSubmit.modelSubmit()
-        nmodel = len(models)
-        self.assertEqual(nmodel, 4, f"Expect 4 models to submit. Got {nmodel}")
 
+        # now fake some obs!
+        for m in models:
+            m.simulated_obs = fake_fn(self.config,m.parameters)
+            m.status = 'PROCESSED'
         # check if we run with df=True we get a dataframe...
-        p = rSubmit.params().drop(columns='ensembleMember').iloc[0, :].values  # cases that have already been run
+        p = rSubmit.params().iloc[0, :].values  # first model
         result = rSubmit.stdFunction(p, df=True)  # should get back a 1 row dataframe.
         self.assertTrue(isinstance(result, pd.DataFrame), 'Should be dataframe')
         self.assertEqual(result.shape, (1, nobs), 'Size not expected')
 
         # check if we apply a transform that works. Only verify size and column names not values..
-        trans = rSubmit.transMatrix(dataFrame=True)
+        trans = rSubmit.config.transMatrix()
         # will truncate this...
         trans = trans.iloc[0:5, :]
         # using params from prev test
@@ -218,7 +213,7 @@ class testRunSubmit(unittest.TestCase):
         self.assertEqual(result.shape, (1, 5))
 
         # test if residual works.
-        expect = rSubmit.stdFunction(p, df=True, scale=True) - rSubmit.targets(scale=True)
+        expect = rSubmit.stdFunction(p, df=True, scale=True) - rSubmit.config.targets(scale=True)
         result = rSubmit.stdFunction(p, df=True, scale=True, residual=True)
         self.assertTrue(expect.equals(result), 'Residual test failed')
 
@@ -241,18 +236,24 @@ class testRunSubmit(unittest.TestCase):
 
         # lets run  it
         configData = self.config
-        rSubmit = self.rSubmit  # setup runSubmit for ease of use.
         configData.ensembleSize(2)
-
-        params = rSubmit.params().drop(columns='ensembleMember')
-        params = params.iloc[0, :].values
-        nobs = len(rSubmit.obsNames())
+        rSubmit = runSubmit.runSubmit(copy.deepcopy(configData), 'optFn',
+                                      rootDir=self.rootDir, refDir=self.refDir)
+        params = rSubmit.config.beginParam()
+        params = params.values
+        nobs = len(rSubmit.config.obsNames())
         # test 1 -- result should be a vector of len nobs
         fn = rSubmit.genOptFunction(scale=True)
-        result = fn(params)
+        with self.assertRaises(exceptions.runModelError):
+            result = fn(params)  # should raise an runModelError exception
+
+        # now run it.
+        fk_fn = fake_run(rSubmit,scale=True)
+        result = list(rSubmit.model_index.values())[0].simulated_obs
         self.assertEqual(result.shape, (nobs,), f'Expected {nobs} element array')
-        expect = rSubmit.obs(scale=True).mean()
-        nptest.assert_allclose(expect, result)
+        pDict = dict(zip(rSubmit.config.paramNames(),params))
+        expect = fk_fn(pDict).rename(result.name)
+        pdtest.assert_series_equal(expect, result)
 
     def test_runOptimized(self):
         """
@@ -270,51 +271,62 @@ class testRunSubmit(unittest.TestCase):
 
             pass in an optimum config. Should run with those values.
         """
+
+        def run_all(config, name='run_test'):
+            rSubmit = runSubmit.runSubmit(copy.deepcopy(config), name,
+                                          rootDir=self.rootDir, refDir=self.refDir)
+            try:
+                rSubmit.runOptimized()
+            except exceptions.runModelError:
+                fake_funcn = fake_run(rSubmit)
+            if np.unique(rSubmit.status()) != ['PROCESSED']:
+                raise ValueError("Something odd")
+            finalConfig = rSubmit.runOptimized()  # run it to get the actual final congig
+            rSubmit.delete()  # clean up!
+            return finalConfig,fake_funcn # and return the final config.
+
         configData = self.config
-        rSubmit = runSubmit.runSubmit(configData, self.Model,
-                                      None, rootDir=self.testDir, verbose=self.verbose, fakeFn=self.fake_fn)
+
         # case 1 -- want to not set nensemble but do modify baseRunId and maxDigits
 
         configData.baseRunID('test1')
         configData.maxDigits(0)
-        params = dict(CT=1e-4, EACF=0.5, ENTCOEF=3, ICE_SIZE=3e-5, RHCRIT=0.7, VF1=0.5, CW=2e-4)
-        configData.optimumParams(
-            **params)  # really should be passed as a series. TODO: Fix all code to use pd.Series underneath!
-        # runOptimized should raise runModelError as needs to run new things.
-        with self.assertRaises(exceptions.runModelError):
-            rSubmit.runOptimized()
+        params = pd.Series(dict(CT=1e-4, EACF=0.5, ENTCOEF=3, ICE_SIZE=3e-5, RHCRIT=0.7, VF1=0.5, CW=2e-4))
+        configData.optimumParams(optimum=params)
+        finalConfig, fake_function = run_all(configData, name='run_opt')
         # and check what is to be created is as expected.
-        nmodels = len(rSubmit.modelSubmit())
-        expect = 1
-        self.assertEqual(nmodels, expect, msg=f'Expected {expect} got {nmodels}')
+        std = finalConfig.standardParam()
+        pDict = configData.optimumParams().to_dict()
+        best = finalConfig.best_obs()
+        expected = fake_function(pDict).rename(best.name)
+        pdtest.assert_series_equal(best, expected)
+        self.assertEqual(finalConfig.simObs().shape[0], 1)
 
+        # WORKING TO HERE,
         # increase ensemble to four and shorten basename.
         configData.baseRunID('test')
         configData.maxDigits(1)
         configData.ensembleSize(4)
-        with self.assertRaises(exceptions.runModelError):
-            rSubmit.runOptimized()
-        nmodels = len(rSubmit.modelSubmit())
-        expect = 4
-        self.assertEqual(nmodels, expect, msg=f'Expected {expect} got {nmodels}')
+        finalConfig,fake_function = run_all(configData,  name='run_opt2')
+        # and check what is to be created is as expected.
+        pDict = configData.optimumParams().to_dict()
+        best = finalConfig.best_obs()
+        expected = fake_function(pDict).rename(best.name)
+        pdtest.assert_series_equal(best, expected)
+        self.assertEqual(finalConfig.simObs().shape[0], 4)
 
         optConfig = copy.deepcopy(configData)
-        opt = optConfig.optimumParams()
-        opt *= 1.1  # multiply everything by 1.1
-        optConfig.optimumParams(**opt.to_dict())  # TODO change optimumParams to get a series.
-        with self.assertRaises(exceptions.runModelError):
-            rSubmit.runOptimized(optConfig=optConfig)
-        nmodels = len(rSubmit.modelSubmit())  # should generate another 4 runs to do. Making 8.
-        expect = 8
-        self.assertEqual(nmodels, expect, msg=f'Expected {expect} got {nmodels}')
-        # let's run the fake stuff and then a final run of runOptimized.
-
-        status, nModels, finalConfig = rSubmit.submit(restartCmd=None, verbose=self.verbose, cost=True,
-                                                      scale=False)
-        # need to read the dirs.
-        rSubmit = runSubmit.runSubmit(configData, self.Model,
-                                      None, rootDir=self.testDir, verbose=self.verbose, fakeFn=self.fake_fn)
-        endConfig = rSubmit.runOptimized(optConfig=optConfig)
+        # set to min range.
+        opt = optConfig.paramRanges().loc['minParam', :]
+        optConfig.optimumParams(optimum=opt)
+        finalConfig,fake_function = run_all(optConfig, name='run_opt3')
+        # and check what is to be created is as expected.
+        # and check what is to be created is as expected.
+        pDict = optConfig.optimumParams().to_dict()
+        best = finalConfig.best_obs()
+        expected = fake_function(pDict).rename(best.name)
+        pdtest.assert_series_equal(best, expected)
+        self.assertEqual(finalConfig.simObs().shape[0], 4)
 
     def test_runDFOLS(self):
         """
@@ -334,59 +346,17 @@ class testRunSubmit(unittest.TestCase):
         scale = True  # applying scaling or not. Need to apply consistently
 
         configData = copy.deepcopy(self.config)
-        configData.postProcessOutput('obs.nc')  # make output netcdf to give increased precision though I think some
-        # precision is lost.
 
         # Set begin to max value.
         maxP = configData.paramRanges().loc['maxParam', :]
         begin = configData.beginParam(maxP)  # can truncate here using .iloc[0:x] if wanted.
-
         obs = configData.obsNames()
-        nobs = len(begin)
-        obs = obs[0:nobs]
-        scales = configData.scales()
-        configData.scales(scales[0:nobs])
-        configData.obsNames(obs, add_constraint=False)
-        # truncate the obsNames. (does not have to be the same as params but makes life easier if so)
-        configData.constraint(False)  # no constraint
-        obs = configData.obsNames()
-        varParamNames = configData.paramNames()  # extract the parameter names if have them
-        covTotal = pd.DataFrame(np.identity(nobs), index=obs, columns=obs) * 1e-5  # small random error..
-        # Work out scaling on variables from the scales in the config. (so when scaling on "interesting" things happen)
-        if scale:
-            var_scales = 10.0 ** np.round(np.log10(configData.scales()))
-        else:  # no scaling so want values to be comparable.
-            var_scales = pd.Series(1.0 + np.arange(nobs) / 10., index=obs)
-        covTotal = covTotal / (var_scales ** 2)  # taking advantage of diagonal covariance.
-        configData.Covariances(CovTotal=covTotal)  # set total covar.
-        tgt = configData.targets(scale=False)
-        if scale:
-            scales = configData.scales()
-        else:
-            scales = pd.Series(np.ones(nobs), index=obs)
-
-        # need to modify the function a bit. Apply scaling and Transform.
-        # This makes it compatible with way that DFOLS gets run with framework.
-        Tmat = configData.transMatrix(scale=scale)
-
-        def fn_opt(params):
-            pDict = {pname:pvalue for pname,pvalue in zip(configData.paramNames(),params)}
-            result = fake_fn(pDict, config=configData, var_scales=var_scales)
-            result -= tgt  # remove tgt
-            result *= scales  # scale
-            result = result @ Tmat.T.values  # apply transformation.
-            return result
-
-        minP = configData.paramRanges().loc['minParam', :].values
-        maxP = configData.paramRanges().loc['maxParam', :].values
-        rangeP = maxP - minP
-
-        expect = np.repeat(0.5, nobs) * rangeP + minP  # expected values
-        nptest.assert_allclose(fn_opt(expect), 0, atol=1e-4)
+        nobs=len(obs)
         # for expected params should get back array close to 0
         # run DFOLS "naked"
+        # set up DFOLS
         dfols_config = configData.DFOLS_config()
-        dfols_config['maxfun'] = 50
+        dfols_config['maxfun'] = 50 # making this 100 seems to cause an extra evaluation and problems with the Jacobian.
         dfols_config['rhobeg'] = 1e-1
         dfols_config['rhoend'] = 1e-3
         # general configuration of DFOLS -- which can be overwritten by config file
@@ -402,18 +372,37 @@ class testRunSubmit(unittest.TestCase):
                      }
 
         # update the user parameters from the configuration.
-        userParams = configData.DFOLS_userParams(userParams=userParams)
         userParams.update(overwrite)
+        userParams = configData.DFOLS_userParams(userParams=userParams)
         # and update the config...
         configData.DFOLS_config(dfols_config)
         configData.DFOLS_userParams(updateParams=userParams)
+
+        ## directly run dfols
         np.random.seed(123456)  # make sure RNG is initialised to same value for first eval of dfols.
         # This should be the same seed as used in runDFOLS
-        prange = (configData.paramRanges(paramNames=varParamNames).loc['minParam', :].values,
-                  configData.paramRanges(paramNames=varParamNames).loc['maxParam', :].values)
+        tgt = configData.targets(scale=scale)
+        Tmat = configData.transMatrix(scale=scale)
+        varParamNames = configData.paramNames()
+        def fn_opt(param_v):  # function for optimisation,
+            pDict = dict(zip(varParamNames, param_v))
+            sim_obs = fake_fn(configData,pDict)
+            if scale:
+                sim_obs *= configData.scales()
+            sim_obs -= tgt
+            sim_obs = sim_obs @ Tmat.T  # apply transform.
+            return sim_obs
+
+        prange = configData.paramRanges(paramNames=varParamNames)
+        minP = prange.loc['minParam', :].values
+        maxP = prange.loc['maxParam', :].values
+        bounds = (minP, maxP)
+        rangeP = maxP - minP
+        expectparam = np.repeat(0.5, len(rangeP)) * rangeP + minP  # these param choices should give 0
+        nptest.assert_allclose(fn_opt(expectparam), 0, atol=1e-4)
         solution = dfols.solve(fn_opt, begin.values,
                                objfun_has_noise=True,
-                               bounds=prange, scaling_within_bounds=True
+                               bounds=bounds, scaling_within_bounds=True
                                , maxfun=dfols_config.get('maxfun', 100)
                                , rhobeg=dfols_config.get('rhobeg', 1e-1)
                                , rhoend=dfols_config.get('rhoend', 1e-3)
@@ -425,49 +414,45 @@ class testRunSubmit(unittest.TestCase):
             print("dfols failed with flag %i error : %s" % (solution.flag, solution.msg))
             raise Exception("Problem with dfols")
         print(f"DFOLS finished {solution.flag} {solution.msg}")
-        soln = pd.Series(solution.x, index=varParamNames).rename(f'Naked DFOLS')
-        expect = pd.Series(expect, index=varParamNames).rename('expect')
-        df = pd.DataFrame([expect, soln])
+        soln = pd.Series(solution.x,index=varParamNames).rename(f'Naked DFOLS')
+        expectparam = pd.Series(expectparam,index=varParamNames).rename('best')
+        df = pd.DataFrame([expectparam, soln])
         #    expect to be within 0.01% of the expected soln.
-        nptest.assert_allclose(soln.values, expect.values, rtol=1e-4)
+        nptest.assert_allclose(soln.values, expectparam.values, rtol=1e-4)
 
-        # now lets go and try runDFOLS
-        fake_function = functools.partial(fake_fn, config=configData, var_scales=var_scales)
-        fake_function.__name__=f'Faking using {fake_fn.__name__}'
-        # set up fake fn to avoid needing a Q system
-        run = True
+        # Run runDFOLS. WIll use fake_function to optimise directly.
         iterCount = 0
-        rSubmit = runSubmit.runSubmit(configData, 'DFOLS_test',
-                                          rootDir=self.rootDir, refDir=self.refDir)
+        rSubmit = runSubmit.runSubmit(configData, 'test_DFOLS',
+                            rootDir=self.rootDir, refDir=self.refDir)
         # setup Submit object.
-        while run:
-
+        while True:
             try:
                 finalConfig = rSubmit.runDFOLS(scale=scale)  # run DFOLS
-                run = False  # if we get to here then we are done.
-            except exceptions.runModelError:  # Need to run some models.
-                rSubmit.instantiate()  # instantiate all models that need running.
-                status = rSubmit.submit_all_models(fake_fn=fake_function)
-                self.assertTrue(status)
+                break  # if we get to here then we are done.
+            except exceptions.runModelError:  # Need to run some models which are "faked"
+                fake_function = fake_run(rSubmit,scale=scale)
                 iterCount += 1
                 # expect nobs+1 on first iteration (parallel running)
                 if iterCount == 1:
-                    self.assertEqual(nobs + 1, len(rSubmit.model_index),
+                    self.assertEqual(len(varParamNames) + 1, len(rSubmit.model_index),
                                      f'Expected to have {nobs + 1} models ran on iteration#1')
 
-        best = finalConfig.optimumParams()
+
+
+
+        # now compare results from DFOLS with those from "naked" dfols.
+        best = finalConfig.optimumParams().rename('best')
         df = df.append(best.rename('DFOLS'))
-        transJac = pd.DataFrame(solution.jacobian, index=varParamNames, columns=Tmat.index)
-        finalConfig.transJacobian(transJac)  # set the transformed Jacobian
+        transJac = pd.DataFrame(solution.jacobian, columns=varParamNames, index=Tmat.index)
 
         print("All done with result\n", df)
-        info, transJac = finalConfig.get_dataFrameInfo(['diagnostic_info', 'transJacobian'])
+        result_transJac = finalConfig.transJacobian()
+        info = finalConfig.get_dataFrameInfo(['diagnostic_info'])
         print("Info\n", info)
-        nptest.assert_allclose(finalConfig.get_dataFrameInfo('transJacobian', dtype=float), solution.jacobian,
-                               atol=1e-10)  # check Jacobian as stored is right
+        pdtest.assert_frame_equal(transJac, result_transJac, atol=1e-10)  # check Jacobian as stored is right
         #    expect to be within 0.01% of the expected soln. If random covariance done then this will be a
         # lot bigger
-        nptest.assert_allclose(best.values, expect.values, rtol=1e-4)
+        pdtest.assert_series_equal(best, expectparam, rtol=1e-4)
 
     def test_runJacobian(self):
         """
@@ -478,85 +463,93 @@ class testRunSubmit(unittest.TestCase):
 
         Test that optConfig works.
         """
-        # Make the optimum values be max values (so we know perturbations take us to the center)
+
+        # Make the begin  values be max values (so we know perturbations take us to the center)
 
         # Modify the steps to be small but different.
+        scale=True
         configData = self.config
+        configData.beginParam(begin=configData.paramRanges().loc['maxParam',:])
         steps = configData.steps()
         steps.iloc[:] = np.arange(len(steps)) * 0.001 + 0.1  # want small but not equal steps.
         steps.loc['scale_steps'] = True
         configData.steps(steps=steps)  # set it in the configuration
         steps = configData.steps()  # get the steps we are actually using.
-        configData.constraint(False)  # turn of constraint.
+        configData.constraint(False)  # turn off constraint.
         prange = configData.paramRanges()  # param ranges
-        # need number of obs and params to be the same -- will set to 7.
-        optParams = prange.loc['maxParam'].iloc[0:7]
+        optParams = prange.loc['maxParam']
         paramNames = optParams.index
         configData.paramNames(paramNames=paramNames)  # set the param names to reduced set.
         obsNames = configData.obsNames(add_constraint=False)  # get the obs names making sure constraint not used.
-        configData.obsNames(obsNames=obsNames[0:7])  # shorten obsnames.
-        obsNames = configData.obsNames(add_constraint=False)  # get the obs names making sure constraint not used.
-        configData.optimumParams(**optParams.to_dict())  # these are scaled values.
-        var_scales = optParams.copy()
-        var_scales.iloc[:] = 1
-        fake_fn = functools.partial(config.fake_fn, var_scales=var_scales)
-        fn = functools.partial(config.bare_fn, var_scales=var_scales, config=configData)
-        fn2 = lambda x: pd.Series(fn(x), index=obsNames)
+
+        def raw_jac(base,steps,scale:bool=False):
+            if scale:
+                scales = configData.scales()
+            else:
+                scales = 1.0
+            ref = fake_fn(configData, base.to_dict())*scales
+            jac_bare = []
+
+            for p in steps.index:
+                dd = base.copy()
+                dd.loc[p] -=  steps.loc[p]
+                delta = fake_fn(configData,dd.to_dict())*scales - ref
+                delta = delta.rename(p)  # name it by param
+                jac_bare.append(delta)
+            jac_bare = pd.DataFrame(jac_bare)  # convert to dataframe
+            # and divide by steps to get jacobian
+            jac_bare = jac_bare.div(-steps, axis=0)
+            # and apply linear transform
+            Tmat = configData.transMatrix(scale=scale)
+            jac_bare = jac_bare @ Tmat.T
+            return jac_bare
         # all wrapped so we get a Series
         nparam = len(optParams)
-        # compute what we expect -- BROKEN as need to set the index correctly...
-        ref = fn2(optParams.values)
-        jac_bare = []
-        for p in steps.index:
-            dd = optParams.copy()
-            dd.loc[p] -= steps.loc[p]
-            delta = fn2(dd.values) - ref
-            delta = delta.rename(p)  # name it by param
-            jac_bare.append(delta)
-        jac_bare = pd.DataFrame(jac_bare)  # convert to dataframe
-        # and convert the estimate of the Jacobian
-        jac_bare = jac_bare.div(-steps, axis=0)
-        # and apply linear transform
-        Tmat = configData.transMatrix()
-        jac_bare = jac_bare @ Tmat.T
-        # print("raw jacobian: \n",jac_bare)
-
-        rSubmit = runSubmit.runSubmit(configData, self.Model,
-                                      None, rootDir=self.testDir, fakeFn=fake_fn, verbose=self.verbose)
+        # compute what we expect --
+        refParam = configData.beginParam()
+        expect_jac = raw_jac(refParam,steps,scale=scale)
+        rSubmit = runSubmit.runSubmit(configData, 'test_jac',
+                                      rootDir=self.rootDir, refDir=self.refDir)
         # setup Submit object.
-        try:
-            finalConfig = rSubmit.runJacobian()  # run Jacobian
+        while True:
+            try:
+                finalConfig = rSubmit.runJacobian(scale=scale)  # run Jacobian
+                break
+            except exceptions.runModelError:  # Need to run some models.
+                fake_func = fake_run(rSubmit,scale=scale)
+                # expect nparam+1 models all processed
+                models = [model for model in rSubmit.model_index.values() if model.status == "PROCESSED"]
+                nModels = len(models)
+                # expect nparam+1 models
+                self.assertEqual(nparam + 1, nModels, f'Expected to have {nparam + 1} models ran')
 
-        except exceptions.runModelError:  # Need to run some models.
-            status, nModels, finalConfig = rSubmit.submit(restartCmd=None, verbose=self.verbose)
-            # expect nparam+1 models
-            self.assertEqual(nparam + 1, nModels, f'Expected to have {nparam + 1} models ran on iteration#1')
-
-        # and read all data back in..
-        rSubmit = runSubmit.runSubmit(configData, self.Model,
-                                      None, rootDir=self.testDir, fakeFn=fake_fn, verbose=self.verbose)
-        finalConfig = rSubmit.runJacobian()  # run Jacobian to get the final answer
         # now check jac is what we expect...
         jac_run = finalConfig.transJacobian()
-        nptest.assert_allclose(jac_run, jac_bare, atol=1e-9)  # round trip through json removes some precision.
+        nptest.assert_allclose(jac_run, expect_jac, atol=1e-9)  # round trip through json removes some precision.
 
         # check that passing in optConfig works and that have nparam +1 cases.
         optConfig = copy.deepcopy(self.config)
-        opt = optConfig.optimumParams()
-        opt *= 0.9
-        optConfig.optimumParams(**opt.to_dict())
-        done = False
-        while done:
+        # set optimum values to max,
+        param_range = configData.paramRanges()
+        opt = param_range.loc['minParam',:]+0.9*param_range.loc['rangeParam',:]
+        optConfig.optimumParams(optimum=opt)
+        expect_jac = raw_jac(opt, steps, scale=scale)
+        rSubmit.delete() # clean up rSubmit -- no automatic deletion as want to keep disk stuff persistant.
+        rSubmit = runSubmit.runSubmit(optConfig, 'test_opt_jac',
+                                      rootDir=self.rootDir, refDir=self.refDir)
+        while True:
             try:
-                finalConfig = rSubmit.runJacobian(optConfig)  # run Jacobian
-                done = True
+                finalConfig = rSubmit.runJacobian(scale=scale)  # run Jacobian
+                break
             except exceptions.runModelError:  # Need to run some models.
-                status, nModels, finalConfig = rSubmit.submit(restartCmd=None, verbose=self.verbose)
+                fake_function = fake_run(rSubmit, scale=scale)
+                models = [model for model in rSubmit.model_index.values() if model.status == "PROCESSED"]
+                nModels = len(models)
                 # expect nparam+1 models
-                self.assertEqual(nparam + 1, nModels, f'Expected to have {nparam + 1} models ran on iteration#1')
+                self.assertEqual(nparam + 1, nModels, f'Expected to have {nparam + 1} models ran')
         # now check jac is what we expect...
         jac_run = finalConfig.transJacobian()
-        nptest.assert_allclose(jac_run, jac_bare, atol=1e-9)
+        nptest.assert_allclose(jac_run, expect_jac, atol=1e-9)
 
     def test_runGaussNewton(self):
         """
@@ -572,73 +565,53 @@ class testRunSubmit(unittest.TestCase):
         scale = True  # applying scaling or not. Need to apply consistently
 
         configData = self.config
-        configData.postProcessOutput('obs.json')  # make output netcdf to give increased precision though I think some
-        # precision is lost.
+        tgt = configData.targets(scale=scale)
+        Tmat = configData.transMatrix(scale=scale)
+        varParamNames = configData.paramNames()
 
+        def fn_opt(param_v):  # function for optimisation,
+            if param_v.ndim == 1:
+                param_v = param_v.reshape(1, -1)
+            nsim = param_v.shape[0]
+            obs = []
+
+            for indx in range(0,nsim):
+
+                pDict = dict(zip(varParamNames, param_v[indx,:]))
+                sim_obs = fake_fn(configData, pDict)
+                if scale:
+                    sim_obs *= configData.scales()
+                sim_obs -= tgt
+                sim_obs = sim_obs @ Tmat.T  # apply transform.
+                obs.append(sim_obs)
+            sim_obs = np.array(obs)
+            return sim_obs
+
+        prange = configData.paramRanges(paramNames=varParamNames)
+        minP = prange.loc['minParam', :].values
+        maxP = prange.loc['maxParam', :].values
+        bounds = (minP, maxP)
+        rangeP = maxP - minP
+        expectparam = np.repeat(0.5, len(rangeP)) * rangeP + minP  # these param choices should give 0
+        nptest.assert_allclose(fn_opt(expectparam), 0, atol=1e-4)
         # Set beginning values to max
         begin = configData.beginParam(configData.paramRanges().loc['maxParam', :])  # and also resets param names
-
-        obs = configData.obsNames()
-        nobs = len(begin)
-        obs = obs[0:nobs]
-        scales = configData.scales()
-        configData.scales(scales[0:nobs])
-        configData.obsNames(obs, add_constraint=False)
-        # truncate the obsNames. (does not have to be the same as params but makes life easier if so)
-        configData.constraint(False)  # no constraint
-        obs = configData.obsNames()
-
-        # code below is a lift from test_DFOLS. TODO put the common code in the setup.
-
-        if scale:
-            var_scales = 10.0 ** np.round(np.log10(configData.scales()))
-        else:  # no scaling so want values to be comparable.
-            var_scales = pd.Series(1.0 + np.arange(nobs) / 10., index=obs)
-
-        covTotal = pd.DataFrame(np.identity(nobs), index=obs, columns=obs) * 1e-5  # small random error..
-        covTotal = covTotal / (var_scales ** 2)  # taking advantage of diagonal covariance.
-        configData.Covariances(CovTotal=covTotal, CovIntVar=0.1 * covTotal,
-                               CovObsErr=0.9 * covTotal)  # set total covar.
-        tgt = configData.targets(scale=False)
-        if scale:
-            scales = configData.scales().values
-        else:
-            scales = np.ones(nobs)
-
-        # need to modify the function a bit. Apply scaling and Transform.
-        # This makes it compatible with way that DFOLS gets run with framework.
-        Tmat = configData.transMatrix(scale=scale)
-
-        def fn_opt(params):
-            result = config.bare_fn(params, config=configData, var_scales=var_scales)
-            print(len(result), len(tgt))
-            result -= tgt.values
-            result *= scales  # scale
-            result = result @ Tmat.T.values  # apply transformation.
-            return result
-
-        minP = configData.paramRanges().loc['minParam', :].values
-        maxP = configData.paramRanges().loc['maxParam', :].values
-        rangeP = maxP - minP
-
-        expect = np.repeat(0.5, nobs) * rangeP + minP  # expected values
-        nptest.assert_allclose(fn_opt(expect), 0.0, atol=1e-4)
-
         # run bare optimise.
-        optimise = configData.optimise().copy()  # get optimisation info
-        intCov = configData.Covariances(scale=scale)['CovIntVar']
+
+        intCov = configData.Covariances(scale=scale)['CovTotal']*0.01
         # Scaling done for compatibility with optFunction.
         # need to transform intCov. errCov should be I after transform.
-
         intCov = Tmat.dot(intCov).dot(Tmat.T)
         # This is correct-- it is the internal covariance transformed
-        optimise['sigma'] = False  # wrapped optimisation into cost function.
-        optimise['deterministicPerturb'] = True  # deterministic perturbations.
-        optimise['maxIterations'] = 10  # no more than 10 iterations.
+        optimise = dict(sigma=False,deterministicPerturb=20,maxIterations=20,alphas=[0.3,0.7,1])
+
         paramNames = configData.paramNames()
+        nparam = len(paramNames)
         nObs = Tmat.shape[0]  # could be less than the "raw" obs depending on Tmat.
-        start = configData.beginParam()
-        print("start", len(start))
+        # for this fake_fn (whcih cares nothing about the obs) we should set the step to 5% of the range.
+
+        configData.steps(steps=configData.paramRanges().loc['rangeParam', :]*0.05)
+        start = configData.beginParam(paramNames=paramNames)
         best, status, info = Optimise.gaussNewton(fn_opt, start.values,
                                                   configData.paramRanges(paramNames=paramNames).values.T,
                                                   configData.steps(paramNames=paramNames).values,
@@ -647,55 +620,28 @@ class testRunSubmit(unittest.TestCase):
 
         # expect to have converged and that best is close to expect
         self.assertEqual(status, 'Converged', msg='Expected to have converged')
-        nptest.assert_allclose(best, expect, atol=1e-3)  # close to 0.1%. Can probably do better by hacking a bit..
+        nptest.assert_allclose(best, expectparam, rtol=1e-4)  # close to 0.1%. Can probably do better by modifying covariance.
         # get out the jacobian for later comparision.
         jac = info['jacobian'][-1, :, :]  # bare right now...
         print("=" * 60)
         # now to run runGaussNewton.
-        # first clean up testDir by deleteting everything in it.
-        optClimLib.delDirContents(self.testDir)
-        run = True
+
         iterCount = 0
         nalpha = len(optimise['alphas'])
-        nparam = len(expect)
-        fake_fn = functools.partial(config.fake_fn, var_scales=var_scales)
-        # set up fake fn to avoid needing a Q system
-
-        # Having trouble with fake_fn/stdFunction and fn_opt. So need to test they give same results
-        # for param choice...
-
-        # test that opt_fn (as ran by runGaussNewton and fn_opt give the same results.
-        # a bit of a pain as need to set up the runSubmit
-        rSubmit = runSubmit.runSubmit(configData, self.Model,
-                                      None, rootDir=self.testDir, fakeFn=fake_fn, verbose=self.verbose)
-        rSubmit.stdFunction(begin.values, df=True, raiseError=False, transform=Tmat, scale=scale,
-                            residual=True)  # say we want it.
-        status, nModels, finalConfig = rSubmit.submit(restartCmd=None,
-                                                      verbose=self.verbose)  # run it (which generates it)
-        rSubmit = runSubmit.runSubmit(configData, self.Model,
-                                      None, rootDir=self.testDir, fakeFn=fake_fn,
-                                      verbose=self.verbose)  # read it back in (in effect)
-        got = rSubmit.stdFunction(begin.values, df=True, raiseError=False, transform=Tmat, scale=scale,
-                                  residual=True, verbose=True)
-        got_fn_opt = pd.Series(fn_opt(begin.values), index=Tmat.index)
-
-        nptest.assert_allclose(got_fn_opt, got.iloc[0, :])
-        # first clean up testDir by deleteting everything in it.
-        optClimLib.delDirContents(self.testDir)
+        rSubmit = runSubmit.runSubmit(configData, 'test_GN',
+                                      rootDir=self.rootDir, refDir=self.refDir)
+        # setup Submit object.
         while True:
-            rSubmit = runSubmit.runSubmit(configData, self.Model,
-                                          None, rootDir=self.testDir, fakeFn=fake_fn, verbose=self.verbose)
             try:
-                finalConfig = rSubmit.runGaussNewton(verbose=self.verbose, scale=scale)
-                break  # done with running
-            except exceptions.runModelError:
-                status, nModels, finalConfig = rSubmit.submit(restartCmd=None, verbose=self.verbose, cost=True,
-                                                              scale=scale)
-
+                finalConfig = rSubmit.runGaussNewton(scale=scale,verbose=True)  # run Guass-Newton line-search.
+                break  # if we get to here then we are done.
+            except exceptions.runModelError:  # Need to run some models which are "faked"
+                create_models = [model for model in rSubmit.model_index.values() if model.status == "CREATED"]
+                nModels= len(create_models)
+                fake_function = fake_run(rSubmit, scale=scale)
                 iterCount += 1
-                # expect nparam+1 on first iteration (parallel running)
                 if iterCount == 1:
-                    self.assertEqual(nparam + 1, nModels, f'Expected to have {nobs + 1} models ran on iteration#1')
+                    self.assertEqual(nparam + 1, len(rSubmit.model_index), f'Expected to have {nparam + 1} models ran on iteration#1')
                 elif (iterCount % 2) == 0:
                     self.assertEqual(nalpha, nModels, f'Expected to have {nalpha} models ran on iteration# {iterCount}')
                 else:
@@ -703,28 +649,36 @@ class testRunSubmit(unittest.TestCase):
 
         # expect optimum value to be close to expected value.
         best = finalConfig.optimumParams()
-        expect = pd.Series(expect, index=paramNames).rename('expect')
+        expect = pd.Series(expectparam, index=paramNames).rename('expect')
         print(pd.DataFrame([best, expect]))
         nptest.assert_allclose(best, expect, rtol=5e-4)
-        nptest.assert_allclose(finalConfig.get_dataFrameInfo('transJacobian', dtype=float), jac,
+        nptest.assert_allclose(finalConfig.transJacobian(), jac,
                                atol=1e-10)  # check Jacobian as stored is right
 
         # check that setting maxIterations to 1 only has 1 iteration.
-        optClimLib.delDirContents(self.testDir)
+        shutil.rmtree(self.rootDir)
         configData.optimise(maxIterations=1)  # limit to 1 iteration
+        rSubmit = runSubmit.runSubmit(configData, 'test_GN2',
+                                      rootDir=self.rootDir, refDir=self.refDir)
+        iterCount =0
         while True:
-            rSubmit = runSubmit.runSubmit(configData, self.Model,
-                                          None, rootDir=self.testDir, fakeFn=fake_fn, verbose=self.verbose)
             try:
-                finalConfig = rSubmit.runGaussNewton(verbose=self.verbose, scale=scale)
-                break  # done with running
-            except exceptions.runModelError:
-                status, nModels, finalConfig = rSubmit.submit(restartCmd=None, verbose=self.verbose, cost=True,
-                                                              scale=scale)
-                print("submitting ", status, nModels)
+                finalConfig = rSubmit.runGaussNewton(scale=scale)  # run DFOLS
+                break  # if we get to here then we are done.
+            except exceptions.runModelError:  # Need to run some models which are "faked"
+                create_models = [model for model in rSubmit.model_index.values() if model.status == "CREATED"]
+                nModels = len(create_models)
+                fake_function = fake_run(rSubmit, scale=scale)
+                iterCount += 1
 
         self.assertEqual(finalConfig.GNparams().Iteration.size, 1, msg=f"Expected 1 iteration got {iterCount}")
 
+    def test_dump_load(self):
+        # test that dumping and loading work by dumping then loading and comparing the two objects.
+        fp=self.rSubmit.config_path
+        self.rSubmit.dump_config()
+        nSubmit = self.rSubmit.load(fp)
+        self.assertEqual(self.rSubmit,nSubmit)
 
 if __name__ == "__main__":
     print("Running Test Cases")

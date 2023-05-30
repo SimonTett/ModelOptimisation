@@ -483,8 +483,10 @@ class SubmitStudy(Study, journal):
         :return:
         """
         # first call the super class method then fix the engine.
-        obj = super(cls,cls).from_dict(dct)
-        obj.engine, obj.submit_fn = obj.submission_engine(obj.computer)  # engine & submit_fn for this computer.
+
+        obj = super().from_dict(dct)
+        if (not callable(obj.engine)) or (not callable(obj.submit_fn)):   # if engine or submit_fn are not callable recreate them
+            obj.engine, obj.submit_fn = obj.submission_engine(obj.computer)  # engine & submit_fn for this computer.
         return obj
 
     def delete(self):
@@ -542,7 +544,8 @@ class SubmitStudy(Study, journal):
         name = base + digit_str
 
         # give a warning if run out of names
-        if self.name_values == [radix]*maxDigits:
+
+        if (maxDigits > 0) & (self.name_values == [radix]*maxDigits):
             logging.warning(f"Ran out of names name_values = {self.name_values}")
         return name  # return name
 
@@ -669,6 +672,8 @@ class SubmitStudy(Study, journal):
         self.update_history(f"Submitted {len(model_list)} model jobs")
         self.dump_config()  # and write ourselves out!
         return True
+
+
 
 
 def eddie_ssh(cmd: list[str]) -> list[str]:

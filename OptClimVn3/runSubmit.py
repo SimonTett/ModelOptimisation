@@ -1,3 +1,8 @@
+from __future__ import annotations
+
+import logging
+import typing
+
 from SubmitStudy import SubmitStudy
 
 import numpy as np
@@ -11,7 +16,7 @@ class runSubmit(SubmitStudy):
     """
           Class   to deal with running various algorithms. (not all of which are optimization).
           It is a specialisation of SubmitStudy and is separated out to make maintenance easier.
-          Idea is that each methods should use cases that exist and deal with parallelism.
+          Idea is that each method should use cases that exist and deal with parallelism.
           If it finds out that cases are missing it should raise exceptions.runModelError.
           Functions should  return a finalConfig which contains
           whatever additional information they consider useful.
@@ -24,14 +29,18 @@ class runSubmit(SubmitStudy):
 
     # has no __init__ method as uses the superclass method.
 
-    def stdFunction(self, params, df=False, raiseError=True, transform=None, scale=False, residual=False,
-                    sumSquare=False, verbose=False):
+    def stdFunction(self, params: np.ndarray,
+                    df: bool = False,
+                    raiseError: bool = True,
+                    ensemble_average: bool = True,
+                    transform: typing.Optional[pd.DataFrame] = None,
+                    scale: bool = False, residual: bool = False,
+                    sumSquare: bool = False) -> np.ndarray | pd.DataFrame | pd.Series:
         """
-        Standard Function used for framework. Returns values from cache if already got it.
-          If not got cached model then raises runModelError exception
-           after adding required model to list of models to be submitted.
-          If multiple ensemble members being asked for will run each one and average.
-          If any obs values are nan in the ensemble then the average value for that obs will be nan.
+        Standard Function used for running model . Returns values from cache if already got it.
+          If not got cached model then raises runModelError exception or returns NaN
+           after generating new model.
+
 
         It is a method rather than a class function as it makes use of some information in the object.
         So to actually get used as a function it needs to be converted to a function. This is done by genOptFunction which
@@ -39,20 +48,18 @@ class runSubmit(SubmitStudy):
 
         :param params -- a numpy array with the parameter values.
                 These parameters should  be ordered as in self.paramNames()
-        :param df (default True) -- If True return all obs (read in after processing) as a dataframe.
-
-        :param raiseError (default True) -- raise exceptions.runModelError  if this is True.
+        :param df  -- If True return all obs (read in after processing) as a dataframe.
+        :param raiseError  -- If True raise exceptions.runModelError  if any requested models do not exist.
                 This should cause generation & submission of models that need running.
                 Else return array full of nans.
+        :param ensemble_average -- If True average the ensemble members.
 
-        :param verbose (default False) -- be verbose when running.
+        The four  parameters below they are applied in the order: scale, residual, transform, sumSquare
+        :param scale   -- if True scale obs  by self.scales()
 
-        For the four  parameters below they are applied in the order: scale, residual, transform, sumSquare
-        :param scale  (default True) -- if True scale obs  by self.scales()
+        :param residual  -- if True remove target (self.target()) from obs
 
-        :param residual (default False) -- if True remove target (self.target()) from obs
-
-        :param transform (default None) -- if provided transform the model obs by matrix multiplying them by this matrix.
+        :param transform  -- if provided transform the model obs by matrix multiplying them by this matrix.
                   It should be  N*nobs where nobs are the number of sim ons and  0 <= N <= nobs.
                   One application of this is to transform the data into a basis of eigenvectors of an
                     error covariance matrix. The transform matrix should be provided as a pandas datarray.
@@ -63,15 +70,12 @@ class runSubmit(SubmitStudy):
 
 
         Using stdFunction -- this  is a method as it needs to know various bits of information contained in ModelSubmit..
-        To actually use it with optimisation function you need to call ModelSubmit.genOptFunction(**kwargs).
+        To actually use it with optimisation function you need to call runSubmit.genOptFunction(**kwargs).
         That will give you a function suitable for many optimisation functions.  If you have more complex needs you
-          likely need to add the runSubmit object to the list of arguments and then do runSubmitObs.stdFunction(.... )
+          likely need to add the runSubmit object to the list of arguments and then do runSubmit.stdFunction(.... )
           This might require you to create  a partial function. Your life will probably be easier if you set df=True
           and work with dataframes in your function.
         TODO use "random" perturbation approach to find how many parallel cases we can run.
-        TODO support ensembles without averaging -- i.e. they just come back. Useful for applications like
-          Ensemble Kalman Filter
-
         """
 
         paramNames = self.config.paramNames()
@@ -87,7 +91,7 @@ class runSubmit(SubmitStudy):
         nsim = use_params.shape[0]  # no of simulations we want to do which is the no of parameter sets provided
         nparams = use_params.shape[1]  # no of params only used to check that parameter array is as expected.
         if nparams != len(paramNames):
-            raise Exception(
+            raise ValueError(
                 "No of parameters %i not consistent with no of varying parameters %i\n" % (nparams, len(paramNames)) +
                 "Params: " + repr(use_params) + "\n paramNames: " + repr(paramNames))
 
@@ -100,30 +104,36 @@ class runSubmit(SubmitStudy):
         else:
             obsNames = self.config.obsNames()
         nObs = len(obsNames)  # How many observations are we expecting?
-        if nObs == 0:# Got zero. Something gone wrong
+        if nObs == 0:  # Got zero. Something gone wrong
             raise ValueError("No observations found. Check your configuration file ")
         # result = np.full((nsim, nObs), np.nan)  # array of np.nan for result
         result = []  # empty list. Will fill with series from analysis and then make into a dataframe.
         nEns = self.config.ensembleSize()  # how many ensemble members do we want to run.
         empty = pd.Series(np.repeat(np.nan, nObs), index=obsNames)
-        missCount = 0
         for indx in range(0, nsim):  # iterate over the simulations.
             pDict = dict(zip(paramNames, use_params[indx, :]))  # create dict with names and values.
             ensObs = []
             for ensembleMember in range(0, nEns):
                 pDict.update(ensembleMember=ensembleMember)
-                mc = self.get_model(pDict)
-                if mc is None: # no model so time to create one.
+                model = self.get_model(pDict)
+                if model is None:  # no model so time to create one.
                     self.create_model(pDict)
                     obs = empty
-                else: # got a model.
+                elif model.status != "PROCESSED": # not processed so return NaN and complain
+                    logging.warning(f"{model} has not been processed. Setting obs to array of nan's")
+                    obs = empty
+                else:  # got a model.
                     obsNames = self.config.obsNames()
-                    obs = mc.simulated_obs # get obs from the model
+                    obs = model.simulated_obs  # get obs from the model
+                    # if obs is None raise an error -- something gone badly wrong.
+                    if obs is None:
+                        raise ValueError(f"{model} has None for simulated_obs")
                     missing_obs = set(obsNames) - set(obs.index)
-                    if len(missing_obs) >0: # trigger error as missing obs
-                        raise ValueError(f"Missing {' '.join(missing_obs)} from model {mc.name()}")
+                    if len(missing_obs) > 0:  # trigger error as missing obs
+                        raise ValueError(f"Missing {' '.join(missing_obs)} from model {model.name}")
                     # force fixed order.
-                    obs = obs.reindex(obsNames)  # note using obsNames as specified. transform (if supplied) can change names.
+                    obs = obs.reindex(
+                        obsNames)  # note using obsNames as specified. transform (if supplied) can change names.
                     if scale:  # scale sim obs.
                         obs *= self.config.scales()
                     if residual:  # difference from target obs
@@ -131,26 +141,27 @@ class runSubmit(SubmitStudy):
                         obs -= tgt
                     if transform is not None:  # apply transform if required.
                         obs = obs @ transform.T  # obs in nsim x nobs; transform  is nev x nobs.
+                    null = obs.isnull()
+                    if np.any(null):
+                        raise ValueError("Obs contains null values at: " + ", ".join(obs.index[null]))
                 ensObs.append(obs)
             # end of loop over ensemble members.
-            ensObs = pd.DataFrame(ensObs)
-            # compute ensemble-mean if needed
-            if ensObs.shape[0] > 1:
-                if verbose:
-                    print("Computing ensemble average")
-                ensObs = ensObs.mean(axis=0)
-            else:
-                ensObs = ensObs.iloc[0, :]  # 1 row so extract the series...
 
-            result.append(ensObs)  # add to list for result
+            # compute ensemble-mean if needed
+            if ensemble_average and (len(ensObs) > 1):
+                logging.debug("Computing ensemble average")
+                ensObs = pd.DataFrame(ensObs)
+                ensObs = [ensObs.mean(axis=0)]
+
+            result.extend(ensObs.copy())  # add to list of  results. Note copying as  ensObs is changed in the loop
         # end of loop over simulations to be done.
         result = pd.DataFrame(result)  # convert to a dataframe
-        if sumSquare:
-            result = (result ** 2).sum(axis=1)
 
         if raiseError and np.any(result.isnull()):
-            # want to raise error and any of result is nan.
+            # want to raise error if any of result is nan.
             raise exceptions.runModelError
+        if sumSquare:
+            result = (result ** 2).sum(axis=1)
         if not df:  # want it as values not  a dataframe
             result = np.squeeze(result.values)
 
@@ -171,19 +182,11 @@ class runSubmit(SubmitStudy):
 
         return fn
 
-    def runOptimized(self, optConfig=None):
+    def runOptimized(self):
         """
         :arg self
         Run optimised case using reference model which may be potentially different from configuration used to optimize.
         Cares about number of ensemble members (default is 1 if not set) and the optimum parameters which should be set.
-
-        One issue is what to name it. As things stand it is up to the user. They should also set maxDigits sensibly.
-        For the UM the sum of length of baseRun & maxDigits should  be 5 or less.
-        TODO: Modify the HadAM3 class so it enforces this.
-
-        :param optConfig -- configuration where optimum value is. If None (default) then config as used in runSubmit
-          init will be used.  If optConfig is provided *only* the optimum value will be used.
-
         """
 
         # basic idea is that users takes final json file and edits it to suit their needs
@@ -201,42 +204,35 @@ class runSubmit(SubmitStudy):
         # the final config (optimum param values, nEns) and n configurations.  Trick is
         # not running more than once... Which is what Submit gives...
         # Hard will come back when I actually have a need!
-
-        if optConfig is None: # no optimum config specified so use whatever used to setup runOptimise.
-            start = self.config.optimumParams()
-        else: # have got an optimum config so use that for starting values
-            start = optConfig.optimumParams()
-
+        start = self.config.optimumParams()
         modelFn = self.genOptFunction(df=True)
-        obsSeries = modelFn(start.values)
+        obsSeries = modelFn(start.values).squeeze()  # if the simu
         # should run ensemble avg etc as side effect...and if things don't exist raise modelError
-        # now to set up information having done all cases.
-        finalConfig = self.runConfig(self.config)  # get final runInfo
+        # now to set up information having done all cases because if we have got here modelError has not been raised.
+        finalConfig = self.runConfig()  # get final runInfo
         finalConfig.beginParam(start)  # setup the begin values!
-        finalConfig.best_obs(obsSeries)
-
+        finalConfig.optimumParams(None)
+        finalConfig.best_obs(best_obs=obsSeries)
         return finalConfig
 
-    def rangeAwarePerturbations(self, baseVals, parLimits, steps):
+    def rangeAwarePerturbations(self, baseVals:pd.Series, parLimits:pd.DataFrame, steps:pd.Series) -> pd.Series:
         """
         Generate perturb param values  towards the centre of the valid range for each
         parameter. Used in runJacobian
 
         Inputs
 
-            arg: self -- Submit object.
             arg: baseVals: parameters at which Jacobian computed at.
             arg: parLimits: dataset max,min limits. parLimits.loc[:,'maxParm'] are the max values;
               parLimits.loc[:,'minParam'] are the min values;
             arg: steps: stepsizes for each parameter.
 
         Inputs, except parLimits, are all pandas series
-        Returns pandas series array defining the perturbed parameter  offset. No checks are made to see
-          if those choices are in range.
+        Returns pandas series array defining the perturbed parameter values
         """
 
-        if self.verbose:
-            print(f"in rangeAwarePerturbations with {baseVals}")
+
+        logging.debug(f"in rangeAwarePerturbations with {baseVals}")
         # derive the centre-of-valid-range
         centres = (parLimits.loc['minParam', :] + parLimits.loc['maxParam', :]) * 0.5
         deltaParam = np.abs(steps)
@@ -246,21 +242,19 @@ class runSubmit(SubmitStudy):
 
         return deltaParam
 
-    def runJacobian(self, optConfig=None):
+    def runJacobian(self,scale:bool=False):
         """
         run Jacobian cases.
-        Rather crude (first order accurate) estimate. Evaluates functions at
+        Rather crude (first order accurate) estimate. Evaluate functions at
           optimum values +/- delta where delta is specified in the StudyConfig used to generate Submit
           +/- is to keep perturbations towards the centre pf the domain.
         A more accurate version would run 2nd order differences around the base point.
         But (as yet) no need for this so not implemented. Probably best done with a centred option.
         The Jacobian computed is the transformed Jacobian. (Apply Transpose matrix).
-        TODO:put this under configuration control.
+
 
         :arg self -- a Submit object.
-        :arg optConfig (optional). If not None (default) then use optimum value in this config to
-           perturb jacobian around. All other values -- particularly steps and boundaries will be taken from
-           config used to generate runSubmit.
+        :param scale -- If True apply scalings.
         :returns a configuration. The following methods should work on it:
                 return: finalConfig -- a studyConfig. The following methods should give you useful data:
 
@@ -272,17 +266,16 @@ class runSubmit(SubmitStudy):
         """
 
         configData = self.config
-        Tmat = configData.transMatrix()
-        modelFn = self.genOptFunction(raiseError=True, df=True, residual=True, transform=Tmat)
-        if optConfig is None:
-            base = configData.optimumParams()
-        else:
-            base = optConfig.optimumParams()
+        Tmat = configData.transMatrix(scale=scale)
+        modelFn = self.genOptFunction(raiseError=True, df=True, residual=True, transform=Tmat,scale=scale)
+        base = configData.optimumParams() # try with optimum parameters
+        if base is None: # if none go with the begin parameters.
+            base = configData.beginParam()
 
         paramRanges = configData.paramRanges()
         steps = configData.steps()  # see what the steps are
         delta = self.rangeAwarePerturbations(base, paramRanges, steps)  # compute the actual deltas
-        params = [base] # list of parameter values to run at -- including the base. Needed to compute jac
+        params = [base]  # list of parameter values to run at -- including the base. Needed to compute jac
 
         for p, v in delta.items():  # iterate over parameters
             param = base[:].rename(p)
@@ -306,7 +299,7 @@ class runSubmit(SubmitStudy):
         dobs = dobs.set_index(delta.index)
         jac = dobs.div(delta, axis=0)  # compute the Jacobian
 
-        finalConfig = self.runConfig(configData)  # get the configuration
+        finalConfig = self.runConfig()  # get the configuration
         finalConfig.transJacobian(transJacobian=jac)  # store the jacobian.
         hes = jac.T @ jac
         finalConfig.hessian(hes)
@@ -355,12 +348,13 @@ class runSubmit(SubmitStudy):
                       'init.run_in_parallel': True,  # run in parallel
                       'interpolation.throw_error_on_nans': True,  # make an error happen!
                       }
-        prange = (configData.paramRanges(paramNames=varParamNames).loc['minParam', :].values,
-                  configData.paramRanges(paramNames=varParamNames).loc['maxParam', :].values)
+
+        prange = configData.paramRanges(paramNames=varParamNames)
+        prange = (prange.loc['minParam',:].values,prange.loc['maxParam',:].values)
         # update the user parameters from the configuration.
         userParams = configData.DFOLS_userParams(userParams=userParams)
         tMat = configData.transMatrix(scale=scale)  # scaling on transform matrix and in optfn  needs to be the same.
-        optFn = self.genOptFunction(transform=tMat, residual=True, raiseError=False, scale=scale,verbose=False)
+        optFn = self.genOptFunction(transform=tMat, residual=True, raiseError=False, scale=scale)
 
         try:
             with warnings.catch_warnings():  # catch the complaints from DFOLS about NaNs encountered..
@@ -383,21 +377,24 @@ class runSubmit(SubmitStudy):
             raise Exception("Problem with dfols")
 
         # need to wrap best sol and put in other information into the final results file.
-        finalConfig = self.runConfig(scale=True,add_cost=True)  # get final runInfo
+        filename= self.rootDir/(self.config.fileName().stem+"_final.json") # final confio
+        finalConfig = self.runConfig(scale=scale, add_cost=True,filename=filename)  # get final runInfo
         best = pd.Series(solution.x, index=varParamNames).rename(finalConfig.name())
-        # Generic stuff (that is probably more useful)
+        # Generic stuff (that is probably more useful). Probably need the Jacobian in "normal" space...
+        # But can transform model jacobian into smaller evect space.
         jacobian = solution.jacobian
         jacobian = pd.DataFrame(jacobian, columns=varParamNames, index=tMat.index)
         finalConfig.transJacobian(jacobian)
         hessian = jacobian @ jacobian.T
         finalConfig.hessian(hessian)
 
-        finalConfig.optimumParams(**(best.to_dict()))  # store the optimum params. TODO make this work with a pd.series.
+        finalConfig.optimumParams(optimum=best)  # store the optimum params.
         # need to put in the best case -- which may not be the best evaluation as DFOLS ignores "burn in"
         solution.diagnostic_info.index = range(0, solution.diagnostic_info.shape[0])
-        finalConfig.set_dataFrameInfo(diagnostic_info=solution.diagnostic_info)
-
+        finalConfig.dfols_solution(solution=solution)
+        #finalConfig.setv('DFOLS_soln',vars(solution))
         print(f"DFOLS completed: Solution status: {solution.msg}")
+        finalConfig.save()
         return finalConfig
 
     def runGaussNewton(self, verbose=False, scale=True):
@@ -434,18 +431,17 @@ class runSubmit(SubmitStudy):
         optimise['sigma'] = False  # wrapped optimisation into cost function.
         optimise['deterministicPerturb'] = True  # deterministic perturbations.
         paramNames = configData.paramNames()
-        nObs = tMat.shape[0]  # might be a smaller because some evals in the covariance matrix are close to zero (or -ve)
-        start = configData.beginParam()
-        optFn = self.genOptFunction(transform=tMat, scale=scale, verbose=verbose, residual=True)
+        nObs = tMat.shape[ 0]  # might be a smaller because some evals in the covariance matrix are close to zero (or -ve)
+        start = configData.beginParam(paramNames=paramNames)
+        optFn = self.genOptFunction(transform=tMat, scale=scale, residual=True,raiseError=True)
         best, status, info = Optimise.gaussNewton(optFn, start.values,
                                                   configData.paramRanges(paramNames=paramNames).values.T,
                                                   configData.steps(paramNames=paramNames).values,
                                                   np.zeros(nObs), optimise,
                                                   cov=np.identity(nObs), cov_iv=intCov, trace=verbose)
-
-        finalConfig = self.runCost(self.config, scale=scale)
+        filename = self.rootDir / (self.config.fileName().stem + "_final.json")  # final confio
+        finalConfig = self.runConfig(scale=scale, add_cost=True, filename=filename)  # get final runInfo
         finalConfig.GNstatus(status)
-        finalConfig = self.runConfig(finalConfig)  # get final runInfo
         # Store the GN specific stuff. TODO consider removing these and just store the info.
         finalConfig.GNparams(info['bestParams'])
         finalConfig.GNcost(info['err_constraint'])
@@ -460,8 +456,8 @@ class runSubmit(SubmitStudy):
 
         best = pd.Series(best, index=finalConfig.paramNames(),
                          name=finalConfig.name())  # wrap best result as pandas series
-        finalConfig.optimumParams(**(best.to_dict()))  # write the optimum params
-        print("status",status)
+        finalConfig.optimumParams(optimum=best)  # write the optimum params
+        print("status", status)
 
         return finalConfig
 

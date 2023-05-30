@@ -24,7 +24,11 @@ import logging
 import os
 import pathlib
 import re
-import warnings
+
+
+from dfols.solver import OptimResults
+
+import generic_json
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -40,7 +44,7 @@ def readConfig(filename, ordered=False):
     """
     Read a configuration and return object of the appropriate version.
     :param filename: name of file (or filepath) to read.
-    :param ordered:  read in as a ordered dict rather than a dict. 
+    :param ordered:  read in as a ordered dict rather than a dict.
     :return: Configuration of appropriate type
     """
     path = pathlib.Path(os.path.expandvars(filename)).expanduser()
@@ -53,12 +57,17 @@ def readConfig(filename, ordered=False):
         vn = float(vn)  # convert to float as version stored as string
 
     # use appropriate generator fn
+    if (vn is None) or (vn < 3):
+        raise ValueError(
+            f"Version = {vn} in {filename}. Update to version 3 or greater to work with current software..")
     if vn is None or vn < 2:  # original configuration definition
         config = OptClimConfig(config)
     elif vn < 3:  # version 2 config
         config = OptClimConfigVn2(config)
+    elif vn < 4:  # version 3 config
+        config = OptClimConfigVn3(config)
     else:
-        raise Exception("Version must be < 3")
+        raise Exception("Version must be < 4")
     ## little hack for bestEval..
     try:
         if not hasattr(config, 'bestEval'):
@@ -243,7 +252,7 @@ class dictFile(dict):
         return self._filename
 
 
-class OptClimConfig(model_base, dictFile):
+class OptClimConfig(dictFile):
     """
     Class to provide methods for working with OptclimConfig file.
     Inherits from dictFile which provides methods to load and save configurations
@@ -1131,7 +1140,7 @@ class OptClimConfig(model_base, dictFile):
         :param scale (default False). If True scale parameters over range (0 is min, 1 is max)
         :return: values as pandas series.
         """
-
+        raise NotImplementedError("vn1 optimum parameters no longer supported")
         # TODO merge this with vn2 code which could be done using  if self.version >= 2: etc
         if hasattr(kwargs, 'scale'):
             raise Exception("scale no longer supported use normalise")  # scale replaced with normalised 14/7/19
@@ -1578,7 +1587,7 @@ class OptClimConfig(model_base, dictFile):
 
         return result
 
-    def baseRunID(self, value:typing.Optional[str]=None) -> str:
+    def baseRunID(self, value: typing.Optional[str] = None) -> str:
         """
         Return (and optionally set) the baseRunID.
         If not defined return 'aa'
@@ -1605,7 +1614,7 @@ class OptClimConfig(model_base, dictFile):
 
         return self.getv('maxDigits', default=3)  # nothing defined -- make it 3.
 
-    def copy(self, filename: typing.Optional[pathlib.Path] = None) -> OptClimConfigVn2:
+    def copy(self, filename: typing.Optional[pathlib.Path] = None) -> OptClimConfigVn2|OptClimConfigVn3:
         """
         :param filename (optional default None): Name of filename to save to.
         :return: a copy of the configuration but set _fileName  to avoid accidental overwriting of file.
@@ -1613,7 +1622,7 @@ class OptClimConfig(model_base, dictFile):
 
         result = copy.deepcopy(self)  # copy the config
 
-        if (filename is not None) and (result._filename.samefile(filename)):
+        if (filename is not None) and (filename.exists()) and (result._filename.samefile(filename)):
             raise ValueError("Copy has same filename as original.")
         result._filename = filename  # set filename
         return result
@@ -1682,28 +1691,32 @@ class OptClimConfigVn2(OptClimConfig):
         param.loc['rangeParam', :] = param.loc['maxParam', :] - param.loc['minParam', :]  # compute range
         return param
 
-    def beginParam(self, values=None, paramNames=None, scale=False):
+    def beginParam(self,
+                   begin:typing.Optional[pd.Series]=None,
+                   paramNames:typing.Optional[typing.List[str]]=None,
+                   scale:bool=False) -> pd.Series:
 
         """
         get the begin parameter values for the study. These are specified in the JSON file in begin block
         Any values not specified use the standard values
-        :param values -- if not None then set begin values to this. This should be provided as a pandas series  Note no scaling is done.
-            and initScale will be set False.
+        :param begin -- if not None then set begin values to this.
+           No scaling is done  and initScale will be set False.
         :param paramNames: Optional names of parameters to use.
         :param scale (default False). If True scale parameters by their range so 0 is minimum and 1 is maximum
         :return: pandas series of begin parameter values.
         """
 
-        if values is None:  # No values specified
+        if begin is None:  # No values specified
             begin = self.Config['Parameters'].get('initParams')
 
         else:  # set them
-            begin = values.to_dict()  # convert from pandas series to dict for internal storage
+            begin = begin.to_dict()  # convert from pandas series to dict for internal storage
             self.Config['Parameters']['initParams'] = begin
             self.Config['Parameters']["initScale"] = False
 
         scaleRange = self.Config['Parameters'].get("initScale")  # want to scale ranges?
-        if paramNames is None:  paramNames = self.paramNames()
+        if paramNames is None:
+            paramNames = self.paramNames()
         beginValues = {}  # empty dict
         standard = self.standardParam(paramNames=paramNames)
 
@@ -1769,7 +1782,10 @@ class OptClimConfigVn2(OptClimConfig):
 
         return values.rename(self.name())
 
-    def steps(self, paramNames=None, normalise=None, steps=None):
+    def steps(self,
+              paramNames:typing.Optional[typing.List[str]]=None,
+              normalise:bool=False,
+              steps:typing.Optional[dict]=None):
         """
         Compute perturbation  for all parameters supplied. If value specified use that. If not use 10% of the range.
         Quasi-scientific in that 10% of range is science choice but needs knowledge of the structure of the JSON file
@@ -1818,7 +1834,7 @@ class OptClimConfigVn2(OptClimConfig):
         :return:  filename relative to studyDir
         TODO: Don't think this used so remove it.
         """
-
+        raise NotImplementedError("cacheFile probably dead")
         fileStore = self.Config.get('studyCacheFile', 'cache_file.json')
         if fileStore is None: fileStore = 'cache_file.json'
         return fileStore
@@ -1985,8 +2001,135 @@ class OptClimConfigVn2(OptClimConfig):
 
 class OptClimConfigVn3(OptClimConfigVn2):
     """
-    Vn3 of OptClimConfig. Currently, does nothing but is a place to grab things for next upgrade.
+    Vn3 of OptClimConfig.
     1) have runTime() and runCode() methods only work with runInfo block -- vn1/2 methods work with names in top level dict.
     2) Have generic way of dealing with dataframes and make all methods use and
        return pandas series or dataframes as appropriate.
     """
+
+    @classmethod
+    def expand(cls, filestr: typing.Optional[str]) -> typing.Optional[pathlib.Path]:
+        """
+        Expand any env vars, convert to path and then expand any user constructs. (Copy from model_base which does things we don't want to do!)
+        :param filestr: path like string or None
+        :return:expanded path or, if filestr is None, None.
+        """
+        if filestr is None:
+            return None
+        path = os.path.expandvars(filestr)
+        path = pathlib.Path(path).expanduser()
+        return path
+    def normalise(self, pandas_obj: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:
+        """
+        Normalize a parameters by range such that min is 0 and max is 1
+        :param pandas_obj: dataframe or series of parameters to normalise
+        :return: normalised values
+        """
+        pnames = pandas_obj.index if isinstance(pandas_obj, pd.Series) else pandas_obj.columns
+        range = self.paramRanges(paramNames=pnames)  # get param range
+        nvalues = (pandas_obj - range.loc['minParam', :]) / range.loc['rangeParam', :]
+        return nvalues
+
+    def best_obs(self, best_obs: typing.Optional[pd.Series] = None) -> pd.Series:
+        """
+        Set best_obs if set. Return best_obs as pandas series with name from self
+        :param best_obs: a pandas series containing the best observations info
+        :return: best_obs
+        """
+
+        if best_obs is not None:
+            self.extra_alg_info(best_obs=best_obs.to_dict())
+
+        best = pd.Series(self.extra_alg_info('best_obs')['best_obs']).rename(self.name())
+
+        return best
+
+    def extra_alg_info(self, *getargs: list[str], **setargs: dict) -> dict:
+        """
+        Store or get extra stuff in alg_info
+        :param getargs -- arguments to get.
+        :param **setargs -- arguments to set.
+        example: config.set_dataFrameInfo(result=result,flaming=flaming,success=pd.Dataframe(data))
+        """
+        # raise NotImplementedError("Write self test")
+        result = dict()
+        alg_info = self.alg_info()
+        for k, v in setargs.items():
+            alg_info[k] = copy.deepcopy(v)  # store it
+        for k in getargs:
+            result[k] = copy.deepcopy(alg_info[k])
+
+        return result
+
+    def optimumParams(self,
+                      paramNames: typing.Optional[list[str]] = None,
+                      normalise: bool = False,
+                      optimum: typing.Optional[pd.Series] = None):
+        """
+        Set/get the optimum parameters. (VN3 version)
+        :param normalise (default False). If True then normalise parameters.
+        :optimum -- optimal parameter values as panda Series
+        :param paramNames -- name of parameters
+        :return: values as pandas series.
+        """
+
+        if paramNames is None:  paramNames = self.paramNames()
+
+        if optimum is not None:  # set the values
+            self.Config['Parameters']['optimumParams'] = optimum.to_dict()
+            # add defaults for ones we have not got.
+        default = pd.Series(self.standardParam(paramNames=paramNames))
+
+        values = self.Config['Parameters'].get('optimumParams', None)
+        if values is None:
+            return values # return None
+        values = pd.Series(values)
+        values = values.combine_first(default).reindex(paramNames)
+
+        if normalise:
+            values = self.normalise(values)
+
+        return values.rename(self.name())
+
+
+    def referenceConfig(self, referenceConfig:typing.Optional[pathlib.Path]=None) -> pathlib.Path:
+        """
+        :param referenceConfig  -- set referenceConfig if not None .
+        :return: full path to the reference configuration of model being used
+        """
+        if referenceConfig is not None:
+            self.getv('study')['referenceModelDirectory'] = str(referenceConfig)
+        modelConfigDir = self.getv('study').get('referenceModelDirectory')
+        # and now expand home directories and env variables
+        if modelConfigDir is not None:
+            modelConfigDir = self.expand(modelConfigDir)
+        return modelConfigDir
+
+
+
+    def dfols_solution(self,
+                       solution:typing.Optional[OptimResults] = None) -> \
+        typing.Optional[OptimResults]:
+        """
+        Store/return solution to DFOLS run.
+        :param solution: solution (from DFOLS) which if not None will be converted to
+           something that can be converted to json
+        :return: solution
+        """
+
+        if solution is not None:
+            # convert solution to something jsonable.
+            conversion = generic_json.dumps(vars(solution)) # use generic_json to convert.
+            self.setv('DFOLS_SOLUTION',conversion)
+
+        soln = self.getv('DFOLS_SOLUTION',None)
+        if soln is None: # not got anything so return None.
+            return soln
+        dct = generic_json.loads(soln) # now have a dict.
+        soln = OptimResults(*range(0,9)) # create empty OptimResults object
+        for k,v in dct.items(): # fill in the instances
+            if not hasattr(soln,k):
+                logging.warning(f"Would like to set attr {k} in soln but does not exist")
+            setattr(soln,k,v) # regardless will set the attribute.
+
+        return soln

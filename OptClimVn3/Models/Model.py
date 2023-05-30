@@ -562,17 +562,18 @@ class Model(ModelBaseClass, journal):
             self.simulated_obs = fake_function(self.parameters).rename(self.name)  # compute the simulated_obs
             if not isinstance(self.simulated_obs, pd.Series):
                 raise ValueError(f"{fake_function} did not return pandas series. Returned {self.simulated_obs}")
+
+            # check for nulls
+            null = self.simulated_obs.isnull()
+            if np.any(null):
+                raise ValueError("Fake function produced null values at: " + ", ".join(self.simulated_obs.index[null]))
             self.fake = True  # we are faking it!
             logging.info(f"Using fake functions {fake_function.__name__}")
             logging.info(f"Faking {self.name}")
             # work through rest of order.
             self.set_status(status)
-            delay = 0.01  # delay 1/100 of second between updates
-            time.sleep(delay)
             self.running()  # running stuff
-            time.sleep(delay)
             self.succeeded()  # succeeded stuff
-            time.sleep(delay)
             self.process()  # and process.
             return f"Faked {self.name}"
         # "real" submission.
@@ -716,7 +717,7 @@ class Model(ModelBaseClass, journal):
         """
         Read the post processed data.
          This default implementation reads simulated obs from netcdf, json or csv data and
-         stores it in the Model as a pandas series
+         stores it in the Model as a pandas series. Tests that nothing is null.
          :param post_process_file: path to the post processed data containing the simulated observations,
         :return: a pandas series of the simulated
         """
@@ -744,6 +745,11 @@ class Model(ModelBaseClass, journal):
         logging.info(f"Read {fileType} data from {post_process_file}")
         obs = pd.Series(obs).rename(self.name)
         self.simulated_obs = obs
+
+        # check for nulls
+        null = obs.isnull()
+        if np.any(null):
+            raise ValueError("Obs contains null values at: " + ", ".join(obs.index[null]))
 
         return obs  # return the obs.
 
