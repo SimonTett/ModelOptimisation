@@ -35,7 +35,7 @@ class testStudyConfig(unittest.TestCase):
         """
         root = importlib.resources.files("OptClimVn3")
         configFile = root / 'configurations' / 'dfols14param_opt3.json'
-        self.config = StudyConfig.readConfig(configFile, ordered=True)
+        self.config = StudyConfig.readConfig(configFile)
         # generate fake -lookup tables
 
         # add in some DFOLS info

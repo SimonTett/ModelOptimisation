@@ -21,7 +21,7 @@ import pandas as pd
 from Model import ModelBaseClass, Model
 from OptClimVn3.Models.model_base import model_base, journal
 from Study import Study
-from StudyConfig import OptClimConfigVn2, OptClimConfigVn3
+from StudyConfig import OptClimConfigVn2, OptClimConfigVn3,dictFile
 
 # check we are version 3.9 or above.
 
@@ -69,7 +69,10 @@ class engine(model_base):
             if callable(v):
                 dct[k] = v.__name__  # replace with name
         logging.debug(f"Converted functions in {dct} to names")
+        # and convert models to paths.
         return dct
+
+
 
     @classmethod
     def from_dict(cls, dct: dict) -> engine:
@@ -286,7 +289,7 @@ class engine(model_base):
         return engine
 
 
-class SubmitStudy(Study, journal):
+class SubmitStudy(model_base,Study, journal):
     """
 
     provides methods to support working out which models need to be submitted. Creates new models and submits them.
@@ -302,7 +305,7 @@ class SubmitStudy(Study, journal):
                  refDir: Optional[pathlib.Path] = None,
                  models: Optional[List[Model]] = None,
                  model_name: Optional[str] = None,
-                 #fakeFn: Optional[fn_type] = None,
+                 config_path:Optional[pathlib.Path] = None,
                  computer: Optional[str] = None):
         """
         Create ModelSubmit instance
@@ -313,11 +316,7 @@ class SubmitStudy(Study, journal):
         :param refDir: Directory where reference model is. If None then config.referenceConfig() will be used.
         :param model_name: Name of model type to create. If None value in config is used
         :param models -- list of models.
-        :param fakeFn : if provided then nothing will actually be submitted.
-            Instead, the fakeFunction will be ran which will generate fake values for the observations file.
-                  fakeFn(params) # given input parameters as pandas Series returns obs as pandas series.
-
-
+        :param config_path -- where configuration should be stored. If None default is root_dir/name
         :param computer -- computer on which model is being ran. If None then config wil be used.
         :return: instance of ModelSubmit
         """
@@ -338,6 +337,10 @@ class SubmitStudy(Study, journal):
         self.computer = computer  # really needed for dumping/loading.
         self.engine, self.submit_fn = self.submission_engine(computer)  # engine & submit_fn for this computer.
 
+        if config_path is None:
+            config_path = self.rootDir / (self.name + '.scfg')
+        self.config_path = config_path
+
         #self.fake_fn = fakeFn
         self.runTime = self.config.runTime()  # extract time
         self.runCode = self.config.runCode()  # extract code
@@ -346,6 +349,7 @@ class SubmitStudy(Study, journal):
         self.update_history(None) # will initialise the history stuff
         self.store_output(None, None)
         self.update_history(f"Created SubmitStudy {self}")
+
 
     def __repr__(self):
         """
@@ -415,7 +419,8 @@ class SubmitStudy(Study, journal):
         model_name = paramDir.pop('model_name', self.model_name)
         post_process = self.config.get('post_process')
         model = ModelBaseClass.model_init(model_name, name=name,
-                                          reference=reference, model_dir=model_dir, config_path=config_path,
+                                          reference=reference, model_dir=model_dir,
+                                          config_path=config_path,
                                           parameters=params, post_process=post_process
                                           )
         key = self.key_for_model(model)
@@ -438,6 +443,28 @@ class SubmitStudy(Study, journal):
         self.dump(self.config_path)
 
 
+    @classmethod
+    def load_SubmitStudy(cls,config_path:pathlib.Path,Study:bool=False) -> Study|SubmitStudy:
+        """
+        Load a SubmitStudy (or anythign that inherits from it) from a file. The object will have config_path replaced by config_path.
+        :param config_path: path to configuration to load
+        :param Study: If True return a Study object. These are read-only (unless you modify by hand the attributes)
+        :return: object
+        """
+
+        obj = cls.load(config_path)
+        # need to convert config (which is a dict) to an OptClimXXX
+        if not isinstance(obj,SubmitStudy):
+            logging.warning(f"Expected instance of SubmitStudy got {type(obj)}")
+        if Study: # convert to a study
+            obj = obj.to_study()
+            return obj
+        if not config_path.samefile(obj.config_path):
+            logging.info(f"Modifying config path from  {obj.config_path} to {config_path}")
+            obj.config_path=config_path
+            obj.update_history(f"Modified config path from  {obj.config_path} to {config_path}")
+
+        return obj
 
 
     def instantiate(self):
@@ -468,26 +495,63 @@ class SubmitStudy(Study, journal):
         Replaces submit_fn with function names. from_dict will replace these.
         :return: a dict. Keys are attributes.
         """
-        import functools
+
         dct = super().to_dict()
         # deal with functions in engine and submit_fn
         if callable(dct['submit_fn']):
             dct['submit_fn'] = dct['submit_fn'].__name__
 
+        logging.debug(f"Replacing models in model_index with config_path")
+        m2 = dict()
+        for key, model in dct['model_index'].items():
+            m2[key] = model.config_path
+        dct['model_index'] = m2
+        dct['config'] = self.config.to_dict() # convert Config to a dict.
         return dct
+
+
+
     @classmethod
     def from_dict(cls, dct: dict) -> SubmitStudy:
         """
-        Convert a dct back to a SubmitStudy
-        :param dct: sct containing attributes to be converted
-        :return:
+        Convert a dct back to a SubmitStudy. Does the following:
+           decodes config -- needs special handling. FIXME: re-engineer StudyConfig so it needs less special handling....
+           Creates the object
+           Copies over attributes from dct to any existing attributes
+           Sets up submission engine -- regenerating functions.
+           Loads up models from paths that are saved.
+        :param dct: dict containing attributes to be converted
+        :return: a SubmitStudy object
         """
-        # first call the super class method then fix the engine.
+        #TODO: (if needed) have some way of loading up model info if the whole lot been moved.
+        # deal with config
+        config = dct.pop('config') # extract the config info.
+        config = dictFile(Config_dct=config['Config']).to_StudyConfig() # convert the config entry to a dictFile then convert to a StudyConfig.
+        # TODO Very messy code. Good to sort out StudyConfig but that needs a big re-engineering job..
 
-        obj = super().from_dict(dct)
+        # create the SubmitStudy object
+        obj = cls(config)
+        obj.fill_attrs(dct) # fill in the rest of the objects attributes.
+        # deal with the engine.
         if (not callable(obj.engine)) or (not callable(obj.submit_fn)):   # if engine or submit_fn are not callable recreate them
             obj.engine, obj.submit_fn = obj.submission_engine(obj.computer)  # engine & submit_fn for this computer.
+        # load up models.
+        model_index = dict()
+        for key, path in obj.model_index.items():  # iterate over the paths (which is how we represent the models)
+            if path.exists():
+                logging.debug(f"Loading model from {path}")
+                # verify key is as expected.
+                model = Model.load_model(path)  # load the model.
+                got_key = obj.key_for_model(model)
+                if key != got_key:  # key changed.
+                    logging.warning(f"Key has changed from {key} to {got_key} for model {model}")
+                model_index[got_key] = model
+            else:
+                logging.warning(f"Failed to find {path} so ignoring.")
+
+        obj.model_index = model_index  # overwrite the index
         return obj
+
 
     def delete(self):
         """
@@ -674,8 +738,20 @@ class SubmitStudy(Study, journal):
         return True
 
 
+    def to_study(self):
+        """
+        Convert to a study.
+        Study instances only have read access to info. Useful if you don't want to accidentally modify state.
+          config_path will be set to None to further reduce risk.
+        :return: Study
+        """
 
+        study = Study(self.config)
+        for key,var in vars(self).items():
+            if hasattr(study,key):
+                setattr(study,key,copy.deepcopy(var)) # make a copy of var and add it as an attribute to study
 
+        return study
 def eddie_ssh(cmd: list[str]) -> list[str]:
     """
     Example submit function for ssh on eddie

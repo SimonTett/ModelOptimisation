@@ -166,12 +166,20 @@ class model_base:
         :return: initialised object
         """
         obj = cls()  # create an default instance
+        obj.fill_attrs(dct) # fill in the values.
+        return obj
+
+    def fill_attrs(self,dct:dict):
+        """
+        Fill in the attributes in self from dct. Used by from_dict.
+        :param dct: dict of key value. self.key=value if self.key exists
+        :return: Nothing. Changes self in place
+        """
         for name, value in dct.items():
-            if hasattr(obj, name):
-                setattr(obj, name, value)
+            if hasattr(self, name):
+                setattr(self, name, value)
             else:
                 logging.warning(f"Did not setattr for {name} as not in obj")
-        return obj
 
     def to_dict(self):
         """

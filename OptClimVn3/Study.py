@@ -1,9 +1,8 @@
 """
 Class to provide ways of looking at a study directory.
-Goal is to merge this into ModelSubmit (eventually).
-Problem is that Study wants an ordered list while ModelSubmit wants a dict keyed on parameters.
-Will privd e a
-Rule#1 -- only have one copy of anything.
+This is a readOnly view -- unless you hack the Study object directly.
+Note no methods are provided to save Study objects
+SubmitStudy inherits from this and that has methods to submit models and modify state.
 """
 from __future__ import annotations
 import matplotlib.pyplot as plt # so we can plot
@@ -24,11 +23,11 @@ from StudyConfig import OptClimConfigVn2, OptClimConfigVn3
 
 
 
-class Study(model_base):
+class Study():
     """
     Class to support a study.  This class provides support for reading info
     from a study -- both in progress or completed, and displaying them.  But does not
-    handle submitting models or realising that a new one needs to be generated.
+    handle submitting models or realizing that a new one needs to be generated.
     """
 
     def __init__(self, config: OptClimConfigVn2|OptClimConfigVn3,
@@ -40,8 +39,9 @@ class Study(model_base):
         :type rootDir:
         :param config: configuration information
         :param name: name of the study. If None name of config is used.
-        :param rootDir : root dir where config file will be created and where model configurations will be searched for.
+        :param rootDir : root dir where, by default, config file will be created and where model configurations will be searched for.
           If None will be current dir/config.name()
+        :param config_path: path to where config
         :param models -- list of models.
         """
         if config is None:
@@ -62,7 +62,7 @@ class Study(model_base):
             self.rootDir = rootDir
         self.rootDir.mkdir(parents=True, exist_ok=True)  # create it if need be.
 
-        self.config_path = self.rootDir / (self.name + '.scfg')
+
 
         self.model_index = dict()
 
@@ -72,6 +72,9 @@ class Study(model_base):
                 if key in self.model_index.keys():
                     raise ValueError(f"Got duplicate key {key}")
                 self.model_index[key] = model
+
+
+
 
     def __repr__(self):
         """
@@ -253,65 +256,9 @@ class Study(model_base):
         cost = pd.Series(cost, index=obs.index).rename('cost ' + self.name)
         return cost
 
-    def to_dict(self):
-        """
-        Convert Study to a dict. Uses super class method to convert but then replaces
-          models with config_path and key with str(key), and replaces config with config.to_dict()
-        :return: dict
-        """
-        dct = super().to_dict()
-        logging.debug(f"Replacing models in model_index with config_path")
-        m2 = dict()
-        for key, model in dct['model_index'].items():
-            m2[key] = model.config_path
-        dct['model_index'] = m2
-        logging.debug(f"Running to_dict on config. FIXME")
-        dct['config']= vars(self.config)
-        return dct
-
-    @classmethod
-    def from_dict(cls, dct: dict):
-        """
-        :param dct: dict to be converted to a Study.
-        As config is a positional parameter which must be present this is poped out of the dct and used in the initialization
-        Loads any models using the paths in model_index.
-         If path does not exist then the that model is deleted with a warning given.
-        :return: a study
-        """
-        # largely copy-paste from superclass from_dict
-        # need to deal with config..which is a right mess. TODO fix StudyConfig so it is much clearer..
-        known_versions = {2:StudyConfig.OptClimConfigVn2,3:StudyConfig.OptClimConfigVn3}
 
 
-        config = dct.pop('config')
-        version = config['Config']['version']
-        c = known_versions[version](StudyConfig.dictFile())
-        for name, value in config.items():
-            setattr(c, name, value)
-        study = cls(config=c)  # create an default instance
-        for name, value in dct.items():
-            if hasattr(study, name):
-                setattr(study, name, value)
-            else:
-                logging.warning(f"Did not setattr for {name} as not in obj")
 
-
-        model_index = dict()
-        for key, path in study.model_index.items():  # iterate over the paths (which is how we represent the models)
-            if path.exists():
-                logging.debug(f"Loading model from {path}")
-                # verify key is as expected.
-                model = Model.load_model(path)  # load the model.
-                got_key = study.key_for_model(model)
-                if key != got_key: # key changed.
-                    logging.warning(f"Key has changed from {key} to {got_key} for model {model}")
-                model_index[got_key] = model
-            else:
-                logging.warning(f"Failed to find {path}.")
-
-        study.model_index = model_index  # overwrite the index
-
-        return study
 
     def runConfig(self, filename:typing.Optional[pathlib.Path]=None,
                   scale:bool=True,add_cost:bool=True) -> OptClimConfigVn2|OptClimConfigVn3:
@@ -424,3 +371,5 @@ class Study(model_base):
         return fig, (costAx, paramAx, obsAx)
 
     # end of Study
+# use model_base.__eq__ for equality. Real hack. Sure there are better ways.
+Study.__eq__ = model_base.__eq__

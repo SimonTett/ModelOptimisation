@@ -7,6 +7,8 @@ import pathlib
 import tempfile
 import unittest.mock  # need to mock the run case.
 import unittest
+
+import Study
 import StudyConfig
 import SubmitStudy
 from Model import Model
@@ -171,6 +173,28 @@ class MyTestCase(unittest.TestCase):
         nsub = SubmitStudy.SubmitStudy.load(submit.config_path)
         self.assertEqual(submit,nsub) # should be identical
 
+        for m1, m2 in zip(submit.model_index.values(), nsub.model_index.values()):
+            self.assertEqual(m1, m2)
+        # check on disk is paths
+        import json
+        with submit.config_path.open('r') as fp:
+            dct = json.load(fp)
+        for (k1, m1), (k2, m2) in zip(dct['object']['model_index'].items(), submit.model_index.items()):
+            self.assertEqual(m1['object'], str(m2.config_path))
+            self.assertEqual(k1, k2)
+
+    def test_load_config(self):
+        # test some functionality in load_config works.
+        pth = self.submit.config_path
+        self.submit.dump_config()
+        newSub = self.submit.load_SubmitStudy(pth)
+        self.assertEqual(self.submit,newSub)
+
+        study = self.submit.load_SubmitStudy(pth,Study=True)
+        # return as a study
+        self.assertIsInstance(study,Study.Study)
+
+
 
     def test_gen_name(self):
         # have generated three models so gen_model should be
@@ -333,7 +357,15 @@ class MyTestCase(unittest.TestCase):
             m.status='RUNNING'
         self.assertEqual(len(self.submit.models_to_submit()), 0)
 
-
+    def test_to_dict(self):
+        # test to_dict method.
+        study_dict = self.submit.to_dict()
+        expected_dict = vars(self.submit)
+        # now replace models!
+        expected_dict['model_index'] = {k: m.config_path for k, m in expected_dict['model_index'].items()}
+        # and evil hack for config
+        expected_dict['config'] = vars(expected_dict['config'])
+        self.assertEqual(study_dict, expected_dict)
 
 
 

@@ -143,35 +143,9 @@ class TestStudy(unittest.TestCase):
         # ensure that the Series has the correct number of elements
         self.assertEqual(len(cost), 2)
 
-    def test_to_dict(self):
-        # test to_dict method.
-        study_dict = self.study.to_dict()
-        expected_dict = vars(self.study)
-        # now replace models!
-        expected_dict['model_index'] = {k: m.config_path for k, m in expected_dict['model_index'].items()}
-        # and evil hack for config
-        expected_dict['config'] = vars(expected_dict['config'])
-        self.assertEqual(study_dict, expected_dict)
 
-    def test_load_dump(self):
-        """
-        Check loading and dumping works!
-        :return:
-        """
 
-        study_cfg_path = self.direct / 'study_config.scfg'
 
-        self.study.dump(study_cfg_path)
-        # now load it.
-        study = self.study.load(study_cfg_path)
-        for m1, m2 in zip(study.model_index.values(), self.study.model_index.values()):
-            self.assertEqual(m1, m2)
-        import json
-        with study_cfg_path.open('r') as fp:
-            dct = json.load(fp)
-        for (k1, m1), (k2, m2) in zip(dct['object']['model_index'].items(), self.study.model_index.items()):
-            self.assertEqual(m1['object'], str(m2.config_path))
-            self.assertEqual(k1, k2)
 
     def test_key_for_model(self):
         pDict = {'zz': 1.02, 'aa': 1, 'nn': [0, 1]}

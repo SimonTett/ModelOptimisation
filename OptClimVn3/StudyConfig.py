@@ -25,7 +25,6 @@ import os
 import pathlib
 import re
 
-
 from dfols.solver import OptimResults
 
 import generic_json
@@ -40,7 +39,8 @@ __version__ = '0.3.0'
 
 
 # functions available to everything.
-def readConfig(filename, ordered=False):
+
+def readConfig(filename):
     """
     Read a configuration and return object of the appropriate version.
     :param filename: name of file (or filepath) to read.
@@ -51,29 +51,8 @@ def readConfig(filename, ordered=False):
 
     if os.path.isfile(path) is False:
         raise IOError("File %s not found" % filename)
-    config = dictFile(filename=path, ordered=ordered)  # read configuration using rather dumb object.
-    vn = config.getv('version', default=None)
-    if isinstance(vn, str):
-        vn = float(vn)  # convert to float as version stored as string
-
-    # use appropriate generator fn
-    if (vn is None) or (vn < 3):
-        raise ValueError(
-            f"Version = {vn} in {filename}. Update to version 3 or greater to work with current software..")
-    if vn is None or vn < 2:  # original configuration definition
-        config = OptClimConfig(config)
-    elif vn < 3:  # version 2 config
-        config = OptClimConfigVn2(config)
-    elif vn < 4:  # version 3 config
-        config = OptClimConfigVn3(config)
-    else:
-        raise Exception("Version must be < 4")
-    ## little hack for bestEval..
-    try:
-        if not hasattr(config, 'bestEval'):
-            config.bestEval = config.cost().idxmin()
-    except ValueError:
-        config.bestEval = None
+    config = dictFile(filename=path)  # read configuration using rather dumb object.
+    config = config.to_StudyConfig()  # convert dictFile to appropriate StudyConfig.
     return config
 
 
@@ -135,32 +114,29 @@ class dictFile(dict):
     extends dict to prove save and load methods.
     """
 
-    def __init__(self, filename=None, ordered=False):
+    def __init__(self, filename=None,
+                 Config_dct: typing.Optional[dict] = None):
         """
-        Initialise dictFile object from file
-        :param (optional) filename -- name of file to load
-        :param (optional) ordered -- if set True then load data as orderedDict. This is incompatable with
-           decoding numpy data. TODO: Understand how to decode numpy data AND make an orderedDict
-        :param *arg: arguments
-        :param kw: keyword arguments
+        Initialise dictFile object from file or from dict (which is fairly awful way)
+        :param filename -- name of file to load
+        :param Config_dict used to initialise Config
         :return: just call dict init and returns that.
         """
+
         if filename is not None:
+            if Config_dct is not None:
+                raise  ValueError("Do not specify Config_dct and file")
             path = pathlib.Path(os.path.expandvars(filename)).expanduser()
             try:
                 with path.open(mode='r') as fp:
-                    if ordered:
-                        dct = json.load(fp)  # , object_pairs_hook=collections.OrderedDict)
-                    else:
-                        dct = json.load(fp, object_hook=decode)  ##,object_pairs_hook=collections.OrderedDict)
+                    Config_dct = json.load(fp, object_hook=decode)  ##,object_pairs_hook=collections.OrderedDict)
             except IOError:  # I/O problem
-                dct = dict()
+                Config_dct = dict()  # make it empty
 
         else:
             path = None
-            dct = dict()
 
-        self.Config = dct
+        self.Config = Config_dct
         self._filename = path
 
     # def __getattr__(self, name):
@@ -251,6 +227,28 @@ class dictFile(dict):
         """
         return self._filename
 
+    def to_StudyConfig(self) -> OptClimConfigVn3:
+        """
+        Convert a dictfile to an OptClimVn3
+        :param config_dir: dictfile rep of config.
+        :return: OptClimConfigVn3 (or with development later version)
+        """
+
+        vn = self.getv('version', default=None)
+        if isinstance(vn, str):
+            vn = float(vn)  # convert to float as version stored as string
+
+        # use appropriate generator fn
+        if (vn is None) or (vn < 3):
+            raise ValueError(
+                f"Version = {vn} in {self._filename}. Update to version 3 or greater to work with current software..")
+        elif vn < 4:  # version 3 config
+            config = OptClimConfigVn3(self)
+        else:
+            raise Exception(f"Version must be < 4. Write new code for {vn}!")
+
+        return config
+
 
 class OptClimConfig(dictFile):
     """
@@ -269,9 +267,8 @@ class OptClimConfig(dictFile):
         Return OptClimConfig object -- likely called using readConfig
         :param config: -- a dictFile configuration. Information will be copied from here. 
         """
-
-        self.__dict__.update(config.__dict__)  # just copy the values across!
         self._covariances = None  # where we store the covariances.
+        self.__dict__.update(config.__dict__)  # just copy the values across!
 
     def version(self):
         """
@@ -1614,7 +1611,7 @@ class OptClimConfig(dictFile):
 
         return self.getv('maxDigits', default=3)  # nothing defined -- make it 3.
 
-    def copy(self, filename: typing.Optional[pathlib.Path] = None) -> OptClimConfigVn2|OptClimConfigVn3:
+    def copy(self, filename: typing.Optional[pathlib.Path] = None) -> OptClimConfigVn2 | OptClimConfigVn3:
         """
         :param filename (optional default None): Name of filename to save to.
         :return: a copy of the configuration but set _fileName  to avoid accidental overwriting of file.
@@ -1627,8 +1624,6 @@ class OptClimConfig(dictFile):
         result._filename = filename  # set filename
         return result
 
-
-# TODO add a method to retrieve the max no of characters in a job with default value 5.
 
 class OptClimConfigVn2(OptClimConfig):
     """
@@ -1692,9 +1687,9 @@ class OptClimConfigVn2(OptClimConfig):
         return param
 
     def beginParam(self,
-                   begin:typing.Optional[pd.Series]=None,
-                   paramNames:typing.Optional[typing.List[str]]=None,
-                   scale:bool=False) -> pd.Series:
+                   begin: typing.Optional[pd.Series] = None,
+                   paramNames: typing.Optional[typing.List[str]] = None,
+                   scale: bool = False) -> pd.Series:
 
         """
         get the begin parameter values for the study. These are specified in the JSON file in begin block
@@ -1783,9 +1778,9 @@ class OptClimConfigVn2(OptClimConfig):
         return values.rename(self.name())
 
     def steps(self,
-              paramNames:typing.Optional[typing.List[str]]=None,
-              normalise:bool=False,
-              steps:typing.Optional[dict]=None):
+              paramNames: typing.Optional[typing.List[str]] = None,
+              normalise: bool = False,
+              steps: typing.Optional[dict] = None):
         """
         Compute perturbation  for all parameters supplied. If value specified use that. If not use 10% of the range.
         Quasi-scientific in that 10% of range is science choice but needs knowledge of the structure of the JSON file
@@ -2006,6 +2001,17 @@ class OptClimConfigVn3(OptClimConfigVn2):
     2) Have generic way of dealing with dataframes and make all methods use and
        return pandas series or dataframes as appropriate.
     """
+    def __eq__(self, other:OptClimConfigVn3) -> bool:
+        """
+        Work out if two OptClimConfigVn3 objects are identical. Compares the two Config attributes.
+        :param other: another OptClimConfigVn3
+        :return: True if equal or False if not.
+        """
+        if type(self) != type(other):
+            print(f"self type: {type(self)} not the same as {type(other)}")
+            return False
+
+        return self.Config == other.Config
 
     @classmethod
     def expand(cls, filestr: typing.Optional[str]) -> typing.Optional[pathlib.Path]:
@@ -2019,6 +2025,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
         path = os.path.expandvars(filestr)
         path = pathlib.Path(path).expanduser()
         return path
+
     def normalise(self, pandas_obj: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:
         """
         Normalize a parameters by range such that min is 0 and max is 1
@@ -2082,7 +2089,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
 
         values = self.Config['Parameters'].get('optimumParams', None)
         if values is None:
-            return values # return None
+            return values  # return None
         values = pd.Series(values)
         values = values.combine_first(default).reindex(paramNames)
 
@@ -2091,8 +2098,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
 
         return values.rename(self.name())
 
-
-    def referenceConfig(self, referenceConfig:typing.Optional[pathlib.Path]=None) -> pathlib.Path:
+    def referenceConfig(self, referenceConfig: typing.Optional[pathlib.Path] = None) -> pathlib.Path:
         """
         :param referenceConfig  -- set referenceConfig if not None .
         :return: full path to the reference configuration of model being used
@@ -2105,11 +2111,9 @@ class OptClimConfigVn3(OptClimConfigVn2):
             modelConfigDir = self.expand(modelConfigDir)
         return modelConfigDir
 
-
-
     def dfols_solution(self,
-                       solution:typing.Optional[OptimResults] = None) -> \
-        typing.Optional[OptimResults]:
+                       solution: typing.Optional[OptimResults] = None) -> \
+            typing.Optional[OptimResults]:
         """
         Store/return solution to DFOLS run.
         :param solution: solution (from DFOLS) which if not None will be converted to
@@ -2119,17 +2123,21 @@ class OptClimConfigVn3(OptClimConfigVn2):
 
         if solution is not None:
             # convert solution to something jsonable.
-            conversion = generic_json.dumps(vars(solution)) # use generic_json to convert.
-            self.setv('DFOLS_SOLUTION',conversion)
+            conversion = generic_json.dumps(vars(solution))  # use generic_json to convert.
+            self.setv('DFOLS_SOLUTION', conversion)
 
-        soln = self.getv('DFOLS_SOLUTION',None)
-        if soln is None: # not got anything so return None.
+        soln = self.getv('DFOLS_SOLUTION', None)
+        if soln is None:  # not got anything so return None.
             return soln
-        dct = generic_json.loads(soln) # now have a dict.
-        soln = OptimResults(*range(0,9)) # create empty OptimResults object
-        for k,v in dct.items(): # fill in the instances
-            if not hasattr(soln,k):
+        dct = generic_json.loads(soln)  # now have a dict.
+        soln = OptimResults(*range(0, 9))  # create empty OptimResults object
+        for k, v in dct.items():  # fill in the instances
+            if not hasattr(soln, k):
                 logging.warning(f"Would like to set attr {k} in soln but does not exist")
-            setattr(soln,k,v) # regardless will set the attribute.
+            setattr(soln, k, v)  # regardless will set the attribute.
 
         return soln
+
+    def to_dict(self) -> dict:
+        """ Convert StudyConfig to a dict """
+        return vars(self)
