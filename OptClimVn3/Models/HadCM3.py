@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import logging
-import typing # TODO add type hints to all functions/methods.
+import typing  # TODO add type hints to all functions/methods.
 
 import numpy as np
 
-from Model import  register_param
-import Model # note this seems to be quite important. Import Model from Model means the registration does not happen..
+from Model import register_param
+import Model  # note this seems to be quite important. Import Model from Model means the registration does not happen..
 import importlib.resources
 from Models.namelist_var import namelist_var
 import pathlib
@@ -57,7 +57,7 @@ class HadCM3(Model.Model):
       Which, by definition, are specific to HadCM3.
     """
 
-    def __init__(self, name:str, reference:pathlib.Path, **kwargs):
+    def __init__(self, name: str, reference: pathlib.Path, **kwargs):
         """"
         HadCM3 Init -- calls super().__init__(*args,**kwargs)
         then sets submit_script to "SUBMIT" and continue script to SUBMIT.cont
@@ -67,13 +67,13 @@ class HadCM3(Model.Model):
         """
         if len(name) > 5:
             raise ValueError("HadXM3 limited to 5 character names")
-        super().__init__(name,reference, **kwargs)  # call super class init and then override
+        super().__init__(name, reference, **kwargs)  # call super class init and then override
         # modify submit_script & continue_script
 
         self.submit_script = 'SUBMIT'
         self.continue_script = 'SUBMIT.cont'
         self.post_process_file = 'post_process.sh'
-        self.runInfo=dict()
+        # self.runInfo=dict()
 
     def Name(self):
         """
@@ -86,29 +86,39 @@ class HadCM3(Model.Model):
         return name
 
     def instantiate(self) -> None:
-
-        runTime = self.parameters.pop('runTime', None)  # remove runTime from the parameter list
-        runCode = self.parameters.pop('runCode', None)  # remove runCode
-        self.runInfo = dict(runCode=runCode, runTime=runTime) # put them in the object itself.
+        """
+        HadCM3 instantitate. Over writes Model version.
+        Call the superclass. to copy reference.
+        Then work out the path to set_status_script
+        Cleans up fixClimFCG
+        Modify the Submit, then script, create work dir and copy any astart ostart files there might be into it.,
+        Then create the continue submit file.
+        Finally create the script that tests if finished or not. If not submits the continue script otherwise
+          sets stats to SUCCEEED which runs the post processing.
+        :return:
+        """
         super().instantiate()  # run super class instantiate.
+        resource = importlib.resources.files("OptClimVn3")
+        set_status_script = str(resource.joinpath("scripts/set_model_status.py"))
+
 
         self.fixClimFCG()  # fix the ClimFGC namelist
-        # TODO set  runTime and runCode using a function. Because this involves editing SUBMIT
-        # we really want to do this once???
         # Step 1 --  copy SUBMIT & SCRIPT to SUBMIT.bak & SCRIPT.bak so we have the originals
         # Then modify SUBMIT & SCRIPT in place
-        #  Have fns to set runTime and runCode. Or just pop them off the parameters. Last is better (and more generic)
+        #
         self.modifySubmit()  # modify Submit script
-        self.modifyScript()  # modify Script
+        self.modifyScript(set_status_script)  # modify Script
         self.createWorkDir()  # create the work directory (and fill it in)
         self.genContSUBMIT()  # generate the continuation script.
-        self.createPostProcessFile("# No job to release")
+        self.createPostProcessFile(set_status_script)
 
-    def perturb(self):
+    def perturb(self, parameters:typing.Optional[dict]=None):
         """
         Perturb HadCM3 model. Default works through up to 6 parameters then gives up!
         :return: nothing
         """
+        if parameters is not None:
+            logging.warning("Passing parameters into HadCM3 perturb method. These are ignored")
         parameters_to_perturb = ['VF1', 'ICE_SIZE', 'ENTCOEF', 'CT', 'ASYM_LAMBDA', 'CHARNOCK']
         if self.perturb_count >= len(parameters_to_perturb):
             raise ValueError(
@@ -118,9 +128,9 @@ class HadCM3(Model.Model):
         parameter = parameters_to_perturb[self.perturb_count]
         parameters = self.read_values(parameter)
         parameters[parameter] *= (1 + 1e-6)  # small parameter perturbation
-        return super().perturb(parameters)
+        return super().perturb(parameters=parameters)
 
-    def createPostProcessFile(self, postProcessCmd):
+    def createPostProcessFile(self, set_status_cmd):
         """
         Used by the submission system to allow the post-processing job to be submitted when the simulation has
         completed. This code also modifies the UM so that when a NRUN is finished it automatically runs the
@@ -131,7 +141,7 @@ class HadCM3(Model.Model):
         # postProcessCmd is the command that gets run when the model has finished. It should release the post-processing!  
         outFile = self.model_dir / self.post_process_file  # needs to be same as used in SCRIPT which actually calls it
         # TODO postProcessCmd should become the script that gets run to update the state.
-        # Eddie does not require login in to a login node to subvbmit jobs
+        # Eddie does not require login in to a login node to subbmit jobs
         # that means (I think) we can drop all the ssh nonsense. Might be needed for other
         # machines but cross that bridge if and when we come to it!
         with open(outFile, 'w') as fp:
@@ -147,7 +157,7 @@ class HadCM3(Model.Model):
     FLAG=$(grep 'FLAG' $RSUB|cut -f2 -d"=" | sed 's/ *//'g)
     if  [ $FLAG = 'N' ]
       then # release the post processing job. 
-      {postProcessCmd} ## code inserted
+      {set_status_cmd} {self.config_path} SUCCEEDED ## code inserted
       echo "FINISHED releasing the post-processing"
     else 
          echo "$TYPE: Still got work to do"
@@ -159,10 +169,10 @@ class HadCM3(Model.Model):
       then
       if [ -n "$TESTING"  ] # for testing.
       then
-    	echo "Testing: Should run $SSHCMD $SUBCONT"
+    	echo "Testing: Should run $SUBCONT"
     	ls -ltr $SUBCONT
       else
-        echo "$SSHCMD $SUBCONT"
+        echo "$SUBCONT"
         $SUBCONT
       fi
     fi
@@ -192,7 +202,7 @@ class HadCM3(Model.Model):
                 except IOError:
                     logging.warning(f"Failed to copy {file} to {workDir}")
 
-    def modifyScript(self):
+    def modifyScript(self,set_status_script):
         """
         modify script.
          set ARCHIVE_DIR to runid/A -- not in SCRIPT??? WOnder where it comes from. Will look at modified script..
@@ -204,6 +214,7 @@ class HadCM3(Model.Model):
             This will be modified by the submission system
          :return:
         """
+
         runid = self.Name()
         experID = runid[0:4]
         jobID = runid[4]
@@ -212,28 +223,60 @@ class HadCM3(Model.Model):
             for line in f:
                 if re.search(modifystr, line):
                     raise Exception("Already modified Script")
+                #
+                elif f.filelineno() == 1: # first line
+                    print(f"{set_status_script} {self.config_path} RUNNING {modifystr}") # we are running so set status to RUNNING.
+                    print(line[0:-1]) # print line out.
                 elif re.match('^EXPTID=', line):
                     print("EXPTID=%s %s" % (experID, modifystr))
                 elif re.match('^JOBID=', line):
                     print("JOBID=%s %s" % (jobID, modifystr))
                 elif re.match('MESSAGE="Run .* finished. Time=`date`"', line):
                     print('MESSAGE="Run %s#%s finished. Time=`date`"' % (experID, jobID))
-                    # TODO run self.finished here.
                 elif re.match('MY_DATADIR=', line):  # fix MY_DATADIR
                     print("MY_DATADIR=%s %s" % (self.model_dir, modifystr))
-                elif re.match('^. submitchk$', line):  # need to modify SCRIPT to call the postProcessFile.
-                    print(line[0:-1])  # print the line out stripping of the newline
-                    print(f'. $JOBDIR/{self.post_process_file} {modifystr}')
-                    # TODO run self.succeeded here. Self postProcessFile is run the succeeded thingie!
                 elif r'DATADIR/$RUNID/' in line:  # replace all the DATADIR/$RUNID stuff.
                     line = line.replace('DATADIR/$RUNID/', 'DATADIR/')
                     print(line[0:-1], modifystr)
+                elif re.match('^. submitchk$', line):  # need to modify SCRIPT to call the postProcessFile.
+                    print(line[0:-1])  # print the line out stripping of the newline
+                    print(f'. $JOBDIR/{self.post_process_file} {modifystr}')
+                    # Self postProcessFile is run.
+                    # When it is completed then post-processing gets run.
+                elif re.match(r'^exit \$RCMASTER',line):# add code to deal with failure
+                    # Success is when the potentially multiple simulations have completed.
+                    # that's handled separately in self.post_process_file
+                    print(f"if [[ $RCMASTER -ne 0 ]]; then ;{set_status_script} {self.config_path} FAILED ; fi  {modifystr}")
+                    print(line[0:-1]) # print out the line.
                 else:  # default line
                     print(line[0:-1])  # remove newline
 
+    from engine import engine
+    def submit_cmd(self, run_info:dict,engine:engine) -> typing.List[str]:
+        """
+        :param run_info -- run information.
+          should include runCode and runTime.
+        :param engine -- engine info. Not used  but provided with superclass method
+
+        :return:  cmd to be run.
+        """
+        if self.status in ['INSTANTIATED', 'PERTURBED']:
+            script = "SUBMIT"
+        elif self.status == 'CONTINUE':
+            script = "SUBMIT.cont"
+        else:
+            raise ValueError(f"Status {self.status} not expected ")
+        runCode = run_info.get('runCode')
+        runTime = run_info.get("runTime")
+        ok = self.set_time_code(script, runTime=runTime, runCode=runCode)
+        if not ok:
+            raise ValueError("Something went wrong with set_time_code")
+
+        return [script]
+
     def set_time_code(self, script: str,
-                      runTime: typing.Optional[int]=None,
-                      runCode: typing.Optional[str]=None) -> bool:
+                      runTime: typing.Optional[int] = None,
+                      runCode: typing.Optional[str] = None) -> bool:
         """
         :param script: Name of script file to modify to set runTime and runCode
         :param runTime: Time in seconds model should run for
@@ -241,7 +284,7 @@ class HadCM3(Model.Model):
         :return: True if succeeded. False if failed.
         """
         if (runTime is None) and (runCode is None):
-            return True # nothign to be done.
+            return True  # nothing to be done.
         logging.debug(f"Setting runTime to {runTime} and runCode to {runCode} for model {self}")
         modifyStr = '## modified time/code'
         # no try/except here. If it fails then all will fail!
@@ -252,7 +295,7 @@ class HadCM3(Model.Model):
                     print(f'{l2}={runTime:d} {modifyStr}')  # Change the time
                 elif (runCode is not None) and re.match(r'ACCOUNT\w*=', line):  # got a project code specified
                     l2 = line.split('=')[0]  # split line at = and keep stuff to the left.
-                    print(f"{l2}={runCode} {modifyStr}")  # Chnage the runCode
+                    print(f"{l2}={runCode} {modifyStr}")  # Change the runCode
                 else:
                     print(line[0:-1])  # remove trailing newline
 
@@ -267,8 +310,7 @@ class HadCM3(Model.Model):
           set CJOBN to runid in SUBMIT  -- first ^CJOBN=
           set MY_DATADIR to dirPath
           set DATAW and DATAM to $MY_DATADIR/W & $MY_DATADIR/M respectively.
-        :param runTime: default None -- if not None then specify time in seconds for model job.
-        :param runCode: default None -- if not None then this is the project code for the model job.
+
 
         :return: nada
         """
@@ -460,8 +502,8 @@ class HadCM3(Model.Model):
                 values = values_nonSph
             # check  namelist values are consistent
             for n, v in zip(nl, values):
-                vr=n.read_value(dirpath=self.model_dir, default=v)
-                assert vr == v,f"Got {vr} but expected {v} for nl {n}"
+                vr = n.read_value(dirpath=self.model_dir, default=v)
+                assert vr == v, f"Got {vr} but expected {v} for nl {n}"
 
             return sph
 
@@ -474,7 +516,7 @@ class HadCM3(Model.Model):
         return result
 
     @register_param("START_TIME")
-    def start_time(self, time_input: str |None):
+    def start_time(self, time_input: str | None):
         """
         :param time_input:  start time as ISO format  string. If None inverse will be done
         :return:  namelist info and values as array. (or if inverse set return the start time)
@@ -645,7 +687,7 @@ class HadCM3(Model.Model):
 
     # Stuff for diffusion calculation. Rather ugly code. Probably not worth doing much with as diffusion does
     # not seem that important!
-    def diff_fn(self, dyndiff, dyndel=6,inverse=False):
+    def diff_fn(self, dyndiff, dyndel=6, inverse=False):
         """
         Support Function to compute diff  coefficient
         :param dyndiff: diffusion value in hours. If None inverse calculation will be done
@@ -715,7 +757,7 @@ class HadCM3(Model.Model):
             diff_time_hrs = self.diff_fn(diff_coeff_nl.read_value(dirpath=self.model_dir)[0], dyndel=powerDiff,
                                          inverse=inverse)
             # round to 3 dps
-            diff_time_hrs = round(diff_time_hrs,3)
+            diff_time_hrs = round(diff_time_hrs, 3)
             return diff_time_hrs
         else:
             diff_pwr = 6  # assuming 3rd order.
@@ -858,7 +900,7 @@ class HadCM3(Model.Model):
             for element, chars in zip(s, ['Y', 'M', 'D', 'H', 'M', 'S']):
                 if element != 0:
                     if isinstance(element, float) and element.is_integer():
-                        element=int(element)
+                        element = int(element)
                     durn += f"{element}{chars}"
                 if chars == 'D':  # days want to add T as into the H, M, S cpt.
                     if np.any(np.array(s[3:]) != 0):
@@ -871,7 +913,7 @@ class HadCM3(Model.Model):
         return durn
 
     ## generic function for ASTART/AINITIAL/OSTART/OINITIAl/
-    def initHist_nlcfiles(self,value:str|None, nl_var:str =None):
+    def initHist_nlcfiles(self, value: str | None, nl_var: str = None):
         """
 
         :param value: value to be set -- typically the name of a file. If None then the inverse calculation will be done.
@@ -888,7 +930,7 @@ class HadCM3(Model.Model):
             # read existing value to get the parameter name and then re-order
             value_nml = nl.read_value(dirpath=self.model_dir)
 
-            parameter =value_nml.split(':')[0]
+            parameter = value_nml.split(':')[0]
             st = f"{parameter}: {value}"
             return (nl, st)
 
@@ -899,7 +941,7 @@ class HadCM3(Model.Model):
         :param astartV: value of ASTART
         :return: nl/tuple (if astartV is not None) to be set or whatever astart is in the models namelist.
         """
-        return self.initHist_nlcfiles(astartV,nl_var='ASTART')
+        return self.initHist_nlcfiles(astartV, nl_var='ASTART')
 
     @register_param("AINITIAL")
     def ainitial(self, ainitialV):
@@ -909,6 +951,7 @@ class HadCM3(Model.Model):
         :return: nl/tuple (if ainitialV is not None) to be set or whatever ainitial is in the models namelist.
         """
         return self.initHist_nlcfiles(ainitialV, nl_var='AINITIAL')
+
     @register_param("OSTART")
     def ostart(self, ostartV):
         """
@@ -927,9 +970,8 @@ class HadCM3(Model.Model):
         """
         return self.initHist_nlcfiles(oinitialV, nl_var='OINITIAL')
 
-
     @register_param("ensembleMember")
-    def ens_member(self,ensMember:typing.Optional[int]) -> None:
+    def ens_member(self, ensMember: typing.Optional[int]) -> None:
         """
         Do nothing as for HadCM3 random perturb is from name.
         :param ensMember: ensemble member. The ensemble member wanted.
@@ -941,10 +983,7 @@ class HadCM3(Model.Model):
             logging.warning("Can not invert ensMember")
             return None
 
-
         return None
-
-
 
 
 traverse = importlib.resources.files("Models")

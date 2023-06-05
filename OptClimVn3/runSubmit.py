@@ -117,10 +117,12 @@ class runSubmit(SubmitStudy):
                 pDict.update(ensembleMember=ensembleMember)
                 model = self.get_model(pDict)
                 if model is None:  # no model so time to create one.
-                    self.create_model(pDict)
+                    key = self.create_model(pDict)
                     obs = empty
-                elif model.status != "PROCESSED": # not processed so return NaN and complain
-                    logging.warning(f"{model} has not been processed. Setting obs to array of nan's")
+                elif model.status != "PROCESSED": # not processed so raise ValueError and complain.
+                    # TODO add in random generation to allow look ahead
+                    raise ValueError(f"model status != PROCESSED = {model.status}")
+                    #logging.warning(f"{model} has not been processed. Setting obs to array of nan's")
                     obs = empty
                 else:  # got a model.
                     obsNames = self.config.obsNames()
@@ -155,6 +157,7 @@ class runSubmit(SubmitStudy):
 
             result.extend(ensObs.copy())  # add to list of  results. Note copying as  ensObs is changed in the loop
         # end of loop over simulations to be done.
+
         result = pd.DataFrame(result)  # convert to a dataframe
 
         if raiseError and np.any(result.isnull()):

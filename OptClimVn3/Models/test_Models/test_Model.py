@@ -10,13 +10,13 @@ import tempfile
 import time
 import unittest
 import unittest.mock
-
+import StudyConfig # so can read in a config for fake_fn.
 import f90nml
 import numpy as np
 import numpy.testing as nptest
 import pandas as pd
 import pandas.testing as pdtest
-
+import engine
 import genericLib
 import generic_json
 from Models.Model import Model
@@ -73,15 +73,12 @@ traverse = importlib.resources.files("Models")
 with importlib.resources.as_file(traverse.joinpath("parameter_config/example_Parameters.csv")) as pth:
     myModel.update_from_file(pth)
 
+root_pth  = importlib.resources.files("OptClimVn3")
+config = StudyConfig.readConfig(root_pth/"configurations/dfols14param_opt3.json")
 
 def fake_function(param):
-    sim_obs = dict()
-    obs_count = 0
-    for k, v in param.items():
-        oname = f"obs{obs_count}"
-        sim_obs[oname] = v ** 2
-        obs_count += 1
-    return pd.Series(sim_obs)
+    return genericLib.fake_fn(config,param)
+
 
 
 class ModelTestCase(unittest.TestCase):
@@ -112,6 +109,8 @@ class ModelTestCase(unittest.TestCase):
         self.testDir = testDir  # for clean up!
         self.refDir = refDir
         self.config_path = self.model.config_path
+
+        self.engine = engine.engine.setup_engine('SGE')
         # set up mock for Model.now
 
     def tearDown(self):
@@ -232,12 +231,11 @@ class ModelTestCase(unittest.TestCase):
                       model_dir=self.testDir, parameters=pardict)
         expected_dct = dict(name='test_model', reference=self.refDir,
                             model_dir=self.testDir, parameters=pardict,
-                            submit_script='submit.sh', continue_script='continue.sh',
-                            post_process={}, post_process_cmd=None, output={},
+                            post_process={}, post_process_cmd=None, _output={},
                             post_process_output=None,
                             post_process_script=None, post_process_script_interp=None, fake=False, simulated_obs=None,
                             perturb_count=0, config_path=self.testDir / "test_model.mcfg",
-                            status='CREATED', history=model.history,
+                            status='CREATED', _history=model._history,
                             run_count=0, submission_count=0)
         dct = model.to_dict()
         self.assertEqual(expected_dct, dct)
@@ -323,7 +321,7 @@ class ModelTestCase(unittest.TestCase):
         :return:
         """
         # test the expected path works
-        nhist = len(self.model.history)
+        nhist = len(self.model._history)
         for status in ['INSTANTIATED', 'SUBMITTED', 'RUNNING', "FAILED", "PERTURBED", "SUBMITTED", "RUNNING",
                        'SUCCEEDED', 'PROCESSED']:
             time.sleep(1e-3)  # sleep for a millisecond
@@ -339,20 +337,20 @@ class ModelTestCase(unittest.TestCase):
             # verify all but status and history are the same form model prior to status change,
             omodeld = vars(omodel)
             modeld = vars(self.model)
-            keys_to_check = set(omodeld.keys()) - {'history', 'status'}
+            keys_to_check = set(omodeld.keys()) - {'_history', 'status'}
             for key in keys_to_check:
                 self.assertEqual(modeld[key], omodeld[key])
-            for key in ['history', 'status']:  # should be different
+            for key in ['_history', 'status']:  # should be different
                 self.assertNotEqual(modeld[key], omodeld[key])
             # history only differs in last entry
-            h = copy.deepcopy(modeld['history'])
+            h = copy.deepcopy(modeld['_history'])
             h.popitem()
-            self.assertEqual(h, omodeld['history'])
+            self.assertEqual(h, omodeld['_history'])
 
             # read in the model
             lmodel = Model.load_model(self.config_path)
             self.assertEqual(vars(lmodel), vars(self.model))  # check they are the same
-            self.assertEqual(nhist, len(self.model.history))  # history right length
+            self.assertEqual(nhist, len(self.model._history))  # history right length
             # test failures
 
             with self.assertRaises(ValueError):
@@ -393,7 +391,7 @@ class ModelTestCase(unittest.TestCase):
         dd = vars(self.model)
         dd2 = vars(omodel)
         dd2['status'] = 'INSTANTIATED'
-        self.assertNotEqual(dd.pop('history'), dd2.pop('history'))
+        self.assertNotEqual(dd.pop('_history'), dd2.pop('_history'))
         self.assertEqual(dd, dd2)
         count_config = 0
         bak_count = 0
@@ -520,7 +518,7 @@ class ModelTestCase(unittest.TestCase):
         model.status = 'SUBMITTED'
         model.running()
         self.assertEqual(model.status, 'RUNNING')
-        self.assertEqual(len(model.history), 2)  # should be two entries.
+        self.assertEqual(len(model._history), 2)  # should be two entries.
         dmodel = Model.load_model(model.config_path)
         self.assertEqual(dmodel, model)
 
@@ -542,7 +540,7 @@ class ModelTestCase(unittest.TestCase):
         with self.assertLogs(level='DEBUG') as log:
             model.perturb(v)
         self.assertEqual(log.output[-1], f"DEBUG:root:set parameters to {v}")
-        self.assertEqual(len(model.history),
+        self.assertEqual(len(model._history),
                          4)  # expect 4 bits of history. Created, Instantiated, the  perturbed using and setting status
         p = model.read_values('VF1')
         self.assertEqual(p, v)
@@ -550,7 +548,7 @@ class ModelTestCase(unittest.TestCase):
         self.assertEqual(model.status, 'PERTURBED')
 
     @unittest.mock.patch.object(myModel, 'now', side_effect=gen_time())
-    def test_failed(self,mck_now):
+    def test_set_failed(self,mck_now):
         """
         Should set status to FAILED.
         :return:
@@ -559,9 +557,9 @@ class ModelTestCase(unittest.TestCase):
 
         model = self.model
         model.status = 'RUNNING'
-        model.failed()
+        model.set_failed()
         self.assertEqual(model.status, 'FAILED')
-        self.assertEqual(len(model.history), 2)  # should be two entries.
+        self.assertEqual(len(model._history), 2)  # should be two entries.
 
     @unittest.mock.patch.object(myModel,'now',side_effect=gen_time())
     def test_succeeded(self,mock_now):
@@ -579,10 +577,10 @@ class ModelTestCase(unittest.TestCase):
             self.assertEqual(log.output[0], f'INFO:root:Ran post-processing cmd {model.post_process_cmd}')
             self.assertEqual(model.status, 'SUCCEEDED')
             self.assertEqual(r, 'Ran PP')
-            self.assertEqual(len(model.history), 2)
+            self.assertEqual(len(model._history), 2)
             dmodel = Model.load_model(model.config_path)
             self.assertEqual(dmodel, model)
-            self.assertEqual(len(model.output),1)
+            self.assertEqual(len(model._output),1)
 
 
             # set post process cmd to None. No subprocess should be submitted
@@ -644,7 +642,7 @@ class ModelTestCase(unittest.TestCase):
                             post_process=post_process)  # create the model.
 
             model.instantiate()  # instantiate the model.
-            model.submit_model(None)  # submit the model.
+            model.submit_model({},self.engine)  # submit the model.
             model.running()  # model is running.
             model.succeeded()  # model has succeeded
             # use fake_fn to generate some fake obs!
@@ -657,9 +655,9 @@ class ModelTestCase(unittest.TestCase):
             # having got to here should have simulated_obs be post_process['fake_obs']
             pdtest.assert_series_equal(model.simulated_obs, pd.Series(post_process['fake_obs']).rename(model.name))
             # should have 6 history entries.
-            self.assertEqual(len(model.history), 6)
+            self.assertEqual(len(model._history), 6)
             # two   outputs -- from one model submission + one post_process
-            self.assertEqual(len(model.output), 2)
+            self.assertEqual(len(model._output), 2)
 
             # now do but where model fails, get perturbed, gets continued and then works.
             cfg = self.testDir / 'model0002.mcfg'
@@ -668,15 +666,16 @@ class ModelTestCase(unittest.TestCase):
                             parameters=dict(VF1=1, CT=2.2, G0=11),
                             post_process=post_process)  # create the model.
             model.instantiate()  # instantiate the model.
-            model.submit_model(None)  # submit the model.
+            model.submit_model({},self.engine)  # submit the model.
             model.running()
             model.failed()
             ct = model.read_values('CT')
             print(ct)
             ct['CT'] *= (1 + 1e-6)
+            model.set_failed()
             model.perturb(ct)
             model.continue_simulation()
-            model.submit_model(None)  # continue
+            model.submit_model({},self.engine)  # continue
             model.running()
             model.succeeded()  # model has succeeded
             # use fake_fn to generate some fake obs!
@@ -686,9 +685,9 @@ class ModelTestCase(unittest.TestCase):
                 generic_json.dump(fake_obs, fp)
             model.process()  # and do the post-processing
             # should have 12 history entries.
-            self.assertEqual(len(model.history), 12)
+            self.assertEqual(len(model._history), 12)
             # three  outputs -- 1 model, one continue and one postprocess.
-            self.assertEqual(len(model.output), 3)
+            self.assertEqual(len(model._output), 3)
             #
 
 

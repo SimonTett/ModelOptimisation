@@ -15,6 +15,7 @@ import logging  # TODO remove all verbose/print and use logging. Means tests nee
 import copy
 from Models.HadCM3 import HadCM3 # so this import puts HadCM3 in the list of known models for the rest of the testing.
 import genericLib
+import importlib.resources
 
 
 def cmp_lines(path_1, path_2, ignore=None, verbose=False):
@@ -66,8 +67,8 @@ class testHadCM3(unittest.TestCase):
                           START_TIME='1977-12-01T00:00:00', RESUBMIT_INTERVAL='P40Y',
                           ASTART='$MYDUMPS/fred.dmp',
                            IA_N_DROP_MIN=4E7, IA_KAPPA_SCALE=0.5, IA_N_INFTY=3.75E89,
-                          SPHERICAL_ICE=False, ICE_DIFF=2.5e-5, MAX_ICE=0.99, OCN_ISODIFF=800,
-                          runTime=1200, runCode='test')
+                          SPHERICAL_ICE=False, ICE_DIFF=2.5e-5, MAX_ICE=0.99, OCN_ISODIFF=800
+                          )
         self.parameters = copy.deepcopy(parameters)
 
         tmpDir = tempfile.TemporaryDirectory()
@@ -121,7 +122,7 @@ class testHadCM3(unittest.TestCase):
 
         self.model.instantiate()
         p = set(self.parameters.keys())
-        p -= {'runTime','runCode'}
+
         p = self.model.read_values(p)
         for param,value in p.items():
             self.assertEqual(self.parameters[param],value,msg=f"Comparison failed for {param}")
@@ -222,16 +223,18 @@ class testHadCM3(unittest.TestCase):
         # better to count the number of lines with ## modified at the end.
         modifyStr = '## modified *$'
         shutil.copy2(self.refDir / 'SCRIPT', self.model.model_dir)
-        self.model.modifyScript()
+        resource = importlib.resources.files("OptClimVn3")
+        set_status_script = str(resource.joinpath("scripts/set_model_status.py"))
+        self.model.modifyScript(set_status_script)
         file = self.model.model_dir / 'SCRIPT'
         count = 0
         with open(file, 'r') as f:
             for line in f:
                 if re.search(modifyStr, line): count += 1
 
-        # expected changes are  exprID, jobID, MY_DATADIR, 4 DATA[M,W,U,T] +2 more DATA [M,W]+ the postProcessing script -- this depends on config.
+        # expected changes are  set_status running, exprID, jobID, MY_DATADIR, 4 DATA[M,W,U,T] +2 more DATA [M,W]+ the postProcessing script -- this depends on config.
         # If emailing then will expect more changes.
-        expect = 10
+        expect = 12
         # Note config this being tested one has no MY_DATADIR/A
         self.assertEqual(count, expect, f'Expected {expect} {modifyStr} got {count}')
 

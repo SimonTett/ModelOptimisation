@@ -27,30 +27,47 @@ class journal:
 
     def update_history(self, message: typing.Optional[str]):
         """
-        Update the history directory. Key will be self.now()
-        If self.history does not exist, then it will be created.
-        Routine updates existing values so that multiple updates in a short time will preserve history.
+        Update the _history directory. Key will be self.now()
+        If self._history does not exist, then it will be created.
+        Routine updates existing values so that multiple updates in a short time will preserve _history.
         Short time defined as less than precision of str(now))
         :param message:message text to be stored.
         If message is None then  self.history will be created and the control returns
         :return:
         """
-        if not hasattr(self, 'history'):  # no history so create it as an empty dict
-            self.history = {}
+        if not hasattr(self, '_history'):  # no history so create it as an empty dict
+            self._history = {}
         if message is None:
             return
-        dtkey = str(self.now())  # datetime for now as string
-        h = self.history.get(dtkey, [])  # get any existing history for this time
+        dt = self.now()
+        dtkey = str(dt)  # datetime for now as string
+
+        h = self._history.get(dtkey, [])  # get any existing history for this time
         h += [message]  # add on the message
-        self.history[dtkey] = h  # store it back again.
+        self._history[dtkey] = h  # store it back again.
         logging.debug(f"Updated history at {dtkey} ")
+
+    def last_history_key(self) -> typing.Optional[str]:
+        """
+
+        :return: last history  or None if no history.
+        """
+
+        if hasattr(self,'_history') and (len(self._history) > 0):
+            last_hist_key = list(self._history.keys())[-1]
+        else:
+            last_hist_key = None
+
+        return last_hist_key
 
     def print_history(self):
         """
          Print out history
          :return:
          """
-        for time, messages in self.history.items():
+        if not hasattr(self,'_history'):
+            print("No History")
+        for time, messages in self._history.items():
             str_msg = '\n'.join(messages)
             print(f"{time}:", str_msg)
 
@@ -63,8 +80,8 @@ class journal:
         If both  are None then only the creatuion of output will be done
         :return: Nothing
         """
-        if not hasattr(self, 'output'):  # no history so create it as an empty dict
-            self.output = {}
+        if not hasattr(self, '_output'):  # no output so create it as an empty dict
+            self._output = {}
 
         if (cmd is None) and (result is None):
             return
@@ -72,9 +89,9 @@ class journal:
         key = str(self.now())
         store = [dict(cmd=cmd, result=result)]  # store them as a dict so can round trip store them in a json file.
         try:
-            self.output[key] += store
+            self._output[key] += store
         except KeyError:
-            self.output[key] = store
+            self._output[key] = store
 
         return
 
@@ -84,7 +101,7 @@ class journal:
         :return: Nothing
         """
 
-        for key, lst in self.output.items():
+        for key, lst in self._output.items():
             for dct in lst:
                 str_cmd = [str(c) for c in dct['cmd']]
                 print(f"Command {' '.join(str_cmd)} stored at {key} returned {dct['result']}")
@@ -93,16 +110,15 @@ class journal:
     def run_cmd(self, cmd: list, **kwargs):
         """
         Run a command using subprocess.check_output and record output.
-          By default run with  text=True
         :param cmd: command to run
-        :**kwargs -- kwargs to be passed to subprocess.check_output. Will update defaults.
+        :**kwargs -- kwargs to be passed to subprocess.check_output. Will update defaultswhich is just text=True
         :return: output from running command
         """
-        args = dict()  #
+        args = dict(text=True)  #
         # issue is that fileNotFound will get returned if a file does not exist. Would need to
         # convert to subprocess.CalledProcessError
         args.update(**kwargs)
-        # this little code fragment from chatGPT (with a bit of nudging/editing)
+        # this little code fragment from chatGPT (with a bit of nudging/editing) traps that.
         try:
             output = subprocess.check_output(cmd, **args)  # run cmd
         except FileNotFoundError as e:  # cmd not found

@@ -321,7 +321,7 @@ class testStudyConfig(unittest.TestCase):
         Test that runtime is 10000
         :return: 
         """
-        self.assertEqual(self.config.getv("runTime"), 10000)
+        self.assertEqual(self.config.runTime(), 10000)
 
     def test_optimumParam(self):
         """

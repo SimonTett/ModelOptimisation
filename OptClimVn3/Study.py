@@ -15,11 +15,12 @@ import typing
 import numpy as np
 import pandas as pd
 
-import StudyConfig
+
 from Models.model_base import model_base
 from Models.Model import Model
 import generic_json
-from StudyConfig import OptClimConfigVn2, OptClimConfigVn3
+from StudyConfig import OptClimConfigVn3
+
 
 
 
@@ -30,7 +31,7 @@ class Study():
     handle submitting models or realizing that a new one needs to be generated.
     """
 
-    def __init__(self, config: OptClimConfigVn2|OptClimConfigVn3,
+    def __init__(self, config: OptClimConfigVn3,
                  name: typing.Optional[str] = None,
                  rootDir: typing.Optional[pathlib.Path] = None,
                  models: typing.Optional[typing.List[Model]] = None):
@@ -105,7 +106,7 @@ class Study():
             f" Status: {status} Model_Types:{model_types}"
         return s
 
-    def key_for_model(self, model:Model, fpFmt:str = '%.4g'):
+    def key_for_model(self, model:Model, fpFmt:str = '%.4g') -> str:
         """
         Generate key from model
         :param model: model for which key gets generated. Uses parameters to generate the key.
@@ -137,7 +138,7 @@ class Study():
             else:  # just append the value.
                 keys.append(repr(v))  # use the object repr method.
         keys = tuple(keys)  # convert to tuple
-        return str(keys)
+        return str(keys) # and then to a string.
 
     def get_model(self, parameters: typing.Mapping, fpFmt: str = '%.4g') -> Model:
         """

@@ -21,6 +21,7 @@ def gen_time():
     timedelta = datetime.timedelta(seconds=1)
     while True:
         time += timedelta
+        print(f"time is {time}")
         yield time
 class myModel(Model):
     pass
@@ -31,8 +32,9 @@ with importlib.resources.as_file(traverse.joinpath("parameter_config/example_Par
     myModel.update_from_file(pth)
 class MyTestCase(unittest.TestCase):
 
-    @unittest.mock.patch.object(SubmitStudy.SubmitStudy, 'now', side_effect=gen_time()) # regen times every time!
-    def setUp(self,mck_now):
+    @unittest.mock.patch.object(SubmitStudy.SubmitStudy, 'now', side_effect=times) # regen times every time!
+    @unittest.mock.patch.object(myModel,'now',side_effect=times)
+    def setUp(self,mck_now,mck_model):
         self.tmpDir = tempfile.TemporaryDirectory()
         testDir = pathlib.Path(self.tmpDir.name)
         cpth = SubmitStudy.SubmitStudy.expand("$OPTCLIMTOP/OptClimVn3/configurations/dfols14param_opt3.json")
@@ -48,77 +50,7 @@ class MyTestCase(unittest.TestCase):
     def tearDown(self):
         self.tmpDir.cleanup()
 
-    # first tests for engines
-    def test_eng_setup_engine(self):
-        # get some thing sensible..
-        cmd = ["echo"], ['fred'] # cmd that will be ran
-        jid = "203675"
-        for name in ['SGE','SLURM']:
-            eng = SubmitStudy.engine.setup_engine(name)
-            # should be name and, except for engine_name, be functions
-            for k,v in vars(eng).items():
-                if k == "engine_name":
-                    self.assertEqual(v,name)
-                else:
-                    self.assertTrue(callable(v))
-                    #run the command -- should be a list but the arguments depend on what it is!
-                    if k == "submit_fn":
-                        result = v(cmd,'tst_sub',pathlib.Path.cwd())
-                        self.assertIsInstance(result,list)
-                    elif k == "array_fn":
-                        result = v(cmd,'tst_sub',pathlib.Path.cwd(),10)
-                        self.assertIsInstance(result,list)
-                    elif k in ['release_fn','kill_fn']:
-                        result = v(jid)
-                        self.assertIsInstance(result,list)
-                    elif k in ['jid_fn']:
-                        jid = "56745"
-                        if name == 'SGE':
-                            result = v("cmd name "+jid)
-                            self.assertEqual(jid, result)
-                        elif name == 'SLURM':
-                            with self.assertRaises(NotImplementedError):
-                                result = v("cmd name "+jid)
-                        else:
-                            raise NotImplementedError(f" implement test for {name} jid_fn")
-                    else:
-                        raise NotImplementedError(f"Do not know how to test {k}")
 
-        # test unknown engin causes failure
-        with self.assertRaises(ValueError):
-            SubmitStudy.engine.setup_engine('fred')
-
-    def test_eng_to_dict(self):
-        # test that the dct we get makes sense. It should be the function *names* and engine_name
-        eng = SubmitStudy.engine.setup_engine('SLURM')
-        dct = eng.to_dict()
-        for k,v in dct.items():
-            if k == 'engine_name':
-                self.assertEqual(v,eng.engine_name)
-            else:
-                eng_v = getattr(eng,k)
-                self.assertIsInstance(v,str)
-                self.assertTrue(callable(eng_v))
-                self.assertEqual(v,eng_v.__name__)
-
-
-    def test_eng_from_dict(self):
-        # test that can convert a dict -- functions get generated from engine_name
-        dct = dict(submit_fn = 'sge_submit_fn',array_fn='sge_array_fn',
-                   release_fn='sge_release_fn',kill_fn='sge_kill_fn',
-                   jid_fn='sge_jid_fn',
-                   engine_name='SGE')
-        eng = SubmitStudy.engine.from_dict(dct)
-        self.assertEqual(eng.to_dict(),dct)
-        # fail cases. See engine_name to SLURM. Should fail with the existing names.
-        dct.update(engine_name='SLURM')
-        with self.assertRaises(ValueError):
-            eng = SubmitStudy.engine.from_dict(dct)
-        # fix all names and should run.
-        for key in dct.keys():
-            dct[key] = dct[key].replace("sge","slurm")
-        eng = SubmitStudy.engine.from_dict(dct)
-        self.assertEqual(eng.to_dict(),dct)
 
 
     def test_create_model(self):
@@ -155,14 +87,14 @@ class MyTestCase(unittest.TestCase):
         for mpth in mpths:
             if not mpth.exists():
                 raise ValueError(f"Model config {mpth} does not exist" )
-        nhist = len(self.submit.history)
+        nhist = len(self.submit._history)
         self.submit.delete() # should delete everything including models.
         # models should all be gone, no model index and next_name be ZZ000
         self.assertFalse(pth.exists())
         for mpth in mpths:
             self.assertFalse(mpth.exists())
         self.assertEqual(self.submit.gen_name(),'ZZ000')
-        self.assertEqual(len(self.submit.history),nhist+1) # added deleted
+        self.assertEqual(len(self.submit._history),nhist+1) # added deleted
 
 
 
@@ -259,7 +191,7 @@ class MyTestCase(unittest.TestCase):
         submit = copy.deepcopy(self.submit)
 
         rtn_job_output = ['postprocess submitted 345678.10']  # array of pp jobs as no next job wanted
-        model_output = ['Model submitted']*len(submit.model_index)
+        model_output = ['Model submitted 34567']*len(submit.model_index)
         output = rtn_job_output + model_output
         with unittest.mock.patch("subprocess.check_output",
                                  autospec=True, side_effect=output) as mck_output:
@@ -305,13 +237,13 @@ class MyTestCase(unittest.TestCase):
             self.assertEqual(mck_output.call_count, 5)  # 5 cases
 
         # final tests -- history and output as expected.
-        # expect 13 history:
-        #    1 start, 3 x model created, 3 x instantiated, pp job submitted, models submitted,
+        # expect 11 history:
+        #    1 start, 3 x model created,  instantiated, pp job submitted, models submitted,
         #      models continued, pp job submitted, next job submitted, models submitted.
         #
         # and 4+3+5 outputs
-        self.assertEqual(len(submit.history),13)
-        self.assertEqual(len(submit.output),3) # pp ran twice plus next iter.
+        self.assertEqual(len(submit._history),11)
+        self.assertEqual(len(submit._output),3) # pp ran twice plus next iter.
 
         # now fake it. subprocess.check_output should not run anything.
         import pandas as pd

@@ -2141,3 +2141,70 @@ class OptClimConfigVn3(OptClimConfigVn2):
     def to_dict(self) -> dict:
         """ Convert StudyConfig to a dict """
         return vars(self)
+
+    # stuff to do with running a model.
+
+    def run_info(self) -> dict:
+        """
+        :return run_info dict
+        """
+
+        run_info = self.getv("run_info")
+        if run_info is None: # if it is None set it to an empty dict.
+            self.setv("run_info",{})
+            run_info = self.getv("run_info")
+
+        return run_info
+
+    def set_run_info(self,**kwargs) -> dict:
+        run_info = self.run_info()
+        for k,v in kwargs.items():
+            if v is not None:
+                run_info[k] = v
+
+        return run_info
+
+    def runCode(self,value:typing.Optional[str]=None) -> str:
+        """
+        value: If not None runCode will be set to this
+        :return: the runCode (or None)
+        """
+        self.set_run_info(runCode=value)
+        return self.run_info().get("runCode")
+
+    def runTime(self,value:typing.Optional[int]=None) -> int:
+        """
+
+        :return: the run time (or None)
+        """
+        self.set_run_info(runTime=value)
+        return self.run_info().get("runTime")
+
+    def machine_name(self,value:typing.Optional[str]=None) -> str:
+
+        """
+        Return name of Machine in config file. Fails if not defined
+        """
+        self.set_run_info(machineName=value)
+        return self.run_info()['machineName']
+
+    def model_name(self,value:typing.Optional[str]=None) -> str:
+        """
+        :return name of model to be created. Should have been registered. And must exist in run_info.
+        """
+        self.set_run_info(modelName=value)
+        return self.run_info()["modelName"]
+
+    def maxRuns(self, value:typing.Optional[int]=None) -> int|None:
+        """
+        Get/set the maximum numbers of runs
+        :param value: If not None (default is None) then set the value
+        :return: maximum number of runs to be done.
+        """
+        self.set_run_info(maxRuns=value)
+
+        mx = self.run_info().get('maxRuns',None)
+        if (mx is not None) and (mx < 1):
+            raise ValueError(f"maxRuns {mx} < 1")
+        # no default -- up to calling application to decide.
+        return mx

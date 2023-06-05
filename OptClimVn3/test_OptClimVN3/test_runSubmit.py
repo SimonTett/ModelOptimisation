@@ -3,13 +3,11 @@ Place to put tests for Submit.
 """
 
 import copy
-import functools  # want the partial!
 import logging
 import pathlib  # make working with file paths easier.
 import shutil
 import tempfile
 import typing
-import unittest.mock
 import unittest
 
 import numpy as np
@@ -20,41 +18,9 @@ import pandas.testing as pdtest
 import StudyConfig
 import exceptions
 import runSubmit
-import HadCM3  # used because test case is HadCM3 model.
+from genericLib import fake_fn
 
-
-def fake_fn(config, params: dict):
-    """
-    Wee test fn for trying out things.
-    :param params -- dict of parameter values
-        Should be a pandas series. If not provided no scaling will be done
-    returns  "fake" data as a pandas Series
-    """
-
-    logging.debug("faking with params: " + str(params))
-    # remove ensembleMember param.
-    params.pop('ensembleMember', None) # remove ensembleMember as a key.
-
-    pranges = config.paramRanges()
-    tgt = config.targets()
-    min_p = pranges.loc['minParam', :]
-    max_p = pranges.loc['maxParam', :]
-    scale_params = max_p - min_p
-    pscale = (pd.Series(params) - min_p) / scale_params
-    pscale -= 0.5  # tgt is at params = 0.5
-    result = 100 * (pscale + pscale ** 2)
-    # this fn has one minima and  no maxima between the boundaries and the minima. So should be easy to optimise.
-    result = result.to_numpy()
-    delta_len = len(tgt) - result.shape[-1]
-    if delta_len > 0:
-        result = np.append(result, result[0:delta_len], axis=-1)  # increase result
-    result = pd.Series(result, index=tgt.index)  # brutal conversion to obs space.
-    var_scales = 10.0 ** np.round(np.log10(config.scales()))
-    result /= var_scales  # make sure changes are roughly right scales.
-
-    result += tgt
-    return result
-
+import HadCM3
 
 def fake_run(rSubmit: runSubmit, scale: bool = True) -> typing.Callable:
     """ Instantiate and  run fake fns.
@@ -151,15 +117,14 @@ class testRunSubmit(unittest.TestCase):
         models = rSubmit.model_index.values()
         self.assertEqual(len(models), 1, "Expect only 1 model to submit")
 
-        # test 1 # run same model and should raise runModelError.
+        # test 1 # run same model and should raise ValueError as status is not processed
         rSubmit.config.ensembleSize(1)  # 1 member ensemble
-        with self.assertRaises(exceptions.runModelError): # shgould also get a warning.
-            result = rSubmit.stdFunction(params)  # should get runModelError exception.
+        with self.assertRaises(ValueError): # should also get a warning.
+            result = rSubmit.stdFunction(params)  # should get ValueError as running twice.
         # no of models to run should be 1. (as we already have it just asked for it twice)
         models = rSubmit.model_index.values()
         self.assertEqual(len(models), 1, "Expect only 1 model to submit")
-
-
+        rSubmit.delete() # restart.
 
         # test 2. Set ensemble size to 2.
         rSubmit.config.ensembleSize(2)  # 1 member ensemble
@@ -169,7 +134,7 @@ class testRunSubmit(unittest.TestCase):
         # no of models to run should be 2
         models = rSubmit.model_index.values()
         self.assertEqual(len(models), 2, "Expect only 2 model to submit")
-
+        rSubmit.delete()
 
         # test 3. Have multiple params
 
@@ -181,12 +146,15 @@ class testRunSubmit(unittest.TestCase):
         models = rSubmit.model_index.values()
         nmodel = len(models)
         self.assertEqual(nmodel, 4, f"Expect 4 models to submit. Got {nmodel}")
-        # test without raising exception.
+        # test without raising exception by setting status to processed and including simulated_obs
+        for model in models:
+            model.status ='PROCESSED'
+            model.simulated_obs = pd.Series(1.0,index=rSubmit.config.obsNames())
         result = rSubmit.stdFunction(params2, raiseError=False)
         # 2 results so should be a 2 element vector
         self.assertEqual(result.shape[0], 2, 'Expected two element vector')
-        # everything should be nan
-        self.assertTrue(np.all(np.isnan(result)), 'Expected all to be missing')
+        # everything should be 1
+        self.assertTrue(np.all(result == 1), 'Expected all to be missing')
         self.assertEqual(result.shape, (2, nobs), 'size not as expected')
 
         # no of models to run should be 4.. (ensemble member * param2)

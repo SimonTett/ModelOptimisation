@@ -12,7 +12,40 @@ import pathlib
 
 import numpy as np
 import pandas as pd
+from StudyConfig import OptClimConfigVn3
+import logging
+def fake_fn(config:OptClimConfigVn3, params: dict) -> pd.Series:
+    """
+    Wee test fn for trying out things.
+    :param config -- configuration. Provides, parameter min, max & ranges and targets.
+    :param params -- dict of parameter values
+    returns  "fake" data as a pandas Series
+    """
 
+    logging.debug("faking with params: " + str(params))
+    # remove ensembleMember param.
+    params.pop('ensembleMember', None) # remove ensembleMember as a key.
+
+    pranges = config.paramRanges()
+    tgt = config.targets()
+    min_p = pranges.loc['minParam', :]
+    max_p = pranges.loc['maxParam', :]
+    scale_params = max_p - min_p
+    param_series = pd.Series(params).combine_first(config.standardParam()) # merge in the std params
+    pscale = (param_series - min_p) / scale_params
+    pscale -= 0.5  # tgt is at params = 0.5
+    result = 100 * (pscale + pscale ** 2)
+    # this fn has one minima and  no maxima between the boundaries and the minima. So should be easy to optimise.
+    result = result.to_numpy()
+    delta_len = len(tgt) - result.shape[-1]
+    if delta_len > 0:
+        result = np.append(result, result[0:delta_len], axis=-1)  # increase result
+    result = pd.Series(result, index=tgt.index)  # brutal conversion to obs space.
+    var_scales = 10.0 ** np.round(np.log10(config.scales()))
+    result /= var_scales  # make sure changes are roughly right scales.
+
+    result += tgt
+    return result
 
 def expand(filestr: str) -> pathlib.Path:
     """

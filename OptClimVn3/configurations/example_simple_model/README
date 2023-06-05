@@ -1,0 +1,2 @@
+Example configuration for simple model.
+includes script (simple_model.py) and config file. (config.py). config file is modified copy of dfols14param_opt3.json

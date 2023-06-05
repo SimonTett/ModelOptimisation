@@ -14,14 +14,15 @@ import logging
 import pathlib
 import string
 import sys
+import numpy as np
 from typing import Optional, List, Callable, Mapping
-
+from engine import engine
 import pandas as pd
 
 from Model import ModelBaseClass, Model
 from OptClimVn3.Models.model_base import model_base, journal
 from Study import Study
-from StudyConfig import OptClimConfigVn2, OptClimConfigVn3,dictFile
+from StudyConfig import OptClimConfigVn3, dictFile
 
 # check we are version 3.9 or above.
 
@@ -30,266 +31,8 @@ if (sys.version_info.major < 3) or (sys.version_info.major == 3 and sys.version_
 
 __version__ = '0.9'
 
-import dataclasses
 
-
-@dataclasses.dataclass(frozen=True,eq=False) # use the __eq__ in model_base
-class engine(model_base):
-    """
-    class that holds information about submission engine
-     see setup_engines if you want to modify or add more engines.
-    Bit of hack around dataclasses but
-    holds the following attributes (which should largely be functions):
-    submit_fn -- function that will submit a job to a job control system.
-            Takes one parameter -- name which is the name of the job
-    array_fn -- function that will submit an array job to a job control.
-            Takes two parameters -- the name and the number of tasks in the array
-    release_fn --  function that takes one parameter -- the job id to release
-    kill_fn -- function that takes one parameter -- the job id to kill.
-    jid_fn -- function that given submission output extracts the job id,
-    engine_name -- the name of the engine
-
-    As it inherits from model_base it has a to_dict method and from_dict method.
-    """
-    submit_fn: callable
-    array_fn: callable
-    release_fn: callable
-    kill_fn: callable
-    jid_fn: callable
-    engine_name: str
-
-    def to_dict(self) -> dict:
-        """
-        Convert engine to dict by replacing callables with the callable name.
-        from_dict (which loads it will reverse this)
-        :return:
-        """
-        dct = dataclasses.asdict(self)
-        for k, v in dct.items():
-            if callable(v):
-                dct[k] = v.__name__  # replace with name
-        logging.debug(f"Converted functions in {dct} to names")
-        # and convert models to paths.
-        return dct
-
-
-
-    @classmethod
-    def from_dict(cls, dct: dict) -> engine:
-        """
-        Convert dict to engine class. Uses engine_name and then runs setup_engine on it.
-        then verifies function names are as expected.
-        :param dct: dct to convert/check
-        :return: Appropriately initialised engine object
-        """
-
-        obj = cls.setup_engine(engine_name=dct['engine_name'])
-
-        # verify all OK
-        for key, val in vars(obj).items():
-            if callable(val) and (val.__name__ != dct[key]):
-                raise ValueError(f"Inconsistency in conversion from {dct} for {key}")
-
-        return obj
-
-    @classmethod
-    def setup_engine(cls,engine_name: str = 'SGE') -> engine:
-        """
-        Create an engine (used by submission system)
-        time: time in minutes that jobs will run for
-        mem: memory required in Mbytes.
-        engine_name: name of engine wanted.
-        Sets up engines which hold cmds for SGE or slurm respectively. See class engine.
-        """
-
-        # SGE-specific command options
-        def sge_submit_fn(cmd: List, name: str, outdir: pathlib.Path, rundir: Optional[pathlib.Path] = None,
-                          run_code: Optional[str] = None, hold_jid: str | int | bool = False
-                          , time: int = 30, mem: int = 4000
-                          ):
-            """
-            Function to submit to SGE
-            :param cmd: list of commands to run.
-            :param name: name of job
-            :param outdir: Directory where output will be put.
-            :param rundir: Directory where job will be ran. If None will run in current working dir.
-            :param run_code: If provided, code to use to run the job
-            :param hold_jid: If provided as a string or integer, this jobid will need to successfully run before cmd is ran.
-              If provided as a bool then job will held if hold_jid is True. If False no hold will be done
-            :return: the command to be submitted.
-            """
-            submit_cmd = ['qsub', '-l', f'h_vmem={mem}M', '-l', f'h_rt=00:{time}:00',
-                          '-V',
-                          "-e", outdir, "-o", outdir,
-                          '-N', name]
-            # -l h_vmem={mem}M: Request mem Mbytes of virtual memory per job
-            # -l h_rt=00:{time}:00: Request a maximum run time of time minutes per job
-            # -V: Pass the environment variables to the job
-            # -N name: name of job
-
-            if run_code is not None:
-                submit_cmd += ['-A', run_code]
-
-            if rundir is None:
-                submit_cmd += ['-cwd']  # run in current working dir
-            else:
-                submit_cmd += ['-wd', str(rundir)]
-
-            if isinstance(hold_jid, bool):
-                if hold_jid:  # just hold the job ID
-                    submit_cmd += ['-h']  # If False nothing will be held
-            else:
-                submit_cmd += ['-hold_jid', hold_jid]  # hold it on something
-
-            submit_cmd += cmd
-            return submit_cmd
-
-        def sge_array_fn(cmd: List, name: str, outdir: pathlib.Path, njobs: int,
-                         rundir: Optional[pathlib.Path] = None,
-                         run_code: Optional[str] = None, hold_jid: str | int | bool = True
-                         , time: int = 30, mem: int = 4000):
-            """
-            Submit an array function to SGE. Calls sge_submit_fn for details.
-            :param cmd: list of commands to run.
-            :param name: name of job
-            :param outdir: Directory where output will be put.
-            :param njobs: Number of jobs to run in the array
-            :param rundir: Directory where job will be ran. If None will run in current working dir.
-            :param run_code: If provided, code to use to run the job
-            :param hold_jid: If provided as a string or integer, this jobid will need to successfully run before cmd is ran.
-              If provided as a bool then job will held if hold_jid is True. If False no hold will be done
-            :return: the command to be submitted.
-            """
-            result = sge_submit_fn([], name, outdir, run_code=run_code, rundir=rundir, hold_jid=hold_jid,time=time,mem=mem) + \
-                     ['-t', f'1:{njobs}']  # -t task array
-            result += cmd
-            return result
-
-        def sge_release_fn(jobid: str | int) -> List:
-            """
-            SGE cmd to release a job
-            :param jobid: jobid to release
-            :return: cmd to release job
-            """
-            return ['qrls', jobid]  # qrls: Command to release a job
-
-        def sge_kill_fn(jobid: str | int) -> List:
-            """
-            SGE cmd to kill a job
-            :param jobid: jobid to kill
-            :return: cmd to kill a job.
-            """
-            return ['qdel', jobid]  # qdel: command to delete a job
-
-        def sge_jid_fn(output:str) -> str:
-            """
-            Extract jobid from output of a qsub or similar command
-            :param output: output from submission (or similar)
-            :return: jobid as a string.
-            """
-
-            return output.split()[2].split('.')[0]
-
-
-
-        # end of SGE functions
-
-        # SLURM-specific command options
-        def slurm_submit_fn(cmd: List, name: str, outdir: pathlib.Path, rundir: Optional[pathlib.Path] = None,
-                            run_code: Optional[str] = None, hold_jid: str | int | bool = False
-                            , time: int = 30, mem: int = 4000):
-            """
-            Function to submit to SGE
-            :param cmd: list of commands to run.
-            :param name: name of job
-            :param outdir: Directory where output will be put.
-            :param rundir: Directory where job will be ran. If None will run in current working dir.
-            :param run_code: If provided, code to use to run the job
-            :param hold_jid: If provided as a string or integer, this jobid will need to successfully run before cmd is ran.
-              If provided as a bool then job will held if hold_jid is True. If False no hold will be done
-            :return: the command to be submitted.
-            """
-            submit_cmd = ['sbatch', f'--mem={mem}', '--mincpus=1', f'--time={time}',
-                          '--output', f'{outdir}/%x_%A_%a.out', '--error', f'{outdir}/%x_%A_%a.err',
-                          '-J', name]
-            # --mem={mem} Request mem mbytes  of memory per job
-            # --mincpus=1: Request at least 1 CPU per job
-            # --time={time}: Request a maximum run time of time  minutes per job
-            # -J name Name of the job
-            if run_code is not None:
-                submit_cmd += ['-A', run_code]
-            if rundir is not None:  # by default Slrum runs in cwd.
-                submit_cmd += ['-D', str(rundir)]  # should be abs path.
-            if isinstance(hold_jid, bool):
-                if hold_jid:
-                    submit_cmd += ['-H']  # Hold it
-            else:
-                submit_cmd += ['-d', f"afterok:{hold_jid}"]
-            submit_cmd += cmd
-            return submit_cmd
-
-        def slurm_array_fn(cmd: List, name: str, outdir: pathlib.Path, njobs: int,
-                           rundir: Optional[pathlib.Path] = None,
-                           run_code: Optional[str] = None, hold_jid: str | int | bool = True
-                           , time: int = 30, mem: int = 4000):
-            """
-            Submit an array function to SLURM. Calls slurm_submit_fn.
-            :param cmd: list of commands to run.
-            :param name: name of job
-            :param outdir: Directory where output will be put.
-            :param njobs: Number of jobs to run in the array
-            :param rundir: Directory where job will be ran. If None will run in current working dir.
-            :param run_code: If provided, code to use to run the job
-            :param hold_jid: If provided as a string or integer, this jobid will need to successfully run before cmd is ran.
-              If provided as a bool then job will held if hold_jid is True. If False no hold will be done
-            :return: the command to be submitted.
-            """
-            result = slurm_submit_fn([], name, outdir, run_code=run_code, rundir=rundir, hold_jid=hold_jid,time=time,mem=mem) + \
-                     ['-a', f'1-{njobs}']  # -a =  task array
-            result += cmd
-            return result
-
-        def slurm_release_fn(jobid: int | str) -> List:
-            """
-            SLURM cmd to release a job
-            :param jobid: The jobid of the job to be released
-            :return: a list of things that can be ran!
-            """
-            return ['scontrol', 'release', jobid]  # Command to release a job
-
-        def slurm_kill_fn(jobid: int | str) -> List:
-            """
-            Slurm cmd to kill a job
-            :param jobid: The jobid to kill
-            :return: command to be ran (a list)
-            """
-            return ['scancel', jobid]
-
-        def slurm_jid_fn(output: str) -> str:
-            """
-            Extract jobid from output of sbatch or similar command
-            :param output: string of output
-            :return: jobid as a string.
-            """
-            raise NotImplementedError
-            return output.split()[2].split('.')[0]
-
-        ## end of slurm functions
-        if engine_name == 'SLURM':
-            engine = cls(submit_fn=slurm_submit_fn, array_fn=slurm_array_fn,
-                         release_fn=slurm_release_fn, kill_fn=slurm_kill_fn,
-                         jid_fn = slurm_jid_fn,
-                         engine_name='SLURM')
-        elif engine_name == 'SGE':
-            engine = cls(submit_fn=sge_submit_fn, array_fn=sge_array_fn, release_fn=sge_release_fn,
-                         kill_fn=sge_kill_fn,jid_fn=sge_jid_fn,
-                         engine_name='SGE')
-        else:
-            raise ValueError(f"Unknown engine {engine_name}")
-        return engine
-
-
-class SubmitStudy(model_base,Study, journal):
+class SubmitStudy(model_base, Study, journal):
     """
 
     provides methods to support working out which models need to be submitted. Creates new models and submits them.
@@ -299,13 +42,13 @@ class SubmitStudy(model_base,Study, journal):
     fn_type = Callable[[Mapping], pd.Series]  # type hint for fakeFn
 
     def __init__(self,
-                 config: Optional[OptClimConfigVn2 | OptClimConfigVn3],
+                 config: Optional[OptClimConfigVn3],
                  name: Optional[str] = None,
                  rootDir: Optional[pathlib.Path] = None,
                  refDir: Optional[pathlib.Path] = None,
                  models: Optional[List[Model]] = None,
                  model_name: Optional[str] = None,
-                 config_path:Optional[pathlib.Path] = None,
+                 config_path: Optional[pathlib.Path] = None,
                  computer: Optional[str] = None):
         """
         Create ModelSubmit instance
@@ -318,18 +61,33 @@ class SubmitStudy(model_base,Study, journal):
         :param models -- list of models.
         :param config_path -- where configuration should be stored. If None default is root_dir/name
         :param computer -- computer on which model is being ran. If None then config wil be used.
-        :return: instance of ModelSubmit
+        :return: instance SubmitStudy with the following public attributes :
+
+            next_job_id -- the next job id
+            post_process_id -- the jid of the task array (or equiv) for the post processing
+            refDir -- path for reference directory
+            model_name -- name of the model being used
+            computer -- name of the computer being used
+            engine -- functions to handle different job submission engines. Currently, only SGE and SLURM are supported.
+            config_path -- path to where config is stored.
+            submit_fn -- function to wrap commands. Needed for cases when cannot directly submit jobs but need some "magic".
+            name_values -- used to generate name. Set to None to reset counter.
+            iter_keys -- dict indexed by key with iteration count.
+            iter_count -- current iteration count.
+
+
+
         """
         super().__init__(config, name=name, models=models, rootDir=rootDir)
         self.next_job_id = None  # no next job (yet)
         self.post_process_jid = None  # no post process job (yet)
 
         if refDir is None:
-            refDir = self.expand(config.referenceConfig())
+            refDir = self.expand(str(config.referenceConfig()))
         self.refDir = refDir
 
         if model_name is None:
-            model_name = self.config.getv("modelName")
+            model_name = self.config.model_name()
         self.model_name = model_name
 
         if computer is None:
@@ -341,31 +99,23 @@ class SubmitStudy(model_base,Study, journal):
             config_path = self.rootDir / (self.name + '.scfg')
         self.config_path = config_path
 
-        #self.fake_fn = fakeFn
-        self.runTime = self.config.runTime()  # extract time
-        self.runCode = self.config.runCode()  # extract code
-        self.fix_params = self.config.fixedParams()  # parameters that are fixed for all cases.
-        self.name_values = None# init the counters for names.
-        self.update_history(None) # will initialise the history stuff
-        self.store_output(None, None)
+        self.name_values = None  # init the counters for names.
         self.update_history(f"Created SubmitStudy {self}")
-
+        self.iter_keys = dict()  # key iteration pairs.
 
     def __repr__(self):
         """
         String that represents a SubmitStudy. Calls superclass method and adds on info about history
         :return: string
         """
-        if len(self.history) > 0:
-            last_hist = "Last changed at "+str(list(self.history.keys())[-1])
-
+        last_hist_key = self.last_history_key()
+        if last_hist_key:
+            last_hist = "Last changed at " + last_hist_key
         else:
             last_hist = "No Hist"
-        s= super().__repr__()+" "+last_hist
+        s = super().__repr__() + " " + last_hist
 
         return s
-
-
 
     @classmethod
     def submission_engine(cls, computer):
@@ -391,7 +141,7 @@ class SubmitStudy(model_base,Study, journal):
 
         return engine.setup_engine(engine_name=engine_name), submit_fn
 
-    def create_model(self, params, dump=True):
+    def create_model(self, params: dict, dump: bool = True) -> Model:
         """
         Create a model, update list of created models and index of models.
         :param   params: dictionary of "variable" parameters which are generated algorithmically.
@@ -403,7 +153,7 @@ class SubmitStudy(model_base,Study, journal):
         If you need functionality beyond this you may want to inherit from SubmitStudy and
           override create_model to meet your needs
         :param dump: If True dump model (using model.dump_model method) and self (using self.dump_config method)
-        :return: A model but self.model_index will be updated.
+        :return: Key but self.model_index will be updated.
         """
 
         name = self.gen_name()
@@ -414,7 +164,7 @@ class SubmitStudy(model_base,Study, journal):
         if config_path.exists():
             raise ValueError(f"config_path {config_path} already exists")
         paramDir = copy.deepcopy(params)
-        paramDir.update(self.fix_params)  # and bring in any fixed params there are
+        paramDir.update(self.config.fixedParams())  # and bring in any fixed params there are
         reference = paramDir.pop('reference', self.refDir)
         model_name = paramDir.pop('model_name', self.model_name)
         post_process = self.config.get('post_process')
@@ -433,6 +183,38 @@ class SubmitStudy(model_base,Study, journal):
         logging.info(f"Created model {model} with parameters {params}")
         return model
 
+    def update_iter(self, models: List[Model]) -> int:
+        """
+        Update iteration information.
+        :param models: models to add to iteration info.
+        :return: current value of iteration count
+        """
+        existing_counts = list(self.iter_keys.values())
+        if len(existing_counts) == 0:
+            iter_count = 0
+        else:
+            iter_count = int(np.max(existing_counts)) + 1 # need as a native python int rathe
+
+        for m in models:
+            key = self.key_for_model(m)
+            self.iter_keys[key] = iter_count
+
+        return iter_count
+
+    def iterations(self) -> List[List[Model]]:
+        """
+
+        :return: list of lists of  models. Outer list is order by iteration. Inner list is models on each iteration.
+            For example result[0] is list of all models from iteration 0.
+        """
+        # TODO: Work out how a version of this can go into Study.
+        # Only way I can currently see of doing this is by converting a SubmitStudy object
+        iter_count = np.max(self.iter_keys.values())
+        result = [[]] * iter_count  # initialise list to iter_count empty lists.
+        for key, iterc in self.iter_keys.items():
+            result[iterc].append(self.model_index[key])
+        return result
+
     def dump_config(self):
         """
         Dump the configuration *and* all its models to self.config_path and their config_paths
@@ -442,9 +224,8 @@ class SubmitStudy(model_base,Study, journal):
             model.dump_model()
         self.dump(self.config_path)
 
-
     @classmethod
-    def load_SubmitStudy(cls,config_path:pathlib.Path,Study:bool=False) -> Study|SubmitStudy:
+    def load_SubmitStudy(cls, config_path: pathlib.Path, Study: bool = False) -> Study | SubmitStudy:
         """
         Load a SubmitStudy (or anythign that inherits from it) from a file. The object will have config_path replaced by config_path.
         :param config_path: path to configuration to load
@@ -454,18 +235,17 @@ class SubmitStudy(model_base,Study, journal):
 
         obj = cls.load(config_path)
         # need to convert config (which is a dict) to an OptClimXXX
-        if not isinstance(obj,SubmitStudy):
+        if not isinstance(obj, SubmitStudy):
             logging.warning(f"Expected instance of SubmitStudy got {type(obj)}")
-        if Study: # convert to a study
+        if Study:  # convert to a study
             obj = obj.to_study()
             return obj
         if not config_path.samefile(obj.config_path):
             logging.info(f"Modifying config path from  {obj.config_path} to {config_path}")
-            obj.config_path=config_path
+            obj.config_path = config_path
             obj.update_history(f"Modified config path from  {obj.config_path} to {config_path}")
 
         return obj
-
 
     def instantiate(self):
         """
@@ -476,7 +256,7 @@ class SubmitStudy(model_base,Study, journal):
         models = [model for model in self.model_index.values() if model.status == 'CREATED']
         for model in models:
             model.instantiate()  # model state will be written out.
-            self.update_history(f'Instantiated {model}')
+        self.update_history(f'Instantiated {len(models)} models')
         logging.info(f"Instantiated {len(models)} models")
         return True
 
@@ -488,6 +268,23 @@ class SubmitStudy(model_base,Study, journal):
         models_to_submit = [model for model in self.model_index.values() if model.is_submittable()]
 
         return models_to_submit
+
+    def models_to_continue(self) -> List[Model]:
+        """
+
+        :return: a list of models that are marked to continue
+        """
+        models_to_continue = [model for model in self.model_index.values() if model.continuable()]
+
+        return models_to_continue
+
+    def failed_models(self) -> List[Model]:
+        """
+
+        :return: list of models that have failed
+        """
+
+        return [model for model in self.model_index.values() if model.failed()]
 
     def to_dict(self) -> dict:
         """
@@ -506,10 +303,8 @@ class SubmitStudy(model_base,Study, journal):
         for key, model in dct['model_index'].items():
             m2[key] = model.config_path
         dct['model_index'] = m2
-        dct['config'] = self.config.to_dict() # convert Config to a dict.
+        dct['config'] = self.config.to_dict()  # convert Config to a dict.
         return dct
-
-
 
     @classmethod
     def from_dict(cls, dct: dict) -> SubmitStudy:
@@ -523,17 +318,19 @@ class SubmitStudy(model_base,Study, journal):
         :param dct: dict containing attributes to be converted
         :return: a SubmitStudy object
         """
-        #TODO: (if needed) have some way of loading up model info if the whole lot been moved.
+        # TODO: (if needed) have some way of loading up model info if the whole lot been moved.
         # deal with config
-        config = dct.pop('config') # extract the config info.
-        config = dictFile(Config_dct=config['Config']).to_StudyConfig() # convert the config entry to a dictFile then convert to a StudyConfig.
+        config = dct.pop('config')  # extract the config info.
+        config = dictFile(Config_dct=config[
+            'Config']).to_StudyConfig()  # convert the config entry to a dictFile then convert to a StudyConfig.
         # TODO Very messy code. Good to sort out StudyConfig but that needs a big re-engineering job..
 
         # create the SubmitStudy object
         obj = cls(config)
-        obj.fill_attrs(dct) # fill in the rest of the objects attributes.
+        obj.fill_attrs(dct)  # fill in the rest of the objects attributes.
         # deal with the engine.
-        if (not callable(obj.engine)) or (not callable(obj.submit_fn)):   # if engine or submit_fn are not callable recreate them
+        if (not callable(obj.engine)) or (
+                not callable(obj.submit_fn)):  # if engine or submit_fn are not callable recreate them
             obj.engine, obj.submit_fn = obj.submission_engine(obj.computer)  # engine & submit_fn for this computer.
         # load up models.
         model_index = dict()
@@ -552,26 +349,39 @@ class SubmitStudy(model_base,Study, journal):
         obj.model_index = model_index  # overwrite the index
         return obj
 
-
     def delete(self):
         """
-        Clean up ModelSubmit configuration by deleting all models and removing self.config_path.
+        Clean up SubmitStudy configuration by deleting all models and removing self.config_path.
         Internal structure will be updated so gen_name goes back to start and will return xxxx0...0
         """
         # Step 1 -- delete models
         for key, model in self.model_index.items():
             model.delete()  # delete the model.
-        self.model_index=dict()
+        self.model_index = dict()
+        self.iter_keys = dict()
         # step 2 -- update internal state
 
         # remove the config_path.
         self.config_path.unlink(missing_ok=True)  # remove the config path.
         # reset values count (used to generate name) to 0.
-        maxDigits = self.config.maxDigits()  # get the maximum length of string for model.
-        self.name_values = None # start again!
+        self.name_values = None  # start again!
         self.update_history("Deleted")
 
-    def gen_name(self,reset=False):
+    def delete_model(self, model):
+        """
+        Delete a model and remove it from the indices
+        :param model: model to delete
+        :return:
+        """
+        key = self.key_for_model(model)
+        m = self.model_index.pop(key)
+        if m != model:
+            raise ValueError(f"Something wrong popped model {m} is not the same as model: {model}")
+        model.delete()
+        self.iter_keys.pop(key)  # remove it from the iteration info.
+        logging.info("Deleted model with key {key}")
+
+    def gen_name(self, reset=False):
         """
         generate the next name .  Will be self.config.baseRunID() + maxDigit chars. Chars are 0-9,a-z
         and will increment every time called. First time it is called then internal counter will be reset
@@ -584,12 +394,12 @@ class SubmitStudy(model_base,Study, journal):
 
         base = self.config.baseRunID()  # get the baserun
         maxDigits = self.config.maxDigits()  # get the maximum length of string for model.
-        chars = string.digits + string.ascii_lowercase # windows does not case distinguish. Silly windows.
+        chars = string.digits + string.ascii_lowercase  # windows does not case distinguish. Silly windows.
         radix = len(chars)
         # increment counter or restart
-        if (reset is True) or (self.name_values is None): # reset the counter
+        if (reset is True) or (self.name_values is None):  # reset the counter
             self.name_values = [0] * maxDigits
-        elif (maxDigits > 0 ) :  # increase the values if we have digits.
+        elif (maxDigits > 0):  # increase the values if we have digits.
             self.name_values[0] += 1
             for indx in range(0, len(self.name_values)):
                 if self.name_values[indx] >= radix:
@@ -598,7 +408,7 @@ class SubmitStudy(model_base,Study, journal):
                         self.name_values[indx + 1] += 1
                     except IndexError:
                         raise ValueError(f"values too large {self.name_values}")
-        else: # just return the base name
+        else:  # just return the base name
             return base
 
         # now to create digit_str
@@ -609,7 +419,7 @@ class SubmitStudy(model_base,Study, journal):
 
         # give a warning if run out of names
 
-        if (maxDigits > 0) & (self.name_values == [radix]*maxDigits):
+        if (maxDigits > 0) & (self.name_values == [radix] * maxDigits):
             logging.warning(f"Ran out of names name_values = {self.name_values}")
         return name  # return name
 
@@ -622,7 +432,7 @@ class SubmitStudy(model_base,Study, journal):
          If None then no next iteration will be submitted.
         :param fake_fn:Function to fake model runs -- will skip most stages including post-processing.
           fake and anything to be continued will generate an error.  No pp or next submission will be done if provided,
-        :return: status of submission
+        :return: number of models submitted
 
         Does the following:
             1) Submits the post-processing jobs as a task array in held state.
@@ -642,28 +452,42 @@ class SubmitStudy(model_base,Study, journal):
         model_list = self.models_to_submit()  # models that need submitting!
         if len(model_list) == 0:  # nothing to do. We are done (no post-processing or resubmission to be submitted)
             return True
-        models_to_continue = [m for m in model_list if m.status == "CONTINUE"]  # marker for continuation
-        #run_fn = functools.partial(subprocess.check_output, text=True, cwd=True)  # what we are using to run things.
 
+        models_to_continue = self.models_to_continue()  # models that need continuing.
         config = self.config
         configName = config.name()
+        run_info = config.run_info()
+        runCode = config.runCode()  # NB with current implementation this is the same as run_info.get('runCode')
+        maxRuns = self.config.maxRuns()
 
-        ## work out postprocess script path
-        OptClimRoot = importlib.resources.files("OptClimVn3")  # root path for OptClimVn3
-        # scriptName = OptClimRoot / "scripts/qsub.sh"  # not sure why this is needed!
-        if len(models_to_continue) > 0:  # (re)submit  models that need continuing and exit
-            if fake_fn is not None:
-                raise ValueError("Faking and continuing")
-            for model in models_to_continue:
-                output = model.submit_model(submit_fn=self.submit_fn, runTime=self.runTime, runCode=self.runCode)  #
-                logging.debug(f"Continuing {model.name} ")
-            logging.info(f"Continued {len(models_to_continue)} and done")
-            self.update_history(f"Continued {len(models_to_continue)} models")
-            self.dump_config()  # and write out the config
-            return True  # nothing else to do -- post-processing should be released when model finishes.
         output_dir = self.rootDir / 'jobOutput'  # directory where output goes for post-processing and next stage.
         # try and create the outputDir
         output_dir.mkdir(parents=True, exist_ok=True)
+        if (maxRuns is not None) and (maxRuns > len(models_to_continue)):
+            models_to_continue = models_to_continue[0:maxRuns]
+            logging.debug(f"Truncating models_to_continue to {maxRuns}")
+        ## work out postprocess script path
+        OptClimRoot = importlib.resources.files("OptClimVn3")  # root path for OptClimVn3
+        # scriptName = OptClimRoot / "scripts/qsub.sh"  # not sure why this is needed!
+
+        if len(models_to_continue) > 0:  # (re)submit  models that need continuing and exit
+            if fake_fn is not None:
+                raise ValueError('Faking and continuing')
+            for model in models_to_continue:
+                output = model.submit_model(run_info, self.engine, submit_fn=self.submit_fn)  #
+                logging.debug(f"Continuing {model.name} ")
+
+            logging.info(f"Continued {len(models_to_continue)} models and done")
+            self.update_history(f"Continued {len(models_to_continue)} models")
+            self.dump_config()  # and write out the config
+            return len(models_to_continue)
+            # nothing else to do -- post-processing should be released when model finishes.
+
+        # No runs to continue so let's submit.
+        if (maxRuns is not None) and (maxRuns > len(model_list)):  # need to truncate run?
+            logging.debug(f"Reducing to {maxRuns} models.")
+            model_list = model_list[0:maxRuns]
+
         if fake_fn is not None:  # faking it until we make it! Only need to run some models
             for index, model in enumerate(model_list):
                 # need to put the post-processing job release command in the model.
@@ -672,8 +496,9 @@ class SubmitStudy(model_base,Study, journal):
                 release_pp = self.engine.release_fn(jid)
                 if self.submit_fn:
                     release_pp = self.submit_fn(release_pp)
-                model.submit_model(self.submit_fn, post_process_cmd=release_pp,
-                                   runTime=self.runTime, runCode=self.runCode, fake_function=fake_fn)
+                model.submit_model(run_info, self.engine,
+                                   submit_fn=self.submit_fn, post_process_cmd=release_pp,
+                                   fake_function=fake_fn)
                 # handling fake_fn
 
                 logging.debug(f"Faking {model.name} which will release {jid}")
@@ -687,18 +512,18 @@ class SubmitStudy(model_base,Study, journal):
         configFile = self.rootDir / 'tempConfigList.txt'  # name of file containing list of configs files  for post-processing stage
         with open(configFile, 'wt') as f:  # write file paths for model configs to the configFile.
             for m in model_list:
-                f.write(str(m.config_path)+"\n")  # Where model state is to be found.
+                f.write(str(m.config_path) + "\n")  # Where model state is to be found.
         # generate the post-processing array job.
         pp_jobName = 'PP' + configName
         postProcess = [OptClimRoot / "scripts/post_process.sh", configFile]
         pp_cmd = self.engine.array_fn(postProcess, pp_jobName, output_dir, len(model_list),
-                                      run_code=self.runCode, rundir=self.rootDir)
+                                      run_code=runCode, rundir=self.rootDir)
         if self.submit_fn:  # and thing to do to submit a job?
             pp_cmd = self.submit_fn(pp_cmd)
         logging.info(f"postProcess task array cmd is {pp_cmd}")
         # run the post process and get its job id
         output = self.run_cmd(pp_cmd)
-        postProcessJID =  self.engine.jid_fn(output) # extract the actual job id as a string
+        postProcessJID = self.engine.jid_fn(output)  # extract the actual job id as a string
         logging.info(f"postProcess array job id is {postProcessJID}")
         self.post_process_jid = postProcessJID
         self.update_history(f"Submitted postProcess array job id as {postProcessJID}")
@@ -708,8 +533,8 @@ class SubmitStudy(model_base,Study, journal):
             # need to run resubmit through a script because qsub copies script being run
             # so somewhere temporary. So lose file information needed for resubmit. Not sure this needed. TODO check if needed.
             next_job_name = 'RE' + configName
-            run_next_submit = self.engine.submit_fn(next_iter_cmd, next_job_name,output_dir,
-                                                    run_code=self.runCode, rundir=self.rootDir,
+            run_next_submit = self.engine.submit_fn(next_iter_cmd, next_job_name, output_dir,
+                                                    run_code=runCode, rundir=self.rootDir,
                                                     hold_jid=postProcessJID)
             if self.submit_fn is not None:
                 run_next_submit = self.submit_fn(run_next_submit)
@@ -721,6 +546,7 @@ class SubmitStudy(model_base,Study, journal):
             self.update_history(f"Submitted next job with ID {jid}")
         # now submit the models with info on what to release.
         # This should only happen if have models to run!
+
         for index, model in enumerate(model_list):
             # need to put the post-processing job release command in the model.
             # model will complain if not in right status
@@ -728,17 +554,18 @@ class SubmitStudy(model_base,Study, journal):
             release_pp = self.engine.release_fn(jid)
             if self.submit_fn:
                 release_pp = self.submit_fn(release_pp)
-            output = model.submit_model(self.submit_fn, post_process_cmd=release_pp,
-                               runTime=self.runTime, runCode=self.runCode)  # no fake_fn here as handled above.
-            logging.debug(f"Submitting {m.name} which will release {jid}")
-
-        logging.info(f"Submitted {len(model_list)} model jobs")
-        self.update_history(f"Submitted {len(model_list)} model jobs")
+            output = model.submit_model(run_info, self.engine, self.submit_fn, post_process_cmd=release_pp)
+            # no fake_fn here as handled above.
+            logging.debug(f"Submitting {model.name} which will release {jid}")
+        # end of dealing with models to submit. Now to do stuff for SubmitStudy.
+        iter_count = self.update_iter(model_list)  # update iteration info.
+        msg = f"Submitted {len(model_list)} model jobs on iteration {iter_count} "
+        self.update_history(msg)
+        logging.info(msg)
         self.dump_config()  # and write ourselves out!
-        return True
+        return len(model_list)
 
-
-    def to_study(self):
+    def to_study(self) -> Study:
         """
         Convert to a study.
         Study instances only have read access to info. Useful if you don't want to accidentally modify state.
@@ -747,11 +574,13 @@ class SubmitStudy(model_base,Study, journal):
         """
 
         study = Study(self.config)
-        for key,var in vars(self).items():
-            if hasattr(study,key):
-                setattr(study,key,copy.deepcopy(var)) # make a copy of var and add it as an attribute to study
+        for key, var in vars(self).items():
+            if hasattr(study, key):
+                setattr(study, key, copy.deepcopy(var))  # make a copy of var and add it as an attribute to study
 
         return study
+
+
 def eddie_ssh(cmd: list[str]) -> list[str]:
     """
     Example submit function for ssh on eddie

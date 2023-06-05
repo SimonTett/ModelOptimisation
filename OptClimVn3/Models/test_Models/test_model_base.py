@@ -142,20 +142,20 @@ class Test_history(unittest.TestCase):
         for count in range(0, 20):
             msg = f"Count is {count}"
             hist.update_history(msg)
-        self.assertEqual(len(hist.history), 20)  #  20 count msgs
+        self.assertEqual(len(hist._history), 20)  #  20 count msgs
         hist.print_history()
 
         test_now = datetime.datetime(1999, 12, 31, 23, 59, 59)
         with unittest.mock.patch.object(hist, 'now', autospec=True, return_value=test_now):
-            hist.history = {}  # set history empty
+            hist._history = {}  # set history empty
             # always have the same time here.
             lst = []
             for count in range(0, 20):
                 msg = f"Count is {count}"
                 lst += [msg]
                 hist.update_history(msg)
-            self.assertEqual(len(hist.history), 1)
-            k, v = hist.history.popitem()
+            self.assertEqual(len(hist._history), 1)
+            k, v = hist._history.popitem()
             self.assertEqual(k, str(test_now))
             self.assertEqual(v, lst)
 
@@ -167,8 +167,8 @@ class Test_history(unittest.TestCase):
         results = ['fred.nc','once','..']
         for cnt,(cmd,result) in enumerate(zip(cmds,results)):
             hist.store_output(cmd,result)
-            self.assertEqual(len(hist.output),cnt+1)
-        for (k,lst),cmd,result  in zip(hist.output.items(),cmds,results):
+            self.assertEqual(len(hist._output),cnt+1)
+        for (k,lst),cmd,result  in zip(hist._output.items(),cmds,results):
             self.assertEqual(lst[0]['cmd'],cmd)
             self.assertEqual(lst[0]['result'],result)
 
@@ -187,7 +187,7 @@ class Test_history(unittest.TestCase):
         mck_check.return_value = result
         self.history.run_cmd(['ls'])
         mck_check.assert_called()
-        time,got = self.history.output.popitem()
+        time,got = self.history._output.popitem()
         self.assertEqual(got,[dict(cmd=['ls'],result=result)])
         # now test some error conds.
         mck_check.side_effect = FileNotFoundError
