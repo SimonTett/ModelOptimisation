@@ -13,6 +13,7 @@ import StudyConfig
 import SubmitStudy
 from Model import Model
 import copy
+import pandas as pd
 
 
 def gen_time():
@@ -22,46 +23,51 @@ def gen_time():
     while True:
         time += timedelta
         yield time
+
+
 class myModel(Model):
     pass
+
+
 # class that inherits from Model.,
-times=gen_time()
+times = gen_time()
 traverse = importlib.resources.files("Models")
 with importlib.resources.as_file(traverse.joinpath("parameter_config/example_Parameters.csv")) as pth:
     myModel.update_from_file(pth)
+
+
 class MyTestCase(unittest.TestCase):
 
-    @unittest.mock.patch.object(SubmitStudy.SubmitStudy, 'now', side_effect=times) # regen times every time!
-    @unittest.mock.patch.object(myModel,'now',side_effect=times)
-    def setUp(self,mck_now,mck_model):
+    @unittest.mock.patch.object(SubmitStudy.SubmitStudy, 'now', side_effect=times)  # regen times every time!
+    @unittest.mock.patch.object(myModel, 'now', side_effect=times)
+    def setUp(self, mck_now, mck_model):
         self.tmpDir = tempfile.TemporaryDirectory()
         testDir = pathlib.Path(self.tmpDir.name)
         cpth = SubmitStudy.SubmitStudy.expand("$OPTCLIMTOP/OptClimVn3/configurations/dfols14param_opt3.json")
         config = StudyConfig.readConfig(cpth)
         config.baseRunID('ZZ')
-        submit = SubmitStudy.SubmitStudy(config,model_name='myModel',rootDir=testDir)
+        submit = SubmitStudy.SubmitStudy(config, model_name='myModel', rootDir=testDir)
         # create some models
-        for param in [dict(VF1=3,CT=1e-4),dict(VF1=2.4,CT=1e-4),dict(VF1=2.6,CT=1e-4)]:
-            submit.create_model(param,dump=True)
+        models=[]
+        for param in [dict(VF1=3, CT=1e-4), dict(VF1=2.4, CT=1e-4), dict(VF1=2.6, CT=1e-4)]:
+            models.append(submit.create_model(param, dump=True))
+        submit.update_iter(models)
         submit.dump_config(dump_models=True)
-        self.submit=submit
+        self.submit = submit
         self.testDir = testDir
 
     def tearDown(self):
         self.tmpDir.cleanup()
-
-
-
 
     def test_create_model(self):
         """
         Test that can create a model.
         :return:
         """
-        params=dict(VF1=2.2,RHCRIT=3)
-        model = self.submit.create_model(params,dump=False)
-        self.assertTrue(isinstance(model,Model))
-        self.assertEqual(model.parameters,params)
+        params = dict(VF1=2.2, RHCRIT=3)
+        model = self.submit.create_model(params, dump=False)
+        self.assertTrue(isinstance(model, Model))
+        self.assertEqual(model.parameters, params)
         # now create one that goes to disk,
         params.update(VF1=2.1)
         model2 = self.submit.create_model(params)
@@ -70,15 +76,13 @@ class MyTestCase(unittest.TestCase):
         # load them and compare.
         m2 = Model.load_model(model.config_path)
         m3 = Model.load_model(model2.config_path)
-        self.assertEqual(model,m2)
-        self.assertEqual(model2,m3)
+        self.assertEqual(model, m2)
+        self.assertEqual(model2, m3)
         sub2 = self.submit.load(self.submit.config_path)
         self.assertEqual(self.submit, sub2)
 
-
-
-    @unittest.mock.patch.object(SubmitStudy.SubmitStudy,'now',side_effect=times)
-    def test_delete(self,mck_now):
+    @unittest.mock.patch.object(SubmitStudy.SubmitStudy, 'now', side_effect=times)
+    def test_delete(self, mck_now):
         # can we delete things.
         pth = self.submit.config_path
         self.submit.config.baseRunID(value='ZZ')
@@ -87,25 +91,23 @@ class MyTestCase(unittest.TestCase):
             raise ValueError(f"config {pth} does not exist")
         for mpth in mpths:
             if not mpth.exists():
-                raise ValueError(f"Model config {mpth} does not exist" )
+                raise ValueError(f"Model config {mpth} does not exist")
         nhist = len(self.submit._history)
-        self.submit.delete() # should delete everything including models.
+        self.submit.delete()  # should delete everything including models.
         # models should all be gone, no model index and next_name be ZZ000
         self.assertFalse(pth.exists())
         for mpth in mpths:
             self.assertFalse(mpth.exists())
-        self.assertEqual(self.submit.gen_name(),'ZZ000')
-        self.assertEqual(len(self.submit._history),nhist+1) # added deleted
-
-
+        self.assertEqual(self.submit.gen_name(), 'ZZ000')
+        self.assertEqual(len(self.submit._history), nhist + 1)  # added deleted
 
     def test_dump_load(self):
         submit = self.submit
 
         submit.dump(submit.config_path)
         nsub = SubmitStudy.SubmitStudy.load(submit.config_path)
-        self.assertEqual(submit,nsub) # should be identical
-        self.assertEqual(nsub.config._filename,submit.config._filename)
+        self.assertEqual(submit, nsub)  # should be identical
+        self.assertEqual(nsub.config._filename, submit.config._filename)
 
         for m1, m2 in zip(submit.model_index.values(), nsub.model_index.values()):
             self.assertEqual(m1, m2)
@@ -122,34 +124,30 @@ class MyTestCase(unittest.TestCase):
         pth = self.submit.config_path
         self.submit.dump_config()
         newSub = self.submit.load_SubmitStudy(pth)
-        self.assertEqual(self.submit,newSub)
+        self.assertEqual(self.submit, newSub)
         # explicitly check
 
-        study = self.submit.load_SubmitStudy(pth,Study=True)
+        study = self.submit.load_SubmitStudy(pth, Study=True)
         # return as a study
-        self.assertIsInstance(study,Study.Study)
-
-
+        self.assertIsInstance(study, Study.Study)
 
     def test_gen_name(self):
         # have generated three models so gen_model should be
         self.submit.name_values = None
         name = self.submit.gen_name()
-        self.assertEqual(name,'ZZ000')
+        self.assertEqual(name, 'ZZ000')
         # set name_values[0] to 11 (should get a)
-        self.submit.name_values[0]=9
+        self.submit.name_values[0] = 9
         name = self.submit.gen_name()
-        self.assertEqual(name,'ZZ00a')
+        self.assertEqual(name, 'ZZ00a')
         # and increase it to 36
-        self.submit.name_values = [35,0,0]
+        self.submit.name_values = [35, 0, 0]
         name = self.submit.gen_name()
         self.assertEqual(name, 'ZZ010')
 
-        self.submit.name_values = [34,35,35]
+        self.submit.name_values = [34, 35, 35]
         name = self.submit.gen_name()
         self.assertEqual(name, 'ZZzzz')
-
-
 
     def test_instantiate(self):
         # test we can instantiate all relevant models.
@@ -165,14 +163,14 @@ class MyTestCase(unittest.TestCase):
         # and one modelDir.
 
         pths_expected = [m.config_path for m in submit.model_index.values()]
-        pths_expected += [submit.config_path,lst_model.model_dir]
+        pths_expected += [submit.config_path, lst_model.model_dir]
         for p in pths_expected:
             self.assertTrue(p.exists())
         self.assertTrue(lst_model.model_dir.is_dir())
 
         # and rootdir should contain ONLY pths_expected.
         pths_got = set(submit.rootDir.glob("*"))
-        self.assertEqual(set(pths_got),set(pths_expected))
+        self.assertEqual(set(pths_got), set(pths_expected))
 
         # now instantiate. Should have two more directories
         submit.instantiate()
@@ -187,55 +185,55 @@ class MyTestCase(unittest.TestCase):
 
     # need to mock both SubmitStudy and myModel now.
     @unittest.mock.patch.object(SubmitStudy.SubmitStudy, 'now', side_effect=times)
-    @unittest.mock.patch.object(myModel,'now',side_effect=times)
-    def test_submit_all_models(self,mck_now,mck_model_now):
+    @unittest.mock.patch.object(myModel, 'now', side_effect=times)
+    def test_submit_all_models(self, mck_now, mck_model_now):
 
         # set up the fake rtn output
         submit = copy.deepcopy(self.submit)
 
         rtn_job_output = ['postprocess submitted 345678.10']  # array of pp jobs as no next job wanted
-        model_output = ['Model submitted 34567']*len(submit.model_index)
+        model_output = ['Model submitted 34567'] * len(submit.model_index)
         output = rtn_job_output + model_output
         with unittest.mock.patch("subprocess.check_output",
                                  autospec=True, side_effect=output) as mck_output:
             submit.submit_all_models()
             # run submit -- nothing should happen as no models are instantiated
             mck_output.assert_not_called()
-            submit.instantiate() # instantiate all models.
+            submit.instantiate()  # instantiate all models.
             submit.submit_all_models()
             # run submit -- should submit the pp process and three models. so 4 times
-            self.assertEqual(mck_output.call_count,4)
+            self.assertEqual(mck_output.call_count, 4)
             # expect to have a tempConfigList.txt file -- with 3 lines as model config file
-            tempFile=submit.rootDir/'tempConfigList.txt'
-            expected_output=[str(model.config_path) for model in submit.model_index.values()]
-            with open(tempFile,'rt') as f:
-                output= f.readlines()
+            tempFile = submit.rootDir / 'tempConfigList.txt'
+            expected_output = [str(model.config_path) for model in submit.model_index.values()]
+            with open(tempFile, 'rt') as f:
+                output = f.readlines()
             output = [o.rstrip("\n") for o in output]
-            self.assertEqual(output,expected_output)
+            self.assertEqual(output, expected_output)
             # expect that the post process cmd is ['qrls',jid]
             # so lets check that.
-            for indx,model in enumerate(submit.model_index.values()):
-                self.assertEqual(model.post_process_cmd,['qrls',f"345678.{indx+1}"])
+            for indx, model in enumerate(submit.model_index.values()):
+                self.assertEqual(model.post_process_cmd, ['qrls', f"345678.{indx + 1}"])
 
         # now have the models all fail and then continue.  Should only have three cases -- the models
         # All status should be submitted and the post-process cmd should be unchanged
         with unittest.mock.patch("subprocess.check_output",
                                  autospec=True, side_effect=model_output) as mck_output:
             for model in submit.model_index.values():
-                model.status="CONTINUE"
+                model.status = "CONTINUE"
             submit.submit_all_models()
-            self.assertEqual(mck_output.call_count,3) # three cases
+            self.assertEqual(mck_output.call_count, 3)  # three cases
             # check models are as expected.
-            for indx,model in enumerate(submit.model_index.values()):
-                self.assertEqual(model.status,"SUBMITTED")
-                self.assertEqual(model.post_process_cmd,['qrls',f"345678.{indx+1}"])
+            for indx, model in enumerate(submit.model_index.values()):
+                self.assertEqual(model.status, "SUBMITTED")
+                self.assertEqual(model.post_process_cmd, ['qrls', f"345678.{indx + 1}"])
 
         # final actual run test. Next job is submitted.
-        output = rtn_job_output + ['Next Submitted 345679']+ model_output
+        output = rtn_job_output + ['Next Submitted 345679'] + model_output
         with unittest.mock.patch("subprocess.check_output",
                                  autospec=True, side_effect=output) as mck_output:
             for m in submit.model_index.values():
-                m.status='INSTANTIATED'
+                m.status = 'INSTANTIATED'
             submit.submit_all_models(next_iter_cmd=['run myself'])
             self.assertEqual(mck_output.call_count, 5)  # 5 cases
 
@@ -245,11 +243,11 @@ class MyTestCase(unittest.TestCase):
         #      models continued, pp job submitted, next job submitted, models submitted.
         #
         # and 4+3+5 outputs
-        self.assertEqual(len(submit._history),11)
-        self.assertEqual(len(submit._output),3) # pp ran twice plus next iter.
+        self.assertEqual(len(submit._history), 11)
+        self.assertEqual(len(submit._output), 3)  # pp ran twice plus next iter.
 
         # now fake it. subprocess.check_output should not run anything.
-        import pandas as pd
+
         def fake_function(param):
             sim_obs = dict()
             obs_count = 0
@@ -258,38 +256,40 @@ class MyTestCase(unittest.TestCase):
                 sim_obs[oname] = v ** 2
                 obs_count += 1
             return pd.Series(sim_obs)
+
         with unittest.mock.patch("subprocess.check_output",
-                            autospec=True, return_value="some value 345678") as mck_output:
+                                 autospec=True, return_value="some value 345678") as mck_output:
             submit = copy.deepcopy(self.submit)
             submit.instantiate()  # instantiate all models.
-            submit.submit_all_models(next_iter_cmd=['run myself'],fake_fn=fake_function)
+            submit.submit_all_models(next_iter_cmd=['run myself'], fake_fn=fake_function)
             mck_output.assert_not_called()
 
-    dt=datetime.datetime(2022,1,1,0,0,0)
+    dt = datetime.datetime(2022, 1, 1, 0, 0, 0)
+
     @unittest.mock.patch.object(SubmitStudy.SubmitStudy, 'now', return_value=dt)
-    def test_repr(self,mck_now):
+    def test_repr(self, mck_now):
 
         self.submit.update_history('DOne!')
         got_repr = repr(self.submit)
-        expect_repr="Name: dfols_r Nmodels:3 Status: CREATED: 3 Model_Types:myModel: 3 Last changed at 2022-01-01 00:00:00"
-        self.assertEqual(got_repr,expect_repr)
+        expect_repr = "Name: dfols_r Nmodels:3 Status: CREATED: 3 Model_Types:myModel: 3 Last changed at 2022-01-01 00:00:00"
+        self.assertEqual(got_repr, expect_repr)
 
     def test_models_to_submit(self):
         # test models_to_submit works. Should get models
         # with status INSTANTIATE or CONTINUE
 
         # first case should be empty
-        self.assertEqual(self.submit.models_to_submit(),[])
+        self.assertEqual(self.submit.models_to_submit(), [])
 
         # instantiate all models.
         self.submit.instantiate()
-        self.assertEqual(len(self.submit.models_to_submit()),3)
+        self.assertEqual(len(self.submit.models_to_submit()), 3)
         # mark 1 for continue
-        list(self.submit.model_index.values())[0].status='CONTINUE'
+        list(self.submit.model_index.values())[0].status = 'CONTINUE'
         self.assertEqual(len(self.submit.models_to_submit()), 3)
         # mark them all as running
         for m in self.submit.model_index.values():
-            m.status='RUNNING'
+            m.status = 'RUNNING'
         self.assertEqual(len(self.submit.models_to_submit()), 0)
 
     def test_to_dict(self):
@@ -302,7 +302,22 @@ class MyTestCase(unittest.TestCase):
         expected_dict['config'] = vars(expected_dict['config'])
         self.assertEqual(study_dict, expected_dict)
 
-
+    def test_iterations(self):
+        # test iterations command works.
+        iters = self.submit.iterations()
+        # iters should be a 1 element list
+        self.assertEqual(len(iters), 1)
+        self.assertEqual(len(iters[0]),3) # and 3 models.
+        # now add a model
+        pDict= iters[0][-1].parameters
+        pDict.update(dict(VF1=pDict.get("VF1",2.0)*1.1))
+        new_model= self.submit.create_model(pDict)
+        self.submit.update_iter([new_model])
+        iters = self.submit.iterations()
+        # iters should be a 2 element list
+        self.assertEqual(len(iters), 2)
+        self.assertEqual(len(iters[1]),1) # and 1 models.
+        self.assertEqual(iters[1][0],new_model)
 
 if __name__ == '__main__':
     unittest.main()

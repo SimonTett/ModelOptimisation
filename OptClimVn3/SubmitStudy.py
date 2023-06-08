@@ -154,7 +154,8 @@ class SubmitStudy(model_base, Study, journal):
         These will be augmented by fixedParams
         If you need functionality beyond this you may want to inherit from SubmitStudy and
           override create_model to meet your needs
-        :param dump: If True dump model (using model.dump_model method) and self (using self.dump_config method)
+        :param dump: If True dump  self (using self.dump_config method)
+        :param dump_model: If True and dump is True then dump all models.
         :return: Key but self.model_index will be updated.
         """
 
@@ -220,14 +221,17 @@ class SubmitStudy(model_base, Study, journal):
             result[iterc].append(self.model_index[key])
         return result
 
-    def dump_config(self):
+    def dump_config(self,dump_models:bool = False):
         """
-        Dump the configuration *and* all its models to self.config_path and their config_paths
+        Dump the configuration to config_path.
+        Unless dump_models is True  models are not dumped. This done to make code run faster as model.set_status(XX) saves the model.
+        :param dump_models: If True dump all models
         :return: Nothing
         """
-        for model in self.model_index.values():
-            model.dump_model()
         self.dump(self.config_path)
+        if dump_models:
+            for model in self.model_index.values():
+                model.dump_model()
 
     @classmethod
     def load_SubmitStudy(cls, config_path: pathlib.Path,
