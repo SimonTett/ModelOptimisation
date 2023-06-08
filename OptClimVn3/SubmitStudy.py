@@ -14,6 +14,8 @@ import logging
 import pathlib
 import string
 import sys
+import typing
+
 import numpy as np
 from typing import Optional, List, Callable, Mapping
 from engine import engine
@@ -193,7 +195,7 @@ class SubmitStudy(model_base, Study, journal):
         if len(existing_counts) == 0:
             iter_count = 0
         else:
-            iter_count = int(np.max(existing_counts)) + 1 # need as a native python int rathe
+            iter_count = int(np.max(existing_counts)) + 1  # need as a native python int rathe
 
         for m in models:
             key = self.key_for_model(m)
@@ -209,9 +211,12 @@ class SubmitStudy(model_base, Study, journal):
         """
         # TODO: Work out how a version of this can go into Study.
         # Only way I can currently see of doing this is by converting a SubmitStudy object
-        iter_count = np.max(self.iter_keys.values())
-        result = [[]] * iter_count  # initialise list to iter_count empty lists.
+        iter_count = np.max(list(self.iter_keys.values()))+1
+        result = [None] * iter_count  # initialize list to iter_count Nones
+        # The obvious result = [[]]*iter_count does not work....
         for key, iterc in self.iter_keys.items():
+            if result[iterc] is None: # None make it an empty list
+                result[iterc] = []
             result[iterc].append(self.model_index[key])
         return result
 
@@ -225,18 +230,22 @@ class SubmitStudy(model_base, Study, journal):
         self.dump(self.config_path)
 
     @classmethod
-    def load_SubmitStudy(cls, config_path: pathlib.Path, Study: bool = False) -> Study | SubmitStudy:
+    def load_SubmitStudy(cls, config_path: pathlib.Path,
+                         config: typing.Optional[OptClimConfigVn3] = None,
+                         Study: bool = False) -> Study | SubmitStudy:
         """
-        Load a SubmitStudy (or anythign that inherits from it) from a file. The object will have config_path replaced by config_path.
+        Load a SubmitStudy (or anything that inherits from it) from a file. The object will have config_path replaced by config_path.
         :param config_path: path to configuration to load
         :param Study: If True return a Study object. These are read-only (unless you modify by hand the attributes)
         :return: object
         """
 
         obj = cls.load(config_path)
-        # need to convert config (which is a dict) to an OptClimXXX
         if not isinstance(obj, SubmitStudy):
             logging.warning(f"Expected instance of SubmitStudy got {type(obj)}")
+        if config is not None:
+            logging.info("Updating configuration")
+            obj.config = copy.deepcopy(config)
         if Study:  # convert to a study
             obj = obj.to_study()
             return obj
@@ -320,9 +329,10 @@ class SubmitStudy(model_base, Study, journal):
         """
         # TODO: (if needed) have some way of loading up model info if the whole lot been moved.
         # deal with config
-        config = dct.pop('config')  # extract the config info.
-        config = dictFile(Config_dct=config[
+        config_dct = dct.pop('config')  # extract the config info.
+        config = dictFile(Config_dct=config_dct[
             'Config']).to_StudyConfig()  # convert the config entry to a dictFile then convert to a StudyConfig.
+        config._filename = config_dct['_filename']
         # TODO Very messy code. Good to sort out StudyConfig but that needs a big re-engineering job..
 
         # create the SubmitStudy object
@@ -340,8 +350,9 @@ class SubmitStudy(model_base, Study, journal):
                 # verify key is as expected.
                 model = Model.load_model(path)  # load the model.
                 got_key = obj.key_for_model(model)
-                if key != got_key:  # key changed.
+                if key != got_key:  # key changed. TODO. deal with ensembleMember which seems to be truncated.
                     logging.warning(f"Key has changed from {key} to {got_key} for model {model}")
+                    raise ValueError
                 model_index[got_key] = model
             else:
                 logging.warning(f"Failed to find {path} so ignoring.")
@@ -364,6 +375,7 @@ class SubmitStudy(model_base, Study, journal):
         # remove the config_path.
         self.config_path.unlink(missing_ok=True)  # remove the config path.
         # reset values count (used to generate name) to 0.
+        # remove the directory.
         self.name_values = None  # start again!
         self.update_history("Deleted")
 
@@ -451,7 +463,7 @@ class SubmitStudy(model_base, Study, journal):
 
         model_list = self.models_to_submit()  # models that need submitting!
         if len(model_list) == 0:  # nothing to do. We are done (no post-processing or resubmission to be submitted)
-            return True
+            return 0
 
         models_to_continue = self.models_to_continue()  # models that need continuing.
         config = self.config
@@ -502,11 +514,15 @@ class SubmitStudy(model_base, Study, journal):
                 # handling fake_fn
 
                 logging.debug(f"Faking {model.name} which will release {jid}")
-
+            # end of dealing with models to submit. Now to do stuff for SubmitStudy.
+            iter_count = self.update_iter(model_list)  # update iteration info. This is duplicate code.
+            #breakpoint()
+            # TODO have fake code and normal submission be better integrated.
             logging.info(f"Faked {len(model_list)} jobs")
             self.update_history(f"Faked {len(model_list)} jobs")
+
             self.dump_config()  # and write ourselves out!
-            return True  # all done now
+            return len(model_list)  # all done now
 
         # normal post processing stuff
         configFile = self.rootDir / 'tempConfigList.txt'  # name of file containing list of configs files  for post-processing stage

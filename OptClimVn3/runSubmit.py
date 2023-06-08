@@ -117,14 +117,16 @@ class runSubmit(SubmitStudy):
                 pDict.update(ensembleMember=ensembleMember)
                 model = self.get_model(pDict)
                 if model is None:  # no model so time to create one.
-                    key = self.create_model(pDict)
+                    model = self.create_model(pDict)
                     obs = empty
+
                 elif model.status != "PROCESSED": # not processed so raise ValueError and complain.
                     # TODO add in random generation to allow look ahead
                     raise ValueError(f"model status != PROCESSED = {model.status}")
                     #logging.warning(f"{model} has not been processed. Setting obs to array of nan's")
                     obs = empty
                 else:  # got a model.
+                    logging.info(f"Using existing model {model}")
                     obsNames = self.config.obsNames()
                     obs = model.simulated_obs  # get obs from the model
                     # if obs is None raise an error -- something gone badly wrong.

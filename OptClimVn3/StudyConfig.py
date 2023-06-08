@@ -226,7 +226,6 @@ class dictFile(dict):
         :return: path to filename
         """
         return self._filename
-
     def to_StudyConfig(self) -> OptClimConfigVn3:
         """
         Convert a dictfile to an OptClimVn3

@@ -21,7 +21,6 @@ def gen_time():
     timedelta = datetime.timedelta(seconds=1)
     while True:
         time += timedelta
-        print(f"time is {time}")
         yield time
 class myModel(Model):
     pass
@@ -44,6 +43,7 @@ class MyTestCase(unittest.TestCase):
         # create some models
         for param in [dict(VF1=3,CT=1e-4),dict(VF1=2.4,CT=1e-4),dict(VF1=2.6,CT=1e-4)]:
             submit.create_model(param,dump=True)
+        submit.dump_config(dump_models=True)
         self.submit=submit
         self.testDir = testDir
 
@@ -65,7 +65,8 @@ class MyTestCase(unittest.TestCase):
         # now create one that goes to disk,
         params.update(VF1=2.1)
         model2 = self.submit.create_model(params)
-        # as dump is True expect SubmitStudy obj on disk as well as model.
+        self.submit.dump_config(dump_models=True)
+        # as dump_models is True expect SubmitStudy obj on disk and model as well.
         # load them and compare.
         m2 = Model.load_model(model.config_path)
         m3 = Model.load_model(model2.config_path)
@@ -104,6 +105,7 @@ class MyTestCase(unittest.TestCase):
         submit.dump(submit.config_path)
         nsub = SubmitStudy.SubmitStudy.load(submit.config_path)
         self.assertEqual(submit,nsub) # should be identical
+        self.assertEqual(nsub.config._filename,submit.config._filename)
 
         for m1, m2 in zip(submit.model_index.values(), nsub.model_index.values()):
             self.assertEqual(m1, m2)
@@ -121,6 +123,7 @@ class MyTestCase(unittest.TestCase):
         self.submit.dump_config()
         newSub = self.submit.load_SubmitStudy(pth)
         self.assertEqual(self.submit,newSub)
+        # explicitly check
 
         study = self.submit.load_SubmitStudy(pth,Study=True)
         # return as a study

@@ -19,6 +19,7 @@ import generic_json
 from Models.model_base import model_base, journal
 from Models.namelist_var import namelist_var
 from Models.param_info import param_info
+from engine import engine
 
 
 # code from David de Klerk 2023-04-13
@@ -518,11 +519,20 @@ class Model(ModelBaseClass, journal):
             raise ValueError(f"{self.post_process_script} does not exist")
 
         self.create_model()  # create model
+        self.modify_model()  # do any modifications to model needed before setting params.
         self.set_params()  # set the params
         self.set_status('INSTANTIATED')
 
+    def modify_model(self):
+        """
+        Modify model. This does nothing and is designed to bee overwritten in classes that inherit from it.
+        :return: None
+        """
+
+        return None
+
     def submit_model(self, run_info: dict,
-                     engine: SubmitStudy.engine,
+                     engine: engine,
                      submit_fn: typing.Optional[typing.Callable] = None,
                      post_process_cmd: typing.Optional[list[str]] = None,
                      fake_function: typing.Optional[typing.Callable] = None,
@@ -530,7 +540,7 @@ class Model(ModelBaseClass, journal):
         """
         Submit  a model.
         :param run_info -- dict of information for running. runTime & runCode used here.
-        :param engine: -- engine (see SubmitStudy.engine) for details.  But provides a function to submit.
+        :param engine: -- engine (see engine) for details.  But provides a function to submit.
             Only needed for some models
         run_info and engine are passed to submit_cmd.
         :param submit_fn: A function that modifies a cmd.
@@ -583,7 +593,6 @@ class Model(ModelBaseClass, journal):
 
         return output
 
-    from engine import engine
     def submit_cmd(self, run_info: dict,
                    engine: engine) -> typing.List[str]:
         """"

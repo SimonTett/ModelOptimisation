@@ -42,11 +42,13 @@ import numpy as np
 import exceptions
 import runSubmit
 import StudyConfig
-from Models.Model import Model  # for generic stuff to do with models.
+
 from Models import *  # all models.
 import genericLib
 import logging
-
+from Models.HadCM3 import  HadCM3
+from Models.simple_model import simple_model
+from Models.Model import Model  # for generic stuff to do with models.
 ## main script
 
 ## set up command line args
@@ -106,7 +108,7 @@ if args.dir is not None:
 else:  # set rootDir to cwd/name
     rootDir = pathlib.Path.cwd() / configData.name()  # default path
 
-config_path = rootDir / configData.name() + ".scfg"
+config_path = rootDir / (configData.name() + ".scfg")
 
 if testRun:
     fakeFn = functools.partial(genericLib.fake_fn, configData)
@@ -130,17 +132,17 @@ wantCost = True
 rSUBMIT = None  # set it to None
 if config_path.exists():  # config file exists. Read it in.
     logging.info(f"Reading status from {config_path}")
-    rSUBMIT = runSubmit.runSubmit.load(config_path)
+    rSUBMIT = runSubmit.runSubmit.load_SubmitStudy(config_path)
     if not isinstance(rSUBMIT, runSubmit.runSubmit):
         raise ValueError(f"Something wrong")
 
     if delete:  # delete the config
         logging.info(f"Deleting existing config {rSUBMIT}")
-        rSUBMIT.delete()  # should reset it.
+        rSUBMIT.delete()  # should clean dir.
+        rSUBMIT = None # remove it.
 
-if rSUBMIT is None:
-    # no configuration exists. So create it.
-    rSUBMIT = runSubmit.runSubmit(configData, None, rootDir=rootDir, config_path=config_path)
+if rSUBMIT is None:# no configuration exists. So create it.
+    rSUBMIT = runSubmit.runSubmit(configData,  rootDir=rootDir, config_path=config_path)
     logging.debug(f"Created new runSubmit {rSUBMIT}")
 
 
@@ -177,7 +179,7 @@ status = rSUBMIT.status()
 if np.any(status != 'PROCESSED'):
     raise ValueError(f"Have unexpected status rSUBMIT:{rSUBMIT}")
 
-np.random.seed(123456)  # init RNG though probably should go to the runXXX methods.
+
 algorithmName = configData.optimise()['algorithm'].upper()
 logging.debug(f"Algorithm is {algorithmName}")
 if algorithmName in ['GUASSNEWTON', 'JACOBIAN']:
@@ -188,6 +190,7 @@ finalConfig = None
 
 while True:
     try:  # run an algorithm iteration.
+        np.random.seed(123456)  # init RNG though probably should go to the runXXX methods.
         if algorithmName == 'DFOLS':
             finalConfig = rSUBMIT.runDFOLS(scale=True)
         elif algorithmName == 'PYSOT':
@@ -212,22 +215,27 @@ while True:
         if dry_run:  # nothing gets submitted or faked. So exit
             logging.info(f"dry_run -- exiting")
             break
-        nModels = rSUBMIT.submit_all_models(restartCMD, fake_fn=fakeFn)
-        finalConfig = rSUBMIT.runConfig(scale=True, add_cost=wantCost)
+        nModels = rSUBMIT.submit_all_models(restartCMD, fake_fn=fakeFn) # this also saves the config.
+        finalConfig = rSUBMIT.runConfig(scale=True, add_cost=wantCost) # generate final configuration
         iterCount += 1
         logging.info(f"On iteration {iterCount} submitted {nModels} models")
         try:
-            logging.info("Last cost is ", finalConfig.cost()[-1])
-        except IndexError:
+            logging.info(f"Last cost is {float(finalConfig.cost().iloc[-1])}")
+        except IndexError: # no cost.
             pass
         if fakeFn is None:  # no fake fn so time to exit. This is "normal" behaviour.
             logging.info("Exiting")
             break  # exit the run forever loop as no more runs should be submitted on this go.
+        else: # reload the configuration (and all models).
+            # This necessary as writing out/reading in changes (slightly) the floating point value of some values
+            # which in turn changes the way the algorithms behave.
+            rSUBMIT = runSubmit.runSubmit.load_SubmitStudy(config_path)
+
     # end of try/except.
 
 # Deal with final stuff
 rSUBMIT.dump_config()  # dump the configuration.
 if finalConfig is not None:  # have a finalConfig. If so save it. We could not have it if dry_run or read_only set.
     finalConfig.save(final_JSON_file)
-    if args.monitor:
-        finalConfig.plot(monitorFile=monitor_file)  # plot it
+    if monitor:
+        finalConfig.plot(monitorFile=monitor_file)  # plot "std plot"

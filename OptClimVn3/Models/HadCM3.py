@@ -85,22 +85,20 @@ class HadCM3(Model.Model):
             raise ValueError(f"For HadCM3 Name must be 5 characters and is {name} ")
         return name
 
-    def instantiate(self) -> None:
+    def modify_model(self):
         """
-        HadCM3 instantitate. Over writes Model version.
-        Call the superclass. to copy reference.
+        HadCM3 modify_model. Overwrites Model version.
+        Call the superclass. modify_model in case it does something!
         Then work out the path to set_status_script
         Cleans up fixClimFCG
         Modify the Submit, then script, create work dir and copy any astart ostart files there might be into it.,
         Then create the continue submit file.
-        Finally create the script that tests if finished or not. If not submits the continue script otherwise
-          sets stats to SUCCEEED which runs the post processing.
+        Finally create the script that tests if finished or not.
         :return:
         """
-        super().instantiate()  # run super class instantiate.
+        super().modify_model()
         resource = importlib.resources.files("OptClimVn3")
         set_status_script = str(resource.joinpath("scripts/set_model_status.py"))
-
 
         self.fixClimFCG()  # fix the ClimFGC namelist
         # Step 1 --  copy SUBMIT & SCRIPT to SUBMIT.bak & SCRIPT.bak so we have the originals
@@ -112,7 +110,9 @@ class HadCM3(Model.Model):
         self.genContSUBMIT()  # generate the continuation script.
         self.createPostProcessFile(set_status_script)
 
-    def perturb(self, parameters:typing.Optional[dict]=None):
+
+
+    def perturb(self, parameters: typing.Optional[dict] = None):
         """
         Perturb HadCM3 model. Default works through up to 6 parameters then gives up!
         :return: nothing
@@ -165,9 +165,9 @@ class HadCM3(Model.Model):
 
     # test for NRUN but not finished.
     SUBCONT={self.continue_script}
-    if [ \( $FLAG = 'Y' \) -a \( $TYPE = 'NRUN' \) ]
+    if [[ ( $FLAG -eq 'Y' ) -a ( $TYPE -eq 'NRUN' ) ]
       then
-      if [ -n "$TESTING"  ] # for testing.
+      if [[ -n "$TESTING"  [] # for testing.
       then
     	echo "Testing: Should run $SUBCONT"
     	ls -ltr $SUBCONT
@@ -202,7 +202,7 @@ class HadCM3(Model.Model):
                 except IOError:
                     logging.warning(f"Failed to copy {file} to {workDir}")
 
-    def modifyScript(self,set_status_script):
+    def modifyScript(self, set_status_script):
         """
         modify script.
          set ARCHIVE_DIR to runid/A -- not in SCRIPT??? WOnder where it comes from. Will look at modified script..
@@ -224,9 +224,10 @@ class HadCM3(Model.Model):
                 if re.search(modifystr, line):
                     raise Exception("Already modified Script")
                 #
-                elif f.filelineno() == 1: # first line
-                    print(f"{set_status_script} {self.config_path} RUNNING {modifystr}") # we are running so set status to RUNNING.
-                    print(line[0:-1]) # print line out.
+                elif f.filelineno() == 1:  # first line
+                    print(
+                        f"{set_status_script} {self.config_path} RUNNING {modifystr}")  # we are running so set status to RUNNING.
+                    print(line[0:-1])  # print line out.
                 elif re.match('^EXPTID=', line):
                     print("EXPTID=%s %s" % (experID, modifystr))
                 elif re.match('^JOBID=', line):
@@ -243,16 +244,17 @@ class HadCM3(Model.Model):
                     print(f'. $JOBDIR/{self.post_process_file} {modifystr}')
                     # Self postProcessFile is run.
                     # When it is completed then post-processing gets run.
-                elif re.match(r'^exit \$RCMASTER',line):# add code to deal with failure
+                elif re.match(r'^exit \$RCMASTER', line):  # add code to deal with failure
                     # Success is when the potentially multiple simulations have completed.
                     # that's handled separately in self.post_process_file
-                    print(f"if [[ $RCMASTER -ne 0 ]]; then ;{set_status_script} {self.config_path} FAILED ; fi  {modifystr}")
-                    print(line[0:-1]) # print out the line.
+                    print(
+                        f"if [[ $RCMASTER -ne 0 ]]; then ;{set_status_script} {self.config_path} FAILED ; fi  {modifystr}")
+                    print(line[0:-1])  # print out the line.
                 else:  # default line
                     print(line[0:-1])  # remove newline
 
     from engine import engine
-    def submit_cmd(self, run_info:dict,engine:engine) -> typing.List[str]:
+    def submit_cmd(self, run_info: dict, engine: engine) -> typing.List[str]:
         """
         :param run_info -- run information.
           should include runCode and runTime.
@@ -349,13 +351,13 @@ class HadCM3(Model.Model):
         """
         Fix problems with the CLIM_FCG_* namelists so they can be parsed by f90nml.
         Generates CNTLATM.bak and modifies CNTLATM
-        TODO -- might now longer need. CHECK
         :return: None
         """
 
         with fileinput.input(self.model_dir / 'CNTLATM', inplace=True, backup='.bakR') as f:
             for line in f:
                 if re.search(r'CLIM_FCG_.*\(1,', line):
+
                     line = line.replace('(1,', '(:,')  # replace the leading 1 with :
                 print(line[0:-1])  # remove trailing newline.
 

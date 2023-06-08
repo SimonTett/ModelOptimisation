@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 from StudyConfig import OptClimConfigVn3
 import logging
+import copy
 def fake_fn(config:OptClimConfigVn3, params: dict) -> pd.Series:
     """
     Wee test fn for trying out things.
@@ -21,7 +22,7 @@ def fake_fn(config:OptClimConfigVn3, params: dict) -> pd.Series:
     :param params -- dict of parameter values
     returns  "fake" data as a pandas Series
     """
-
+    params = copy.deepcopy(params)
     logging.debug("faking with params: " + str(params))
     # remove ensembleMember param.
     params.pop('ensembleMember', None) # remove ensembleMember as a key.

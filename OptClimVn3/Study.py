@@ -149,7 +149,7 @@ class Study():
         """
 
         key = self.key(parameters,fpFmt=fpFmt)
-        logging.debug("Key is\n", repr(key), '\n', '-' * 60)
+        logging.debug(f"Key is: {key}")
         model = self.model_index.get(key, None)
         return model
 
@@ -193,7 +193,7 @@ class Study():
         :return: pandas series of model status
         """
         dct = {model.name: model.status for model in self.model_index.values()}
-        return pd.Series(dct).rename(self.name)
+        return pd.Series(dct,dtype=str).rename(self.name)
 
     def params(self, normalize: bool = False) -> pd.DataFrame:
         """
