@@ -46,9 +46,10 @@ import StudyConfig
 from Models import *  # all models.
 import genericLib
 import logging
-from Models.HadCM3 import  HadCM3
+from Models.HadCM3 import HadCM3
 from Models.simple_model import simple_model
 from Models.Model import Model  # for generic stuff to do with models.
+
 ## main script
 
 ## set up command line args
@@ -126,9 +127,7 @@ monitor_file = rootDir / (jsonFile.stem + "_monitor.png")
 ##############################################################
 
 # common stuff across all algorithms
-iterCount = 0  # for testing print out iterCount
-nModels = 0
-wantCost = True
+
 rSUBMIT = None  # set it to None
 if config_path.exists():  # config file exists. Read it in.
     logging.info(f"Reading status from {config_path}")
@@ -139,13 +138,12 @@ if config_path.exists():  # config file exists. Read it in.
     if delete:  # delete the config
         logging.info(f"Deleting existing config {rSUBMIT}")
         rSUBMIT.delete()  # should clean dir.
-        rSUBMIT = None # remove it.
+        rSUBMIT = None  # remove it.
 
-if rSUBMIT is None:# no configuration exists. So create it.
-    rSUBMIT = runSubmit.runSubmit(configData,  rootDir=rootDir, config_path=config_path)
+if rSUBMIT is None:  # no configuration exists. So create it.
+    # We can get here either because config_path does not exist or we deleted the config.
+    rSUBMIT = runSubmit.runSubmit(configData, rootDir=rootDir, config_path=config_path)
     logging.debug(f"Created new runSubmit {rSUBMIT}")
-
-
 
 # We might  have runs to do so check that and run them if so.
 if not (dry_run or read_only):  # not dry running or read only.
@@ -164,8 +162,6 @@ if not (dry_run or read_only):  # not dry running or read only.
                 model.status = 'CONTINUE'
             if fail == 'delete':  # delete model
                 rSUBMIT.delete_model(model)
-        if fail in ['perturbc', 'continue']:
-            logging.info(f"Continuing {len(rSUBMIT.models_to_continue())}")
     #  submit models and exit -- only those that are submittable will be submitted.
     nModels = rSUBMIT.submit_all_models(restartCMD, fake_fn=fakeFn)
     # this handles both models that are instantiated or those that need continuing.
@@ -179,16 +175,14 @@ status = rSUBMIT.status()
 if np.any(status != 'PROCESSED'):
     raise ValueError(f"Have unexpected status rSUBMIT:{rSUBMIT}")
 
-
 algorithmName = configData.optimise()['algorithm'].upper()
 logging.debug(f"Algorithm is {algorithmName}")
-if algorithmName in ['GUASSNEWTON', 'JACOBIAN']:
+if algorithmName in ['RUNOPTIMISED', 'JACOBIAN']:
     wantCost = False
 else:
     wantCost = True
-finalConfig = None
-
-while True:
+finalConfig = None # so we have something!
+while True: # loop indefinetly so can have fake_fn. This really to test code/algorithm.
     try:  # run an algorithm iteration.
         np.random.seed(123456)  # init RNG though probably should go to the runXXX methods.
         if algorithmName == 'DFOLS':
@@ -210,23 +204,23 @@ while True:
         if read_only:
             logging.info(f"read_only -- exiting")
             break  # exit the loop -- we are done as in read_only mode.
-        rSUBMIT.instantiate()  # instantiate all cases that need instantiation.
+        iter_count = rSUBMIT.instantiate()  # instantiate all cases that need instantiation.
+        # This also generates iteration information.
         logging.info(f"Instantiated {rSUBMIT}")
         if dry_run:  # nothing gets submitted or faked. So exit
             logging.info(f"dry_run -- exiting")
             break
-        nModels = rSUBMIT.submit_all_models(restartCMD, fake_fn=fakeFn) # this also saves the config.
-        finalConfig = rSUBMIT.runConfig(scale=True, add_cost=wantCost) # generate final configuration
-        iterCount += 1
-        logging.info(f"On iteration {iterCount} submitted {nModels} models")
+        nModels = rSUBMIT.submit_all_models(restartCMD, fake_fn=fakeFn)  # this also saves the config.
+        finalConfig = rSUBMIT.runConfig(scale=True, add_cost=wantCost)  # generate final configuration
+        logging.info(f"On iteration {iter_count} submitted {nModels} models")
         try:
             logging.info(f"Last cost is {float(finalConfig.cost().iloc[-1])}")
-        except IndexError: # no cost.
+        except IndexError:  # no cost.
             pass
         if fakeFn is None:  # no fake fn so time to exit. This is "normal" behaviour.
             logging.info("Exiting")
             break  # exit the run forever loop as no more runs should be submitted on this go.
-        else: # reload the configuration (and all models).
+        else:  # reload the configuration (and all models).
             # This necessary as writing out/reading in changes (slightly) the floating point value of some values
             # which in turn changes the way the algorithms behave.
             rSUBMIT = runSubmit.runSubmit.load_SubmitStudy(config_path)
