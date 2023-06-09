@@ -196,7 +196,7 @@ class SubmitStudy(model_base, Study, journal):
         if len(existing_counts) == 0:
             iter_count = 0
         else:
-            iter_count = int(np.max(existing_counts)) + 1  # need as a native python int rathe
+            iter_count = int(np.max(existing_counts)) + 1  # need as a native python int rather than numpy.
 
         for m in models:
             key = self.key_for_model(m)
@@ -262,16 +262,17 @@ class SubmitStudy(model_base, Study, journal):
 
     def instantiate(self):
         """
-        Instantiate all created models.
+        Instantiate all created models. And update_iter so we can see what was done.
         :return: True if all were instantiated. False otherwise
         """
 
         models = [model for model in self.model_index.values() if model.status == 'CREATED']
         for model in models:
             model.instantiate()  # model state will be written out.
-        self.update_history(f'Instantiated {len(models)} models')
+        iter_count = self.update_iter(models) # update iteration info
+        self.update_history(f'Instantiated {len(models)} models on iteration {iter_count}')
         logging.info(f"Instantiated {len(models)} models")
-        return True
+        return iter_count
 
     def models_to_submit(self) -> List[Model]:
         """
@@ -519,8 +520,6 @@ class SubmitStudy(model_base, Study, journal):
 
                 logging.debug(f"Faking {model.name} which will release {jid}")
             # end of dealing with models to submit. Now to do stuff for SubmitStudy.
-            iter_count = self.update_iter(model_list)  # update iteration info. This is duplicate code.
-            #breakpoint()
             # TODO have fake code and normal submission be better integrated.
             logging.info(f"Faked {len(model_list)} jobs")
             self.update_history(f"Faked {len(model_list)} jobs")
@@ -578,8 +577,7 @@ class SubmitStudy(model_base, Study, journal):
             # no fake_fn here as handled above.
             logging.debug(f"Submitting {model.name} which will release {jid}")
         # end of dealing with models to submit. Now to do stuff for SubmitStudy.
-        iter_count = self.update_iter(model_list)  # update iteration info.
-        msg = f"Submitted {len(model_list)} model jobs on iteration {iter_count} "
+        msg = f"Submitted {len(model_list)} model jobs  "
         self.update_history(msg)
         logging.info(msg)
         self.dump_config()  # and write ourselves out!
