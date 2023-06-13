@@ -89,9 +89,9 @@ monitor = args.monitor
 fail = args.fail
 
 if verbose == 1:
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.INFO,force=True)
 elif verbose > 1:
-    logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(level=logging.DEBUG,force=True)
 else:
     pass
 

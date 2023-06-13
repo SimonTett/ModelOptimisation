@@ -3,6 +3,7 @@ import datetime
 import filecmp
 import importlib
 import logging
+import os
 import pathlib
 import shutil
 import subprocess
@@ -236,7 +237,9 @@ class ModelTestCase(unittest.TestCase):
                             post_process_script=None, post_process_script_interp=None, fake=False, simulated_obs=None,
                             perturb_count=0, config_path=self.testDir / "test_model.mcfg",
                             status='CREATED', _history=model._history,
-                            run_count=0, submission_count=0)
+                            run_count=0, submission_count=0,
+                            set_status_script= self.model.expand("$OPTCLIMTOP/OptClimVn3/scripts/set_model_status.py"))
+
         dct = model.to_dict()
         self.assertEqual(expected_dct, dct)
 
@@ -426,6 +429,19 @@ class ModelTestCase(unittest.TestCase):
         self.assertEqual(bak_count, expected_bak_count)
         self.assertEqual(1, count_config)  # only one config file.
 
+    def test_setup_model_env(self):
+        # create dir and fake config.
+        self.model.model_dir.mkdir(exist_ok=True,parents=True)
+        self.model.config_path.touch()
+        self.model.setup_model_env()
+        # check environ as expected.
+        self.assertEqual(os.environ['OPTCLIM_MODEL_PATH'],str(self.model.config_path))
+        # and file generated contains expected content.
+        config_pth = self.model.model_dir/'OPTCLIM_MODEL_PATH.json'
+        with open(config_pth,'rt') as fp:
+            dct = generic_json.load(fp)
+        self.assertEqual(dct['config_path'], self.config_path)
+
     @unittest.mock.patch.object(myModel, 'now', side_effect=gen_time())
     def test_submit_model(self,mck_now):
         """
@@ -540,8 +556,8 @@ class ModelTestCase(unittest.TestCase):
         with self.assertLogs(level='DEBUG') as log:
             model.perturb(v)
         self.assertEqual(log.output[-1], f"DEBUG:root:set parameters to {v}")
-        self.assertEqual(len(model._history),
-                         4)  # expect 4 bits of history. Created, Instantiated, the  perturbed using and setting status
+        self.assertEqual(len(model._history),    5)
+        # expect 5 bits of history. Created, Modified,Instantiated, perturbed using and setting status
         p = model.read_values('VF1')
         self.assertEqual(p, v)
         self.assertEqual(model.perturb_count, 1)  # perturbed it once.
@@ -654,8 +670,8 @@ class ModelTestCase(unittest.TestCase):
             # need to run a bunch of tests here.
             # having got to here should have simulated_obs be post_process['fake_obs']
             pdtest.assert_series_equal(model.simulated_obs, pd.Series(post_process['fake_obs']).rename(model.name))
-            # should have 6 history entries.
-            self.assertEqual(len(model._history), 6)
+            # should have 7 history entries.
+            self.assertEqual(len(model._history), 7)
             # two   outputs -- from one model submission + one post_process
             self.assertEqual(len(model._output), 2)
 
@@ -685,7 +701,7 @@ class ModelTestCase(unittest.TestCase):
                 generic_json.dump(fake_obs, fp)
             model.process()  # and do the post-processing
             # should have 12 history entries.
-            self.assertEqual(len(model._history), 12)
+            self.assertEqual(len(model._history), 13)
             # three  outputs -- 1 model, one continue and one postprocess.
             self.assertEqual(len(model._output), 3)
             #

@@ -19,7 +19,7 @@ import importlib.resources
 
 import StudyConfig
 
-os.environ['OPTCLIMTOP'] = os.path.curdir
+#os.environ['OPTCLIMTOP'] = os.path.curdir
 
 
 class testStudyConfig(unittest.TestCase):

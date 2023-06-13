@@ -306,6 +306,7 @@ class Model(ModelBaseClass, journal):
         fake -- If True model is faked.
         perturb_count -- no of times perturbation has been done.
         parameters -- dict of parameters/values
+        set_status_script -- path to script that sets_status. Your model will need to call this.
 
         Things that should be changed in inherited classes (and are not written out)
             submit_script -- name of script to submit for a new simulation
@@ -359,6 +360,11 @@ class Model(ModelBaseClass, journal):
                 self.post_process_output = post_process_output
             else:
                 self.post_process_output = None
+
+        # setup path to where script that sets status is.
+        root = self.expand("$OPTCLIMTOP/OptClimVn3")
+        script_pth= root/"scripts/set_model_status.py"
+        self.set_status_script = script_pth
 
         # code below test_Models that post_process_script exists and is executable.
         if self.post_process_script is not None:
@@ -525,11 +531,48 @@ class Model(ModelBaseClass, journal):
 
     def modify_model(self):
         """
-        Modify model. This does nothing and is designed to bee overwritten in classes that inherit from it.
+        Modify model. This does nothing and is designed to be overwritten in classes that inherit from it.
+        Those should call this first as it checks that set_status_script exists and updates history
+
         :return: None
         """
+        if not self.set_status_script.exists():
+            raise ValueError(f"Need {self.set_status_script} does not exists")
+
+        self.update_history(f"modifying model")
 
         return None
+
+    def setup_model_env(self) -> bool:
+        """
+        Method to set up stuff for model_status_script to get model_config
+        This function does it by setting up env var OPTCLIM_MODEL_PATH and
+          writing out the json file model_dir/OPTCLIM_MODEL_PATH.json with model_config stored in it.
+          Uses generic json dump to do so.
+          Idea is that this gets run just before a model is actually submitted. As model run
+            is then expected to run the status update script.
+        both model_config and model_dir should exist. If they do not or are not a file or dir respectively
+          a value error will be raised.
+        :param model_config: path to model configuration.
+        :param model_dir: path to model_dir. Model assumed to run in that
+        :return: True if successful; False if Not though will actually fail!
+        """
+        if not self.model_dir.exists():
+            raise ValueError(f"Model_dir {self.model_dir} does not exists")
+        if not self.model_dir.is_dir():
+            raise ValueError(f"Model_dir {self.model_dir} is not a directory")
+        if not self.config_path.exists():
+            raise ValueError(f"Model config {self.config_path} does not exist")
+        if not self.config_path.is_file():
+            raise ValueError(f"Model config {self.config_path} is not a file")
+        config_info = dict(config_path=self.config_path)
+        outpath = self.model_dir / "OPTCLIM_MODEL_PATH.json"
+        with open(outpath, 'wt') as fp:
+            generic_json.dump(config_info, fp)
+
+        os.environ['OPTCLIM_MODEL_PATH'] = str(self.config_path)  # set up the environment.
+        logging.debug(f"Wrote config path to {outpath}. $OPTCLIM_MODEL_PATH = {os.environ['OPTCLIM_MODEL_PATH']}")
+        return True  # we worked!
 
     def submit_model(self, run_info: dict,
                      engine: engine,
@@ -541,7 +584,8 @@ class Model(ModelBaseClass, journal):
         Submit  a model.
         :param run_info -- dict of information for running. runTime & runCode used here.
         :param engine: -- engine (see engine) for details.  But provides a function to submit.
-            Only needed for some models
+            Only needed for some models. Also provides information on how to set up things so
+              running complex model can update status.
         run_info and engine are passed to submit_cmd.
         :param submit_fn: A function that modifies a cmd.
           Contract for this is that it takes in a list (cmd) and transforms it.
@@ -580,12 +624,10 @@ class Model(ModelBaseClass, journal):
         if post_process_cmd is not None:
             self.post_process_cmd = post_process_cmd  # the post-processing cmd needed to run post-processing.
         logging.debug(f"self.post_process_cmd  is {self.post_process_cmd}")
-
-        # DO override the Model method for your own purposes.
-
         if submit_fn is not None:
             cmd = submit_fn(cmd)
-
+        ok = self.setup_model_env() # set up "environment" so that
+        # actual running model can update status.
         output = self.run_cmd(cmd)
         logging.debug(f"Ran {cmd}")
         self.submission_count += 1
@@ -850,6 +892,8 @@ class Model(ModelBaseClass, journal):
         logging.warning(f"Nothing set for {ensMember}. Override in your own model")
 
         return None
+
+
 
 
 Model.register_class(Model)  # register ourselves!

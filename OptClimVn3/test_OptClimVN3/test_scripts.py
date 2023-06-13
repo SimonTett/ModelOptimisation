@@ -1,0 +1,107 @@
+# test the scripts
+import os
+import pathlib
+import unittest
+import subprocess
+import tempfile
+import Model
+import platform
+
+import StudyConfig
+from runSubmit import runSubmit # so we can test if we have one!
+import model_base
+import HadCM3# needed because we are reading in HadCM3 models...
+
+
+class testScripts(unittest.TestCase):
+
+    def setup_model(self):
+        cpath = Model.Model.expand("$OPTCLIMTOP/OptClimVn3/configurations/example_simple_model")
+        model = Model.Model('test_model',
+                            reference=cpath,
+                            config_path=self.tempDir / 'testmodel.mcfg',
+                            model_dir=self.tempDir / 'testmodel',
+                            parameters=dict(pone=2, pthree=3),
+                            status='SUBMITTED')
+        model.model_dir.mkdir(exist_ok=True, parents=True)
+        model.dump_model()
+        model.setup_model_env()  # setup the env.
+        return model
+
+    def setUp(self) -> None:
+        direct = tempfile.TemporaryDirectory()
+        self.direct = direct
+        self.tempDir = pathlib.Path(direct.name)
+        self.script_dir = Model.Model.expand("$OPTCLIMTOP/OptClimVn3/scripts")
+        self.assertTrue(self.script_dir.exists()) # this failing when ran along with all tests.
+
+    def test_set_model_status(self):
+        # test set_model_status works
+        # need  a model with status = "SUBMITTED" setup_model does that.
+        pth = self.script_dir/"set_model_status.py"
+        self.assertTrue(pth.exists())
+        model = self.setup_model()
+
+        if platform.system() == 'Windows':
+            cmd = ['python',str(pth)]
+        else:
+            cmd = [str(pth)]
+        cmd += ['RUNNING','-v','-v']
+        try:
+            subprocess.run(cmd,cwd=model.model_dir,capture_output=True,check=True,shell=True,text=True)
+        except subprocess.CalledProcessError as err:
+            print("stdout",err.stdout)
+            print("stderr",err.stderr)
+            raise
+        model = Model.Model.load_model(model.config_path)
+        self.assertEqual(model.status,'RUNNING')
+        model.delete()
+        # run again but turn of env var.
+        model = self.setup_model()
+        os.environ.pop('OPTCLIM_MODEL_PATH')
+        try:
+            subprocess.run(cmd,cwd=model.model_dir,capture_output=True,check=True,shell=True,text=True)
+        except subprocess.CalledProcessError as err:
+            print("stdout",err.stdout)
+            print("stderr",err.stderr)
+            raise
+        model = Model.Model.load_model(model.config_path)
+        self.assertEqual(model.status,'RUNNING')
+        model.delete()
+        # try again but provide cmd line argument and delete file + env var
+        model = self.setup_model()
+        os.environ.pop('OPTCLIM_MODEL_PATH')
+        (model.model_dir/'OPTCLIM_MODEL_PATH.json').unlink() # delete file.
+        cmd += ['--config_path',str(model.config_path)]
+        try:
+            subprocess.run(cmd,cwd=model.model_dir,capture_output=True,check=True,shell=True,text=True)
+        except subprocess.CalledProcessError as err:
+            print("stdout",err.stdout)
+            print("stderr",err.stderr)
+            raise
+        model = Model.Model.load_model(model.config_path)
+        self.assertEqual(model.status,'RUNNING')
+
+
+    def test_runAlgorithm(self):
+        """ Test runAlgorithm by running it in test mode.
+        Success means it has worked!
+        """
+        if platform.system() == 'Windows':
+            cmd=['python']
+        else:
+            cmd=[]
+        config_pth = Model.Model.expand("$OPTCLIMTOP/OptClimVn3/configurations/dfols14param_opt3.json")
+        config = StudyConfig.readConfig(config_pth)
+        cmd += [str(self.script_dir/'runAlgorithm.py'),str(config_pth),"-v", "-v", "-t",
+                "-d",str(self.tempDir) ,"--delete"]
+        subprocess.run(cmd,capture_output=True,check=True,shell=True,text=True)
+        config_pth = self.tempDir/(config.name() + ".scfg")
+        self.assertTrue(config_pth.exists()) # check config file exists.
+        sconfig = runSubmit.load(config_pth)
+        self.assertIsInstance(sconfig,runSubmit)
+
+
+
+if __name__ == '__main__':
+    unittest.main()

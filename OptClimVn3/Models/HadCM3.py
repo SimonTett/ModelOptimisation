@@ -97,18 +97,16 @@ class HadCM3(Model.Model):
         :return:
         """
         super().modify_model()
-        resource = importlib.resources.files("OptClimVn3")
-        set_status_script = str(resource.joinpath("scripts/set_model_status.py"))
 
         self.fixClimFCG()  # fix the ClimFGC namelist
         # Step 1 --  copy SUBMIT & SCRIPT to SUBMIT.bak & SCRIPT.bak so we have the originals
         # Then modify SUBMIT & SCRIPT in place
         #
         self.modifySubmit()  # modify Submit script
-        self.modifyScript(set_status_script)  # modify Script
+        self.modifyScript(self.set_status_script)  # modify Script
         self.createWorkDir()  # create the work directory (and fill it in)
         self.genContSUBMIT()  # generate the continuation script.
-        self.createPostProcessFile(set_status_script)
+        self.createPostProcessFile(self.set_status_script)
 
 
 
@@ -130,20 +128,17 @@ class HadCM3(Model.Model):
         parameters[parameter] *= (1 + 1e-6)  # small parameter perturbation
         return super().perturb(parameters=parameters)
 
-    def createPostProcessFile(self, set_status_cmd):
+    def createPostProcessFile(self, set_status_cmd:pathlib.Path):
         """
         Used by the submission system to allow the post-processing job to be submitted when the simulation has
         completed. This code also modifies the UM so that when a NRUN is finished it automatically runs the
         continuation case. This HadCM3 implementation generates a file call optclim_finished which is sourced by
         SCRIPT. SCRIPT needs to be modified to actually do this. (See modifySCRIPT).
-
+        :param set_status_cmd. path to set_status_cmd
         """
         # postProcessCmd is the command that gets run when the model has finished. It should release the post-processing!  
         outFile = self.model_dir / self.post_process_file  # needs to be same as used in SCRIPT which actually calls it
-        # TODO postProcessCmd should become the script that gets run to update the state.
         # Eddie does not require login in to a login node to subbmit jobs
-        # that means (I think) we can drop all the ssh nonsense. Might be needed for other
-        # machines but cross that bridge if and when we come to it!
         with open(outFile, 'w') as fp:
             print(
                 f"""#  script to be run in ksh from UM45 SCRIPT
@@ -157,7 +152,7 @@ class HadCM3(Model.Model):
     FLAG=$(grep 'FLAG' $RSUB|cut -f2 -d"=" | sed 's/ *//'g)
     if  [ $FLAG = 'N' ]
       then # release the post processing job. 
-      {set_status_cmd} {self.config_path} SUCCEEDED ## code inserted
+      {set_status_cmd} SUCCEEDED ## code inserted
       echo "FINISHED releasing the post-processing"
     else 
          echo "$TYPE: Still got work to do"
@@ -202,9 +197,12 @@ class HadCM3(Model.Model):
                 except IOError:
                     logging.warning(f"Failed to copy {file} to {workDir}")
 
-    def modifyScript(self, set_status_script):
+    def modifyScript(self, set_status_script:pathlib.Path):
         """
         modify script.
+        :param set_status_script -- path to script that sets status.
+
+
          set ARCHIVE_DIR to runid/A -- not in SCRIPT??? WOnder where it comes from. Will look at modified script..
          set EXPTID to runid  --  first ^EXPTID=xhdi
          set JOBID to jobid  -- first ^JOBID
@@ -226,7 +224,7 @@ class HadCM3(Model.Model):
                 #
                 elif f.filelineno() == 1:  # first line
                     print(
-                        f"{set_status_script} {self.config_path} RUNNING {modifystr}")  # we are running so set status to RUNNING.
+                        f"{set_status_script} RUNNING {modifystr}")  # we are running so set status to RUNNING.
                     print(line[0:-1])  # print line out.
                 elif re.match('^EXPTID=', line):
                     print("EXPTID=%s %s" % (experID, modifystr))
@@ -248,8 +246,8 @@ class HadCM3(Model.Model):
                     # Success is when the potentially multiple simulations have completed.
                     # that's handled separately in self.post_process_file
                     print(
-                        f"if [[ $RCMASTER -ne 0 ]]; then ;{set_status_script} {self.config_path} FAILED ; fi  {modifystr}")
-                    print(line[0:-1])  # print out the line.
+                        f"if [[ $RCMASTER -ne 0 ]]; then ;{set_status_script} FAILED ; fi  {modifystr}")
+                    print(line[0:-1])  # print out the original line.
                 else:  # default line
                     print(line[0:-1])  # remove newline
 
