@@ -485,103 +485,62 @@ class SubmitStudy(model_base, Study, journal):
             logging.debug(f"Truncating models_to_continue to {maxRuns}")
         ## work out postprocess script path
         OptClimRoot = importlib.resources.files("OptClimVn3")  # root path for OptClimVn3
-        # scriptName = OptClimRoot / "scripts/qsub.sh"  # not sure why this is needed!
 
         if len(models_to_continue) > 0:  # (re)submit  models that need continuing and exit
             if fake_fn is not None:
                 raise ValueError('Faking and continuing')
             for model in models_to_continue:
-                output = model.submit_model(run_info, self.engine, submit_fn=self.submit_fn)  #
+                pp_jid = model.submit_model(run_info, self.engine,
+                                            submit_fn=self.submit_fn,
+                                            outputDir=output_dir)
                 logging.debug(f"Continuing {model.name} ")
 
             logging.info(f"Continued {len(models_to_continue)} models and done")
             self.update_history(f"Continued {len(models_to_continue)} models")
             self.dump_config()  # and write out the config
             return len(models_to_continue)
-            # nothing else to do -- post-processing should be released when model finishes.
+            # nothing else to do -- next stage is still sitting  in the Q waiting to be released.
 
         # No runs to continue so let's submit.
+        # Deal with maxRuns.
         if (maxRuns is not None) and (maxRuns > len(model_list)):  # need to truncate run?
             logging.debug(f"Reducing to {maxRuns} models.")
             model_list = model_list[0:maxRuns]
 
-        if fake_fn is not None:  # faking it until we make it! Only need to run some models
-            for index, model in enumerate(model_list):
-                # need to put the post-processing job release command in the model.
-                # model will complain if not in right status
-                jid = "NOID" + f".{index + 1}"  # work out the jobid for release of post-processing
-                release_pp = self.engine.release_fn(jid)
-                if self.submit_fn:
-                    release_pp = self.submit_fn(release_pp)
-                model.submit_model(run_info, self.engine,
-                                   submit_fn=self.submit_fn, post_process_cmd=release_pp,
-                                   fake_function=fake_fn)
-                # handling fake_fn
+        # submit models! Faking if necessary.
+        pp_jids=[] # list of job ids from post-processing
+        for model in model_list: # submit model and post-processing
+            pp_jid = model.submit_model(run_info,self.engine,submit_fn=self.submit_fn,
+                                        outputDir=output_dir,fake_function=fake_fn)
+            if pp_jid is not None: # got a post-processing jid.
+                pp_jids.append(pp_jid) # add it to the list
 
-                logging.debug(f"Faking {model.name} which will release {jid}")
-            # end of dealing with models to submit. Now to do stuff for SubmitStudy.
-            # TODO have fake code and normal submission be better integrated.
+        if fake_fn is not None:
             logging.info(f"Faked {len(model_list)} jobs")
             self.update_history(f"Faked {len(model_list)} jobs")
+        else:
+            logging.info(f"Submitted {len(model_list)} jobs")
+            self.update_history(f"Submitted {len(model_list)} models")
 
-            self.dump_config()  # and write ourselves out!
-            return len(model_list)  # all done now
-
-        # normal post processing stuff
-        configFile = self.rootDir / 'tempConfigList.txt'  # name of file containing list of configs files  for post-processing stage
-        with open(configFile, 'wt') as f:  # write file paths for model configs to the configFile.
-            for m in model_list:
-                f.write(str(m.config_path) + "\n")  # Where model state is to be found.
-        # generate the post-processing array job.
-        pp_jobName = 'PP' + configName
-        postProcess = [OptClimRoot / "scripts/post_process.sh", configFile]
-        pp_cmd = self.engine.array_fn(postProcess, pp_jobName, output_dir, len(model_list),
-                                      run_code=runCode, rundir=self.rootDir)
-        if self.submit_fn:  # and thing to do to submit a job?
-            pp_cmd = self.submit_fn(pp_cmd)
-        logging.info(f"postProcess task array cmd is {pp_cmd}")
-        # run the post process and get its job id
-        output = self.run_cmd(pp_cmd)
-        postProcessJID = self.engine.jid_fn(output)  # extract the actual job id as a string
-        logging.info(f"postProcess array job id is {postProcessJID}")
-        self.post_process_jid = postProcessJID
-        self.update_history(f"Submitted postProcess array job id as {postProcessJID}")
         # now (re)submit this entire script so that the next iteration in the algorithm can be ran
-        if (next_iter_cmd is not None):
-            # submit the next job in the iteration.
-            # need to run resubmit through a script because qsub copies script being run
-            # so somewhere temporary. So lose file information needed for resubmit. Not sure this needed. TODO check if needed.
+        if (next_iter_cmd is not None) and (len(pp_jids) >0):
+            # submit the next job in the iteration if have one and submitted post-processing.
             next_job_name = 'RE' + configName
-            run_next_submit = self.engine.submit_fn(next_iter_cmd, next_job_name, output_dir,
+            run_next_submit = self.engine.submit_fn(next_iter_cmd, next_job_name, outdir = output_dir,
                                                     run_code=runCode, rundir=self.rootDir,
-                                                    hold_jid=postProcessJID)
+                                                    hold_jid=pp_jids)
             if self.submit_fn is not None:
                 run_next_submit = self.submit_fn(run_next_submit)
-            logging.info("Next iteration cmd is ", run_next_submit)
             output = self.run_cmd(run_next_submit)
+            logging.info(f"Next iteration cmd is {run_next_submit} with output:{output}")
             jid = self.engine.jid_fn(output)  # extract the actual job id.
             logging.info(f"Job ID for next iteration is {jid}")
             self.next_job_id = jid
             self.update_history(f"Submitted next job with ID {jid}")
-        # now submit the models with info on what to release.
-        # This should only happen if have models to run!
 
-        for index, model in enumerate(model_list):
-            # need to put the post-processing job release command in the model.
-            # model will complain if not in right status
-            jid = postProcessJID + f".{index + 1}"  # work out the jobid for release of post-processing
-            release_pp = self.engine.release_fn(jid)
-            if self.submit_fn:
-                release_pp = self.submit_fn(release_pp)
-            output = model.submit_model(run_info, self.engine, self.submit_fn, post_process_cmd=release_pp)
-            # no fake_fn here as handled above.
-            logging.debug(f"Submitting {model.name} which will release {jid}")
-        # end of dealing with models to submit. Now to do stuff for SubmitStudy.
-        msg = f"Submitted {len(model_list)} model jobs  "
-        self.update_history(msg)
-        logging.info(msg)
-        self.dump_config()  # and write ourselves out!
-        return len(model_list)
+        self.dump_config()  # and write ourselves out
+        return len(model_list)  # all done now
+
 
     def to_study(self) -> Study:
         """

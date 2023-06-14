@@ -111,7 +111,7 @@ class journal:
         """
         Run a command using subprocess.check_output and record output.
         :param cmd: command to run
-        :**kwargs -- kwargs to be passed to subprocess.check_output. Will update defaultswhich is just text=True
+        :**kwargs -- kwargs to be passed to subprocess.check_output. Will update defaults which is just text=True
         :return: output from running command
         """
         args = dict(text=True)  #

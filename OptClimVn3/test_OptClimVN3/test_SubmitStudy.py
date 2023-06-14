@@ -191,9 +191,9 @@ class MyTestCase(unittest.TestCase):
         # set up the fake rtn output
         submit = copy.deepcopy(self.submit)
 
-        rtn_job_output = ['postprocess submitted 345678.10']  # array of pp jobs as no next job wanted
+        rtn_job_output = ['postprocess submitted 345678.10'] *len(submit.model_index) # array of pp jobs as no next job wanted
         model_output = ['Model submitted 34567'] * len(submit.model_index)
-        output = rtn_job_output + model_output
+        output = [item for sublist in zip(rtn_job_output, model_output) for item in sublist]
         with unittest.mock.patch("subprocess.check_output",
                                  autospec=True, side_effect=output) as mck_output:
             submit.submit_all_models()
@@ -201,19 +201,12 @@ class MyTestCase(unittest.TestCase):
             mck_output.assert_not_called()
             submit.instantiate()  # instantiate all models.
             submit.submit_all_models()
-            # run submit -- should submit the pp process and three models. so 4 times
-            self.assertEqual(mck_output.call_count, 4)
-            # expect to have a tempConfigList.txt file -- with 3 lines as model config file
-            tempFile = submit.rootDir / 'tempConfigList.txt'
-            expected_output = [str(model.config_path) for model in submit.model_index.values()]
-            with open(tempFile, 'rt') as f:
-                output = f.readlines()
-            output = [o.rstrip("\n") for o in output]
-            self.assertEqual(output, expected_output)
+            # run submit -- should submit the three * (pp process and  models). so 6 times
+            self.assertEqual(mck_output.call_count, 6)
             # expect that the post process cmd is ['qrls',jid]
             # so lets check that.
             for indx, model in enumerate(submit.model_index.values()):
-                self.assertEqual(model.post_process_cmd, ['qrls', f"345678.{indx + 1}"])
+                self.assertEqual(model.post_process_cmd, ['qrls', f"345678"])
 
         # now have the models all fail and then continue.  Should only have three cases -- the models
         # All status should be submitted and the post-process cmd should be unchanged
@@ -226,7 +219,7 @@ class MyTestCase(unittest.TestCase):
             # check models are as expected.
             for indx, model in enumerate(submit.model_index.values()):
                 self.assertEqual(model.status, "SUBMITTED")
-                self.assertEqual(model.post_process_cmd, ['qrls', f"345678.{indx + 1}"])
+                self.assertEqual(model.post_process_cmd, ['qrls', f"345678"])
 
         # final actual run test. Next job is submitted.
         output = rtn_job_output + ['Next Submitted 345679'] + model_output
@@ -234,17 +227,18 @@ class MyTestCase(unittest.TestCase):
                                  autospec=True, side_effect=output) as mck_output:
             for m in submit.model_index.values():
                 m.status = 'INSTANTIATED'
+                m.post_process_cmd = None # set post_process_cmd back to None.
             submit.submit_all_models(next_iter_cmd=['run myself'])
-            self.assertEqual(mck_output.call_count, 5)  # 5 cases
+            self.assertEqual(mck_output.call_count, 7)  # 7 cases. 3 x (model + pp submit) + one next job.
 
         # final tests -- history and output as expected.
-        # expect 11 history:
-        #    1 start, 3 x model created,  instantiated, pp job submitted, models submitted,
-        #      models continued, pp job submitted, next job submitted, models submitted.
+        # expect 9 history:
+        #    1 start, 3 x model created,  instantiated,  models submitted,
+        #      models continued, models submitted, next job submitted
         #
         # and 4+3+5 outputs
-        self.assertEqual(len(submit._history), 11)
-        self.assertEqual(len(submit._output), 3)  # pp ran twice plus next iter.
+        self.assertEqual(len(submit._history), 9)
+        self.assertEqual(len(submit._output), 1)  # Next iter.
 
         # now fake it. subprocess.check_output should not run anything.
 

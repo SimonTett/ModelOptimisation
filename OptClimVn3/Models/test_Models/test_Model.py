@@ -651,7 +651,7 @@ class ModelTestCase(unittest.TestCase):
                             fake_obs=self.fake_fn().to_dict())
         cfg = self.testDir / 'model0001.mcfg'
         with unittest.mock.patch('subprocess.check_output', autospec=True,
-                                 return_value="Submitted something"):
+                                 return_value="Submitted something 56467"):
             model = myModel('test_model001', self.refDir, model_dir=self.testDir,
                             config_path=cfg,
                             parameters=dict(VF1=1, CT=2.2, G0=11),
@@ -672,8 +672,9 @@ class ModelTestCase(unittest.TestCase):
             pdtest.assert_series_equal(model.simulated_obs, pd.Series(post_process['fake_obs']).rename(model.name))
             # should have 7 history entries.
             self.assertEqual(len(model._history), 7)
-            # two   outputs -- from one model submission + one post_process
-            self.assertEqual(len(model._output), 2)
+            # four    outputs -- from  model submission, post_process submission, post-process release and
+            # running post-processing.
+            self.assertEqual(len(model._output), 4)
 
             # now do but where model fails, get perturbed, gets continued and then works.
             cfg = self.testDir / 'model0002.mcfg'
@@ -691,7 +692,7 @@ class ModelTestCase(unittest.TestCase):
             model.set_failed()
             model.perturb(ct)
             model.continue_simulation()
-            model.submit_model({},self.engine)  # continue
+            model.submit_model({},self.engine)
             model.running()
             model.succeeded()  # model has succeeded
             # use fake_fn to generate some fake obs!
@@ -700,10 +701,11 @@ class ModelTestCase(unittest.TestCase):
             with open(model.model_dir / model.post_process_output, 'w') as fp:
                 generic_json.dump(fake_obs, fp)
             model.process()  # and do the post-processing
-            # should have 12 history entries.
+            # should have 13 history entries.
             self.assertEqual(len(model._history), 13)
-            # three  outputs -- 1 model, one continue and one postprocess.
-            self.assertEqual(len(model._output), 3)
+            # five  outputs -- 1 model, one continue and one postprocess submission, one post-process release and running
+            # post-process script.
+            self.assertEqual(len(model._output), 5)
             #
 
 

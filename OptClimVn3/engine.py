@@ -73,9 +73,11 @@ class engine(model_base):
         """
 
         # SGE-specific command options
-        def sge_submit_fn(cmd: typing.List, name: str, outdir: pathlib.Path,
+        def sge_submit_fn(cmd: typing.List, name: str,
+                          outdir: typing.Optional[pathlib.Path],
                           rundir: typing.Optional[pathlib.Path] = None,
-                          run_code: typing.Optional[str] = None, hold_jid: str | int | bool = False
+                          run_code: typing.Optional[str] = None,
+                          hold_jid: typing.List[str]| str | bool = False
                           ,time: int = 30, mem: int = 4000,
                           n_cores: int = 1
                           ):
@@ -85,14 +87,20 @@ class engine(model_base):
             :param time: Time (in seconds) needed for job
             :param cmd: list of commands to run.
             :param name: name of job
-            :param outdir: Directory where output will be put.
+            :param outdir: Directory where output will be put. If None will be set to cwd/output.
             :param rundir: Directory where job will be ran. If None will run in current working dir.
             :param run_code: If provided, code to use to run the job
-            :param hold_jid: If provided as a string or integer, this jobid will need to successfully run before cmd is ran.
+            :param hold_jid: If provided as a string or list of strings,
+            this (these) jobids will need to successfully run before cmd is ran.
               If provided as a bool then job will held if hold_jid is True. If False no hold will be done
             :param n_cores: No of cores to use.
             :return: the command to be submitted.
             """
+
+            if outdir is None:
+                outdir = pathlib.Path.cwd()/'output'
+                logging.debug(f"Set outdir to {outdir}")
+
             submit_cmd = ['qsub', '-l', f'h_vmem={mem}M', '-l', f'h_rt=00:{time}:00',
                           '-V',
                           "-e", outdir, "-o", outdir,
@@ -110,11 +118,12 @@ class engine(model_base):
             else:
                 submit_cmd += ['-wd', str(rundir)]
 
-            if isinstance(hold_jid, bool):
-                if hold_jid:  # just hold the job ID
-                    submit_cmd += ['-h']  # If False nothing will be held
-            else:
+            if isinstance(hold_jid, bool) and hold_jid:
+                submit_cmd += ['-h']  # If False nothing will be held
+            if isinstance(hold_jid,str):
                 submit_cmd += ['-hold_jid', hold_jid]  # hold it on something
+            if isinstance(hold_jid,list) and (len(hold_jid) > 0): # need a non-empty list.
+                submit_cmd += ['-hold_jid', ",".join(hold_jid)]  # hold it on multiple jobs
             if n_cores > 1:  # more than 1 core wanted.
                 submit_cmd += ['-pe ', f'mpi {n_cores}']  # ask for mpi env.
             submit_cmd += cmd
@@ -122,7 +131,7 @@ class engine(model_base):
 
         def sge_array_fn(cmd: typing.List, name: str, outdir: pathlib.Path, njobs: int,
                          rundir: typing.Optional[pathlib.Path] = None,
-                         run_code: typing.Optional[str] = None, hold_jid: str | int | bool = True
+                         run_code: typing.Optional[str] = None, hold_jid: typing.List[str] | str | bool = True
                          , time: int = 30, mem: int = 4000, n_cores: int = 1):
             """
             Submit an array function to SGE. Calls sge_submit_fn for details.
@@ -171,22 +180,28 @@ class engine(model_base):
         # end of SGE functions
 
         # SLURM-specific command options
-        def slurm_submit_fn(cmd: typing.List, name: str, outdir: pathlib.Path,
+        def slurm_submit_fn(cmd: typing.List, name: str,
+                            outdir: typing.Optional[pathlib.Path] = None,
                             rundir: typing.Optional[pathlib.Path] = None,
-                            run_code: typing.Optional[str] = None, hold_jid: str | int | bool = False
+                            run_code: typing.Optional[str] = None,
+                            hold_jid: typing.List[str]|str |  bool = False
                             , time: int = 30, mem: int = 4000, n_cores: int = 1):
             """
             Function to submit to SGE
             :param cmd: list of commands to run.
             :param name: name of job
-            :param outdir: Directory where output will be put.
+            :param outdir: Directory where output will be put. If None then will be cwd/output
             :param rundir: Directory where job will be ran. If None will run in current working dir.
             :param run_code: If provided, code to use to run the job
-            :param hold_jid: If provided as a string or integer, this jobid will need to successfully run before cmd is ran.
+            :param hold_jid: If provided as a string, this jobid will need to successfully run before cmd is ran.
+              If a list (of jobid's) then all jobs will need to be run
               If provided as a bool then job will held if hold_jid is True. If False no hold will be done
             :param n_cores; No of cores to be requested
             :return: the command to be submitted.
             """
+            if outdir is None:
+                outdir = pathlib.Path.cwd()/'output'
+                logging.debug(f"Set outdir to {outdir}")
             submit_cmd = ['sbatch', f'--mem={mem}', f'--mincpus={n_cores}', f'--time={time}',
                           '--output', f'{outdir}/%x_%A_%a.out', '--error', f'{outdir}/%x_%A_%a.err',
                           '-J', name]
@@ -198,17 +213,19 @@ class engine(model_base):
                 submit_cmd += ['-A', run_code]
             if rundir is not None:  # by default Slrum runs in cwd.
                 submit_cmd += ['-D', str(rundir)]  # should be abs path.
-            if isinstance(hold_jid, bool):
-                if hold_jid:
+            if isinstance(hold_jid, bool) and hold_jid:# got a book and its True. Just hold the job
                     submit_cmd += ['-H']  # Hold it
-            else:
-                submit_cmd += ['-d', f"afterok:{hold_jid}"]
+            if isinstance(hold_jid,str): # String -- hold on one job
+                submit_cmd += f'--dependency=afterok:{hold_jid}'
+            if isinstance(hold_jid,list) and (len(hold_jid) > 0):
+                # hold on multiple jobs (empty list means nothing to be held)
+                submit_cmd += "--dependency=afterok:"+":".join(hold_jid)
             submit_cmd += cmd
             return submit_cmd
 
         def slurm_array_fn(cmd: typing.List, name: str, outdir: pathlib.Path, njobs: int,
                            rundir: typing.Optional[pathlib.Path] = None,
-                           run_code: typing.Optional[str] = None, hold_jid: str | int | bool = True
+                           run_code: typing.Optional[str] = None, hold_jid: typing.List[str]|str |  bool = True
                            , time: int = 30, mem: int = 4000, n_cores: int = 1):
             """
             Submit an array function to SLURM. Calls slurm_submit_fn.
