@@ -18,7 +18,7 @@ import typing
 
 import numpy as np
 from typing import Optional, List, Callable, Mapping
-from engine import engine
+import engine
 import pandas as pd
 
 from Model import ModelBaseClass, Model
@@ -72,7 +72,6 @@ class SubmitStudy(model_base, Study, journal):
             computer -- name of the computer being used
             engine -- functions to handle different job submission engines. Currently, only SGE and SLURM are supported.
             config_path -- path to where config is stored.
-            submit_fn -- function to wrap commands. Needed for cases when cannot directly submit jobs but need some "magic".
             name_values -- used to generate name. Set to None to reset counter.
             iter_keys -- dict indexed by key with iteration count.
             iter_count -- current iteration count.
@@ -95,7 +94,7 @@ class SubmitStudy(model_base, Study, journal):
         if computer is None:
             computer = self.config.machine_name()
         self.computer = computer  # really needed for dumping/loading.
-        self.engine, self.submit_fn = self.submission_engine(computer)  # engine & submit_fn for this computer.
+        self.engine = self.submission_engine(computer)  # engine & submit_fn for this computer.
 
         if config_path is None:
             config_path = self.rootDir / (self.name + '.scfg')
@@ -126,10 +125,10 @@ class SubmitStudy(model_base, Study, journal):
 
         :param computer: name of computer. If SGE or SLURM then these will be used.
          Currently known computers are eddie, archer or ARC. eddie uses sge while the other two use slurm
-        :return: the submission engine and submit_fn (None if not needed)
+        :return: the submission engine  (None if not needed)
         """
 
-        submit_fn = None
+        connect_fn = None
         if computer in ['SGE', 'SLURM']:  # Generic SGE/SLURM
             engine_name = computer
         elif computer == 'eddie':  # Edinburgh cluster
@@ -141,7 +140,7 @@ class SubmitStudy(model_base, Study, journal):
         else:
             raise ValueError(f"Unknown computer {computer}")
 
-        return engine.setup_engine(engine_name=engine_name), submit_fn
+        return engine.setup_engine(engine_name=engine_name,connect_fn=connect_fn)
 
     def create_model(self, params: dict, dump: bool = True) -> Model:
         """
@@ -302,16 +301,15 @@ class SubmitStudy(model_base, Study, journal):
 
     def to_dict(self) -> dict:
         """
-        Convert StudyConfig instance to dict.
-        Replaces submit_fn with function names. from_dict will replace these.
+        Convert StudyConfig instance to dict. engine will be saved with the computer name
+       from_dict will replace these.
         :return: a dict. Keys are attributes.
         """
 
         dct = super().to_dict()
-        # deal with functions in engine and submit_fn
-        if callable(dct['submit_fn']):
-            dct['submit_fn'] = dct['submit_fn'].__name__
-
+        # deal with engine
+        logging.debug(f"Converting engine to {self.computer}")
+        dct['engine']= self.computer
         logging.debug(f"Replacing models in model_index with config_path")
         m2 = dict()
         for key, model in dct['model_index'].items():
@@ -327,7 +325,7 @@ class SubmitStudy(model_base, Study, journal):
            decodes config -- needs special handling. FIXME: re-engineer StudyConfig so it needs less special handling....
            Creates the object
            Copies over attributes from dct to any existing attributes
-           Sets up submission engine -- regenerating functions.
+           Sets up submission engine using its name
            Loads up models from paths that are saved.
         :param dct: dict containing attributes to be converted
         :return: a SubmitStudy object
@@ -344,9 +342,7 @@ class SubmitStudy(model_base, Study, journal):
         obj = cls(config)
         obj.fill_attrs(dct)  # fill in the rest of the objects attributes.
         # deal with the engine.
-        if (not callable(obj.engine)) or (
-                not callable(obj.submit_fn)):  # if engine or submit_fn are not callable recreate them
-            obj.engine, obj.submit_fn = obj.submission_engine(obj.computer)  # engine & submit_fn for this computer.
+        obj.engine = obj.submission_engine(obj.computer) # regenerate the engine.
         # load up models.
         model_index = dict()
         for key, path in obj.model_index.items():  # iterate over the paths (which is how we represent the models)
@@ -491,7 +487,6 @@ class SubmitStudy(model_base, Study, journal):
                 raise ValueError('Faking and continuing')
             for model in models_to_continue:
                 pp_jid = model.submit_model(run_info, self.engine,
-                                            submit_fn=self.submit_fn,
                                             outputDir=output_dir)
                 logging.debug(f"Continuing {model.name} ")
 
@@ -510,7 +505,7 @@ class SubmitStudy(model_base, Study, journal):
         # submit models! Faking if necessary.
         pp_jids=[] # list of job ids from post-processing
         for model in model_list: # submit model and post-processing
-            pp_jid = model.submit_model(run_info,self.engine,submit_fn=self.submit_fn,
+            pp_jid = model.submit_model(run_info,self.engine,
                                         outputDir=output_dir,fake_function=fake_fn)
             if pp_jid is not None: # got a post-processing jid.
                 pp_jids.append(pp_jid) # add it to the list
@@ -529,8 +524,6 @@ class SubmitStudy(model_base, Study, journal):
             run_next_submit = self.engine.submit_fn(next_iter_cmd, next_job_name, outdir = output_dir,
                                                     run_code=runCode, rundir=self.rootDir,
                                                     hold_jid=pp_jids)
-            if self.submit_fn is not None:
-                run_next_submit = self.submit_fn(run_next_submit)
             output = self.run_cmd(run_next_submit)
             logging.info(f"Next iteration cmd is {run_next_submit} with output:{output}")
             jid = self.engine.jid_fn(output)  # extract the actual job id.

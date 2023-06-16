@@ -391,11 +391,11 @@ class testHadCM3(unittest.TestCase):
         bak_path = model.model_dir/'SUBMIT_backup'
         shutil.copy2(pth,bak_path)
         time = pth.stat().st_mtime
-        model.set_time_code("SUBMIT", None, None)
+        model.set_time_code(model.model_dir/"SUBMIT", None, None)
         time2 = pth.stat().st_mtime
         self.assertEqual(time,time2)
         # now change runTime
-        model.set_time_code("SUBMIT",runTime=3000)
+        model.set_time_code(model.model_dir/"SUBMIT",runTime=3000)
         time2 = pth.stat().st_mtime
         self.assertNotEqual(time, time2) # times should be different.
         modifyStr = r'## modified time/code\s*$'

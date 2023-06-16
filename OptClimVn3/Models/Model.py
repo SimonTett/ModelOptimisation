@@ -19,7 +19,7 @@ import generic_json
 from Models.model_base import model_base, journal
 from Models.namelist_var import namelist_var
 from Models.param_info import param_info
-from engine import engine
+import engine
 
 
 # code from David de Klerk 2023-04-13
@@ -579,8 +579,7 @@ class Model(ModelBaseClass, journal):
         return True  # we worked!
 
     def submit_model(self, run_info: dict,
-                     engine: engine,
-                     submit_fn: typing.Optional[typing.Callable] = None,
+                     engine: engine.abstractEngine,
                      fake_function: typing.Optional[typing.Callable] = None,
                      outputDir: typing.Optional[pathlib.Path] = None
                      ) -> typing.Optional[str]:
@@ -591,7 +590,6 @@ class Model(ModelBaseClass, journal):
 
         :param run_info -- dict of information for running. runTime & runCode used here.
         :param engine: -- engine (see engine) for details.
-        :param submit_fn: A function that modifies a cmd. TODO move into engine.
           Contract for this is that it takes in a list (cmd) and transforms it.
            If None then the cmd will simply be ran.
         :param fake_function -- if provided no submission  will be done. Instead, this function will be used to generate fake obs.
@@ -643,22 +641,16 @@ class Model(ModelBaseClass, journal):
             # note the post-processing is submitted "held".It needs to be released once the model
             # has actually finished. That could require multiple simulations. So we don't tag it on the model
             # and explicitly release it.
-            if submit_fn is not None:  # possible transform pp_cmd. TODO -- make this happen in engine.
-                pp_cmd = submit_fn(pp_cmd)
             output = self.run_cmd(pp_cmd)  # submit the post-processing job. Note it is held.
             logging.debug(f"post-processing run {pp_cmd} and got {output}")
             pp_jid = engine.jid_fn(output)  # extract the job-ID.
             release_cmd = engine.release_fn(pp_jid)  # and generate the release job cmd.
-            if submit_fn is not None:
-                release_cmd = submit_fn(release_cmd)
             self.post_process_cmd = release_cmd  # store it! So when model releases the post-processing cmd it will run.
             logging.debug(f"self.post_process_cmd  is {self.post_process_cmd}")
         else:
             pp_jid = None  # no post-processing got submitted.
         # submit the model!
         cmd = self.submit_cmd(run_info, engine)
-        if submit_fn is not None:
-            cmd = submit_fn(cmd)
         # actual running model can update status.
         output = self.run_cmd(cmd)
         logging.debug(f"Model submission: ran {cmd} and got {output}")
@@ -668,12 +660,12 @@ class Model(ModelBaseClass, journal):
         return pp_jid  # return the post-processing jid
 
     def submit_cmd(self, run_info: dict,
-                   engine: engine) -> typing.List[str]:
+                   engine: engine.abstractEngine) -> typing.List[str]:
         """"
         Generate the submission command. Over-ride this for your own model.
         :param run_info -- run_info block.
         :param engine -- engine info.
-        If status is INSTANTIATED or PERTURBED then this runs engine.submit_fn on  ["submit.sh"] and if CONTINUE runs on  ["continue.sh"]
+        If status is INSTANTIATED or PERTURBED then this runs engine.connect_fn on  ["submit.sh"] and if CONTINUE runs on  ["continue.sh"]
         output should go to model_dir/'model_output' which will be created if it does not exist.
         """
         if self.status in ['INSTANTIATED', 'PERTURBED']:
@@ -682,13 +674,15 @@ class Model(ModelBaseClass, journal):
             script = "continue.sh"
         else:
             raise ValueError(f"Status {self.status} not expected ")
+        script = self.model_dir/script
         runCode = run_info.get('runCode')
         runTime = run_info.get('runTime')
         # need to (potentially) modify model script so runTime and runCode are set.
         # but in this case just use the submit_fn.
         outdir = self.model_dir / 'model_output'
         outdir.mkdir(parents=True, exist_ok=True)
-        cmd = engine.submit_fn([script], f"{self.name}{self.run_count:05d}", outdir,
+
+        cmd = engine.submit_fn([str(script)], f"{self.name}{self.run_count:05d}", outdir,
                                run_code=runCode, time=runTime)
 
         return cmd

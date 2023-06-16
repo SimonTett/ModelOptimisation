@@ -15,6 +15,7 @@ import fileinput
 import shutil
 import re
 import stat
+import engine
 
 
 def IDLinterpol(inyold, inxold, xnew):
@@ -251,8 +252,8 @@ class HadCM3(Model.Model):
                 else:  # default line
                     print(line[0:-1])  # remove newline
 
-    from engine import engine
-    def submit_cmd(self, run_info: dict, engine: engine) -> typing.List[str]:
+
+    def submit_cmd(self, run_info: dict, engine: engine.slurm_engine|engine.sge_engine) -> typing.List[str]:
         """
         :param run_info -- run information.
           should include runCode and runTime.
@@ -260,10 +261,11 @@ class HadCM3(Model.Model):
 
         :return:  cmd to be run.
         """
+        # HadCM3 runs a script which creates the job and then submits it...
         if self.status in ['INSTANTIATED', 'PERTURBED']:
-            script = "SUBMIT"
+            script = self.model_dir/"SUBMIT"
         elif self.status == 'CONTINUE':
-            script = "SUBMIT.cont"
+            script = self.model_dir/"SUBMIT.cont"
         else:
             raise ValueError(f"Status {self.status} not expected ")
         runCode = run_info.get('runCode')
@@ -271,14 +273,17 @@ class HadCM3(Model.Model):
         ok = self.set_time_code(script, runTime=runTime, runCode=runCode)
         if not ok:
             raise ValueError("Something went wrong with set_time_code")
-
-        return [script]
+        cmd = [script]
+        if engine.connect_fn is not None:
+            cmd = engine.connect_fn(cmd)
+        return cmd
 
     def set_time_code(self, script: str,
                       runTime: typing.Optional[int] = None,
                       runCode: typing.Optional[str] = None) -> bool:
         """
-        :param script: Name of script file to modify to set runTime and runCode
+        :param script: Name of script file to modify to set runTime and runCode.
+          self.model_dir/script will be modified.
         :param runTime: Time in seconds model should run for
         :param runCode:  Code to use to do the run.
         :return: True if succeeded. False if failed.
@@ -288,7 +293,7 @@ class HadCM3(Model.Model):
         logging.debug(f"Setting runTime to {runTime} and runCode to {runCode} for model {self}")
         modifyStr = '## modified time/code'
         # no try/except here. If it fails then all will fail!
-        with fileinput.input(self.model_dir / script, inplace=True) as f:
+        with fileinput.input(self.model_dir/script, inplace=True) as f:
             for line in f:
                 if (runTime is not None) and re.match(r'[NC]RUN_TIME_LIMIT\w*=', line):  # got a time specified
                     l2 = line.split('=')[0]  # split line at = and keep stuff to the left

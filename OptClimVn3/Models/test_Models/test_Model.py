@@ -111,7 +111,7 @@ class ModelTestCase(unittest.TestCase):
         self.refDir = refDir
         self.config_path = self.model.config_path
 
-        self.engine = engine.engine.setup_engine('SGE')
+        self.engine = engine.setup_engine('SGE')
         # set up mock for Model.now
 
     def tearDown(self):
