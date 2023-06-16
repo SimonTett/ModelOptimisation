@@ -94,7 +94,7 @@ class SubmitStudy(model_base, Study, journal):
         if computer is None:
             computer = self.config.machine_name()
         self.computer = computer  # really needed for dumping/loading.
-        self.engine = self.submission_engine(computer)  # engine & submit_fn for this computer.
+        self.engine = self.submission_engine(computer)  # engine & submit for this computer.
 
         if config_path is None:
             config_path = self.rootDir / (self.name + '.scfg')
@@ -450,10 +450,10 @@ class SubmitStudy(model_base, Study, journal):
         Does the following:
             1) Submits the post-processing jobs as a task array in held state.
                  Jobs continuing (as they failed) will not have a post-processing job as their post-processing job will still be
-                   in the system. Nor will they have a next job to release (As that will already be in the system).
+                   in the system. Nor will they have a next job to release_job (As that will already be in the system).
                    if any continue jobs submit those and be done.
             2) Submits  resubmit so once the array of post-processing jobs has completed the next bit of the algorithm gets ran.
-            3) Submits the model simulations -- which once each one has run will release the appropriate post-processing task
+            3) Submits the model simulations -- which once each one has run will release_job the appropriate post-processing task
             4) When all the post-processing jobs are done the resubmission will be ran.
 
         This algorithm is not particularly robust to failure -- if anything fails the various jobs will be sitting around
@@ -521,12 +521,12 @@ class SubmitStudy(model_base, Study, journal):
         if (next_iter_cmd is not None) and (len(pp_jids) >0):
             # submit the next job in the iteration if have one and submitted post-processing.
             next_job_name = 'RE' + configName
-            run_next_submit = self.engine.submit_fn(next_iter_cmd, next_job_name, outdir = output_dir,
-                                                    run_code=runCode, rundir=self.rootDir,
-                                                    hold_jid=pp_jids)
+            run_next_submit = self.engine.submit_cmd(next_iter_cmd, next_job_name, outdir = output_dir,
+                                                     run_code=runCode, rundir=self.rootDir,
+                                                     hold=pp_jids)
             output = self.run_cmd(run_next_submit)
             logging.info(f"Next iteration cmd is {run_next_submit} with output:{output}")
-            jid = self.engine.jid_fn(output)  # extract the actual job id.
+            jid = self.engine.job_id(output)  # extract the actual job id.
             logging.info(f"Job ID for next iteration is {jid}")
             self.next_job_id = jid
             self.update_history(f"Submitted next job with ID {jid}")

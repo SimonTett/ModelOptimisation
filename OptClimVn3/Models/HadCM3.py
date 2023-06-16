@@ -137,7 +137,7 @@ class HadCM3(Model.Model):
         SCRIPT. SCRIPT needs to be modified to actually do this. (See modifySCRIPT).
         :param set_status_cmd. path to set_status_cmd
         """
-        # postProcessCmd is the command that gets run when the model has finished. It should release the post-processing!  
+        # postProcessCmd is the command that gets run when the model has finished. It should release_job the post-processing!
         outFile = self.model_dir / self.post_process_file  # needs to be same as used in SCRIPT which actually calls it
         # Eddie does not require login in to a login node to subbmit jobs
         with open(outFile, 'w') as fp:
@@ -152,7 +152,7 @@ class HadCM3(Model.Model):
     qshistprint $PHIST $RSUB # get the status info from the history file
     FLAG=$(grep 'FLAG' $RSUB|cut -f2 -d"=" | sed 's/ *//'g)
     if  [ $FLAG = 'N' ]
-      then # release the post processing job. 
+      then # release_job the post processing job. 
       {set_status_cmd} SUCCEEDED ## code inserted
       echo "FINISHED releasing the post-processing"
     else 
@@ -209,7 +209,7 @@ class HadCM3(Model.Model):
          set JOBID to jobid  -- first ^JOBID
 
           After . submitchk insert:
-         . $JOBDIR/optclim_finished ## run the check for job release and resubmission.
+         . $JOBDIR/optclim_finished ## run the check for job release_job and resubmission.
             This will be modified by the submission system
          :return:
         """

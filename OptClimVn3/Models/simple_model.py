@@ -44,11 +44,11 @@ class simple_model(Model):
             raise ValueError("No CONTINUE allowed for simple_model.py")
         else:
             raise ValueError(f"Status {self.status} not expected ")
-        # just use the submit_fn.
+        # just use the submit.
         outdir = self.model_dir/'model_output'
         outdir.mkdir(parents=True,exist_ok=True)
-        cmd = engine.submit_fn([script],f"{self.name}{self.run_count:05d}",outdir,
-                               runCode=runCode,runTime=runTime)
+        cmd = engine.submit_cmd([script], f"{self.name}{self.run_count:05d}", outdir,
+                                runCode=runCode, runTime=runTime)
 
         return cmd
 

@@ -672,7 +672,7 @@ class ModelTestCase(unittest.TestCase):
             pdtest.assert_series_equal(model.simulated_obs, pd.Series(post_process['fake_obs']).rename(model.name))
             # should have 7 history entries.
             self.assertEqual(len(model._history), 7)
-            # four    outputs -- from  model submission, post_process submission, post-process release and
+            # four    outputs -- from  model submission, post_process submission, post-process release_job and
             # running post-processing.
             self.assertEqual(len(model._output), 4)
 
@@ -703,7 +703,7 @@ class ModelTestCase(unittest.TestCase):
             model.process()  # and do the post-processing
             # should have 13 history entries.
             self.assertEqual(len(model._history), 13)
-            # five  outputs -- 1 model, one continue and one postprocess submission, one post-process release and running
+            # five  outputs -- 1 model, one continue and one postprocess submission, one post-process release_job and running
             # post-process script.
             self.assertEqual(len(model._output), 5)
             #

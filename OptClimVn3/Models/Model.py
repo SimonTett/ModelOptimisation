@@ -287,7 +287,7 @@ class Model(ModelBaseClass, journal):
           Which adds some information to post_process block and provides it as a dict.
 
 
-        :param post_process_cmd -- command to run or release the post-processing.
+        :param post_process_cmd -- command to run or release_job the post-processing.
         Only used when status gets set to COMPLETED.
         :param simulated_obs -- value of simulated_obs. Will be None or a pandas series
 
@@ -586,7 +586,7 @@ class Model(ModelBaseClass, journal):
         """
         Submit  a model and its post-processing.
         Post-processing gets submitted first but held.
-        Model gets cmd to release post-processing included before it gets submitting.
+        Model gets cmd to release_job post-processing included before it gets submitting.
 
         :param run_info -- dict of information for running. runTime & runCode used here.
         :param engine: -- engine (see engine) for details.
@@ -595,7 +595,7 @@ class Model(ModelBaseClass, journal):
         :param fake_function -- if provided no submission  will be done. Instead, this function will be used to generate fake obs.
           Designed for testing code that runs whole algorithms. Takes one argument -- dict of parameters.
         :outputDir -- path to where output goes. Used for post-processing.
-          If None default from engine.submit_fn will be used
+          If None default from engine.submit will be used
         :return: The jobid of the post-process submission. None if nothing submitted (fake_fn set or continuing)
 
         Example:
@@ -633,18 +633,18 @@ class Model(ModelBaseClass, journal):
             run_time = self.post_process.get('runTime')  # get the runTime.
             run_code = self.post_process.get('runCode', run_info.get('runCode'))
             # and the run_code -- default is value in run_info but use value from post_process if we have it.
-            pp_cmd = engine.submit_fn(pp_cmd, f"PP_{self.name}",
-                                      outdir=outputDir,
-                                      hold_jid=True,
-                                      time=run_time,
-                                      run_code=run_code)  # generate the submit cmd.
+            pp_cmd = engine.submit_cmd(pp_cmd, f"PP_{self.name}",
+                                       outdir=outputDir,
+                                       hold=True,
+                                       time=run_time,
+                                       run_code=run_code)  # generate the submit cmd.
             # note the post-processing is submitted "held".It needs to be released once the model
             # has actually finished. That could require multiple simulations. So we don't tag it on the model
-            # and explicitly release it.
+            # and explicitly release_job it.
             output = self.run_cmd(pp_cmd)  # submit the post-processing job. Note it is held.
             logging.debug(f"post-processing run {pp_cmd} and got {output}")
-            pp_jid = engine.jid_fn(output)  # extract the job-ID.
-            release_cmd = engine.release_fn(pp_jid)  # and generate the release job cmd.
+            pp_jid = engine.job_id(output)  # extract the job-ID.
+            release_cmd = engine.release_job(pp_jid)  # and generate the release_job job cmd.
             self.post_process_cmd = release_cmd  # store it! So when model releases the post-processing cmd it will run.
             logging.debug(f"self.post_process_cmd  is {self.post_process_cmd}")
         else:
@@ -678,12 +678,12 @@ class Model(ModelBaseClass, journal):
         runCode = run_info.get('runCode')
         runTime = run_info.get('runTime')
         # need to (potentially) modify model script so runTime and runCode are set.
-        # but in this case just use the submit_fn.
+        # but in this case just use the submit.
         outdir = self.model_dir / 'model_output'
         outdir.mkdir(parents=True, exist_ok=True)
 
-        cmd = engine.submit_fn([str(script)], f"{self.name}{self.run_count:05d}", outdir,
-                               run_code=runCode, time=runTime)
+        cmd = engine.submit_cmd([str(script)], f"{self.name}{self.run_count:05d}", outdir,
+                                run_code=runCode, time=runTime)
 
         return cmd
 
@@ -752,7 +752,7 @@ class Model(ModelBaseClass, journal):
         status = 'SUCCEEDED'
 
         if self.post_process_cmd is not None:
-            # release the post-processing job. But really system specific.
+            # release_job the post-processing job. But really system specific.
             # just run the post-processing cmd as a sub-shell.
             # That hopefully, eventually, does model.post_process()!
             # On eddie this will be something like ssh login01.eddie.ecdf.ed.ac.uk qrls NNNNNNNN.x
