@@ -1,6 +1,6 @@
 """"
 Provide generic functions for job submission, job release_job, killing a job and extracting a jobid
-Provides implementations for SGE andn SLURM. You might find your version of SGE or SLURM has subtle changes
+Provides implementations for SGE and SLURM. You might find your version of SGE or SLURM has subtle changes
 to extract the job-id. If so extend the relevant class and modify setup_engine.
 """
 
@@ -11,7 +11,7 @@ import subprocess
 import typing
 import pathlib
 from abc import ABCMeta, abstractmethod
-
+from time import sleep
 allowed_eng = typing.Literal['SGE', 'SLURM']
 def setup_engine(engine_name: allowed_eng = 'SGE',
                  connect_fn: typing.Optional[typing.Callable] = None) -> abstractEngine:
@@ -174,7 +174,7 @@ class sge_engine(abstractEngine):
 
         submit_cmd = ['qsub', '-l', f'h_vmem={mem}M', '-l', f'h_rt={time}',
                       '-V',
-                      "-e", outdir, "-o", outdir,
+                      "-e", str(outdir)+"/", "-o", str(outdir)+"/",
                       '-N', name]
         # -l h_vmem={mem}M: Request mem Mbytes of virtual memory per job
         # -l h_rt={time}: Request a maximum run time of time seconds per job
@@ -242,21 +242,23 @@ class sge_engine(abstractEngine):
         :param full_output If True will return (raw) full output
         :return: One of 'Running','Held','Error','Suspended','Queuing',"Failed"
         """
-        cmd = ["qstat","-j",job_id]
+        #cmd = ["qstat","-j",job_id,"|","grep","status"] 
+        cmd = ['qstat']
+        cmd = f'qstat | grep {job_id}'
         if callable(self.connect_fn):
             cmd = self.connect_fn(cmd)
-        result = subprocess.check_output(cmd,text=True)
-        if full_output:
-            return result
-
-        status = result.split(" ")[4]
+        result = subprocess.run(cmd,capture_output=True,text=True,shell=True)
+        if result.returncode == 1:
+            return "notFound"
+        result.check_returncode()
+        status = result.stdout.split()[4]
         if status[0]=='E':
             return 'Error'
         elif status[0] == 'r':
             return 'Running'
         elif status[0] in ['S','s']:
             return "Suspended"
-        elif status == 'qwh':
+        elif status == 'hqw':
             return "Held"
         elif status == 'qw':
             return "Queuing"
