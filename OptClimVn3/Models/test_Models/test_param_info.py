@@ -4,6 +4,7 @@ import pathlib
 import tempfile
 import unittest
 import unittest.mock
+import importlib.resources
 
 import numpy as np
 import pandas as pd
@@ -284,7 +285,6 @@ FN [function: {fn.__qualname__} ]
                     cloud_rh_crit[2] = max(0.85, rhcrit)
                     return (rhcrit_nl, cloud_rh_crit)
 
-        import importlib
         traverse = importlib.resources.files("Models")
         #myModel.remove_param() # clean it up!
         #myModel.register_functions()

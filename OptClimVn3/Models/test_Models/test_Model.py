@@ -1,7 +1,7 @@
 import copy
 import datetime
 import filecmp
-import importlib
+import importlib.resources
 import logging
 import os
 import pathlib
@@ -102,7 +102,7 @@ class ModelTestCase(unittest.TestCase):
         tmpDir = tempfile.TemporaryDirectory()
         testDir = pathlib.Path(tmpDir.name)  # used throughout.
         refDir = pathlib.Path(Model.expand('$OPTCLIMTOP/Configurations')) / 'xnmea'  # need a coupled model.
-        post_process = dict(script='$OPTCLIMTOP/OptClimVn2/comp_obs.py', outputPath='obs.json')
+        post_process = dict(script='$OPTCLIMTOP/OptClimVn3/scripts/comp_obs.py', outputPath='obs.json')
         self.model = myModel(name='test_model', reference=refDir,
                              model_dir=testDir, post_process=post_process,
                              parameters=dict(RHCRIT=2, VF1=2.5, CT=2))
@@ -193,7 +193,7 @@ class ModelTestCase(unittest.TestCase):
                          Model.known_models(), )
         oh = 2
         init1 = dict(
-            post_process=dict(high='five', script='$OPTCLIMTOP/OptClimVn2/comp_obs.py', outputPath='obs.json'),
+            post_process=dict(high='five', script='$OPTCLIMTOP/OptClimVn3/scripts/comp_obs.py', outputPath='obs.json'),
             parameters=dict(harry=2, fred=oh))
         init2 = copy.copy(init1)
         init2['post_process']['high'] = 'four'

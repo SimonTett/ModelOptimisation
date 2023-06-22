@@ -86,7 +86,7 @@ class testHadCM3(unittest.TestCase):
         tmpDir = tempfile.TemporaryDirectory()
         testDir = pathlib.Path(tmpDir.name)  # used throughout.
         refDir = pathlib.Path(HadCM3.expand('$OPTCLIMTOP/Configurations')) / 'xnmea'  # need a coupled model.
-        post_process = dict(script='$OPTCLIMTOP/OptClimVn2/comp_obs.py', outputPath='obs.json')
+        post_process = dict(script='$OPTCLIMTOP/OptClimVn3/scripts/comp_obs.py', outputPath='obs.json')
         self.model = HadCM3(name='testM', reference=refDir,
                             model_dir=testDir, post_process=post_process,
                             parameters=parameters)

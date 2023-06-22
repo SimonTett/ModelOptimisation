@@ -32,7 +32,7 @@ class MyTestCase(unittest.TestCase):
         # job1 -> job2, job4
         # job2, job1 -> job3
         #
-        logging.basicConfig(force=True,level=logging.DEBUG)
+        #logging.basicConfig(force=True,level=logging.DEBUG)
         if platform.system() != "Linux":
             logging.warning(f"Skipping test as can only run on linux not on {platform.system()}. ")
             return
@@ -117,5 +117,4 @@ class MyTestCase(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    logging.basicConfig(force=True,level=logging.DEBUG)
     unittest.main()

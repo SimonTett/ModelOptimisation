@@ -266,7 +266,7 @@
     },
     "postProcess": {
         "comment": "Options to control post processing. Details depend on your post processing script.",
-        "script": "$OPTCLIMTOP/um45/obs_in_nc/comp_obs.py",
+        "script": "$OPTCLIMTOP/OptClimVn3/scripts/comp_obs.py",
         "script_comment": "Full path name -- including any environment variables you might have -- to postprocessing script",
         "outputPath": "obs.json",
         "outputPath_comment": "output path relative to model dir -- should be one of .nc, .json or .csv. Default is observations.nc",

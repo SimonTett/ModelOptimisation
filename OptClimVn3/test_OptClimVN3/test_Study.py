@@ -70,7 +70,7 @@ class TestStudy(unittest.TestCase):
         # test that a single model configuration can be read
         study = self.study
         study.model_index = dict()  # no models!
-        files = list(self.direct.glob("**/" + '*.mcfg'))
+        files = sorted(list(self.direct.glob("**/" + '*.mcfg')))
         models = study.read_model_configs(files[0:1])
         self.assertEqual(models[0].name, 'model000')
         self.assertEqual(list(study.model_index.values())[0].name, 'model000')

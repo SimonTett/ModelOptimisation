@@ -4,7 +4,7 @@ import logging
 import pathlib
 import shutil
 import tempfile
-
+import typing
 import f90nml
 import numpy as np
 
@@ -39,14 +39,17 @@ class namelist_var(model_base):
         return r
 
     _file_cache = dict()  # where we cache files
-    def read_value(self, dirpath=pathlib.Path.cwd(), clean=False,default=None):
+    def read_value(self,
+                   dirpath:pathlib.Path =pathlib.Path.cwd(),
+                   clean: bool =False,
+                   default:typing.Any =None):
         """ Read  value from disk file containing namelists. Files will be cached to speed up subsequent reads.
         :param dir: Directory where namelist is.
         :param clean -- If True clean the cache before reading.
-
+        :param default -- default value
         """
         namelists = self.file_cache(dirpath / self.filepath, clean=clean)
-        value = namelists[self.namelist].get(self.nl_var,default)
+        value = namelists[self.namelist].get(self.nl_var.lower(),default)
         if value is None:
             raise KeyError(f"{self} not found")
         return value
@@ -74,7 +77,8 @@ class namelist_var(model_base):
         cls._file_cache = dict()
 
     @classmethod
-    def file_cache(cls, filepath, clean=False, make_copy=True):
+    def file_cache(cls, filepath:pathlib.Path, 
+                   clean:bool=False, make_copy:bool=True):
         """
         Read/cache file
         :param filepath: path to file containing namelist
@@ -95,7 +99,9 @@ class namelist_var(model_base):
         return namelists
 
     @classmethod
-    def modify_namelists(cls, nl_info:iter, dirpath: pathlib.Path = pathlib.Path.cwd(), update: bool = False,
+    def modify_namelists(cls, nl_info:iter, 
+                         dirpath: pathlib.Path = pathlib.Path.cwd(), 
+                         update: bool = False,
                          clean: bool = False) -> dict:
         """
         Update dict indexed by files. Each containing a f90nml namelist.
@@ -121,12 +127,13 @@ class namelist_var(model_base):
                     file_dict[path] = f90nml.namelist.Namelist()  # initialise to empty namelist.
                     logging.debug(f"Setting {path} empty")
 
-            if nl.namelist not in file_dict[path].keys():
-                file_dict[path][nl.namelist] = f90nml.namelist.Namelist()
+            if nl.namelist.lower() not in file_dict[path].keys():
+                logging.debug(f"Setting {nl.namelist.lower()} to empty")
+                file_dict[path][nl.namelist.lower()] = f90nml.namelist.Namelist()
 
-            file_dict[path][nl.namelist][nl.nl_var] = value
+            file_dict[path][nl.namelist.lower()][nl.nl_var.lower()] = value
             if isinstance(value,np.ndarray): # convert numpy arrays.
-                file_dict[path][nl.namelist][nl.nl_var] = value.tolist()
+                file_dict[path][nl.namelist.lower()][nl.nl_var.lower()] = value.tolist()
             logging.debug(f"Setting {nl}  to {value}")
         return file_dict
 
@@ -134,7 +141,8 @@ class namelist_var(model_base):
     def nl_modify(cls, nl_info: iter, dirpath=pathlib.Path.cwd()):
         """
         Modifiy namelist files. Sadly f90nml.patch() is a bit flaky.
-          So, for each file we read in the entire contents. Update using the changes, write to a temp file, remove the input file
+          So, for each file we read in the entire contents. 
+         Update using the changes, write to a temp file, remove the input file
             and move the temp file to the original location.
         :param nl_info: iterable of namelist_var, value pairs,
           will also clear cache after all modification done.
