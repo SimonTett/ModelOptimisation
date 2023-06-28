@@ -97,7 +97,7 @@ else:
 
 configData = StudyConfig.readConfig(filename=jsonFile)  # parse the jsonFile.
 
-args_not_for_restart = ['-r', '--restart']  # arguments to be removed from the restart cmd
+args_not_for_restart = [ '--delete']  # arguments to be removed from the restart cmd
 restartCMD = [arg for arg in sys.argv if arg not in args_not_for_restart]  # generate restart cmd.
 if dry_run or read_only:
     restartCMD = None  # no restarting!

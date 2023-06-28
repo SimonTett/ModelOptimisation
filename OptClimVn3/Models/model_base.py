@@ -118,9 +118,11 @@ class journal:
         # issue is that fileNotFound will get returned if a file does not exist. Would need to
         # convert to subprocess.CalledProcessError
         args.update(**kwargs)
+        cmd_to_run = [str(c) for c in cmd]
         # this little code fragment from chatGPT (with a bit of nudging/editing) traps that.
         try:
-            output = subprocess.check_output(cmd, **args)  # run cmd
+            logging.debug(f"Running {' '.join(cmd_to_run)}")
+            output = subprocess.check_output(cmd_to_run, **args)  # run cmd
         except FileNotFoundError as e:  # cmd not found
             raise subprocess.CalledProcessError(
                 returncode=e.errno,

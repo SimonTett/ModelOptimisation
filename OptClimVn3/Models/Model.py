@@ -349,6 +349,9 @@ class Model(ModelBaseClass, journal):
         # attributes that get defined based on inputs or are just fixed.
         if post_process is not None:
             self.set_post_process(post_process)
+        # setup submit and continue script
+        self.submit_script = "submit.sh"
+        self.continue_script = "continue.sh"
         # setup path to where script that sets status is. TODO: Is this actually needed?
         root = self.expand("$OPTCLIMTOP/OptClimVn3")
         script_pth = root / "scripts/set_model_status.py"
@@ -698,9 +701,9 @@ class Model(ModelBaseClass, journal):
         output should go to model_dir/'model_output' which will be created if it does not exist.
         """
         if self.status in ['INSTANTIATED', 'PERTURBED']:
-            script = "submit.sh"
+            script = self.submit_script
         elif self.status == 'CONTINUE':
-            script = "continue.sh"
+            script = self.continue_script
         else:
             raise ValueError(f"Status {self.status} not expected ")
         script = self.model_dir / script
