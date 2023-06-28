@@ -102,7 +102,8 @@ class ModelTestCase(unittest.TestCase):
         tmpDir = tempfile.TemporaryDirectory()
         testDir = pathlib.Path(tmpDir.name)  # used throughout.
         refDir = pathlib.Path(Model.expand('$OPTCLIMTOP/Configurations')) / 'xnmea'  # need a coupled model.
-        post_process = dict(script='$OPTCLIMTOP/OptClimVn3/scripts/comp_obs.py', outputPath='obs.json')
+        post_process = dict(script='$OPTCLIMTOP/OptClimVn3/scripts/comp_obs.py', output_file='sim_obs.json')
+        self.post_process = post_process
         self.model = myModel(name='test_model', reference=refDir,
                              model_dir=testDir, post_process=post_process,
                              parameters=dict(RHCRIT=2, VF1=2.5, CT=2))
@@ -208,13 +209,14 @@ class ModelTestCase(unittest.TestCase):
                 t = Model.model_init(name, name, self.refDir, model_dir=self.testDir / name, **init1)
 
     def test_add_param_info(self):
+
         nl1 = namelist_var(filepath=pathlib.Path('fred'), namelist='james', nl_var='harry')
         nl2 = namelist_var(filepath=pathlib.Path('fred'), namelist='james', nl_var='james')
 
         expect_param_info = [nl1, nl2]
         pardict = dict(fred=2, james=3)
-        model = Model.model_init('myModel', name='test_model', reference=self.refDir,
-                                 model_dir=self.testDir, parameters=pardict)
+        model = Model.model_init('myModel', 'test_model',self.refDir, post_process=self.post_process,
+                                 model_dir=self.testDir, parameters=pardict,)
         model.add_param_info(dict(vf1=nl1))
         model.add_param_info(dict(vf1=nl2), duplicate=True)
         self.assertEqual(model.param_info.to_dict()['vf1'], expect_param_info)
@@ -228,13 +230,15 @@ class ModelTestCase(unittest.TestCase):
         :return:
         """
         pardict = dict(fred=2, james=3)
-        model = Model(name='test_model', reference=self.refDir,
+        model = Model('test_model', self.refDir,post_process=self.post_process,
                       model_dir=self.testDir, parameters=pardict)
+        cmd = [model.expand(self.post_process['script']),'input.json',self.post_process['output_file']]
         expected_dct = dict(name='test_model', reference=self.refDir,
                             model_dir=self.testDir, parameters=pardict,
                             post_process={}, post_process_cmd=None, _output={},
-                            post_process_output=None,
-                            post_process_script=None, post_process_script_interp=None, fake=False, simulated_obs=None,
+                            _post_process_input='input.json',
+                            _post_process_output='sim_obs.json',
+                            post_process_cmd_script=cmd, fake=False, simulated_obs=None,
                             perturb_count=0, config_path=self.testDir / "test_model.mcfg",
                             status='CREATED', _history=model._history,
                             run_count=0, submission_count=0,
@@ -261,7 +265,7 @@ class ModelTestCase(unittest.TestCase):
                 self.fredv = 10
 
         for class_name in ['Model', 'model4', 'model5']:
-            model = Model.model_init(class_name, name=f'test_{class_name}01', reference=self.refDir,
+            model = Model.model_init(class_name, f'test_{class_name}01', self.refDir,post_process=self.post_process,
                                      model_dir=self.testDir, parameters=pardict)
             model.dump_model()
             lmodel = Model.load_model(model.config_path)
@@ -617,8 +621,7 @@ class ModelTestCase(unittest.TestCase):
         Will do first by faking things!
         :return:
         """
-        model = Model('test001', self.refDir, model_dir=self.testDir)
-        model.post_process_output = 'obs.json'
+        model = Model('test001', self.refDir, post_process=self.post_process,model_dir=self.testDir)
         model.fake = True
         model.status = 'SUCCEEDED'  # we have succeeded
         model.process()  # with fake
@@ -629,12 +632,14 @@ class ModelTestCase(unittest.TestCase):
         # use fake_fn to generate some fake obs!
         fake_obs = self.fake_fn().to_dict()
         # and write them out for
-        with open(model.model_dir / model.post_process_output, 'w') as fp:
+        with open(model.model_dir / model._post_process_output, 'w') as fp:
             generic_json.dump(fake_obs, fp)
 
         with unittest.mock.patch('subprocess.check_output',
                                  autospec=True, return_value="Submitted something"):
             model.process()  # run the post-processing. Nothing should be ran because of the mock
+              # But then nothing can be read in. Need to mock that too? Better to mock the output so
+              # it just writes info to file. #TODO modify mock so it writes to model._post_process_output
         pdtest.assert_series_equal(pd.Series(fake_obs).rename(model.name), model.simulated_obs)
         self.assertEqual(model.status, 'PROCESSED')
 
@@ -658,13 +663,14 @@ class ModelTestCase(unittest.TestCase):
                             post_process=post_process)  # create the model.
 
             model.instantiate()  # instantiate the model.
+            self.assertIsNotNone(model.post_process_cmd_script)
             model.submit_model({},self.engine)  # submit the model.
             model.running()  # model is running.
             model.succeeded()  # model has succeeded
             # use fake_fn to generate some fake obs!
             fake_obs = self.fake_fn().to_dict()
             # and write them out for
-            with open(model.model_dir / model.post_process_output, 'w') as fp:
+            with open(model.model_dir / model._post_process_output, 'w') as fp:
                 generic_json.dump(fake_obs, fp)
             model.process()  # and do the post-processing
             # need to run a bunch of tests here.
@@ -698,7 +704,7 @@ class ModelTestCase(unittest.TestCase):
             # use fake_fn to generate some fake obs!
             fake_obs = self.fake_fn().to_dict()
             # and write them out for
-            with open(model.model_dir / model.post_process_output, 'w') as fp:
+            with open(model.model_dir / model._post_process_output, 'w') as fp:
                 generic_json.dump(fake_obs, fp)
             model.process()  # and do the post-processing
             # should have 13 history entries.
@@ -707,6 +713,32 @@ class ModelTestCase(unittest.TestCase):
             # post-process script.
             self.assertEqual(len(model._output), 5)
             #
+
+    def test_set_post_process(self):
+        # tests for set_post_process
+        model = Model('fred',self.refDir,post_process=self.post_process)
+        pp = copy.deepcopy(self.post_process)
+        script = model.expand(pp.pop('script'))
+        output = pp.pop('output_file','sim_obs.json')
+        input = pp.pop('input_file','input.json')
+        # test simple thing.
+        self.assertEqual(model.post_process_cmd_script,[script,input,output])
+        self.assertEqual(model._post_process_output,output)
+        self.assertEqual(model._post_process_input,input)
+        self.assertEqual(model.post_process,pp)
+        # with interp
+        pp=copy.deepcopy(self.post_process)
+        pp['interp']='python'
+        model.set_post_process(pp)
+        self.assertEqual(model.post_process_cmd_script,['python',script,input,output])
+        # No PP
+        model = Model('fred', self.refDir)
+        self.assertEqual(model.post_process_cmd_script,None)
+        # set del pp['script']. Should give an error
+        pp=copy.deepcopy(self.post_process)
+        pp.pop('script')
+        with self.assertRaises(ValueError):
+            model = Model('fred',self.refDir,post_process=pp)
 
 
 if __name__ == '__main__':

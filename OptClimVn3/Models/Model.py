@@ -242,6 +242,7 @@ class Model(ModelBaseClass, journal):
     def __init__(self,
                  name: str,
                  reference: pathlib.Path,
+                 post_process: typing.Optional[dict] = None,
                  model_dir: pathlib.Path = pathlib.Path.cwd(),
                  config_path: typing.Optional[pathlib.Path] = None,
                  status: str = "CREATED",
@@ -250,7 +251,6 @@ class Model(ModelBaseClass, journal):
                  run_count: int = 0,
                  perturb_count: int = 0,
                  parameters: typing.Optional[dict] = None,
-                 post_process: typing.Optional[dict] = None,
                  post_process_cmd: typing.Optional[typing.List] = None,
                  simulated_obs: typing.Optional[pd.Series] = None):
         """
@@ -273,20 +273,18 @@ class Model(ModelBaseClass, journal):
         :param parameters -- dict of parameters names and values.
 
 
-        :param post_process -- dict for post-processing. If available, will be made available to post-processing code.
-            Must contain at least the following keys:
-                script -- full path to the script that will be ran
-                outputPath -- local path to where the output of the script will be written.
-                if contains script_interp -- this is the interpreter used for the script.
+        :param post_process -- dict for post-processing. If None no post-processing will be done.
+         Dict will be made available to post-processing code.
+          See set_post_process method for details.
+           post_process must contain script
+            The following keys may  be used:
+                interp -- the interpreter used for the script.
                     Handy for windows but better to use #! in your script!
-            The following keys will be used:
-              runTime -- time in seconds for the post-processing.
-          This should be constructed in the  setup using the StudyConfig. Goal would be to provide some useful information
-          identify which parameters are variable, parameter ranges for those. Expected obs names,
-          Suggests a method for StudyConfig for this.
-          Which adds some information to post_process block and provides it as a dict.
-
-
+                input_file -- name of the input file for the post-processing.
+                     This will contain the contents of post_process minus the script stuff.
+                output_file -- name of the output file from the post-processing
+                runTime -- time in seconds for the post-processing.
+          This should be constructed in the  setup using the StudyConfig.
         :param post_process_cmd -- command to run or release_job the post-processing.
         Only used when status gets set to COMPLETED.
         :param simulated_obs -- value of simulated_obs. Will be None or a pandas series
@@ -297,26 +295,27 @@ class Model(ModelBaseClass, journal):
         reference --  where the reference configuration came from.
         config_path -- where the configuration is to be written to (or was read from).
         name -- name of the model
-
         status -- status of the model
-        history -- model history
-        post_process -- post-processing information.
-        output -- output from sub shell commands indexed by time
-        post_process_script -- Script/exe to be run for post-processing. If None no post-processing will be done.
-        post_process_script_interp -- interpreter for the post-processing script. If None not used.
+        post_process -- post-processing information. See Model.set_post_process for details.
+        post_process_cmd_script -- cmd to be run for post-processing.
         post_process_cmd -- cmd to run the post-processing. Depends on your submission/job management system
-
         fake -- If True model is faked.
         perturb_count -- no of times perturbation has been done.
         parameters -- dict of parameters/values
         set_status_script -- path to script that sets_status. Your model will need to call this.
 
-        Things that should be changed in inherited classes (and are not written out)
-            submit_script -- name of script to submit for a new simulation
-            continue_script -- name of script to submit for a continuing simulation
+        Private attributes:
+          _post_process_input -- name of input file for post-procesing
+          _post_process_output -- name of input file for post-processing
+
+          Note that update_history and store_output (see Journal for doc for those) set up private attributes.
 
         """
         # set up default values.
+        self.post_process = {}  # where all post-processing info stored.
+        self.post_process_cmd_script = None  # cmd (list) to be run for post-processing.
+        self._post_process_input = None  # filename where input for post-processing goes
+        self._post_process_output = None  # filename where output for post-processing goes.
         self.fake = fake  # did we fake the model? Changed at submission.
         self.perturb_count = perturb_count  # how many times have we perturbed the model?
         self.submission_count = submission_count  # how mamy times have we submitted the model?
@@ -330,11 +329,6 @@ class Model(ModelBaseClass, journal):
         else:
             parameters = copy.deepcopy(parameters)
         # TODO check that parameters exist in lookup.
-
-        if post_process is None:
-            post_process = {}
-        else:
-            post_process = copy.deepcopy(post_process)  # do not modify input.
 
         self.name = name
 
@@ -351,38 +345,73 @@ class Model(ModelBaseClass, journal):
             raise ValueError(f"Status {status} not in " + " ".join(self.allowed_status))
 
         self.parameters = parameters
-        self.post_process = post_process
         self.post_process_cmd = post_process_cmd
         # attributes that get defined based on inputs or are just fixed.
-
         if post_process is not None:
-            self.post_process_script = post_process.pop('script', None)
-            self.post_process_script_interp = post_process.pop('script_interp', None)
-            post_process_output = post_process.pop('outputPath', None)
-            if post_process_output is not None:
-                self.post_process_output = post_process_output
-            else:
-                self.post_process_output = None
-            self.post_process = copy.deepcopy(post_process)  # copy the post_process dict into the object.
-        # setup path to where script that sets status is.
+            self.set_post_process(post_process)
+        # setup path to where script that sets status is. TODO: Is this actually needed?
         root = self.expand("$OPTCLIMTOP/OptClimVn3")
         script_pth = root / "scripts/set_model_status.py"
         self.set_status_script = script_pth
 
-        # code below test_Models that post_process_script exists and is executable.
-        if self.post_process_script is not None:
-            # check it is read/executable by us raising errors if not.
-            self.post_process_script = self.expand(self.post_process_script)
-            ok = self.post_process_script.is_file()
-            if not ok:
-                raise ValueError(f"Script file {self.post_process_script} does not exist")
-            ok = os.access(self.post_process_script, os.R_OK | os.X_OK)
-            if not ok:
-                raise ValueError(f"Script file {self.post_process_script} does not have read and execute permission")
         self.status = status
         if self.status == 'CREATED':  # creating model for the first time
             self.update_history("CREATING model")
         self.simulated_obs = simulated_obs
+
+    def set_post_process(self, post_process: typing.Optional[dict] = None):
+
+        """
+        Set up post_process info.
+        :param post_process -- None or  dict containing information for post-processing.
+            If None will immediately return without doing anything.
+        If dict must include:
+            script -- full path to script to run. Will be passed through self.expand to expand vars and user id.
+             Will be checked for existence, and if script_interp is not None,  for execute permission.
+            If None/not present will raise an error
+        post_process can include
+            interp -- if not None the name of the interpreter.
+            input_file -- name of input file for post-processing. If None will be input.json
+                 post-processing info will be written to that file so post processor has access to it
+                Will be stored in self._post_process_input
+            output_file -- name of output file for post-processing. If None will be sim_obs.json
+                This is where simulated observations go (which are then read in).
+                Will be stored in self._post_process_output
+        post_process will be deepcopyed to self.post_process with script, interp, input_file, output_file removed
+        self.post_process_cmd_script will hold the command to run the post-processing.
+        :return: None
+        """
+        if post_process is None:
+            return
+        pp= copy.deepcopy(post_process)
+        script = pp.pop('script',None)
+        if script is None:
+            raise ValueError("No script in post_process")
+
+        interp = pp.pop('interp',None)
+        input_file = pp.pop('input_file', 'input.json')
+        output_file = pp.pop('output_file', 'sim_obs.json')
+
+        self._post_process_input = input_file
+        self._post_process_output = output_file
+        script = self.expand(script)
+        # check script is read/executable by us raising errors if not.
+        ok = script.is_file()
+        if not ok:
+            raise ValueError(f"Script file {script} does not exist")
+        if not os.access(script, os.R_OK):
+            raise ValueError(f"Script file {script} does not have read permission")
+
+        if (not interp) and (not os.access(script, os.X_OK)):  # if script only then test for it being executable.
+            raise ValueError(f"Script file {script} does not have execute permission")
+
+        pp_cmd = []
+        if interp:
+            pp_cmd += [interp]
+        pp_cmd += [script]
+        pp_cmd += [input_file, output_file]
+        self.post_process_cmd_script = pp_cmd  # assumed to be running in model_dir
+        self.post_process = pp  #
 
     def compare_objects(self, other):
         """
@@ -524,10 +553,6 @@ class Model(ModelBaseClass, journal):
         Also, should make any changes needed to those files.
         :return:
         """
-        # test for existence of post-processing script
-        if (self.post_process_script is not None) and (not self.post_process_script.exists()):  # check script exists.
-            raise ValueError(f"{self.post_process_script} does not exist")
-
         self.create_model()  # create model
         self.modify_model()  # do any modifications to model needed before setting params.
         self.set_params()  # set the params
@@ -621,7 +646,7 @@ class Model(ModelBaseClass, journal):
             self.running()  # running stuff
             self.succeeded()  # succeeded stuff
             self.process()  # and process.
-            return None # nothing submitted.
+            return None  # nothing submitted.
         # real stuff.
         # setup env.
         self.setup_model_env()  # now have env (and other stuff) setup.
@@ -674,7 +699,7 @@ class Model(ModelBaseClass, journal):
             script = "continue.sh"
         else:
             raise ValueError(f"Status {self.status} not expected ")
-        script = self.model_dir/script
+        script = self.model_dir / script
         runCode = run_info.get('runCode')
         runTime = run_info.get('runTime')
         # need to (potentially) modify model script so runTime and runCode are set.
@@ -755,7 +780,7 @@ class Model(ModelBaseClass, journal):
             # release_job the post-processing job. But really system specific.
             # just run the post-processing cmd as a sub-shell.
             # That hopefully, eventually, does model.post_process()!
-            # On eddie this will be something like ssh login01.eddie.ecdf.ed.ac.uk qrls NNNNNNNN.x
+            # On eddie this will be something like qrls NNNNNNNN.x
             result = self.run_cmd(self.post_process_cmd, cwd=self.model_dir)
             # will raise an error if it failed.
             logging.info(f"Ran post-processing cmd {self.post_process_cmd}")
@@ -782,14 +807,14 @@ class Model(ModelBaseClass, journal):
             self.set_status(status)  # just update the status
             return
 
-        input_file = self.model_dir / self.post_proccess_json  # generate json file to hold post process info
+        input_file = self.model_dir / self._post_process_input  # generate json file to hold post process info
+        logging.debug(f"Dumping post_process to {input_file}")
         with open(input_file, 'w') as fp:
             generic_json.dump(self.post_process, fp)
         # dump the post-processing dict for the post-processing to  pick up.
 
-        post_process_output = self.model_dir / self.post_process_output
-        cmd = [str(self.post_process_script), str(input_file), str(post_process_output)]
-        result = self.run_cmd(cmd, cwd=self.model_dir)  #
+        post_process_output = self.model_dir / self._post_process_output
+        result = self.run_cmd(self.post_process_cmd_script, cwd=self.model_dir)  #
 
         # get in the simulated obs which also sets them 
         self.read_simulated_obs(post_process_output)
