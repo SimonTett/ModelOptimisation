@@ -38,9 +38,9 @@ def fake_fn(config:OptClimConfigVn3, params: dict) -> pd.Series:
     result = 100 * (pscale + pscale ** 2)
     # this fn has one minima and  no maxima between the boundaries and the minima. So should be easy to optimise.
     result = result.to_numpy()
-    delta_len = len(tgt) - result.shape[-1]
-    if delta_len > 0:
-        result = np.append(result, result[0:delta_len], axis=-1)  # increase result
+    while (len(tgt) > result.shape[-1]):
+        result = np.append(result, result, axis=-1)
+    result = result[0:len(tgt)] # truncate it to len of tgt.
     result = pd.Series(result, index=tgt.index)  # brutal conversion to obs space.
     var_scales = 10.0 ** np.round(np.log10(config.scales()))
     result /= var_scales  # make sure changes are roughly right scales.

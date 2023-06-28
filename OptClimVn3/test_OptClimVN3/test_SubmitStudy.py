@@ -43,7 +43,9 @@ class MyTestCase(unittest.TestCase):
     def setUp(self, mck_now, mck_model):
         self.tmpDir = tempfile.TemporaryDirectory()
         testDir = pathlib.Path(self.tmpDir.name)
-        cpth = SubmitStudy.SubmitStudy.expand("$OPTCLIMTOP/OptClimVn3/configurations/dfols14param_opt3.json")
+        optclim3 = Model.expand('$OPTCLIMTOP/OptClimVn3/')
+        refDir = optclim3/'configurations/example_Model'
+        cpth = refDir/"dfols14param_opt3.json"
         config = StudyConfig.readConfig(cpth)
         config.baseRunID('ZZ')
         submit = SubmitStudy.SubmitStudy(config, model_name='myModel', rootDir=testDir)
