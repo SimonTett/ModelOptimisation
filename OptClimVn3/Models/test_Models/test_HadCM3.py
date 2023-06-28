@@ -86,7 +86,8 @@ class testHadCM3(unittest.TestCase):
         tmpDir = tempfile.TemporaryDirectory()
         testDir = pathlib.Path(tmpDir.name)  # used throughout.
         refDir = pathlib.Path(HadCM3.expand('$OPTCLIMTOP/Configurations')) / 'xnmea'  # need a coupled model.
-        post_process = dict(script='$OPTCLIMTOP/OptClimVn3/scripts/comp_obs.py', outputPath='obs.json')
+        post_process = dict(script='$OPTCLIMTOP/OptClimVn3/scripts/comp_obs.py', output_file='obs.json')
+        self.post_process = post_process
         self.model = HadCM3(name='testM', reference=refDir,
                             model_dir=testDir, post_process=post_process,
                             parameters=parameters)
@@ -516,7 +517,7 @@ class testHadCM3(unittest.TestCase):
         Tests startTime to see if it works
         :return:
         """
-        model = HadCM3(name='aa001',reference=self.refDir)
+        model = HadCM3('aa001',self.refDir)
         tests = [ '2020-01-01', '1990-01-01', '1999-09-09 01:01:01']
         expect = [[2020, 1, 1, 0, 0, 0], [1990, 1, 1, 0, 0, 0], [1999, 9, 9, 1, 1, 1]]
 
@@ -531,7 +532,7 @@ class testHadCM3(unittest.TestCase):
 
         :return: nada
         """
-        model = HadCM3(name='aa001',reference=self.refDir)
+        model = HadCM3('aa001',self.refDir)
         tests = [  'P7Y', 'P7Y1M', 'P7Y1M1D', 'P7Y1M1DT1H1M1S']
         expect = [[7, 0, 0, 0, 0, 0], [7, 1, 0, 0, 0, 0], [7, 1, 1, 0, 0, 0], [7, 1, 1, 1, 1, 1]]
 

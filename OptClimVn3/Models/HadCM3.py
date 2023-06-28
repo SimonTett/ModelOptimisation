@@ -68,7 +68,7 @@ class HadCM3(Model.Model):
         """
         if len(name) > 5:
             raise ValueError("HadXM3 limited to 5 character names")
-        super().__init__(name, reference, **kwargs)  # call super class init and then override
+        super().__init__(name, reference,**kwargs)  # call super class init and then override
         # modify submit_script & continue_script
 
         self.submit_script = 'SUBMIT'

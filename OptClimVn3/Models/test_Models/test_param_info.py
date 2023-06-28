@@ -58,6 +58,8 @@ class TestParamInfo(unittest.TestCase):
                 pass
         cols.extend(cols2)
         self.expected_df = self.expected_df.reindex(columns=cols)
+        post_process = dict(script='$OPTCLIMTOP/OptClimVn3/scripts/comp_obs.py', output_file='obs.json')
+        self.post_process = post_process
 
     def test_register(self):
         # Test registered a namelist (well a list of anything)
@@ -293,7 +295,7 @@ FN [function: {fn.__qualname__} ]
 
         with tempfile.TemporaryDirectory() as tmpdir:
             p=pathlib.Path(tmpdir)
-            model = myModel('fred',reference=myModel.expand("$OPTCLIMTOP/Configurations/xnmea"),model_dir=p)  # depends on myModel
+            model = myModel('fred',myModel.expand("$OPTCLIMTOP/Configurations/xnmea"),self.post_process,  model_dir=p)  # depends on myModel
             model.instantiate()
             self.assertEqual(model.param_info.read_param(model, 'VF1'), 1)
             self.assertEqual(model.param_info.read_param(model, 'RHCRIT'), 0.7)

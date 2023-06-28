@@ -8,7 +8,8 @@ import logging
 import os
 import pathlib
 import generic_json
-from  Model import Model
+from  Model import Model # need some generic way of importing everything in Models
+from Models.HadCM3 import HadCM3
 
 
 allowed_keys = set(Model.status_info.keys()) - {'SUBMITTED'}

@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
-""" Compute simulated observables 
+""" Compute simulated observables
+This for UM and update fo that used in Tett et al, 2022
 Observations are:
 Global mean, Northern Hemisphere Extratropical average (30N-90N), Southern Hemisphere Extra-tropical (90S-30S) mean and 
 Tropical (30S - 30N) mean for:
@@ -17,9 +18,13 @@ and Northern Hemisphere Extra-tropical and Tropical Mean Sea Level
 Pressure difference from global average
 
  """
+import pathlib
+
 import numpy  # numpy
 import datetime  # get datetime module
 import iris  # Met Office IRIS library
+import iris.util
+import iris.cube
 from iris.time import PartialDateTime
 import iris.analysis.cartography
 import json  # get JSON library
@@ -35,19 +40,20 @@ import glob  # glob support.
 def periodConstraint(cube, start_time=None, end_time=None):
     """
     Generate a time constraint between start_time and end_time. start_time is included while end_time is not included in 
-    the times requested. start_time and end_time should be passed in as tuples/or lists 
+    the times requested. start_time and end_time should be passed in as tuples/or lists
+    TODO support 360 day calendar -- for example 2005-02-30.
     """
     Units = cube[0].coord('time').units  # get the units of time so we can convert to them!
 
     if (start_time is None):
         t1 = -1e20  # large -ve time
     else:
-        t1 = Units.date2num(datetime.datetime(*start_time))  # * expands the tupple into hopefully three
+        t1 = Units.date2num(datetime.datetime.fromisoformat(start_time))  #
 
     if (end_time is None):
         t2 = 1e20  # large +ve time
     else:
-        t2 = Units.date2num(datetime.datetime(*end_time))  #
+        t2 = Units.date2num(datetime.datetime.fromisoformat(end_time))  #
 
     return iris.Constraint(time=lambda cell: t1 < cell.point < t2)
 
@@ -72,19 +78,19 @@ def means(cube, name=None, start_time=None, end_time=None, mask=None, mask_name=
         int_name = 'VAR'
 
     cube_internal = cube.copy()  # make a copy of the cube as I want to potentially apply a mask to it
-    ## possibly fix cube long/lat bounds
+    # possibly fix cube long/lat bounds
     for coord in ['longitude', 'latitude']:
         if (not (cube_internal.coord(coord).has_bounds())):  # bounds not set if so guess them.
             cube_internal.coord(coord).guess_bounds()
 
-    ## possibly deal with mask
-    if (mask is not None):
+    # possibly deal with mask
+    if mask is not None:
         int_name = mask_name + int_name
         lmask = iris.util.broadcast_to_shape(numpy.squeeze(mask.data), cube_internal.shape, [1, 2])
         cube_internal.data = numpy.ma.array(cube_internal.data, mask=(lmask == 0))
         cube_internal.attributes['mask'] = mask_attribute
 
-    ## constraints
+    # constraints
     constraints = {
         'GLOBAL': None,
         'NHX': iris.Constraint(coord_values={'latitude': lambda y: y > 30.0}),
@@ -98,8 +104,7 @@ def means(cube, name=None, start_time=None, end_time=None, mask=None, mask_name=
         constraint = constraints[key]
         cc = cube_internal.extract(time_constraint & constraint)  # extract to the sub-region and time  we want
         if (verbose >= 3):
-            print
-            "CC is size", cc.shape
+            print( "CC is size", cc.shape)
 
         wt = iris.analysis.cartography.area_weights(cc)  # compute the area weights
         mn = cc.collapsed(['time', 'latitude', 'longitude'], iris.analysis.MEAN,
@@ -118,7 +123,7 @@ def means(cube, name=None, start_time=None, end_time=None, mask=None, mask_name=
 parser = argparse.ArgumentParser(description=
                                  """Post process Unified Model data to provide simulated observations. Example use is:
   
-   comp_obs.py input.json /exports/work/geos_cesd_workspace/OptClim/Runs/st17_reg/01/s0101/A/output.nc.
+   comp_obs.py input.json output.nc.
   
   Observations are:
   
@@ -153,37 +158,30 @@ parser.add_argument("-v", "--verbose", help="Provide verbose output", action="co
 args = parser.parse_args()  # and parse the arguments
 # setup processing
 
-json_file = open(args.JSON_FILE, 'r')  # open file for reading
-json_info = json.load(json_file)  # read the JSON file
-json_file.close()  # close file
+with open(args.JSON_FILE,'r') as fp:
+    post_process = json.load(fp)  # read the JSON file
 
-try:
-    options = json_info['postProcess']  # get the options
-except KeyError:
-    raise Exception("Need to provide post_process_options in " + args.JSON_FILE)
 
-mask_file = options['mask_file']
+
+mask_file = post_process['mask_file']
 mask_file = os.path.expanduser(os.path.expandvars(mask_file))
-mask_name = options['mask_name']
-start_time = options['start_time']
-end_time = options['end_time']
+mask_name = post_process['mask_name']
+start_time = post_process['start_time']
+end_time = post_process['end_time']
 
 verbose = args.verbose
 
 if verbose:  # print out some helpful information..
-    print
-    "mask_file", mask_file
-    print
-    "land_mask", mask_name
-    print
-    "start_time", start_time
-    print
-    "end_file", end_time
+    print(f"""mask_file: {mask_file}
+    land_mask: {mask_name}
+    start_time: {start_time}
+    end_time: {end_time}""")
     if (verbose > 1):
-        print
-        "options are ", options
+        print("post_process is ", post_process)
 
-output_file = args.OUTPUT
+output_file = pathlib.Path(args.OUTPUT)
+if output_file.stem != '.nc':
+    raise NotImplementedError(f"Can only cope with netcdf. Asking for {output_file.stem}")
 land_mask = iris.load_cube(mask_file, mask_name)  # land/sea mask
 mask_attr = 'file: ' + mask_file + ' Name: ' + mask_name
 
@@ -192,7 +190,7 @@ constrain_60S = iris.Constraint(coord_values={'latitude': lambda y: y >= -60})
 land_mask_60S = land_mask.extract(constrain_60S)  # mask noth of 60S
 mask_attr_60S = 'file: ' + mask_file + ' Name: ' + mask_name + " > 60S"
 # files=args.UM_ROOT+"/aps/*.pp"
-files = glob.glob(os.path.join(('A', 'aps', '*.pp')))
+files = glob.glob(os.path.join(['A', 'aps', '*.pp']))
 
 ## now to process data. Below could be simplified with a loop and constraints but not worth the hassle at this point.
 
@@ -258,13 +256,11 @@ output_data.extend(mslp_short)  # add it to the list to be appended
 
 if (verbose):  # print out the summary data for all created values
     for cube in output_data:
-        print
-        cube.name(), "=", cube.data
+        print ( cube.name(), "=", cube.data)
         if (verbose > 1):
-            print
-            cube
-            print
-            "============================================================"
+            print(cube)
+            print("="*50)
+
 
 ## now to write the data
 iris.save(output_data, output_file)
