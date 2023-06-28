@@ -34,7 +34,7 @@ class testStudyConfig(unittest.TestCase):
         :return:
         """
         root = importlib.resources.files("OptClimVn3")
-        configFile = root / 'configurations' / 'dfols14param_opt3.json'
+        configFile = root / 'configurations/example_Model/dfols14param_opt3.json'
         self.config = StudyConfig.readConfig(configFile)
         # generate fake -lookup tables
 
@@ -167,7 +167,7 @@ class testStudyConfig(unittest.TestCase):
         """
 
         ref = self.config.referenceConfig()
-        expect = self.config.expand("$OPTCLIMTOP/Configurations/HadAM3_ed3_SL7_15m")
+        expect = self.config.expand("$OPTCLIMTOP/OptClimVn3/configurations/example_Model")
         self.assertEqual(ref, expect)
 
         # test we can set it
@@ -308,7 +308,7 @@ class testStudyConfig(unittest.TestCase):
         values['NoSuchParam'] = None
         fix = self.config.fixedParams()
         self.assertEqual(fix['VF1'], 1.0, msg='VF1 not as expected')  # should be set to default value
-        self.assertEqual(fix['CW'], 2e-4, msg='CW_LAND not as expected')  # should be set to default value
+        self.assertEqual(fix['CW'], 2e-4, msg='CW not as expected')  # should be set to default value
         self.assertEqual(fix['ALPHAM'], 0.5, msg='ALPHAM not as expected')  # should be set to default value
         self.assertIsNone(fix['NoSuchParam'], msg='NoSuchParam should be None')  # should be None
         # set values['VF1'] to 2 and check it is still 2.

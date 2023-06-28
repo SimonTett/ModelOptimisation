@@ -295,7 +295,8 @@ FN [function: {fn.__qualname__} ]
 
         with tempfile.TemporaryDirectory() as tmpdir:
             p=pathlib.Path(tmpdir)
-            model = myModel('fred',myModel.expand("$OPTCLIMTOP/Configurations/xnmea"),self.post_process,  model_dir=p)  # depends on myModel
+            model = myModel('fred',myModel.expand("$OPTCLIMTOP/OptClimVn3/configurations/example_Model")
+                                                  ,self.post_process,  model_dir=p)  # depends on myModel
             model.instantiate()
             self.assertEqual(model.param_info.read_param(model, 'VF1'), 1)
             self.assertEqual(model.param_info.read_param(model, 'RHCRIT'), 0.7)

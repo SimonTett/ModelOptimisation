@@ -25,6 +25,7 @@ from Models.Model import register_param
 from Models.namelist_var import namelist_var
 
 
+
 def gen_time():
     # used to mock Model.now()
     time = datetime.datetime(2000, 1, 11, 0, 0, 0)
@@ -101,8 +102,9 @@ class ModelTestCase(unittest.TestCase):
         # create a model and store it.
         tmpDir = tempfile.TemporaryDirectory()
         testDir = pathlib.Path(tmpDir.name)  # used throughout.
-        refDir = pathlib.Path(Model.expand('$OPTCLIMTOP/Configurations')) / 'xnmea'  # need a coupled model.
-        post_process = dict(script='$OPTCLIMTOP/OptClimVn3/scripts/comp_obs.py', output_file='sim_obs.json')
+        optclim3 = Model.expand('$OPTCLIMTOP/OptClimVn3/')
+        refDir = optclim3/'configurations/example_Model'
+        post_process = dict(script=optclim3/'scripts/comp_obs.py', output_file='sim_obs.json')
         self.post_process = post_process
         self.model = myModel(name='test_model', reference=refDir,
                              model_dir=testDir, post_process=post_process,
@@ -241,7 +243,8 @@ class ModelTestCase(unittest.TestCase):
                             post_process_cmd_script=cmd, fake=False, simulated_obs=None,
                             perturb_count=0, config_path=self.testDir / "test_model.mcfg",
                             status='CREATED', _history=model._history,
-                            run_count=0, submission_count=0,
+                            run_count=0, submission_count=0,continue_script='continue.sh',
+                            submit_script='submit.sh',
                             set_status_script= self.model.expand("$OPTCLIMTOP/OptClimVn3/scripts/set_model_status.py"))
 
         dct = model.to_dict()

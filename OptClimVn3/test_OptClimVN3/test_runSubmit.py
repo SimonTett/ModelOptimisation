@@ -411,7 +411,7 @@ class testRunSubmit(unittest.TestCase):
         # now compare results from DFOLS with those from "naked" dfols.
         best = finalConfig.optimumParams().rename('best')
         df = df.append(best.rename('DFOLS'))
-        transJac = pd.DataFrame(solution.jacobian, columns=varParamNames, index=Tmat.index)
+        transJac = pd.DataFrame(finalConfig.dfols_solution().jacobian, columns=varParamNames, index=Tmat.index)
 
         print("All done with result\n", df)
         result_transJac = finalConfig.transJacobian()

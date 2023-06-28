@@ -323,7 +323,7 @@ class runSubmit(SubmitStudy):
         It should not make any difference if scale is True or False. But if regularisation is done
         then it is better to have all (diagonal) elements of the covariance matrix have roughly the same mag
         which is really what scaling does for you. (for example converting kg/sec/m^2 to mm/day). Current implementation
-        of tranMatrix does truncates removing all evectors and evalues when evalues < 1E-6 * max(evalues)
+        of tranMatrix truncates removing all eigenvectors and eigenvalues when egivenvalues < 1E-6 * max(evalues)
 
         return: finalConfig -- a studyConfig. The following methods should give you useful data:
 
