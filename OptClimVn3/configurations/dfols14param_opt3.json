@@ -1,11 +1,11 @@
 {
-    "history": "Reference config for DFOLS algorithm and Vn3 of OptClim. Perturbing all 14 parameters ",
+    "history": "Test config for DFOLS algorithm and Vn3 of OptClim. Perturbing 7 parameters ",
     "Developer_comment": "StudyConfig.py provides methods that work with this configuration file. Remember to change them if you change structure of this.",
     "version": 3,
     "version_comment": "Version ID",
     "Name": "dfols_r",
     "Name_comment": "Study Name",
-    "baseRunID": "dr",
+    "baseRunID": "d7",
     "baseRunID_comment": "base for runID. .",
     "run_info": {
         "runTime": 10000,
@@ -52,21 +52,14 @@
             "RUN_TARGET_comment": "Run target -- as an ISO period string "
         },
         "initParams": {
-            "comment": "Intial values for parameters to be optimised. Set to null to use default values. Values below are for HadAM3-14#1 ",
+            "comment": "Intial values for parameters to be optimised. Set to null to use default values. Values below are first 7 for HadAM3-14#1 ",
             "VF1": 1.0,
             "RHCRIT": 0.0,
             "ICE_SIZE": 0.0,
             "ENTCOEF": 1.0,
             "EACF": 0.0,
             "CT": 1.0,
-            "CW": 1.0,
-            "DYNDIFF": 1.0,
-            "KAY_GWAVE": 1.0,
-            "ASYM_LAMBDA": 0.0,
-            "CHARNOCK": 1.0,
-            "G0": 0.0,
-            "Z0FSEA": 0.0,
-            "ALPHAM": 0.0
+            "CW": 1.0
         },
         "initScale": true,
         "initScale_comment": "If true then startParams range from 0 to 1 where 0 means min value; 1 max value.",

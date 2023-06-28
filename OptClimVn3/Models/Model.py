@@ -531,6 +531,10 @@ class Model(ModelBaseClass, journal):
         self.create_model()  # create model
         self.modify_model()  # do any modifications to model needed before setting params.
         self.set_params()  # set the params
+        # set permissions to rxw,rx,rx for submit and continue script.
+        for file in [self.submit_script,self.continue_script]:
+            (self.model_dir/file).chmod(0o766) # set permission
+
         self.set_status('INSTANTIATED')
 
     def modify_model(self):
@@ -630,7 +634,7 @@ class Model(ModelBaseClass, journal):
             if self.post_process_cmd is not None:  # check self.post_process_cmd is None and fail if not!
                 raise ValueError(f"Have post_process_cmd {self.post_process_cmd} should be None")
             pp_cmd = [self.set_status_script, '-config_path', str(self.config_path), 'PROCESSED']  # post-process cmd.
-            run_time = self.post_process.get('runTime')  # get the runTime.
+            run_time = self.post_process.get('runTime',1800)  # get the runTime.
             run_code = self.post_process.get('runCode', run_info.get('runCode'))
             # and the run_code -- default is value in run_info but use value from post_process if we have it.
             pp_cmd = engine.submit_cmd(pp_cmd, f"PP_{self.name}",
