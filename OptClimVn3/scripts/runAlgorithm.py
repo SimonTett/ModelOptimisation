@@ -46,9 +46,8 @@ import StudyConfig
 from Models import *  # all models.
 import genericLib
 import logging
-from Models.HadCM3 import HadCM3
-from Models.simple_model import simple_model
-from Models.Model import Model  # for generic stuff to do with models.
+from Models import * #imports all models we know about. See Models/__init__.py
+
 
 ## main script
 
@@ -105,7 +104,7 @@ if dry_run or read_only:
 logging.info("Running from config %s named %s" % (jsonFile, configData.name()))
 
 if args.dir is not None:
-    rootDir = Model.expand(args.dir)  # directory defined so set rootDir
+    rootDir = Model.Model.expand(args.dir)  # directory defined so set rootDir
 else:  # set rootDir to cwd/name
     rootDir = pathlib.Path.cwd() / configData.name()  # default path
 

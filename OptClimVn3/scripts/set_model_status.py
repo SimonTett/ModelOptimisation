@@ -8,21 +8,16 @@ import logging
 import os
 import pathlib
 import generic_json
-from  Model import Model # need some generic way of importing everything in Models
-from Models.HadCM3 import HadCM3
+from Models import * # see Models/__init__.py.
 
 
-allowed_keys = set(Model.status_info.keys()) - {'SUBMITTED'}
+allowed_keys = set(Model.Model.status_info.keys()) - {'SUBMITTED'}
 # this script does not handle submission of the model as that is more complex. See SubmitStudy for that.
 parser = argparse.ArgumentParser(description="""
     Set model status to something. This can have side effects depending on the status. 
-    Example usage: set_model_status COMPLETED
-    This script gets the path to the model config from:
-    --config_path
-    os.environ('MODEL_CONFIG_PATH') 
-    or reading (in the current directory) MODEL_CONFIG_PATH.json
+    Example usage: set_model_status pth_to_config COMPLETED
     """)
-parser.add_argument("--config_path",type=str,help='path for model config',default=None)
+parser.add_argument("config",type=str,help='path for model config')
 parser.add_argument("status", type=str, help="What to set model status to", choices=allowed_keys)
 parser.add_argument("-v", "--verbose", action="count", default=None,
                     help="Be more verbose. Level one gives logging.INFO and level 2 gives logging.DEBUG")
@@ -42,25 +37,11 @@ for k,v in os.environ.items():
 
 logging.debug(f"Path is {pathlib.Path.cwd()}")
 # work out where config lives.
-config_path = args.config_path # first try arguments
-if config_path is None: # not provided
-    logging.debug("No config_path provided. Trying env")
-    try:
-        config_path=pathlib.Path(os.environ['OPTCLIM_MODEL_PATH']) # get from env.
-    except KeyError: # not found in env
-        file = "OPTCLIM_MODEL_PATH.json"
-        logging.debug(f"No OPTCLIM_MODEL_PATH in env. Trying to read {file}")
-        with open(file) as fp: # read json file and extract config_path
-            config_path_dir = generic_json.load(fp)
-        config_path = config_path_dir['config_path']
-else:
-    config_path = Model.expand(args.config_path)
+config_path = Model.Model.expand(args.config) #
+logging.info(f"config_path = {config_path}")
 status = args.status
-
-# verify that dir_path exists and is a directory
-if not (config_path.exists()):
-    raise ValueError(f"config_path {config_path} does not exist.")
-model = Model.load_model(config_path)
+logging.info(f"Status = {status}")
+model = Model.Model.load_model(config_path)
 # read model in. type of model gets worked out through saved configuration
 # and set its status. That can do lots of things. See Model methods.
 # there is enough logging in load_model to report what is being done!

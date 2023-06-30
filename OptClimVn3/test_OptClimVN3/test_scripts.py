@@ -46,7 +46,7 @@ class testScripts(unittest.TestCase):
             cmd = ['python',str(pth)]
         else:
             cmd = [str(pth)]
-        cmd += ['RUNNING','-v']
+        cmd += [str(model.config_path),'RUNNING','-v']
         try:
             subprocess.run(cmd,cwd=model.model_dir,capture_output=True,check=True,text=True)
         except subprocess.CalledProcessError as err:
@@ -56,31 +56,7 @@ class testScripts(unittest.TestCase):
         model = Model.Model.load_model(model.config_path)
         self.assertEqual(model.status,'RUNNING')
         model.delete()
-        # run again but turn of env var.
-        model = self.setup_model()
-        os.environ.pop('OPTCLIM_MODEL_PATH')
-        try:
-            subprocess.run(cmd,cwd=model.model_dir,capture_output=True,check=True,text=True)
-        except subprocess.CalledProcessError as err:
-            print("stdout",err.stdout)
-            print("stderr",err.stderr)
-            raise
-        model = Model.Model.load_model(model.config_path)
-        self.assertEqual(model.status,'RUNNING')
-        model.delete()
-        # try again but provide cmd line argument and delete file + env var
-        model = self.setup_model()
-        os.environ.pop('OPTCLIM_MODEL_PATH')
-        (model.model_dir/'OPTCLIM_MODEL_PATH.json').unlink() # delete file.
-        cmd += ['--config_path',str(model.config_path)]
-        try:
-            subprocess.run(cmd,cwd=model.model_dir,capture_output=True,check=True,text=True)
-        except subprocess.CalledProcessError as err:
-            print("stdout",err.stdout)
-            print("stderr",err.stderr)
-            raise
-        model = Model.Model.load_model(model.config_path)
-        self.assertEqual(model.status,'RUNNING')
+
 
 
     def test_runAlgorithm(self):

@@ -153,7 +153,7 @@ class HadCM3(Model.Model):
     FLAG=$(grep 'FLAG' $RSUB|cut -f2 -d"=" | sed 's/ *//'g)
     if  [ $FLAG = 'N' ]
       then # release_job the post processing job. 
-      {set_status_cmd} SUCCEEDED ## code inserted
+      {set_status_cmd} {str(self.config_path)} SUCCEEDED ## code inserted
       echo "FINISHED releasing the post-processing"
     else 
          echo "$TYPE: Still got work to do"
@@ -202,8 +202,6 @@ class HadCM3(Model.Model):
         """
         modify script.
         :param set_status_script -- path to script that sets status.
-
-
          set ARCHIVE_DIR to runid/A -- not in SCRIPT??? WOnder where it comes from. Will look at modified script..
          set EXPTID to runid  --  first ^EXPTID=xhdi
          set JOBID to jobid  -- first ^JOBID
@@ -225,7 +223,7 @@ class HadCM3(Model.Model):
                 #
                 elif f.filelineno() == 1:  # first line
                     print(
-                        f"{set_status_script} RUNNING {modifystr}")  # we are running so set status to RUNNING.
+                        f"{set_status_script} {str(self.config_path)} RUNNING {modifystr}")  # we are running so set status to RUNNING.
                     print(line[0:-1])  # print line out.
                 elif re.match('^EXPTID=', line):
                     print("EXPTID=%s %s" % (experID, modifystr))
@@ -247,7 +245,7 @@ class HadCM3(Model.Model):
                     # Success is when the potentially multiple simulations have completed.
                     # that's handled separately in self.post_process_file
                     print(
-                        f"if [[ $RCMASTER -ne 0 ]]; then ;{set_status_script} FAILED ; fi  {modifystr}")
+                        f"if [[ $RCMASTER -ne 0 ]]; then ;{set_status_script} {str(self.config_path)} FAILED ; fi  {modifystr}")
                     print(line[0:-1])  # print out the original line.
                 else:  # default line
                     print(line[0:-1])  # remove newline
