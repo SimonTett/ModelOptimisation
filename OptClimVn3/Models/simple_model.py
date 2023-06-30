@@ -7,7 +7,7 @@ import logging
 import json
 
 from Model import Model
-import SubmitStudy # need the engine!
+import engine # need the engine!
 
 
 class simple_model(Model):
@@ -29,7 +29,7 @@ class simple_model(Model):
 
     # over write submit_cmd
     def submit_cmd(self,run_info,
-                   engine:SubmitStudy.engine) -> typing.List[str]:
+                   engine:engine) -> typing.List[str]:
         """"
         Generate the submission command.
         :param run_info # run_info. only runTime and runCode are used
