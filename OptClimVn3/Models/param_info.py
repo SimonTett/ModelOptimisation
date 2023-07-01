@@ -4,6 +4,7 @@ import logging
 import pathlib
 import typing
 
+import numpy as np
 import pandas as pd
 
 from Models.model_base import model_base
@@ -193,7 +194,7 @@ class param_info(model_base):
         df = df.reindex(columns=pd.Index(ordering))
         return df
 
-    def update_from_file(self, filepath: pathlib.Path, duplicate: bool = False, **kwargs):
+    def update_from_file(self, filepath: pathlib.Path|str, duplicate: bool = False, **kwargs):
         """
         Add parameters from file.
         :param filepath: path to csv file (can be anything accepted by pandas.read_csv).
@@ -206,6 +207,7 @@ class param_info(model_base):
         """
 
         parameter_df = pd.read_csv(self.expand(filepath), **kwargs)
+        parameter_df = parameter_df.replace({np.nan:None}) # replace any Nan with None. (on write out None get written as nan)
         for indx, row in parameter_df.iterrows():
             param, typ = row.loc[['parameter', 'type']]
             if typ == 'namelist_var':
@@ -213,7 +215,7 @@ class param_info(model_base):
                 if pd.isnull(name):  # no name defined set it to param.
                     name = param
                 nl = namelist_var(filepath=pathlib.Path(row.loc['filepath']), namelist=row.loc['namelist'],
-                                  nl_var=row.loc['nl_var'], name=name)
+                                  nl_var=row.loc['nl_var'], default=row.loc['default'],name=name)
                 self.register(param, nl, duplicate=duplicate)
                 logging.debug(f"Registered {nl} for parameter {param}")
             elif typ == 'function':

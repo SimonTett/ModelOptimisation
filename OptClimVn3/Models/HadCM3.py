@@ -251,7 +251,7 @@ class HadCM3(Model.Model):
                     print(line[0:-1])  # remove newline
 
 
-    def submit_cmd(self, run_info: dict, engine: engine.slurm_engine|engine.sge_engine) -> typing.List[str]:
+    def submit_cmd(self, run_info: dict, engine: engine) -> typing.List[str]:
         """
         :param run_info -- run information.
           should include runCode and runTime.
@@ -459,10 +459,10 @@ class HadCM3(Model.Model):
         """
 
         nlev = self.nlev(expect=19)  # test have 19 levels
-        eacf_nl = namelist_var(filepath=pathlib.Path('CNTLATM'), namelist='SLBC21', nl_var='EACF')
+        eacf_nl = namelist_var(filepath=pathlib.Path('CNTLATM'), namelist='SLBC21', nl_var='EACF',default=0.5)
         inverse = eacf is None
         if inverse:
-            eacf_val = eacf_nl.read_value(dirpath=self.model_dir, default=0.5)
+            eacf_val = eacf_nl.read_value(dirpath=self.model_dir)
             if len(eacf_val) != nlev:
                 raise ValueError("EA CF namelist {eacf_nl} has len {len(eacf_val)} not {nlev}")
             return eacf_val[0]
@@ -484,13 +484,13 @@ class HadCM3(Model.Model):
         :param sphIce: True if want spherical ice (which is default). If None inverse calc is done
         :return:  returns nl/tuple pair or, if inverse, the value of sphIce
         """
-        nl = [namelist_var(nl_var='I_CNV_ICE_LW', namelist='R2LWCLNL', filepath=pathlib.Path('CNTLATM')),
+        nl = [namelist_var(nl_var='I_CNV_ICE_LW', namelist='R2LWCLNL', filepath=pathlib.Path('CNTLATM'),default=1),
               # default 1, perturb 7
-              namelist_var(nl_var='I_ST_ICE_LW', namelist='R2LWCLNL', filepath=pathlib.Path('CNTLATM')),
+              namelist_var(nl_var='I_ST_ICE_LW', namelist='R2LWCLNL', filepath=pathlib.Path('CNTLATM'),default=1),
               # default 1, perturb 7
-              namelist_var(nl_var='I_CNV_ICE_SW', namelist='R2SWCLNL', filepath=pathlib.Path('CNTLATM')),
+              namelist_var(nl_var='I_CNV_ICE_SW', namelist='R2SWCLNL', filepath=pathlib.Path('CNTLATM'),default=3),
               # default 3, perturb 7
-              namelist_var(nl_var='I_ST_ICE_SW', namelist='R2SWCLNL', filepath=pathlib.Path('CNTLATM')),
+              namelist_var(nl_var='I_ST_ICE_SW', namelist='R2SWCLNL', filepath=pathlib.Path('CNTLATM'),default=2),
               # default 2, perturb 7
               ]
         values_sph = [1, 1, 3, 2]
@@ -498,14 +498,14 @@ class HadCM3(Model.Model):
         inverse = sphIce is None
         if inverse:  # inverse -- so  extract value and test for consistency
             # check all is OK
-            sph = (nl[0].read_value(dirpath=self.model_dir, default=1) == 1)
+            sph = (nl[0].read_value(dirpath=self.model_dir) == 1)
             if sph:
                 values = values_sph
             else:
                 values = values_nonSph
             # check  namelist values are consistent
             for n, v in zip(nl, values):
-                vr = n.read_value(dirpath=self.model_dir, default=v)
+                vr = n.read_value(dirpath=self.model_dir)
                 assert vr == v, f"Got {vr} but expected {v} for nl {n}"
 
             return sph
@@ -777,10 +777,10 @@ class HadCM3(Model.Model):
         :return: namelist, value.
         """
         self.nlev(expect=19)
-        rhcrit_nl = namelist_var(nl_var='RHCRIT', namelist='RUNCNST', filepath=pathlib.Path('CNTLATM'))
+        rhcrit_nl = namelist_var(nl_var='RHCRIT', namelist='RUNCNST', filepath=pathlib.Path('CNTLATM'), default=0.7)
         inverse = (rhcrit is None)
         if inverse:
-            cloud_rh_crit = rhcrit_nl.read_value(dirpath=self.model_dir, default=0.7)
+            cloud_rh_crit = rhcrit_nl.read_value(dirpath=self.model_dir)
             rhcrit = cloud_rh_crit[3]
             expected = 19 * [rhcrit]
             for it, v in enumerate([0.95, 0.9, 0.85]):
@@ -803,12 +803,13 @@ class HadCM3(Model.Model):
             Same value will be used for northern and southern hemispheres. If None inverse calculation will be done.
         :return: (by default) the namelist/value information as list
         """
-        iceDiff_nlNH, iceDiff_nlSH = (namelist_var(nl_var=var, namelist='SEAICENL', filepath=pathlib.Path('CNTLOCN'))
+        iceDiff_nlNH, iceDiff_nlSH = (namelist_var(nl_var=var, namelist='SEAICENL',
+                                                   filepath=pathlib.Path('CNTLOCN'),default=2.5e-5)
                                       for var in ['EDDYDIFFN', 'EDDYDIFFS'])
         inverse = (OcnIceDiff is None)
         if inverse:
-            v = iceDiff_nlNH.read_value(dirpath=self.model_dir, default=2.5e-5)
-            v_sh = iceDiff_nlSH.read_value(dirpath=self.model_dir, default=2.5e-5)
+            v = iceDiff_nlNH.read_value(dirpath=self.model_dir)
+            v_sh = iceDiff_nlSH.read_value(dirpath=self.model_dir)
             if v != v_sh:
                 raise ValueError(
                     "Ocean ice diffusion coefficient is not the same for northern and southern hemispheres")
@@ -825,12 +826,13 @@ class HadCM3(Model.Model):
             If None inverse condition will be done
         :return: nl/values to set the values, if inverse return the NH value.
         """
-        iceMax_nlNH, iceMax_nlSH = (namelist_var(nl_var=var, namelist='SEAICENL', filepath=pathlib.Path('CNTLOCN'))
+        iceMax_nlNH, iceMax_nlSH = (namelist_var(nl_var=var, namelist='SEAICENL',
+                                                 filepath=pathlib.Path('CNTLOCN'), default=0.995)
                                     for var in ['AMXNORTH', 'AMXSOUTH'])
         inverse = (iceMaxConc is None)
         if inverse:
-            v = iceMax_nlNH.read_value(dirpath=self.model_dir, default=0.995)
-            v2 = iceMax_nlSH.read_value(dirpath=self.model_dir, default=0.995)
+            v = iceMax_nlNH.read_value(dirpath=self.model_dir)
+            v2 = iceMax_nlSH.read_value(dirpath=self.model_dir)
             if min(0.98, v) != v2:
                 raise ValueError(f"SH Ocean ice maximum concentration = {v2} not {min(0.98, v)}")
             return v
@@ -846,12 +848,13 @@ class HadCM3(Model.Model):
            Note these picked by examining Lettie Roach's generated files. If None then inverse calculation will be done
         :return: namelist/values to be set or the namelist value.
         """
-        ocnDiff_AM0, ocnDiff_AM1 = (namelist_var(nl_var=var, namelist='EDDY', filepath=pathlib.Path('CNTLOCN'))
+        ocnDiff_AM0, ocnDiff_AM1 = (namelist_var(nl_var=var, namelist='EDDY',
+                                                 filepath=pathlib.Path('CNTLOCN'), default=1e3)
                                     for var in ['AM0_SI', 'AM1_SI'])
         inverse = (ocnIsoDiff is None)
         if inverse:
-            v = ocnDiff_AM0.read_value(dirpath=self.model_dir, default=1e3)
-            v2 = ocnDiff_AM1.read_value(dirpath=self.model_dir, default=1e3)
+            v = ocnDiff_AM0.read_value(dirpath=self.model_dir)
+            v2 = ocnDiff_AM1.read_value(dirpath=self.model_dir)
             if v != v2:
                 raise ValueError(f"Ocean isopycnal diffusion coefficients differ")
             return v

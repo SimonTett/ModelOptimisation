@@ -22,11 +22,6 @@ class namelist_var(model_base):
     name: str = None
     default: any = None
 
-    """def Name(self):
-        name = self.name
-        if name is None:
-            name = f"{str(self.filepath)}&{self.namelist} {self.nl_var}"
-        return name"""
 
     def __repr__(self):
         """ Representation -- the name and the cpts"""
@@ -41,15 +36,17 @@ class namelist_var(model_base):
     _file_cache = dict()  # where we cache files
     def read_value(self,
                    dirpath:pathlib.Path =pathlib.Path.cwd(),
-                   clean: bool =False,
-                   default:typing.Any =None):
+                   clean: bool =False):
         """ Read  value from disk file containing namelists. Files will be cached to speed up subsequent reads.
         :param dir: Directory where namelist is.
         :param clean -- If True clean the cache before reading.
-        :param default -- default value
         """
         namelists = self.file_cache(dirpath / self.filepath, clean=clean)
-        value = namelists[self.namelist].get(self.nl_var.lower(),default)
+        try:
+            value = namelists[self.namelist].get(self.nl_var.lower(),self.default)
+        except KeyError: # namelist does not exist. Use default value
+            value = self.default
+            logging.info(f"Failed to read {self.namelist} returning {self.default} for {self.nl_var}")
         if value is None:
             raise KeyError(f"{self} not found")
         return value
