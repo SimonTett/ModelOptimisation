@@ -8,7 +8,7 @@ import platform
 
 import StudyConfig
 from runSubmit import runSubmit # so we can test if we have one!
-
+from Models import * # all models defined
 
 class testScripts(unittest.TestCase):
 
