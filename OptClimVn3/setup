@@ -1,0 +1,7 @@
+# setup env for OptCLIMVn3
+# Run with . ./setup
+# change OPTCLIMTOP for your system
+export OPTCLIMTOP=/exports/csce/eddie/geos/groups/OPTCLIM/software/optimise2023/ModelOptimisation
+VN3=$OPTCLIMTOP/OptClimVn3
+export PYTHONPATH=$VN3:$VN3/Models:$VN3/support:$PYTHONPATH
+export PATH=$VN3/scripts:$PATH
