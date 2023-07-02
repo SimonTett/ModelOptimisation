@@ -11,4 +11,7 @@ Modules are:
 * runSubmit.py -- algorithms for model submission etc
 
 * StudyConfig.py -- reads in and decodes study configuration files. 
-* 
+
+* exceptions.py -- provides exceptions needed by SubmitStudy -- an exception to be raised if model does not exist.
+
+Also see support for modules that provide general support and Models for model classes.

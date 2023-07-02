@@ -5,14 +5,6 @@ Model.py -- root class for all models.
 Provides generic functions that should be overloaded. 
 If you do want to add your own method then within that method it is recommended to first call the super-class method.
 
-model_base.py -- provides two classes 
-   * journal -- provides support for recording history and output of commands
-   * model_base -- registers model with generic_json and provides minimum methods needed by that.
-
-
-namelist_var.py -- provides class that supports namelists. You might want to use this as an example or extend this if your model sets parameters in other ways.
-
-param_info.py -- provides class that supports parameter sets including a register function.
 
 simple_model.py -- a simple model that does little but is intended as an example and for testing. 
 

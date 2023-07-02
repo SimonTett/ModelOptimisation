@@ -22,7 +22,7 @@ import genericLib
 import generic_json
 from Models.Model import Model
 from Models.Model import register_param
-from Models.namelist_var import namelist_var
+from namelist_var import namelist_var
 
 
 

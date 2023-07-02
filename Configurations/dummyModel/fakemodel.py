@@ -4,7 +4,7 @@ A fake model for testing optimisation (or related) frameworks.
 """
 import argparse # parse command line arguments
 import collections # want ordered dict
-import exceptions
+import optclim_exceptions
 import os
 import shutil
 import stat

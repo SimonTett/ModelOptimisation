@@ -6,7 +6,7 @@ import logging
 
 import json
 
-from Models import *
+from Model import Model
 import engine # need the engine!
 
 

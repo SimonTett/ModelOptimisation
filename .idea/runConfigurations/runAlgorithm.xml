@@ -12,7 +12,7 @@
     <option name="ADD_CONTENT_ROOTS" value="true" />
     <option name="ADD_SOURCE_ROOTS" value="true" />
     <option name="SCRIPT_NAME" value="$PROJECT_DIR$/OptClimVn3/scripts/runAlgorithm.py" />
-    <option name="PARAMETERS" value="-d C:\Users\stett2\Documents\tmpDir -t $OPTCLIMTOP/OptClimVn3/configurations/dfols14param_opt3.json --monitor --delete -v -v" />
+    <option name="PARAMETERS" value="-d C:\Users\stett2\Documents\tmpDir -t $OPTCLIMTOP/OptClimVn3/configurations/dfols14param_opt3.json --monitor --delete -v" />
     <option name="SHOW_COMMAND_LINE" value="true" />
     <option name="EMULATE_TERMINAL" value="false" />
     <option name="MODULE_MODE" value="false" />

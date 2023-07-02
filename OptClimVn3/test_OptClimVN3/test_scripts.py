@@ -1,5 +1,4 @@
 # test the scripts
-import os
 import pathlib
 import unittest
 import subprocess
@@ -9,8 +8,6 @@ import platform
 
 import StudyConfig
 from runSubmit import runSubmit # so we can test if we have one!
-import model_base
-import HadCM3# needed because we are reading in HadCM3 models...
 
 
 class testScripts(unittest.TestCase):

@@ -16,11 +16,11 @@ import pandas as pd
 import pandas.testing as pdtest
 
 import StudyConfig
-import exceptions
+import optclim_exceptions
 import runSubmit
 from genericLib import fake_fn
 
-import HadCM3
+from Models import *
 
 def fake_run(rSubmit: runSubmit, scale: bool = True) -> typing.Callable:
     """ Instantiate and  run fake fns.
@@ -128,7 +128,7 @@ class testRunSubmit(unittest.TestCase):
 
         # test 2. Set ensemble size to 2.
         rSubmit.config.ensembleSize(2)  # 1 member ensemble
-        with self.assertRaises(exceptions.runModelError):
+        with self.assertRaises(optclim_exceptions.runModelError):
             result = rSubmit.stdFunction(params)
 
         # no of models to run should be 2
@@ -139,7 +139,7 @@ class testRunSubmit(unittest.TestCase):
         # test 3. Have multiple params
 
         rSubmit.config.ensembleSize(2)  # 2 member ensemble
-        with self.assertRaises(exceptions.runModelError):
+        with self.assertRaises(optclim_exceptions.runModelError):
             result = rSubmit.stdFunction(params2)
 
         # no of models to run should be 4.. (ensemble member * param2)
@@ -212,7 +212,7 @@ class testRunSubmit(unittest.TestCase):
         nobs = len(rSubmit.config.obsNames())
         # test 1 -- result should be a vector of len nobs
         fn = rSubmit.genOptFunction(scale=True)
-        with self.assertRaises(exceptions.runModelError):
+        with self.assertRaises(optclim_exceptions.runModelError):
             result = fn(params)  # should raise an runModelError exception
 
         # now run it.
@@ -245,7 +245,7 @@ class testRunSubmit(unittest.TestCase):
                                           rootDir=self.rootDir, refDir=self.refDir)
             try:
                 rSubmit.runOptimized()
-            except exceptions.runModelError:
+            except optclim_exceptions.runModelError:
                 fake_funcn = fake_run(rSubmit)
             if np.unique(rSubmit.status()) != ['PROCESSED']:
                 raise ValueError("Something odd")
@@ -397,7 +397,7 @@ class testRunSubmit(unittest.TestCase):
             try:
                 finalConfig = rSubmit.runDFOLS(scale=scale)  # run DFOLS
                 break  # if we get to here then we are done.
-            except exceptions.runModelError:  # Need to run some models which are "faked"
+            except optclim_exceptions.runModelError:  # Need to run some models which are "faked"
                 fake_function = fake_run(rSubmit,scale=scale)
                 iterCount += 1
                 # expect nobs+1 on first iteration (parallel running)
@@ -483,7 +483,7 @@ class testRunSubmit(unittest.TestCase):
             try:
                 finalConfig = rSubmit.runJacobian(scale=scale)  # run Jacobian
                 break
-            except exceptions.runModelError:  # Need to run some models.
+            except optclim_exceptions.runModelError:  # Need to run some models.
                 fake_func = fake_run(rSubmit,scale=scale)
                 # expect nparam+1 models all processed
                 models = [model for model in rSubmit.model_index.values() if model.status == "PROCESSED"]
@@ -509,7 +509,7 @@ class testRunSubmit(unittest.TestCase):
             try:
                 finalConfig = rSubmit.runJacobian(scale=scale)  # run Jacobian
                 break
-            except exceptions.runModelError:  # Need to run some models.
+            except optclim_exceptions.runModelError:  # Need to run some models.
                 fake_function = fake_run(rSubmit, scale=scale)
                 models = [model for model in rSubmit.model_index.values() if model.status == "PROCESSED"]
                 nModels = len(models)
@@ -603,7 +603,7 @@ class testRunSubmit(unittest.TestCase):
             try:
                 finalConfig = rSubmit.runGaussNewton(scale=scale,verbose=True)  # run Guass-Newton line-search.
                 break  # if we get to here then we are done.
-            except exceptions.runModelError:  # Need to run some models which are "faked"
+            except optclim_exceptions.runModelError:  # Need to run some models which are "faked"
                 create_models = [model for model in rSubmit.model_index.values() if model.status == "CREATED"]
                 nModels= len(create_models)
                 fake_function = fake_run(rSubmit, scale=scale)
@@ -633,7 +633,7 @@ class testRunSubmit(unittest.TestCase):
             try:
                 finalConfig = rSubmit.runGaussNewton(scale=scale)  # run DFOLS
                 break  # if we get to here then we are done.
-            except exceptions.runModelError:  # Need to run some models which are "faked"
+            except optclim_exceptions.runModelError:  # Need to run some models which are "faked"
                 create_models = [model for model in rSubmit.model_index.values() if model.status == "CREATED"]
                 nModels = len(create_models)
                 fake_function = fake_run(rSubmit, scale=scale)

@@ -39,14 +39,14 @@ import os
 import sys
 import pathlib
 import numpy as np
-import exceptions
+import optclim_exceptions
 import runSubmit
 import StudyConfig
 
-from Models import *  # all models.
 import genericLib
 import logging
 from Models import * #imports all models we know about. See Models/__init__.py
+print("Known models are ",Model.Model.known_models())
 
 
 ## main script
@@ -199,7 +199,7 @@ while True: # loop indefinetly so can have fake_fn. This really to test code/alg
         else:
             raise ValueError(f"Don't know what to do with Algorithm: {algorithmName}")
         break  # we have finished running algorithm so can exit and go to final clear up.
-    except exceptions.runModelError:  # error which triggers need to instantiate and run more models.
+    except optclim_exceptions.runModelError:  # error which triggers need to instantiate and run more models.
         if read_only:
             logging.info(f"read_only -- exiting")
             break  # exit the loop -- we are done as in read_only mode.

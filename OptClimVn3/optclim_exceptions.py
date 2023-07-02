@@ -1,5 +1,5 @@
 """
-Define all exceptions used by OptClimVn2
+Define all exceptions used by OptClimVn3
 
 """
 

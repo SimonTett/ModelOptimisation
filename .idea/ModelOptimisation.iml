@@ -7,8 +7,8 @@
       <sourceFolder url="file://$MODULE_DIR$/um45" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/OptClimVn3" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/OptClimVn3/Models" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/OptClimVn3/generic" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/OptClimVn3/scripts" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/OptClimVn3/support" isTestSource="false" />
     </content>
     <orderEntry type="jdk" jdkName="Python 3.9 (base)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />

@@ -138,7 +138,7 @@ class TestJsonEncoder(unittest.TestCase):
 
 class TestJsonUtils(unittest.TestCase):
     def setUp(self):
-        nl=namelist_var.namelist_var(filepath=pathlib.Path('test_nl'),namelist='atmos',nl_var='fred')
+        nl= namelist_var.namelist_var(filepath=pathlib.Path('test_nl'), namelist='atmos', nl_var='fred')
         self.data = {'a': np.array([1, 2, 3]),
                      'b': pd.DataFrame({'col1': [1, 2], 'col2': [3, 4]}),
                      'c': pd.Series([1, 2, 3]),
@@ -146,7 +146,7 @@ class TestJsonUtils(unittest.TestCase):
                      'e':dict(fred=True,james=2,harry=4.5,gordon='some text'),
                      'f':[1,2,3,'more test'],
                      'g':nl,
-                     'h':param_info.param_info()}
+                     'h': param_info.param_info()}
         self.data['h'].register('VF1',nl)
     def assertAllequal(self,data1,data2):
         for key,value in data1.items():

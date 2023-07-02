@@ -1,2 +1,2 @@
 __all__=['simple_model','HadCM3','Model'] # these models get imported when from Models import * is done
-# if you add a new model class add it to this so that it is available to any scripts that need to know about models.
+# if you add a new model class add it to this so that it is available to any scripts that need to know about modelsl.

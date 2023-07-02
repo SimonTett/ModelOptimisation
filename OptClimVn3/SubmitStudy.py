@@ -22,7 +22,7 @@ import engine
 import pandas as pd
 
 from Model import ModelBaseClass, Model
-from Models.model_base import model_base, journal
+from model_base import model_base, journal
 from Study import Study
 from StudyConfig import OptClimConfigVn3, dictFile
 

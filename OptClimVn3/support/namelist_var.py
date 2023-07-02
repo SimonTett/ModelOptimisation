@@ -4,11 +4,10 @@ import logging
 import pathlib
 import shutil
 import tempfile
-import typing
 import f90nml
 import numpy as np
 
-from Models.model_base import model_base
+from model_base import model_base
 
 
 @dataclasses.dataclass(frozen=True)

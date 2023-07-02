@@ -33,7 +33,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import xarray  # TODO -- consider removing dependence on xarray
-from Models.model_base import model_base
 
 __version__ = '0.3.0'
 

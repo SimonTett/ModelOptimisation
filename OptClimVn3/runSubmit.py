@@ -7,7 +7,7 @@ from SubmitStudy import SubmitStudy
 
 import numpy as np
 import pandas as pd
-import exceptions
+import optclim_exceptions
 import warnings
 import functools
 
@@ -17,7 +17,7 @@ class runSubmit(SubmitStudy):
           Class   to deal with running various algorithms. (not all of which are optimization).
           It is a specialisation of SubmitStudy and is separated out to make maintenance easier.
           Idea is that each method should use cases that exist and deal with parallelism.
-          If it finds out that cases are missing it should raise exceptions.runModelError.
+          If it finds out that cases are missing it should raise optclim_exceptions.runModelError.
           Functions should  return a finalConfig which contains
           whatever additional information they consider useful.
 
@@ -49,7 +49,7 @@ class runSubmit(SubmitStudy):
         :param params -- a numpy array with the parameter values.
                 These parameters should  be ordered as in self.paramNames()
         :param df  -- If True return all obs (read in after processing) as a dataframe.
-        :param raiseError  -- If True raise exceptions.runModelError  if any requested models do not exist.
+        :param raiseError  -- If True raise optclim_exceptions.runModelError  if any requested models do not exist.
                 This should cause generation & submission of models that need running.
                 Else return array full of nans.
         :param ensemble_average -- If True average the ensemble members.
@@ -164,7 +164,7 @@ class runSubmit(SubmitStudy):
 
         if raiseError and np.any(result.isnull()):
             # want to raise error if any of result is nan.
-            raise exceptions.runModelError
+            raise optclim_exceptions.runModelError
         if sumSquare:
             result = (result ** 2).sum(axis=1)
         if not df:  # want it as values not  a dataframe
@@ -372,7 +372,7 @@ class runSubmit(SubmitStudy):
                                        rhoend=dfols_config.get('rhoend', 1e-3),
                                        user_params=userParams)
         except np.linalg.linalg.LinAlgError:
-            raise exceptions.runModelError("dfols failed with lin alg error")
+            raise optclim_exceptions.runModelError("dfols failed with lin alg error")
             # this is how DFOLS tells us it got NaN which then triggers running the next set of simulations.
 
         # code here will be run when DFOLS has completed. It mostly is to put stuff in the final JSON file

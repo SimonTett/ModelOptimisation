@@ -7,8 +7,8 @@ import typing
 import numpy as np
 import pandas as pd
 
-from Models.model_base import model_base
-from Models.namelist_var import namelist_var
+from model_base import model_base
+from namelist_var import namelist_var
 
 
 class param_info(model_base):

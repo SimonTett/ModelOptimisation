@@ -150,7 +150,7 @@ class testHadCM3(unittest.TestCase):
                          'RESUBMIT_INTERVAL': "P40Y",
                          'OSTART': '$DATAW/$RUNID.ostart', 'ASTART': '$MYDUMPS/fred.dmp',
                          'AINITIAL': '$MY_DUMPS/aeabra.daf4c10', 'OINITIAL': '$MY_DUMPS/aeabro.daf4c10',
-                         "ANTHSCA": 0.99, "NAME": "XFRED", "OHSCA": 1.2, "VOLCSCA": 1.2}
+                         "ANTHSCA": 0.99, "NAME": "XFRED", "OHSCA": 1.2, "O2H2SCA":0.8,"VOLCSCA": 1.2}
 
         # check we have got all known parameters.
         expect_params = set(self.model.param_info.known_parameters())

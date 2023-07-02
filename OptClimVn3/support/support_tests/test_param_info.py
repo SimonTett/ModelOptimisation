@@ -10,9 +10,8 @@ import numpy as np
 import pandas as pd
 import pandas.testing as pdtest
 
-import genericLib
-from Models.namelist_var import namelist_var
-from Models.param_info import param_info
+from namelist_var import namelist_var
+from param_info import param_info
 from Models import Model
 
 """
