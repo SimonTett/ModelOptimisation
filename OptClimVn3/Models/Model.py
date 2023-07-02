@@ -15,10 +15,9 @@ import pandas as pd
 import xarray
 
 import generic_json
-from model_base import model_base, journal
+from model_base import journal
 from ModelBaseClass import ModelBaseClass,register_param
 from namelist_var import namelist_var
-from param_info import param_info
 import engine
 
 

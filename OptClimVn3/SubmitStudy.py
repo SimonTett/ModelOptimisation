@@ -21,7 +21,7 @@ from typing import Optional, List, Callable, Mapping
 import engine
 import pandas as pd
 
-from Model import ModelBaseClass, Model
+from Model import Model
 from model_base import model_base, journal
 from Study import Study
 from StudyConfig import OptClimConfigVn3, dictFile
@@ -140,7 +140,7 @@ class SubmitStudy(model_base, Study, journal):
         else:
             raise ValueError(f"Unknown computer {computer}")
 
-        return engine.setup_engine(engine_name=engine_name,connect_fn=connect_fn)
+        return engine.setup_engine(engine_name=engine_name, connect_fn=connect_fn)
 
     def create_model(self, params: dict, dump: bool = True) -> Model:
         """
@@ -170,7 +170,7 @@ class SubmitStudy(model_base, Study, journal):
         reference = paramDir.pop('reference', self.refDir)
         model_name = paramDir.pop('model_name', self.model_name)
         post_process = self.config.get('post_process')
-        model = ModelBaseClass.model_init(model_name, name=name,
+        model = Model.model_init(model_name, name=name,
                                           reference=reference, model_dir=model_dir,
                                           config_path=config_path,
                                           parameters=params, post_process=post_process

@@ -7,7 +7,7 @@ import logging
 import json
 
 from Model import Model
-import engine # need the engine!
+import engine  # need the engine!
 
 
 class simple_model(Model):
@@ -28,8 +28,8 @@ class simple_model(Model):
         logging.debug(f"Dumped parameters to {out_file}")
 
     # over write submit_cmd
-    def submit_cmd(self,run_info,
-                   engine:engine) -> typing.List[str]:
+    def submit_cmd(self, run_info,
+                   engine: engine) -> typing.List[str]:
         """"
         Generate the submission command.
         :param run_info # run_info. only runTime and runCode are used

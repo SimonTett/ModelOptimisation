@@ -1,8 +1,6 @@
 # Modules that support runnings studies.
 Modules are:
 
-* engine.py -- provides generic support for job submission engines. 
-     Supports SLURM and SGE
 
 * Study.py -- read only support for Studies (collections of model simulations)
 
