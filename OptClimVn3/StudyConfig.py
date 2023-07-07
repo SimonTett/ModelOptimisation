@@ -113,7 +113,7 @@ class dictFile(dict):
     extends dict to prove save and load methods.
     """
 
-    def __init__(self, filename=None,
+    def __init__(self, filename:typing.Optional[str]=None,
                  Config_dct: typing.Optional[dict] = None):
         """
         Initialise dictFile object from file or from dict (which is fairly awful way)
@@ -1609,7 +1609,7 @@ class OptClimConfig(dictFile):
 
         return self.getv('maxDigits', default=3)  # nothing defined -- make it 3.
 
-    def copy(self, filename: typing.Optional[pathlib.Path] = None) -> OptClimConfigVn2 | OptClimConfigVn3:
+    def copy(self, filename: typing.Optional[pathlib.Path] = None) -> OptClimConfig:
         """
         :param filename (optional default None): Name of filename to save to.
         :return: a copy of the configuration but set _fileName  to avoid accidental overwriting of file.
@@ -2206,3 +2206,5 @@ class OptClimConfigVn3(OptClimConfigVn2):
             raise ValueError(f"maxRuns {mx} < 1")
         # no default -- up to calling application to decide.
         return mx
+
+

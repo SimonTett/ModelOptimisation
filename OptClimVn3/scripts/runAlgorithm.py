@@ -39,15 +39,16 @@ import os
 import sys
 import pathlib
 import numpy as np
+from Models import *  # imports all models we know about. See Models/__init__.py Import this before anything else.
 import optclim_exceptions
 import runSubmit
 import StudyConfig
 
 import genericLib
 import logging
-from Models import * #imports all models we know about. See Models/__init__.py
-print("Known models are ",Model.Model.known_models())
 
+
+print("Known models are ", Model.known_models())
 
 ## main script
 
@@ -88,15 +89,15 @@ monitor = args.monitor
 fail = args.fail
 
 if verbose == 1:
-    logging.basicConfig(level=logging.INFO,force=True)
+    logging.basicConfig(level=logging.INFO, force=True)
 elif verbose > 1:
-    logging.basicConfig(level=logging.DEBUG,force=True)
+    logging.basicConfig(level=logging.DEBUG, force=True)
 else:
     pass
 
 configData = StudyConfig.readConfig(filename=jsonFile)  # parse the jsonFile.
 
-args_not_for_restart = [ '--delete']  # arguments to be removed from the restart cmd
+args_not_for_restart = ['--delete']  # arguments to be removed from the restart cmd
 restartCMD = [arg for arg in sys.argv if arg not in args_not_for_restart]  # generate restart cmd.
 if dry_run or read_only:
     restartCMD = None  # no restarting!
@@ -104,7 +105,7 @@ if dry_run or read_only:
 logging.info("Running from config %s named %s" % (jsonFile, configData.name()))
 
 if args.dir is not None:
-    rootDir = Model.Model.expand(args.dir)  # directory defined so set rootDir
+    rootDir = Model.expand(args.dir)  # directory defined so set rootDir
 else:  # set rootDir to cwd/name
     rootDir = pathlib.Path.cwd() / configData.name()  # default path
 
@@ -180,8 +181,8 @@ if algorithmName in ['RUNOPTIMISED', 'JACOBIAN']:
     wantCost = False
 else:
     wantCost = True
-finalConfig = None # so we have something!
-while True: # loop indefinetly so can have fake_fn. This really to test code/algorithm.
+finalConfig = None  # so we have something!
+while True:  # loop indefinetly so can have fake_fn. This really to test code/algorithm.
     try:  # run an algorithm iteration.
         np.random.seed(123456)  # init RNG though probably should go to the runXXX methods.
         if algorithmName == 'DFOLS':

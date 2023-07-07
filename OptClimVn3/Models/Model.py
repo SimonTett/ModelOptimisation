@@ -19,7 +19,7 @@ from model_base import journal
 from ModelBaseClass import ModelBaseClass,register_param
 from namelist_var import namelist_var
 import engine
-
+#from Study import Study
 
 
 
@@ -82,10 +82,10 @@ class Model(ModelBaseClass, journal):
                  perturb_count: int = 0,
                  parameters: typing.Optional[dict] = None,
                  post_process_cmd: typing.Optional[typing.List] = None,
-                 simulated_obs: typing.Optional[pd.Series] = None):
+                 simulated_obs: typing.Optional[pd.Series] = None,
+                 study:typing.Optional[Study] = None):
         """
         Initialise the Model class.
-
 
         :param name -- name of model
         :param reference -- reference directory. Should be a pathlib.Path
@@ -101,8 +101,6 @@ class Model(ModelBaseClass, journal):
         :param run_count -- no of times model has been running
         :param perturb_count -- no of times model has been perturbed.
         :param parameters -- dict of parameters names and values.
-
-
         :param post_process -- dict for post-processing. If None no post-processing will be done.
          Dict will be made available to post-processing code.
           See set_post_process method for details.
@@ -117,9 +115,13 @@ class Model(ModelBaseClass, journal):
           This should be constructed in the  setup using the StudyConfig.
         :param post_process_cmd -- command to run or release_job the post-processing.
         Only used when status gets set to COMPLETED.
-        :param simulated_obs -- value of simulated_obs. Will be None or a pandas series
+        :param simulated_obs -- value of simulated_obs.
+        :param study -- a study. This is there in case model wants to interrogate it at init time.
+        It is recommended that study **not** be stored as an attribute.
+           If you do take great care and worry about recursion as study stores models.
+           Note that this implementation does not take use study
 
-        All are stored as attributes and are publicly available though user should be careful if they modify them.
+        All (except study) are stored as attributes and are publicly available though user should be careful if they modify them.
         public attributes:
         model_dir -- directory where model information is stored
         reference --  where the reference configuration came from.
@@ -391,7 +393,8 @@ class Model(ModelBaseClass, journal):
         self.set_params()  # set the params
         # set permissions to rxw,rx,rx for submit and continue script.
         for file in [self.submit_script,self.continue_script]:
-            (self.model_dir/file).chmod(0o766) # set permission
+            if file is not None:
+                (self.model_dir/file).chmod(0o766) # set permission
 
         self.set_status('INSTANTIATED')
 

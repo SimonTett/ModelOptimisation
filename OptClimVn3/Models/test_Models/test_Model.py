@@ -11,6 +11,8 @@ import tempfile
 import time
 import unittest
 import unittest.mock
+
+
 import StudyConfig # so can read in a config for fake_fn.
 import f90nml
 import numpy as np
@@ -20,8 +22,8 @@ import pandas.testing as pdtest
 import engine
 import genericLib
 import generic_json
-from Models.Model import Model
-from Models.Model import register_param
+from Models import Model
+from Model import register_param
 from namelist_var import namelist_var
 
 
@@ -36,7 +38,7 @@ def gen_time():
 
 
 # To get log info set --log-cli-level WARNING in "additional arguments " in pycharm config
-# rempve any registered classes **except** Model.
+# remove any registered classes **except** Model.
 for k in Model.known_models():
     if k != "Model":
         Model.remove_class(k)
@@ -101,6 +103,7 @@ class ModelTestCase(unittest.TestCase):
                             datefmt='%Y-%m-%d %H:%M:%S', level=logging.DEBUG)
         # create a model and store it.
         tmpDir = tempfile.TemporaryDirectory()
+        tmpDir = tempfile.TemporaryDirectory()
         testDir = pathlib.Path(tmpDir.name)  # used throughout.
         optclim3 = Model.expand('$OPTCLIMTOP/OptClimVn3/')
         refDir = optclim3/'configurations/example_Model'
@@ -115,7 +118,6 @@ class ModelTestCase(unittest.TestCase):
         self.config_path = self.model.config_path
 
         self.engine = engine.setup_engine('SGE')
-        # set up mock for Model.now
 
     def tearDown(self):
         """
@@ -145,6 +147,11 @@ class ModelTestCase(unittest.TestCase):
         Test that class inheritance and naming works
         :return:
         """
+        # remove any registered classes **except** Mode and myModel. Don't know why I need
+        # to do this here as do it above..
+        for k in Model.known_models():
+            if k not in ["Model",'myModel']:
+                Model.remove_class(k)
 
         # define a bunch of sub-classes to check all works
 
@@ -392,6 +399,8 @@ class ModelTestCase(unittest.TestCase):
         :return:
         """
         # model_dir should only have one file.
+
+
 
         omodel = copy.deepcopy(self.model)
         self.model.instantiate()

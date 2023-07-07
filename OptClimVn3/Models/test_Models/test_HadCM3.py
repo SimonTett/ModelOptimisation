@@ -13,7 +13,7 @@ import unittest
 import pathlib
 import logging  # TODO remove all verbose/print and use logging. Means tests need to explicitly set logging up
 import copy
-from Models.HadCM3 import HadCM3 # so this import puts HadCM3 in the list of known models for the rest of the testing.
+from Models import HadCM3
 import genericLib
 import importlib.resources
 
@@ -225,7 +225,7 @@ class testHadCM3(unittest.TestCase):
         modifyStr = '## modified *$'
         shutil.copy2(self.refDir / 'SCRIPT', self.model.model_dir)
         resource = importlib.resources.files("OptClimVn3")
-        set_status_script = str(resource.joinpath("scripts/set_model_status.py"))
+        set_status_script = pathlib.Path(resource.joinpath("scripts/set_model_status.py"))
         self.model.modifyScript(set_status_script)
         file = self.model.model_dir / 'SCRIPT'
         count = 0

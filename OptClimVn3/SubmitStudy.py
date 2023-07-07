@@ -170,11 +170,15 @@ class SubmitStudy(model_base, Study, journal):
         reference = paramDir.pop('reference', self.refDir)
         model_name = paramDir.pop('model_name', self.model_name)
         post_process = self.config.get('post_process')
+        study = self.to_study()  # convert SubmitStudy to Study
         model = Model.model_init(model_name, name=name,
-                                          reference=reference, model_dir=model_dir,
-                                          config_path=config_path,
-                                          parameters=params, post_process=post_process
-                                          )
+                                 reference=reference,
+                                 model_dir=model_dir,
+                                 config_path=config_path,
+                                 parameters=params,
+                                 post_process=post_process,
+                                 study=study
+                                 )
         key = self.key_for_model(model)
         if key in self.model_index:
             raise ValueError(f"Already got key for {key} and parameters {model.parameters}")
@@ -211,16 +215,16 @@ class SubmitStudy(model_base, Study, journal):
         """
         # TODO: Work out how a version of this can go into Study.
         # Only way I can currently see of doing this is by converting a SubmitStudy object
-        iter_count = np.max(list(self.iter_keys.values()))+1
+        iter_count = np.max(list(self.iter_keys.values())) + 1
         result = [None] * iter_count  # initialize list to iter_count Nones
         # The obvious result = [[]]*iter_count does not work....
         for key, iterc in self.iter_keys.items():
-            if result[iterc] is None: # None make it an empty list
+            if result[iterc] is None:  # None make it an empty list
                 result[iterc] = []
             result[iterc].append(self.model_index[key])
         return result
 
-    def dump_config(self,dump_models:bool = False):
+    def dump_config(self, dump_models: bool = False):
         """
         Dump the configuration to config_path.
         Unless dump_models is True  models are not dumped. This done to make code run faster as model.set_status(XX) saves the model.
@@ -268,7 +272,7 @@ class SubmitStudy(model_base, Study, journal):
         models = [model for model in self.model_index.values() if model.status == 'CREATED']
         for model in models:
             model.instantiate()  # model state will be written out.
-        iter_count = self.update_iter(models) # update iteration info
+        iter_count = self.update_iter(models)  # update iteration info
         self.update_history(f'Instantiated {len(models)} models on iteration {iter_count}')
         logging.info(f"Instantiated {len(models)} models")
         return iter_count
@@ -309,7 +313,7 @@ class SubmitStudy(model_base, Study, journal):
         dct = super().to_dict()
         # deal with engine
         logging.debug(f"Converting engine to {self.computer}")
-        dct['engine']= self.computer
+        dct['engine'] = self.computer
         logging.debug(f"Replacing models in model_index with config_path")
         m2 = dict()
         for key, model in dct['model_index'].items():
@@ -342,7 +346,7 @@ class SubmitStudy(model_base, Study, journal):
         obj = cls(config)
         obj.fill_attrs(dct)  # fill in the rest of the objects attributes.
         # deal with the engine.
-        obj.engine = obj.submission_engine(obj.computer) # regenerate the engine.
+        obj.engine = obj.submission_engine(obj.computer)  # regenerate the engine.
         # load up models.
         model_index = dict()
         for key, path in obj.model_index.items():  # iterate over the paths (which is how we represent the models)
@@ -503,12 +507,12 @@ class SubmitStudy(model_base, Study, journal):
             model_list = model_list[0:maxRuns]
 
         # submit models! Faking if necessary.
-        pp_jids=[] # list of job ids from post-processing
-        for model in model_list: # submit model and post-processing
-            pp_jid = model.submit_model(run_info,self.engine,
-                                        outputDir=output_dir,fake_function=fake_fn)
-            if pp_jid is not None: # got a post-processing jid.
-                pp_jids.append(pp_jid) # add it to the list
+        pp_jids = []  # list of job ids from post-processing
+        for model in model_list:  # submit model and post-processing
+            pp_jid = model.submit_model(run_info, self.engine,
+                                        outputDir=output_dir, fake_function=fake_fn)
+            if pp_jid is not None:  # got a post-processing jid.
+                pp_jids.append(pp_jid)  # add it to the list
 
         if fake_fn is not None:
             logging.info(f"Faked {len(model_list)} jobs")
@@ -518,10 +522,10 @@ class SubmitStudy(model_base, Study, journal):
             self.update_history(f"Submitted {len(model_list)} models")
 
         # now (re)submit this entire script so that the next iteration in the algorithm can be ran
-        if (next_iter_cmd is not None) and (len(pp_jids) >0):
+        if (next_iter_cmd is not None) and (len(pp_jids) > 0):
             # submit the next job in the iteration if have one and submitted post-processing.
             next_job_name = 'RE' + configName
-            run_next_submit = self.engine.submit_cmd(next_iter_cmd, next_job_name, outdir = output_dir,
+            run_next_submit = self.engine.submit_cmd(next_iter_cmd, next_job_name, outdir=output_dir,
                                                      run_code=runCode, rundir=self.rootDir,
                                                      hold=pp_jids)
             output = self.run_cmd(run_next_submit)
@@ -533,7 +537,6 @@ class SubmitStudy(model_base, Study, journal):
 
         self.dump_config()  # and write ourselves out
         return len(model_list)  # all done now
-
 
     def to_study(self) -> Study:
         """

@@ -52,7 +52,7 @@ class MyTestCase(unittest.TestCase):
         cmd_pth.chmod(0o755)
         connect_fn = None
         system_name = 'SGE' # change for the system you want to run on.
-        eng = engine.setup_engine(engine_name=system_name, connect_fn=connect_fn)
+        eng = engine.setup_engine(engine_name=system_name,connect_fn=connect_fn)
         # will submit 4 jobs. 3 held and then submit a release job which releases the first  job.
         cmd1=eng.submit_cmd([str(cmd_pth)],'datejob', outdir=log_pth,
                             time=10, mem=500, hold=True)

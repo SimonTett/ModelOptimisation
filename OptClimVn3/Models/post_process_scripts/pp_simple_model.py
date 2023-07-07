@@ -17,7 +17,7 @@ import genericLib
 import subprocess
 
 
-parser = argparse.ArgumentParser(description="Copy output from simple_model.py to output file"
+parser = argparse.ArgumentParser(description="Copy output from run_simple_model.py to output file"
                                  )
 parser.add_argument("CONFIG", help="The Name of the Config file")
 parser.add_argument("-d", "--dir", help="The Name of the input directory")
