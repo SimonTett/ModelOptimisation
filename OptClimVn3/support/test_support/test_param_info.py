@@ -93,7 +93,7 @@ class TestParamInfo(unittest.TestCase):
             p.register('VF1', 'new_nl_var5')  # overwrite
             p.register('RHCRIT2', set_RHCRIT2)
         self.assertEqual(log.output, [
-            f"WARNING:root:Overwriting VF1 and removing ['new_nl_var1']",
+            f"INFO:root:Overwriting VF1 and removing ['new_nl_var1']",
             f"DEBUG:root:Set VF1 to new_nl_var5",
             f"DEBUG:root:Parameter RHCRIT2 uses method {set_RHCRIT2.__qualname__} ",
         ])
