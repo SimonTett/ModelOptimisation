@@ -73,27 +73,19 @@ class testHadCM3(unittest.TestCase):
 
         tmpDir = tempfile.TemporaryDirectory()
         testDir = pathlib.Path(tmpDir.name)  # used throughout.
-        refDir = pathlib.Path('Configurations') / 'xnmea'  # need a coupled model.
+        refDir = pathlib.Path(HadCM3.expand('$OPTCLIMTOP/Configurations')) / 'xnmea'  # need a coupled model.
+
         simObsDir = HadCM3.expand('$OPTCLIMTOP/test_in')
-        #self.dirPath = testDir
-        self.refPath = refDir
         self.tmpDir = tmpDir  # really a way of keeping in context
         self.testDir = testDir
-        # refDir = os.path.expandvars(os.path.expanduser(refDir))
-        # simObsDir = os.path.expandvars(os.path.expanduser(simObsDir))
-        shutil.rmtree(testDir, onerror=genericLib.errorRemoveReadonly)
         # create a model and store it.
-        tmpDir = tempfile.TemporaryDirectory()
-        testDir = pathlib.Path(tmpDir.name)  # used throughout.
-        refDir = pathlib.Path(HadCM3.expand('$OPTCLIMTOP/Configurations')) / 'xnmea'  # need a coupled model.
+        self.refDir = refDir
+
         post_process = dict(script='$OPTCLIMTOP/OptClimVn3/scripts/comp_obs.py', output_file='obs.json')
         self.post_process = post_process
         self.model = HadCM3(name='testM', reference=refDir,
                             model_dir=testDir, post_process=post_process,
                             parameters=parameters)
-        self.tmpDir = tmpDir
-        self.testDir = testDir  # for clean up!
-        self.refDir = refDir
         self.config_path = self.model.config_path
 
         shutil.copy(simObsDir / '01_GN' / 'h0101' / 'observables.nc',
@@ -104,9 +96,8 @@ class testHadCM3(unittest.TestCase):
         Clean up by removing the temp directory contents
         :return:
         """
-        # self.tmpDir.cleanup() # sadly fails because not all files in are writable.
-        genericLib.delDirContents(self.tmpDir.name)
-        # print("Remove by hand ",self.testDir)
+        shutil.rmtree(self.testDir, onerror=genericLib.errorRemoveReadonly)
+        self.tmpDir.cleanup()
 
     def test_instantiate(self):
         """

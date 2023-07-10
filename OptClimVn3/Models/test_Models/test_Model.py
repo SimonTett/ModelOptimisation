@@ -103,7 +103,6 @@ class ModelTestCase(unittest.TestCase):
                             datefmt='%Y-%m-%d %H:%M:%S', level=logging.DEBUG)
         # create a model and store it.
         tmpDir = tempfile.TemporaryDirectory()
-        tmpDir = tempfile.TemporaryDirectory()
         testDir = pathlib.Path(tmpDir.name)  # used throughout.
         optclim3 = Model.expand('$OPTCLIMTOP/OptClimVn3/')
         refDir = optclim3/'configurations/example_Model'
@@ -124,8 +123,9 @@ class ModelTestCase(unittest.TestCase):
         Clean up by removing the temp directory contents
         :return:
         """
-        # self.tmpDir.cleanup() # sadly fails because not all files in are writable.
-        genericLib.delDirContents(self.testDir)
+        shutil.rmtree(self.testDir, onerror=genericLib.errorRemoveReadonly)
+        self.tmpDir.cleanup()
+
 
     def assertAllequal(self, data1, data2):
         for key, value in data1.items():
@@ -139,8 +139,6 @@ class ModelTestCase(unittest.TestCase):
             else:
                 self.assertEqual(value, value2)
 
-    def tearDown(self):
-        shutil.rmtree(self.testDir, onerror=genericLib.errorRemoveReadonly)
 
     def test_inherit(self):
         """

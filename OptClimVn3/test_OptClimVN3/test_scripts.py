@@ -5,6 +5,8 @@ import subprocess
 import tempfile
 import Model
 import platform
+import shutil
+import genericLib
 
 import StudyConfig
 from runSubmit import runSubmit # so we can test if we have one!
@@ -31,6 +33,15 @@ class testScripts(unittest.TestCase):
         self.tempDir = pathlib.Path(direct.name)
         self.script_dir = Model.Model.expand("$OPTCLIMTOP/OptClimVn3/scripts")
         self.assertTrue(self.script_dir.exists()) # this failing when ran along with all tests.
+
+    def tearDown(self) -> None:
+        """
+        Clean up by removing the temp directory contents
+        :return:
+        """
+        shutil.rmtree(self.direct.name, onerror=genericLib.errorRemoveReadonly)
+        self.direct.cleanup()
+
 
     def test_set_model_status(self):
         # test set_model_status works

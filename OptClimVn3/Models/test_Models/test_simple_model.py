@@ -78,7 +78,6 @@ class Test_simple_model(unittest.TestCase):
         # count the number of modifystr there are.
         with open(model.model_dir/'run_simple_model.py', 'r') as f:
             for line in f:
-                print(line,end='')
                 if re.search(modifyStr, line): count += 1
 
         # expect sevent modifications -- import, 2xstart, 2xfail and 2succeeded.
@@ -134,10 +133,12 @@ class Test_simple_model(unittest.TestCase):
         if platform.system() == 'Windows':
             cmd = ['python',f'{model.submit_script}',f'{model.StudyConfig_path}']
         else:
-            cmd = [str(model.submit_script),str(model.StudyConfig_path)]
+            cmd = ["./"+str(model.submit_script),str(model.StudyConfig_path)]
 
 
-        result=subprocess.run(cmd,cwd=model.model_dir,check=True,shell=True,text=True)
+        result=subprocess.run(cmd,cwd=model.model_dir,check=True,text=True)
+        # on linux note that shell=True requires a strong to be passed not a 
+        # list.
         model2 = simple_model.load_model(model.config_path)
         self.assertEqual(model2.status,'SUCCEEDED')
 

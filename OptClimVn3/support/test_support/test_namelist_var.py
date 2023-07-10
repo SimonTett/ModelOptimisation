@@ -44,6 +44,7 @@ class namelist_var_TestCase(unittest.TestCase):
         self.namelist=nl_list
     def tearDown(self):
         shutil.rmtree(self.testDir, onerror=genericLib.errorRemoveReadonly)
+        self.tmpDir.cleanup() # and actually remove it explicitly
 
 
     def test_file_cache(self):

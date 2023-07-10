@@ -79,7 +79,6 @@ class TestModelBase(unittest.TestCase):
         :return:
         """
         with tempfile.TemporaryDirectory() as tmpdir:
-            print(type(tmpdir))
             dirname = pathlib.Path(tmpdir)
             file=dirname/'test/test.cfg'
             self.model.dump(file)
@@ -119,7 +118,6 @@ class TestModelBase(unittest.TestCase):
             setattr(m2,k,v) # set the value in the objust
             self.assertNotEqual(m1,m2) # should be different
             setattr(m2,k,v_orig) # put original value back
-            print("="*60)
         self.assertEqual(m1,m2) # and should be equal
 
 class Test_history(unittest.TestCase):
@@ -143,7 +141,7 @@ class Test_history(unittest.TestCase):
             msg = f"Count is {count}"
             hist.update_history(msg)
         self.assertEqual(len(hist._history), 20)  #  20 count msgs
-        hist.print_history()
+        #hist.print_history()
 
         test_now = datetime.datetime(1999, 12, 31, 23, 59, 59)
         with unittest.mock.patch.object(hist, 'now', autospec=True, return_value=test_now):
@@ -172,7 +170,7 @@ class Test_history(unittest.TestCase):
             self.assertEqual(lst[0]['cmd'],cmd)
             self.assertEqual(lst[0]['result'],result)
 
-        hist.print_output()
+        #hist.print_output()
 
     @unittest.mock.patch("subprocess.check_output",autospec=True)
     def test_run_cmd(self,mck_check):

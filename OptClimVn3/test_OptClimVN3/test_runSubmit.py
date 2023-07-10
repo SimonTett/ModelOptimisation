@@ -413,10 +413,8 @@ class testRunSubmit(unittest.TestCase):
         df = df.append(best.rename('DFOLS'))
         transJac = pd.DataFrame(finalConfig.dfols_solution().jacobian, columns=varParamNames, index=Tmat.index)
 
-        print("All done with result\n", df)
         result_transJac = finalConfig.transJacobian()
         info = finalConfig.get_dataFrameInfo(['diagnostic_info'])
-        print("Info\n", info)
         pdtest.assert_frame_equal(transJac, result_transJac, atol=1e-10)  # check Jacobian as stored is right
         #    expect to be within 0.01% of the expected soln. If random covariance done then this will be a
         # lot bigger
@@ -591,7 +589,6 @@ class testRunSubmit(unittest.TestCase):
         nptest.assert_allclose(best, expectparam, rtol=1e-4)  # close to 0.1%. Can probably do better by modifying covariance.
         # get out the jacobian for later comparision.
         jac = info['jacobian'][-1, :, :]  # bare right now...
-        print("=" * 60)
         # now to run runGaussNewton.
 
         iterCount = 0
@@ -601,7 +598,7 @@ class testRunSubmit(unittest.TestCase):
         # setup Submit object.
         while True:
             try:
-                finalConfig = rSubmit.runGaussNewton(scale=scale,verbose=True)  # run Guass-Newton line-search.
+                finalConfig = rSubmit.runGaussNewton(scale=scale,verbose=False)  # run Guass-Newton line-search.
                 break  # if we get to here then we are done.
             except optclim_exceptions.runModelError:  # Need to run some models which are "faked"
                 create_models = [model for model in rSubmit.model_index.values() if model.status == "CREATED"]
@@ -651,5 +648,4 @@ class testRunSubmit(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    print("Running Test Cases")
     unittest.main()  # actually run the test cases

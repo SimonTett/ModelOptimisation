@@ -3,7 +3,7 @@ Module that provides optimisation functions. Functions here are Scientific which
  only get to use data in the "optimise" block of the configuration file. For everything else the framework provides data
  as numpy arrays and lists. Exception: Currently needs access to minmax, step and covariance blocks
   Currently provides:
-    doGaussNewtown: Does Gauss Newton calculation working out LineSearch values
+    doGaussNewton: Does Gauss Newton calculation working out LineSearch values
     doLineSearch: Decides to terminate or not and returns next set of doGaussNewton cases
 
    And a bunch of support routines
@@ -122,6 +122,10 @@ def rangeAwarePerturbations(baseVals, parLimits, steps, nrandom=None,
     # check in range and fail if not
     bad = (y < parLimits[:,0]) | (y > parLimits[:,1])
     if np.any(bad):
+        ybad = np.where(bad,y,np.nan)
+        print("Bad y =:\n",ybad,"\n")
+        print("Param range\n",parLimits,"\n")
+        breakpoint()
         raise ValueError("Parameters out of range")
     # possibly perturb the array
     if nrandom is not None:
@@ -244,7 +248,7 @@ def calcErr(simulated, observations, cov=None):
         delta = lsimulated[i,] - observations
         err[i] = (delta.dot(inv_cov)).dot(delta)
 
-    err = np.sqrt(err / np.float(nobs))  # root mean square.
+    err = np.sqrt(err / float(nobs))  # root mean square.
     return err
 
 
@@ -298,10 +302,12 @@ def doGaussNewton(param_value, param_range, UM_value, obs, cov=None,
        params: A dictionaary of the  actual parameters (or defaults used) from studyJSON
       
     """
-    fn_label = 'doGN'  # anem of function for tracing purpose
+    fn_label = 'doGN'  # name of function for tracing purpose
     nObs = len(obs)
     nParam = len(param_value[0, :])
     ## Set up default values
+    if trace is True:
+        breakpoint()
     if scalings is None:
         use_scalings = np.repeat(1.0, nObs)
     else:
@@ -694,6 +700,8 @@ def doLineSearch(param_value, param_range, UM_value, obs, step, cov=None, cov_iv
     NewParam = None  ## make it none by default.
 
     ## Now to decide if we continue
+    pp = param_range[:,:] # copy it!
+
     if (err_constraint[index] + minImprovement > last_err_constraint):
         StatusInfo = 'Stalled'  # worse than previous state
     elif test_stat_state <= chisq_no_progress:
@@ -711,6 +719,8 @@ def doLineSearch(param_value, param_range, UM_value, obs, step, cov=None, cov_iv
         StatusInfo = 'Continue'
 
     info['StatusInfo'] = StatusInfo
+    import numpy.testing as nptest
+    nptest.assert_array_equal(param_range,pp)
 
     return StatusInfo, err, err_constraint, NewParam, index, nextIterParam, info
 
@@ -766,7 +776,7 @@ def gaussNewton(function: typing.Callable,
 
     # stage 0 -- setup
     maxIterations = optimise.get("maxIterations")
-    if maxIterations is not None:
+    if maxIterations is not None and trace:
         print("Max Iterations is ", maxIterations)
     nrandom = optimise.get('nrandom', None)
     deterministicPerturb = optimise.get('deterministicPertub', True)
@@ -817,12 +827,12 @@ def gaussNewton(function: typing.Callable,
         infoLS['obsValues'] = obsValuesLS
         statusList.append({'gaussNewton': infoGN, 'lineSearch': infoLS})
         iterCount += 1  # increase iteration count
-        print("iterCount ", iterCount, maxIterations)
         if (maxIterations is not None) and (iterCount >= maxIterations):
             if trace:
                 print(f"Done {iterCount} iterations which is > {maxIterations}. Stopping.")
-            if statusInfo is 'Continue':
-                print("Trace is ", trace, " Ran out of iterations")
+            if statusInfo == 'Continue':
+                if trace:
+                    print(" Ran out of iterations")
                 statusInfo = 'Failed'
                 break
         if trace:

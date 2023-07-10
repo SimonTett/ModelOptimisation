@@ -67,7 +67,7 @@ class param_info(model_base):
         if not duplicate:
             try:
                 var = self.param_constructors.pop(parameter)
-                logging.warning(f"Overwriting {parameter} and removing {var}")
+                logging.info(f"Overwriting {parameter} and removing {var}")
                 for v in var:
                     self.got_vars.remove(v)  # remove v from set of things we already have.
                     if callable(v):  # remove the function info.
