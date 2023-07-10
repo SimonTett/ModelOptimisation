@@ -123,4 +123,4 @@ class simple_model(Model):
         :param parameters: dict of parameters to set.
         :return: Nada!
         """
-
+        raise NotImplementedError
