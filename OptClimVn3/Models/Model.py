@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 import xarray
 
-import generic_json
+import json
 from model_base import journal
 from ModelBaseClass import ModelBaseClass,register_param
 from namelist_var import namelist_var
@@ -83,7 +83,7 @@ class Model(ModelBaseClass, journal):
                  parameters: typing.Optional[dict] = None,
                  post_process_cmd: typing.Optional[typing.List] = None,
                  simulated_obs: typing.Optional[pd.Series] = None,
-                 study:typing.Optional[Study] = None):
+                 study:typing.Optional["Study"] = None):
         """
         Initialise the Model class.
 
@@ -412,36 +412,36 @@ class Model(ModelBaseClass, journal):
 
         return None
 
-    def setup_model_env(self) -> bool:
-        """
-        Method to set up stuff for model_status_script to get model_config
-        This function does it by setting up env var OPTCLIM_MODEL_PATH and
-          writing out the json file model_dir/OPTCLIM_MODEL_PATH.json with model_config stored in it.
-          Uses generic json dump to do so.
-          Idea is that this gets run just before a model is actually submitted. As model run
-            is then expected to run the status update script.
-        both model_config and model_dir should exist. If they do not or are not a file or dir respectively
-          a value error will be raised.
-        :param model_config: path to model configuration.
-        :param model_dir: path to model_dir. Model assumed to run in that
-        :return: True if successful; False if Not though will actually fail!
-        """
-        if not self.model_dir.exists():
-            raise ValueError(f"Model_dir {self.model_dir} does not exists")
-        if not self.model_dir.is_dir():
-            raise ValueError(f"Model_dir {self.model_dir} is not a directory")
-        if not self.config_path.exists():
-            raise ValueError(f"Model config {self.config_path} does not exist")
-        if not self.config_path.is_file():
-            raise ValueError(f"Model config {self.config_path} is not a file")
-        config_info = dict(config_path=self.config_path)
-        outpath = self.model_dir / "OPTCLIM_MODEL_PATH.json"
-        with open(outpath, 'wt') as fp:
-            generic_json.dump(config_info, fp)
-
-        os.environ['OPTCLIM_MODEL_PATH'] = str(self.config_path)  # set up the environment.
-        logging.debug(f"Wrote config path to {outpath}. $OPTCLIM_MODEL_PATH = {os.environ['OPTCLIM_MODEL_PATH']}")
-        return True  # we worked!
+    # def setup_model_env(self) -> bool:
+    #     """
+    #     Method to set up stuff for model_status_script to get model_config
+    #     This function does it by setting up env var OPTCLIM_MODEL_PATH and
+    #       writing out the json file model_dir/OPTCLIM_MODEL_PATH.json with model_config stored in it.
+    #       Uses generic json dump to do so.
+    #       Idea is that this gets run just before a model is actually submitted. As model run
+    #         is then expected to run the status update script.
+    #     both model_config and model_dir should exist. If they do not or are not a file or dir respectively
+    #       a value error will be raised.
+    #     :param model_config: path to model configuration.
+    #     :param model_dir: path to model_dir. Model assumed to run in that
+    #     :return: True if successful; False if Not though will actually fail!
+    #     """
+    #     if not self.model_dir.exists():
+    #         raise ValueError(f"Model_dir {self.model_dir} does not exists")
+    #     if not self.model_dir.is_dir():
+    #         raise ValueError(f"Model_dir {self.model_dir} is not a directory")
+    #     if not self.config_path.exists():
+    #         raise ValueError(f"Model config {self.config_path} does not exist")
+    #     if not self.config_path.is_file():
+    #         raise ValueError(f"Model config {self.config_path} is not a file")
+    #     config_info = dict(config_path=self.config_path)
+    #     outpath = self.model_dir / "OPTCLIM_MODEL_PATH.json"
+    #     with open(outpath, 'wt') as fp:
+    #         generic_json.dump(config_info, fp)
+    #
+    #     os.environ['OPTCLIM_MODEL_PATH'] = str(self.config_path)  # set up the environment.
+    #     logging.debug(f"Wrote config path to {outpath}. $OPTCLIM_MODEL_PATH = {os.environ['OPTCLIM_MODEL_PATH']}")
+    #     return True  # we worked!
 
     def submit_model(self, run_info: dict,
                      engine: engine.abstractEngine,
@@ -489,7 +489,7 @@ class Model(ModelBaseClass, journal):
             return None  # nothing submitted.
         # real stuff.
         # setup env.
-        self.setup_model_env()  # now have env (and other stuff) setup.
+        #self.setup_model_env()  # now have env (and other stuff) setup.
         # first sort out the post-processing.
         if not self.continuable():
             if self.post_process_cmd is not None:  # check self.post_process_cmd is None and fail if not!
@@ -638,7 +638,8 @@ class Model(ModelBaseClass, journal):
         "Contract" for a post-processing script
         1) takes a json file as input (arg#1) and puts output in file (arg#2).
         2) It is being ran in the model_directory.
-         arg#1 needs generic_json.load to read the json file. This handles the necessary decoding.
+         arg#1 needs json.load to read the json file. Code should expect a dict and use the postProcess entry.
+             This allows it ot read in and act on a StudyConfig file.
          arg#2 can be .json or .csv or .nc
         :return: output from post-processing.
         """
@@ -649,8 +650,9 @@ class Model(ModelBaseClass, journal):
 
         input_file = self.model_dir / self._post_process_input  # generate json file to hold post process info
         logging.debug(f"Dumping post_process to {input_file}")
+        output = dict(postProcess=self.post_process) # wrap post process in dict
         with open(input_file, 'w') as fp:
-            generic_json.dump(self.post_process, fp)
+            json.dump(output, fp)
         # dump the post-processing dict for the post-processing to  pick up.
 
         post_process_output = self.model_dir / self._post_process_output
@@ -679,7 +681,7 @@ class Model(ModelBaseClass, journal):
 
         elif fileType == '.json':  # json file
             with open(post_process_file, 'r') as fp:
-                obs = generic_json.load(fp)
+                obs = json.load(fp)
             logging.debug("json file got " + " ".join(obs.keys()))
 
         elif fileType == '.csv':  # data is a csv file.

@@ -261,7 +261,7 @@ class Study():
 
 
     def runConfig(self, filename:typing.Optional[pathlib.Path]=None,
-                  scale:bool=True,add_cost:bool=True) -> OptClimConfigVn2|OptClimConfigVn3:
+                  scale:bool=True,add_cost:bool=True) -> OptClimConfigVn3:
         """
         **copy** self.config and add parameters and obs to it. Modified config is returned
         :param filename - pathlib to file (or None). Will override filepath in new config

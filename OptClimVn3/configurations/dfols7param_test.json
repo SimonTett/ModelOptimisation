@@ -268,24 +268,10 @@
         "mask_file_comment": "Path to mask file. Example value is for N48 HadAM3",
         "mask_name": "land_binary_mask",
         "mask_name_comment": "Name of mask variable. Depends on file..",
-        "start_time": [
-            2000,
-            3,
-            1,
-            0,
-            0,
-            0
-        ],
-        "start_time_comment": "Start time as YY,MM, DD, Hr, Min, Sec",
-        "end_time": [
-            2005,
-            3,
-            1,
-            0,
-            0,
-            0
-        ],
-        "end_time_comment": "End time as YY,MM, DD, Hr, Min, Sec"
+        "start_time": "2000-03-01",
+        "start_time_comment": "Start time as ISO date",
+        "end_time": "2005-03-01",
+        "end_time_comment": "End time as ISO date"
     },
     "targets": {
         "comment": "Observed targets for optimisation. Should include constraint value.",

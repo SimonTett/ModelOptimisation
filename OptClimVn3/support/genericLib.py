@@ -4,18 +4,23 @@
    - copyDir: Copy directory recursively in a sensible way to allow testing
 
 """
+from __future__ import annotations
+
 import errno
 import os
 import shutil
 import stat
 import pathlib
+import typing
 
 import numpy as np
 import pandas as pd
 from StudyConfig import OptClimConfigVn3
 import logging
 import copy
-def fake_fn(config:OptClimConfigVn3, params: dict) -> pd.Series:
+
+
+def fake_fn(config: OptClimConfigVn3, params: dict) -> pd.Series:
     """
     Wee test fn for trying out things.
     :param config -- configuration. Provides, parameter min, max & ranges and targets.
@@ -25,14 +30,14 @@ def fake_fn(config:OptClimConfigVn3, params: dict) -> pd.Series:
     params = copy.deepcopy(params)
     logging.debug("faking with params: " + str(params))
     # remove ensembleMember param.
-    params.pop('ensembleMember', None) # remove ensembleMember as a key.
+    params.pop('ensembleMember', None)  # remove ensembleMember as a key.
 
     pranges = config.paramRanges()
     tgt = config.targets()
     min_p = pranges.loc['minParam', :]
     max_p = pranges.loc['maxParam', :]
     scale_params = max_p - min_p
-    param_series = pd.Series(params).combine_first(config.standardParam()) # merge in the std params
+    param_series = pd.Series(params).combine_first(config.standardParam())  # merge in the std params
     pscale = (param_series - min_p) / scale_params
     pscale -= 0.5  # tgt is at params = 0.5
     result = 100 * (pscale + pscale ** 2)
@@ -40,13 +45,68 @@ def fake_fn(config:OptClimConfigVn3, params: dict) -> pd.Series:
     result = result.to_numpy()
     while (len(tgt) > result.shape[-1]):
         result = np.append(result, result, axis=-1)
-    result = result[0:len(tgt)] # truncate it to len of tgt.
+    result = result[0:len(tgt)]  # truncate it to len of tgt.
     result = pd.Series(result, index=tgt.index)  # brutal conversion to obs space.
     var_scales = 10.0 ** np.round(np.log10(config.scales()))
     result /= var_scales  # make sure changes are roughly right scales.
 
     result += tgt
     return result
+
+def parse_isoduration( s: str | typing.List) -> typing.List|str:
+    """ Parse a str ISO-8601 Duration: https://en.wikipedia.org/wiki/ISO_8601#Durations
+      OR convert a 6 element list (y m, d, h m s) into a ISO duration.
+    Originally copied from:
+    https://stackoverflow.com/questions/36976138/is-there-an-easy-way-to-convert-iso-8601-duration-to-timedelta
+    Though could use isodate library but trying to avoid dependencies and isodate does not look maintained.
+    :param s: str to be parsed. If not a string starting with "P" then ValueError will be raised.
+    :return: 6 element list [YYYY,MM,DD,HH,mm,SS.ss] which is suitable for the UM namelists
+    """
+
+    def get_isosplit(s, split):
+        if split in s:
+            n, s = s.split(split, 1)
+        else:
+            n = '0'
+        return n.replace(',', '.'), s  # to handle like "P0,5Y"
+
+    if isinstance(s, str):
+        logging.debug("Parsing {str}")
+        if s[0] != 'P':
+            raise ValueError("ISO 8061 demands durations start with P")
+        s = s.split('P', 1)[-1]  # Remove prefix
+
+        split = s.split('T')
+        if len(split) == 1:
+            sYMD, sHMS = split[0], ''
+        else:
+            sYMD, sHMS = split  # pull them out
+
+        durn = []
+        for split_let in ['Y', 'M', 'D']:  # Step through letter dividers
+            d, sYMD = get_isosplit(sYMD, split_let)
+            durn.append(float(d))
+
+        for split_let in ['H', 'M', 'S']:  # Step through letter dividers
+            d, sHMS = get_isosplit(sHMS, split_let)
+            durn.append(float(d))
+    elif isinstance(s, list) and len(s) == 6:  # invert list
+        durn = 'P'
+        logging.debug("Converting {s} to string")
+        for element, chars in zip(s, ['Y', 'M', 'D', 'H', 'M', 'S']):
+            if element != 0:
+                if isinstance(element, float) and element.is_integer():
+                    element = int(element)
+                durn += f"{element}{chars}"
+            if chars == 'D':  # days want to add T as into the H, M, S cpt.
+                if np.any(np.array(s[3:]) != 0):
+                    durn += 'T'
+        if durn == 'P':  # everything = 0
+            durn += '0S'
+    else:
+        raise ValueError(f"Do not know what to do with {s} of type {type(s)}")
+
+    return durn
 
 def expand(filestr: str) -> pathlib.Path:
     """
@@ -58,6 +118,7 @@ def expand(filestr: str) -> pathlib.Path:
     path = os.path.expandvars(filestr)
     path = pathlib.Path(path).expanduser()
     return path
+
 
 def errorRemoveReadonly(func, path, exc):
     """
@@ -167,7 +228,7 @@ def copyTestDir(inDir, outDir, setDir='', trace=False):
 
 # done with copyTestDir
 
-def genSeed(param):
+def genSeed(param: pd.Series) -> int:
     """
     Initialise RNG based on parameter as pandas series. So is deterministic.
     :param param: pandas series of values
@@ -185,3 +246,64 @@ def genSeed(param):
         seed = seed // 2
 
     return seed
+
+
+import argparse
+import json
+
+
+def std_post_process_setup(parser: argparse.ArgumentParser) -> typing.Tuple[argparse.Namespace,  dict]:
+    """
+    Adds standard post-processing arguments to a parser and then parse the parser.
+     Then read in the post_processing information
+    :param parser: parser to have arguments added to.
+      arguments added are:
+         CONFIG -- path to config file.
+         -d/-dir -- name of input directory.
+         OUTPUT -- path to output file
+         -v/--verbose -- increase verbosity.  -v turns logging.info on while -v -v turns logging.debug on.
+
+    config will be loaded from CONFIG and postProcess key extracted.
+    output file  taken from post_process info (if present) otherwise
+    sets appropriate  logging level using basicConfig and force=True (will overwrite any existing logging)
+
+    :return: args (after parsing) post_process dict
+      args contains whatever in parser and:
+        CONFIG -- path to config file
+        OUTPUT -- path to OUTPUT file
+        dir -- path to directory where data to be read from.
+        verbose -- level of verbosity.
+    """
+    parser.add_argument("CONFIG", type=str,help="The Name of the Config file. Should be a json file with a postProcess entry.")
+    parser.add_argument("-d", "--dir", type=str, help="The path to the input directory", default=os.getcwd())
+    parser.add_argument("OUTPUT", nargs='?', default=None,
+                        help="The name of the output file. Will override what is in the config file")
+    parser.add_argument("-v", "--verbose", help="Increase logging level. -v = info, -v -v = debug", action="count",
+                        default=0)
+
+    args = parser.parse_args()  # and parse the arguments
+    # Get stuff in.
+    args.CONFIG = expand(args.CONFIG)
+    with open(args.CONFIG, 'rt') as fp:
+        config = json.load(fp)
+    post_process = config.get('postProcess', {})
+    if args.OUTPUT is None:
+        output_file = post_process['outputPath']  # better be defined so throw error if not
+    else:
+        output_file = args.OUTPUT
+
+    args.OUTPUT = expand(output_file)  # expand users and env vars.
+    args.dir = expand(args.dir) # expand users and env vars
+
+    if args.verbose == 1:
+        logging.basicConfig(force=True, level=logging.INFO)
+    elif args.verbose > 1:
+        logging.basicConfig(force=True, level=logging.DEBUG)
+    else:  # nothing to do
+        pass
+
+    logging.debug("Post Process data")
+    for key, value in post_process.items():
+        logging.debug(f"{key}:{value}")
+
+    return args,  post_process

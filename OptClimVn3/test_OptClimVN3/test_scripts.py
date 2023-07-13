@@ -24,7 +24,6 @@ class testScripts(unittest.TestCase):
                             status='SUBMITTED')
         model.model_dir.mkdir(exist_ok=True, parents=True)
         model.dump_model()
-        model.setup_model_env()  # setup the env.
         return model
 
     def setUp(self) -> None:

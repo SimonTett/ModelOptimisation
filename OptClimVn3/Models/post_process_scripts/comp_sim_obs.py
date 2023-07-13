@@ -16,7 +16,7 @@ import re
 import numpy as np
 import xarray
 
-import StudyConfig
+import json
 
 # for moleculr wts.
 Avogadro_constant = 6.022E23
@@ -333,15 +333,16 @@ def do_work():
       Northern Hemisphere Extra-tropical and Tropical Mean Sea Level Pressure difference from global average
     """
                                      )
-    parser.add_argument("CONFIG", help="The Name of the Config file")
+    parser.add_argument("CONFIG", help="The Name of the Config file. Should be a json file with a postProcess entry.")
     parser.add_argument("-d", "--dir", help="The Name of the input directory")
     parser.add_argument("OUTPUT", nargs='?', default=None,help="The name of the output file. Will override what is in the config file")
     parser.add_argument("-v", "--verbose", help="Provide verbose output", action="count", default=0)
     args = parser.parse_args()  # and parse the arguments
     # setup processing
+    with open(args.CONFIG,'rt') as fp:
+        config = json.load(fp)
 
-    config = StudyConfig.readConfig(args.CONFIG)
-    options = config.getv('postProcess', {})
+    options = config.get('postProcess', {})
     path = options.get('netcdf_path', 'nc/apm')
 
     # work out the files if needed

@@ -443,18 +443,18 @@ class ModelTestCase(unittest.TestCase):
         self.assertEqual(bak_count, expected_bak_count)
         self.assertEqual(1, count_config)  # only one config file.
 
-    def test_setup_model_env(self):
-        # create dir and fake config.
-        self.model.model_dir.mkdir(exist_ok=True,parents=True)
-        self.model.config_path.touch()
-        self.model.setup_model_env()
-        # check environ as expected.
-        self.assertEqual(os.environ['OPTCLIM_MODEL_PATH'],str(self.model.config_path))
-        # and file generated contains expected content.
-        config_pth = self.model.model_dir/'OPTCLIM_MODEL_PATH.json'
-        with open(config_pth,'rt') as fp:
-            dct = generic_json.load(fp)
-        self.assertEqual(dct['config_path'], self.config_path)
+    # def test_setup_model_env(self):
+    #     # create dir and fake config.
+    #     self.model.model_dir.mkdir(exist_ok=True,parents=True)
+    #     self.model.config_path.touch()
+    #     self.model.setup_model_env()
+    #     # check environ as expected.
+    #     self.assertEqual(os.environ['OPTCLIM_MODEL_PATH'],str(self.model.config_path))
+    #     # and file generated contains expected content.
+    #     config_pth = self.model.model_dir/'OPTCLIM_MODEL_PATH.json'
+    #     with open(config_pth,'rt') as fp:
+    #         dct = generic_json.load(fp)
+    #     self.assertEqual(dct['config_path'], self.config_path)
 
     @unittest.mock.patch.object(myModel, 'now', side_effect=gen_time())
     def test_submit_model(self,mck_now):

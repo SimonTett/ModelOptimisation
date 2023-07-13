@@ -16,6 +16,7 @@ import shutil
 import re
 import stat
 import engine
+import genericLib
 
 
 def IDLinterpol(inyold, inxold, xnew):
@@ -574,10 +575,10 @@ class HadCM3(Model):
                 if d2 != durn:
                     raise ValueError(f"Durations differ between {nl} and {namelistData[0]}")
             # convert to string
-            durn = self.parse_isoduration(durn)
+            durn = genericLib.parse_isoduration(durn)
             return durn  # just return the value as a 6 element list.
         else:
-            durn = self.parse_isoduration(duration)
+            durn = genericLib.parse_isoduration(duration)
             # verify that len of target is >= 1 and <= 6 and if not raise error.
             if len(durn) != 6:
                 raise Exception(f"Durn {durn} should have 6 elements. Computed from {duration} ")
@@ -862,61 +863,62 @@ class HadCM3(Model):
             return [(ocnDiff_AM0, ocnIsoDiff), (ocnDiff_AM1, ocnIsoDiff)]
 
     ## class methods now!
-    @classmethod
-    def parse_isoduration(cls, s: str | list):
-        """ Parse a str ISO-8601 Duration: https://en.wikipedia.org/wiki/ISO_8601#Durations
-          OR convert a 6 element list (y m, d, h m s) into a ISO duration.
-        Originally copied from:
-        https://stackoverflow.com/questions/36976138/is-there-an-easy-way-to-convert-iso-8601-duration-to-timedelta
-        Though could use isodate library but trying to avoid dependencies and isodate does not look maintained.
-        :param s: str to be parsed. If not a string starting with "P" then ValueError will be raised.
-        :return: 6 element list [YYYY,MM,DD,HH,mm,SS.ss] which is suitable for the UM namelists
-        """
-
-        def get_isosplit(s, split):
-            if split in s:
-                n, s = s.split(split, 1)
-            else:
-                n = '0'
-            return n.replace(',', '.'), s  # to handle like "P0,5Y"
-
-        if isinstance(s, str):
-            logging.debug("Parsing {str}")
-            if s[0] != 'P':
-                raise ValueError("ISO 8061 demands durations start with P")
-            s = s.split('P', 1)[-1]  # Remove prefix
-
-            split = s.split('T')
-            if len(split) == 1:
-                sYMD, sHMS = split[0], ''
-            else:
-                sYMD, sHMS = split  # pull them out
-
-            durn = []
-            for split_let in ['Y', 'M', 'D']:  # Step through letter dividers
-                d, sYMD = get_isosplit(sYMD, split_let)
-                durn.append(float(d))
-
-            for split_let in ['H', 'M', 'S']:  # Step through letter dividers
-                d, sHMS = get_isosplit(sHMS, split_let)
-                durn.append(float(d))
-        elif isinstance(s, list) and len(s) == 6:  # invert list
-            durn = 'P'
-            logging.debug("Converting {s} to string")
-            for element, chars in zip(s, ['Y', 'M', 'D', 'H', 'M', 'S']):
-                if element != 0:
-                    if isinstance(element, float) and element.is_integer():
-                        element = int(element)
-                    durn += f"{element}{chars}"
-                if chars == 'D':  # days want to add T as into the H, M, S cpt.
-                    if np.any(np.array(s[3:]) != 0):
-                        durn += 'T'
-            if durn == 'P':  # everything = 0
-                durn += '0S'
-        else:
-            raise ValueError(f"Do not know what to do with {s} of type {type(s)}")
-
-        return durn
+    # @classmethod
+    # def parse_isoduration(cls, s: str | typing.List) -> typing.List|str:
+    #
+    #     """ Parse a str ISO-8601 Duration: https://en.wikipedia.org/wiki/ISO_8601#Durations
+    #       OR convert a 6 element list (y m, d, h m s) into a ISO duration.
+    #     Originally copied from:
+    #     https://stackoverflow.com/questions/36976138/is-there-an-easy-way-to-convert-iso-8601-duration-to-timedelta
+    #     Though could use isodate library but trying to avoid dependencies and isodate does not look maintained.
+    #     :param s: str to be parsed. If not a string starting with "P" then ValueError will be raised.
+    #     :return: 6 element list [YYYY,MM,DD,HH,mm,SS.ss] which is suitable for the UM namelists
+    #     """
+    #
+    #     def get_isosplit(s, split):
+    #         if split in s:
+    #             n, s = s.split(split, 1)
+    #         else:
+    #             n = '0'
+    #         return n.replace(',', '.'), s  # to handle like "P0,5Y"
+    #
+    #     if isinstance(s, str):
+    #         logging.debug("Parsing {str}")
+    #         if s[0] != 'P':
+    #             raise ValueError("ISO 8061 demands durations start with P")
+    #         s = s.split('P', 1)[-1]  # Remove prefix
+    #
+    #         split = s.split('T')
+    #         if len(split) == 1:
+    #             sYMD, sHMS = split[0], ''
+    #         else:
+    #             sYMD, sHMS = split  # pull them out
+    #
+    #         durn = []
+    #         for split_let in ['Y', 'M', 'D']:  # Step through letter dividers
+    #             d, sYMD = get_isosplit(sYMD, split_let)
+    #             durn.append(float(d))
+    #
+    #         for split_let in ['H', 'M', 'S']:  # Step through letter dividers
+    #             d, sHMS = get_isosplit(sHMS, split_let)
+    #             durn.append(float(d))
+    #     elif isinstance(s, list) and len(s) == 6:  # invert list
+    #         durn = 'P'
+    #         logging.debug("Converting {s} to string")
+    #         for element, chars in zip(s, ['Y', 'M', 'D', 'H', 'M', 'S']):
+    #             if element != 0:
+    #                 if isinstance(element, float) and element.is_integer():
+    #                     element = int(element)
+    #                 durn += f"{element}{chars}"
+    #             if chars == 'D':  # days want to add T as into the H, M, S cpt.
+    #                 if np.any(np.array(s[3:]) != 0):
+    #                     durn += 'T'
+    #         if durn == 'P':  # everything = 0
+    #             durn += '0S'
+    #     else:
+    #         raise ValueError(f"Do not know what to do with {s} of type {type(s)}")
+    #
+    #     return durn
 
     ## generic function for ASTART/AINITIAL/OSTART/OINITIAl/
     def initHist_nlcfiles(self, value: str | None, nl_var: str = None):
