@@ -6,7 +6,7 @@ import unittest.mock
 import SubmitStudy
 import tempfile
 import pathlib
-
+import engine
 from simple_model import simple_model
 from Model import Model
 import StudyConfig
@@ -106,7 +106,7 @@ class Test_simple_model(unittest.TestCase):
         # test that submit_cmd is as expected.
         self.model.instantiate() # create the model on disk.
         run_info=dict()
-        eng = self.submit.submission_engine('SGE') # SGE cmd
+        eng = engine.submission_engine('SGE') # SGE cmd
         cmd = self.model.submit_cmd(run_info,eng)
         self.assertIsInstance(cmd,list)
         model = self.model

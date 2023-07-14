@@ -12,9 +12,73 @@ import typing
 import pathlib
 from abc import ABCMeta, abstractmethod
 from time import sleep
+
+
+def submission_engine(computer):
+    """
+    This should be modified if porting OptClim to a new computer system
+
+    :param computer: name of computer. If SGE or SLURM then these will be used.
+     Currently known computers are eddie, archer or ARC. eddie uses sge while the other two use slurm
+    :return: the submission engine  (None if not needed)
+    """
+
+    connect_fn = None
+    if computer in ['SGE', 'SLURM']:  # Generic SGE/SLURM
+        engine_name = computer
+    elif computer == 'eddie':  # Edinburgh cluster
+        engine_name = 'SGE'
+        connect_fn = eddie_ssh
+    elif computer == 'archer':  # UK national super-computer
+        engine_name = 'SLURM'
+    elif computer == 'ARC':  # Oxford cluster.
+        engine_name = 'SLURM'
+    else:
+        raise ValueError(f"Unknown computer {computer}")
+
+    return setup_engine(engine_name=engine_name, connect_fn=connect_fn)
+
+
+def ssh_cmd(node: str, cmd: list[str], rundir: typing.Optional[pathlib.Path] = None) -> list[str]:
+    """
+    Generic ssh command. Assumes that filesystems match on all nodes.
+     Either write a function for your machine which calls this or use functools.partial.
+    :param node: name of node to ssh to.
+    :param cmd: command to run
+    :param rundir: Where to run the command.
+       If not provided command will be run in current working dir when the generated command is run.
+        This assumes you are running the command with  journal.run_cmd(). See doc for that method.
+        If rundir is a shell var then it will be expanded when the command is run if journal.run_cmd is used.
+    :return: modified cmd which includes ssh
+    """
+    if rundir is None:
+        rundir = '$PWD'  # path at time of running (on linux systems)
+    s = f"cd {str(rundir)}; export PYTHONPATH=$PYTHONPATH ; export PATH=$PATH; " + " ".join(cmd)
+    # run_cmd (which will eventually run the command) will expand env variables with values, at the time it is run.
+    return ['ssh', node, s]
+
+
+def eddie_ssh(cmd: list[str], rundir: typing.Optional[pathlib.Path] = None) -> list[str]:
+    """
+    Example submit function for ssh on eddie. Calls ssh_cmd with node set to login03.ecdf.ed.ac.uk
+    :param cmd: command to submit -- should be a list.
+    :param rundir: Where to run the command.
+       If not provided command will be run in current working dir when the generated command is run.
+        This assumes you are running the command with  journal.run_cmd(). See doc for that method.
+        If rundir is a shell var then it will be expanded when the command is run if journal.run_cmd is used.
+    :return: modified cmd which includes ssh.
+    """
+    rcmd = ssh_cmd('login03.ecdf.ed.ac.uk', cmd, rundir=rundir)
+    return rcmd
+
+
 allowed_eng = typing.Literal['SGE', 'SLURM']
+
+connect_sig = typing.Callable[[list[str], typing.Optional[pathlib.Path]], list[str]]
+
+
 def setup_engine(engine_name: allowed_eng = 'SGE',
-                 connect_fn: typing.Optional[typing.Callable] = None) -> abstractEngine:
+                 connect_fn: typing.Optional[connect_sig] = None) -> abstractEngine:
     """
     Create an engine (used by submission system)
     :param engine_name: name of engine wanted.
@@ -33,7 +97,8 @@ class abstractEngine(metaclass=ABCMeta):
     """
     Abstract class for Engines. Inherit and implement for your own class.
     """
-    #TODO -- have submit_cmd return output and jobid.
+
+    # TODO -- have submit_cmd return output and jobid.
     def __init__(self, connect_fn: typing.Optional[typing.Callable] = None):
         """
         Initialise an Engine instance
@@ -67,7 +132,7 @@ class abstractEngine(metaclass=ABCMeta):
 
     @abstractmethod
     def submit_cmd(self,
-                   cmd: typing.List, name: str,
+                   cmd: typing.List[str], name: str,
                    outdir: typing.Optional[pathlib.Path] = None,
                    rundir: typing.Optional[pathlib.Path] = None,
                    run_code: typing.Optional[str] = None,
@@ -86,7 +151,7 @@ class abstractEngine(metaclass=ABCMeta):
         :param outdir: Directory where output will be put.
              If None will be set to cwd/output.
         :param rundir: Directory where job will be ran.
-           If None will run in current working dir.
+           If None will run in current working dir when command is run.
         :param run_code: If provided, code to use to run the job
         :param hold: If provided as a string or list of strings,
         this (these) jobids will need to successfully run before cmd is ran.
@@ -125,7 +190,7 @@ class abstractEngine(metaclass=ABCMeta):
         """
         pass
 
-    def job_status(self,job_id:str,full_output:bool =False) -> str:
+    def job_status(self, job_id: str, full_output: bool = False) -> str:
         """
         Return the status of a job. Tuple will contain strings
         :param job_id: job id for status to be checked.
@@ -135,6 +200,7 @@ class abstractEngine(metaclass=ABCMeta):
         pass
 
     # end of abstract functions
+
 
 class sge_engine(abstractEngine):
     """
@@ -158,7 +224,7 @@ class sge_engine(abstractEngine):
         :param cmd: list of commands to run.
         :param name: name of job
         :param outdir: Directory where output will be put. If None will be set to cwd/output.
-        :param rundir: Directory where job will be ran. If None will run in current working dir.
+        :param rundir: Directory where job will be ran. If None will run in current working dir when command is run.
         :param run_code: If provided, code to use to run the job
         :param hold: If provided as a string or list of strings,
         this (these) jobids will need to successfully run before cmd is ran.
@@ -174,7 +240,7 @@ class sge_engine(abstractEngine):
 
         submit_cmd = ['qsub', '-l', f'h_vmem={mem}M', '-l', f'h_rt={time}',
                       '-V',
-                      "-e", str(outdir)+"/", "-o", str(outdir)+"/",
+                      "-e", str(outdir) + "/", "-o", str(outdir) + "/",
                       '-N', name]
         # -l h_vmem={mem}M: Request mem Mbytes of virtual memory per job
         # -l h_rt={time}: Request a maximum run time of time seconds per job
@@ -201,7 +267,7 @@ class sge_engine(abstractEngine):
             submit_cmd += ['-t', f'1:{n_tasks}']
         submit_cmd += cmd
         if callable(self.connect_fn):
-            submit_cmd = self.connect_fn(submit_cmd)
+            submit_cmd = self.connect_fn(submit_cmd, rundir=rundir)
         return submit_cmd
 
     def release_job(self, jobid: str) -> typing.List[str]:
@@ -235,28 +301,28 @@ class sge_engine(abstractEngine):
 
         return output.split()[2].split('.')[0]
 
-    def job_status(self,job_id:str,full_output:bool =False) -> str:
+    def job_status(self, job_id: str, full_output: bool = False) -> str:
         """
         Return the status of a job. Tuple will contain strings
         :param job_id: job id for status to be checked.
         :param full_output If True will return (raw) full output
         :return: One of 'Running','Held','Error','Suspended','Queuing',"Failed"
         """
-        #cmd = ["qstat","-j",job_id,"|","grep","status"] 
+        # cmd = ["qstat","-j",job_id,"|","grep","status"]
         cmd = ['qstat']
         cmd = f'qstat | grep {job_id}'
         if callable(self.connect_fn):
             cmd = self.connect_fn(cmd)
-        result = subprocess.run(cmd,capture_output=True,text=True,shell=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, shell=True)
         if result.returncode == 1:
             return "notFound"
         result.check_returncode()
         status = result.stdout.split()[4]
-        if status[0]=='E':
+        if status[0] == 'E':
             return 'Error'
         elif status[0] == 'r':
             return 'Running'
-        elif status[0] in ['S','s']:
+        elif status[0] in ['S', 's']:
             return "Suspended"
         elif status == 'hqw':
             return "Held"
@@ -266,6 +332,7 @@ class sge_engine(abstractEngine):
             logging.warning(f"Got unknown status {status} from {result}")
 
         return "Failed"
+
 
 class slurm_engine(abstractEngine):
     """
@@ -287,7 +354,7 @@ class slurm_engine(abstractEngine):
         :param cmd: list of commands to run.
         :param name: name of job
         :param outdir: Directory where output will be put. If None then will be cwd/output
-        :param rundir: Directory where job will be ran. If None will run in current working dir.
+        :param rundir: Directory where job will be ran. If None will run in current working dir when command ran.
         :param run_code: If provided, code to use to run the job
         :param hold: If provided as a string, this jobid will need to successfully run before cmd is ran.
           If a list (of jobid's) then all jobs will need to be run
@@ -304,10 +371,10 @@ class slurm_engine(abstractEngine):
         submit_cmd = ['sbatch', f'--mem={mem}', f'--mincpus={n_cores}', f'--time={time}',
                       '--output', f'{outdir}/%x_%A_%a.out', '--error', f'{outdir}/%x_%A_%a.err',
                       '-J', name]
-        # --mem={mem} Request mem mbytes  of memory per job
+        # --mem={mem}: Request mem mbytes  of memory per job
         # --mincpus={n_cores}: Request at least n_cores CPU per job
         # --time={time}: Request a maximum run time of time  minutes per job
-        # -J name Name of the job
+        # -J name: Name of the job
         if run_code is not None:
             submit_cmd += ['-A', run_code]
         if rundir is not None:  # by default Slrum runs in cwd.
@@ -323,7 +390,7 @@ class slurm_engine(abstractEngine):
             submit_cmd += ['-a', f'1-{n_tasks}']  # -a =  task array
         submit_cmd += cmd
         if callable(self.connect_fn):
-            submit_cmd = self.connect_fn(submit_cmd)
+            submit_cmd = self.connect_fn(submit_cmd, rundir=rundir)
         return submit_cmd
 
     def release_job(self, jobid: str) -> typing.List:
@@ -357,7 +424,7 @@ class slurm_engine(abstractEngine):
 
         return output.split()[2].split('.')[0]
 
-    def job_status(self,job_id:str,full_output:bool =False) -> str:
+    def job_status(self, job_id: str, full_output: bool = False) -> str:
         """
         Return the status of a job. Tuple will contain strings
         :param job_id: job id for status to be checked.
@@ -365,33 +432,31 @@ class slurm_engine(abstractEngine):
         :return: One of 'Running','Held','Error','Suspended','Queuing',"Failed","NotFound"
         """
 
-
-        cmd = ["squeue",f"--job_ids={job_id}",'--long'] # get the output in long form for specified job.
+        cmd = ["squeue", f"--job_ids={job_id}", '--long']  # get the output in long form for specified job.
         if not full_output:
             cmd += ['--noheader']
         if callable(self.connect_fn):
             cmd = self.connect_fn(cmd)
-        result = subprocess.check_output(cmd,text=True)
+        result = subprocess.check_output(cmd, text=True)
         if full_output:
             return result
 
         codes = dict(
             PENDING='Queueing', RUNNING='Running', SUSPENDED='Suspended', CANCELLED='Failed', COMPLETING='Running',
             COMPLETED='Finished', CONFIGURING='Running', FAILED='Failed', TIMEOUT='Failed', PREEMPTED='Queuing',
-            NODE_FAIL='Failed',SPECIAL_EXIT='Failed')
+            NODE_FAIL='Failed', SPECIAL_EXIT='Failed')
 
-         # check for job not present (either because it ran or was never there)
+        # check for job not present (either because it ran or was never there)
         # work out how to parse result.
-        if len(result) == 0: # nothing found
+        if len(result) == 0:  # nothing found
             return "NotFound"
         status = result.split(" ")[4]
         if status.startswith("PENDING"):
-            reason = status.split("(")[1].replace(")","")
-            if reason in ['JobHeldUser','JobHeldAdmin',"Dependency"]:
+            reason = status.split("(")[1].replace(")", "")
+            if reason in ['JobHeldUser', 'JobHeldAdmin', "Dependency"]:
                 return "Held"
             else:
                 return "Queueing"
         else:
             return_code = codes[status]
             return return_code
-

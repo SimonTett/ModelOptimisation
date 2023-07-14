@@ -599,7 +599,7 @@ class ModelTestCase(unittest.TestCase):
         """
         model = self.model
         model.status = 'RUNNING'  # should be RUNNING
-        model.post_process_cmd = ['qrls', 56432]
+        model.post_process_cmd = ['qrls', '56432']
 
         with unittest.mock.patch('subprocess.check_output', autospec=True, return_value='Ran PP') as mock_chk:
             with self.assertLogs() as log:

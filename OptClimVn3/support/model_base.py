@@ -13,7 +13,7 @@ import generic_json
 
 class journal:
     """
-    Provide history information.
+    Provide history information, ability to run commands and record output.
     """
 
     @staticmethod
@@ -110,7 +110,7 @@ class journal:
     def run_cmd(self, cmd: list, **kwargs):
         """
         Run a command using subprocess.check_output and record output.
-        :param cmd: command to run
+        :param cmd: command to run. Any shell variables ($VARNAME) in the cmd will be expanded at the time of running.
         :**kwargs -- kwargs to be passed to subprocess.check_output. Will update defaults which is just text=True
         :return: output from running command
         """
@@ -118,7 +118,8 @@ class journal:
         # issue is that fileNotFound will get returned if a file does not exist. Would need to
         # convert to subprocess.CalledProcessError
         args.update(**kwargs)
-        cmd_to_run = [str(c) for c in cmd]
+        cmd_to_run = [os.path.expandvars(c) for c in cmd]
+        # using expandvars so any shell variables in command are expanded.
         # this little code fragment from chatGPT (with a bit of nudging/editing) traps that.
         try:
             logging.debug(f"Running {' '.join(cmd_to_run)}")

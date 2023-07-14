@@ -9,7 +9,6 @@ Porting hints:
 from __future__ import annotations
 
 import copy
-import importlib
 import logging
 import pathlib
 import string
@@ -94,7 +93,7 @@ class SubmitStudy(model_base, Study, journal):
         if computer is None:
             computer = self.config.machine_name()
         self.computer = computer  # really needed for dumping/loading.
-        self.engine = self.submission_engine(computer)  # engine & submit for this computer.
+        self.engine = engine.submission_engine(computer)  # engine & submit for this computer.
 
         if config_path is None:
             config_path = self.rootDir / (self.name + '.scfg')
@@ -118,29 +117,7 @@ class SubmitStudy(model_base, Study, journal):
 
         return s
 
-    @classmethod
-    def submission_engine(cls, computer):
-        """
-        This should be modified if porting OptClim to a new computer system
 
-        :param computer: name of computer. If SGE or SLURM then these will be used.
-         Currently known computers are eddie, archer or ARC. eddie uses sge while the other two use slurm
-        :return: the submission engine  (None if not needed)
-        """
-
-        connect_fn = None
-        if computer in ['SGE', 'SLURM']:  # Generic SGE/SLURM
-            engine_name = computer
-        elif computer == 'eddie':  # Edinburgh cluster
-            engine_name = 'SGE'
-        elif computer == 'archer':  # UK national super-computer
-            engine_name = 'SLURM'
-        elif computer == 'ARC':  # Oxford cluster.
-            engine_name = 'SLURM'
-        else:
-            raise ValueError(f"Unknown computer {computer}")
-
-        return engine.setup_engine(engine_name=engine_name, connect_fn=connect_fn)
 
     def create_model(self, params: dict, dump: bool = True) -> Model:
         """
@@ -154,7 +131,7 @@ class SubmitStudy(model_base, Study, journal):
         If you need functionality beyond this you may want to inherit from SubmitStudy and
           override create_model to meet your needs
         :param dump: If True dump  self (using self.dump_config method)
-        :param dump_model: If True and dump is True then dump all models.
+        :param dump: If True and dump is True then dump all models.
         :return: Key but self.model_index will be updated.
         """
 
@@ -346,7 +323,7 @@ class SubmitStudy(model_base, Study, journal):
         obj = cls(config)
         obj.fill_attrs(dct)  # fill in the rest of the objects attributes.
         # deal with the engine.
-        obj.engine = obj.submission_engine(obj.computer)  # regenerate the engine.
+        obj.engine = engine.submission_engine(obj.computer)  # regenerate the engine.
         # load up models.
         model_index = dict()
         for key, path in obj.model_index.items():  # iterate over the paths (which is how we represent the models)
@@ -484,8 +461,6 @@ class SubmitStudy(model_base, Study, journal):
             models_to_continue = models_to_continue[0:maxRuns]
             logging.debug(f"Truncating models_to_continue to {maxRuns}")
         ## work out postprocess script path
-        OptClimRoot = importlib.resources.files("OptClimVn3")  # root path for OptClimVn3
-
         if len(models_to_continue) > 0:  # (re)submit  models that need continuing and exit
             if fake_fn is not None:
                 raise ValueError('Faking and continuing')
@@ -554,12 +529,4 @@ class SubmitStudy(model_base, Study, journal):
         return study
 
 
-def eddie_ssh(cmd: list[str]) -> list[str]:
-    """
-    Example submit function for ssh on eddie
-    :param cmd: command to submit -- should be a list.
-    :return: modified cmd which includes ssh
-    """
-    cwd = str(pathlib.Path.cwd())
-    s = f"cd {cwd}; " + " ".join(cmd)
-    return ['ssh', 'login01.eddie.ecdf.ed.ac.uk', s]
+

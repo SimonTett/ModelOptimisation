@@ -494,7 +494,7 @@ class Model(ModelBaseClass, journal):
         if not self.continuable():
             if self.post_process_cmd is not None:  # check self.post_process_cmd is None and fail if not!
                 raise ValueError(f"Have post_process_cmd {self.post_process_cmd} should be None")
-            pp_cmd = [self.set_status_script, '-config_path', str(self.config_path), 'PROCESSED']  # post-process cmd.
+            pp_cmd = [str(self.set_status_script), '-config_path', str(self.config_path), 'PROCESSED']  # post-process cmd.
             run_time = self.post_process.get('runTime',1800)  # get the runTime.
             run_code = self.post_process.get('runCode', run_info.get('runCode'))
             # and the run_code -- default is value in run_info but use value from post_process if we have it.

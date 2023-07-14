@@ -48,6 +48,7 @@ class MyTestCase(unittest.TestCase):
         cpth = refDir/"dfols14param_opt3.json"
         config = StudyConfig.readConfig(cpth)
         config.baseRunID('ZZ')
+        config.machine_name('SGE') # eddie (which is default config has a connect_fn. raw SGE does not!)
         submit = SubmitStudy.SubmitStudy(config, model_name='myModel', rootDir=testDir)
         # create some models
         models=[]
