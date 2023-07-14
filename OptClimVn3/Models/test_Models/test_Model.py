@@ -463,77 +463,80 @@ class ModelTestCase(unittest.TestCase):
          Test status outside expected fails
         :return:
         """
+        model = self.model
+        model.status = 'INSTANTIATED'  # should have state instantiated
+        omodel = copy.deepcopy(model)
+        # need to patch subprocess.check_output
+        with unittest.mock.patch('subprocess.check_output', autospec=True,
+                                 return_value="Your job 123456") as mock_chk:
+            result = model.submit_model({}, self.engine)
+            mock_chk.assert_called()  # actually got called
+            kw_args = dict(text=True)
+            # args is a tuple of the arguments (just one list in this case)
+            name =  f"{model.name}{model.run_count:05d}"
+            outdir = model.model_dir / 'model_output'
+            scmd = (self.engine.submit_cmd([str(model.model_dir/'submit.sh')],name,outdir=outdir,time=2000),)
+            self.assertEqual(mock_chk.call_args.args,scmd)
+            self.assertEqual(mock_chk.call_args.kwargs, kw_args)
+            # expect result to be "123456" # a fake jobid
+            self.assertEqual(result, "123456")
+            # also expect changes in status, history, and post_process_cmd
+            self.assertEqual(len(model._history), 2)
+            k, v = model._history.popitem()  # remove last history entry.
+            self.assertEqual(v, [f"Status set to SUBMITTED in {model.model_dir}"])
+            self.assertEqual(model.post_process_cmd,['qrls','123456'])
+            sub_script = [str(model.set_status_script),str(model.config_path),'PROCESSED']
+            expect_output = dict(cmd=self.engine.submit_cmd(sub_script,f"PP_{model.name}",time=1800,hold=True),result='Your job 123456')
+            got = list(model._output.values())[0][0]
+            self.assertEqual(got,expect_output)
 
-        def eddie_ssh(cmd: list[str]) -> list[str]:
-            """
-            Example submit function for ssh on eddie
-            :param cmd: command to submit -- should be a list.
-            :return: modified cmd which includes ssh
-            """
-            cwd = str(pathlib.Path.cwd())
-            s = f"cd {cwd}; " + " ".join(cmd)
-            return ['ssh', 'login01.eddie.ecdf.ed.ac.uk', s]
+            # set status to CONTINUE and test that works.
+            mock_chk.reset_mock()
+            model.status = "CONTINUE"
+            result = model.submit_model({}, self.engine)
+            self.assertIsNone(result) # continuing so no pp jid
+            mock_chk.assert_called()  # actually got called
+            kw_args = dict(text=True)
+            name =  f"{model.name}{model.run_count:05d}"
+            outdir = model.model_dir / 'model_output'
+            scmd = (self.engine.submit_cmd([str(model.model_dir/'continue.sh')],name,outdir=outdir,time=2000),)
+            self.assertEqual(mock_chk.call_args.args, scmd)
+            self.assertEqual(mock_chk.call_args.kwargs, kw_args)
 
-            model = self.model
-            model.status = 'INSTANTIATED'  # should have state instantiated
-            omodel = copy.deepcopy(model)
-            # need to patch subprocess.check_output
-            with unittest.mock.patch('subprocess.check_output', autospec=True,
-                                     return_value="Submitted Model") as mock_chk:
-                result = model.submit_model(None, post_process_cmd=None)
-                mock_chk.assert_called()  # actually got called
-                kw_args = dict(cwd=True, text=True)
-                # args is a tuple of the arguments (just one list in this case)
-                self.assertEqual(mock_chk.call_args.args, (['submit.sh'],))
-                self.assertEqual(mock_chk.call_args.kwargs, kw_args)
-                # expect result to be "Submitted Model"
-                self.assertEqual(result, "Submitted Model")
-                # also expect changes in status, history, and post_process_cmd
-                self.assertEqual(len(model.history), 2)
-                k, v = model.history.popitem()  # remove last history entry.
-                self.assertEqual(v, [f"Status set to SUBMITTED in {model.model_dir}"])
-                self.assertIsNone(model.post_process_cmd)
-                self.assertEqual(["Submitted Model"], model.output['SUBMITTED'])
+            # also expect changes in status, history, and post_process_cmd
+            self.assertEqual(len(model._history), 2)
+            k, v = model._history.popitem()  # remove last history entry.
+            self.assertEqual(v, [f"Status set to SUBMITTED in {model.model_dir}"])
+            self.assertEqual(model.post_process_cmd,['qrls','123456'])
+            sub_script = [str(model.set_status_script), str(model.config_path), 'PROCESSED']
+            expect_output = dict(cmd=self.engine.submit_cmd(sub_script, f"PP_{model.name}", time=1800, hold=True),
+                                 result='Your job 123456')
+            got = list(model._output.values())[0][0]
+            self.assertEqual(got, expect_output)
 
-                # set status to CONTINUE and test that works.
-                mock_chk.reset_mock()
-                model.status = "CONTINUE"
-                result = model.submit_model(None, post_process_cmd=None)
-                mock_chk.assert_called()  # actually got called
-                kw_args = dict(cwd=True, text=True)
-                self.assertEqual(mock_chk.call_args.args, (['continue.sh'],))
-                self.assertEqual(mock_chk.call_args.kwargs, kw_args)
-                # expect result to be "Submitted Model"
-                self.assertEqual(result, "Submitted Model")
-                # also expect changes in status, history, and post_process_cmd
-                self.assertEqual(len(model.history), 2)
-                k, v = model.history.popitem()  # remove last history entry.
-                self.assertEqual(v, [f"Status set to SUBMITTED in {model.model_dir}"])
-                self.assertIsNone(model.post_process_cmd)
-                self.assertEqual(["Submitted Model"] * 2, model.output['SUBMITTED'])
+            # test that submit_cmd works. Will still be continuing!
+            mock_chk.reset_mock()
+            model.status = "CONTINUE"
+            result = model.submit_model({},self.engine)
+            mock_chk.assert_called()  # actually got called
 
-                # test that submit_cmd works. Will still be continuing!
-                mock_chk.reset_mock()
-                model.status = "CONTINUE"
-                result = model.submit_model(eddie_ssh, post_process_cmd=None)
-                mock_chk.assert_called()  # actually got called
-                self.assertEqual(mock_chk.call_args.args, (eddie_ssh(['continue.sh']),))
+            # test that post-process cmd works too. This will be in the model.
+            mock_chk.reset_mock()
+            model.status = "INSTANTIATED"
+            model.post_process_cmd = None # reset this to None
+            pp = ['qrls', '123456']
+            result = model.submit_model({},self.engine)
+            self.assertEqual(model.post_process_cmd, pp)
 
-                # test that post-process cmd works too. This will be in the model.
-                mock_chk.reset_mock()
-                model.status = "INSTANTIATED"
-                pp = ['qrls', 23456]
-                result = model.submit_model(None, post_process_cmd=pp)
-                self.assertEqual(model.post_process_cmd, pp)
-
-                # test that fake-fn does not submit and puts some results in,
-                mock_chk.reset_mock()
-                model.status = "INSTANTIATED"
-                model.submit_model(None, fake_function=fake_function)
-                mock_chk.assert_not_called()
-                expect = fake_function(model.parameters).rename(model.name)
-                pdtest.assert_series_equal(model.simulated_obs, expect)
-                self.assertEqual(model.status, 'PROCESSED')
+            # test that fake-fn does not submit and puts some results in,
+            mock_chk.reset_mock()
+            model.status = "INSTANTIATED"
+            model.post_process_cmd = None # reset this to None
+            model.submit_model({},self.engine,fake_function=fake_function)
+            mock_chk.assert_not_called()
+            expect = fake_function(model.parameters).rename(model.name)
+            pdtest.assert_series_equal(model.simulated_obs, expect)
+            self.assertEqual(model.status, 'PROCESSED')
 
     @unittest.mock.patch.object(myModel, 'now', side_effect=gen_time())
     def test_running(self,mck_now):

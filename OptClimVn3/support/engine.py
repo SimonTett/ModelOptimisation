@@ -132,7 +132,8 @@ class abstractEngine(metaclass=ABCMeta):
 
     @abstractmethod
     def submit_cmd(self,
-                   cmd: typing.List[str], name: str,
+                   cmd: typing.List[str],
+                   name: str,
                    outdir: typing.Optional[pathlib.Path] = None,
                    rundir: typing.Optional[pathlib.Path] = None,
                    run_code: typing.Optional[str] = None,

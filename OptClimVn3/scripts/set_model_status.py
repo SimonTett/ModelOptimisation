@@ -18,7 +18,7 @@ parser = argparse.ArgumentParser(description="""
     """)
 parser.add_argument("config",type=str,help='path for model config')
 parser.add_argument("status", type=str, help="What to set model status to", choices=allowed_keys)
-parser.add_argument("-v", "--verbose", action="count", default=None,
+parser.add_argument("-v", "--verbose", action="count", default=0,
                     help="Be more verbose. Level one gives logging.INFO and level 2 gives logging.DEBUG")
 args = parser.parse_args()
 # deal with verbosity

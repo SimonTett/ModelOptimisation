@@ -16,11 +16,12 @@ import xarray
 
 import json
 from model_base import journal
-from ModelBaseClass import ModelBaseClass,register_param
+from ModelBaseClass import ModelBaseClass, register_param
 from namelist_var import namelist_var
 import engine
-#from Study import Study
 
+
+# from Study import Study
 
 
 class Model(ModelBaseClass, journal):
@@ -83,7 +84,7 @@ class Model(ModelBaseClass, journal):
                  parameters: typing.Optional[dict] = None,
                  post_process_cmd: typing.Optional[typing.List] = None,
                  simulated_obs: typing.Optional[pd.Series] = None,
-                 study:typing.Optional["Study"] = None):
+                 study: typing.Optional["Study"] = None):
         """
         Initialise the Model class.
 
@@ -121,7 +122,8 @@ class Model(ModelBaseClass, journal):
            If you do take great care and worry about recursion as study stores models.
            Note that this implementation does not take use study
 
-        All (except study) are stored as attributes and are publicly available though user should be careful if they modify them.
+        All (except study) are stored as attributes and are publicly available
+          though user should be careful if they modify them.
         public attributes:
         model_dir -- directory where model information is stored
         reference --  where the reference configuration came from.
@@ -218,12 +220,12 @@ class Model(ModelBaseClass, journal):
         """
         if post_process is None:
             return
-        pp= copy.deepcopy(post_process)
-        script = pp.pop('script',None)
+        pp = copy.deepcopy(post_process)
+        script = pp.pop('script', None)
         if script is None:
             raise ValueError("No script in post_process")
 
-        interp = pp.pop('interp',None)
+        interp = pp.pop('interp', None)
         input_file = pp.pop('input_file', 'input.json')
         output_file = pp.pop('output_file', 'sim_obs.json')
 
@@ -286,7 +288,8 @@ class Model(ModelBaseClass, journal):
 
     def __repr__(self):
         """
-        String that represents model. Shows type,name,status, no of parameters and (if possible) when history last updated
+        String that represents model. Shows type,name,status, no of parameters and
+          (if possible) when history last updated
         :return: str
         """
         last_hist_key = self.last_history_key()
@@ -392,9 +395,9 @@ class Model(ModelBaseClass, journal):
         self.modify_model()  # do any modifications to model needed before setting params.
         self.set_params()  # set the params
         # set permissions to rxw,rx,rx for submit and continue script.
-        for file in [self.submit_script,self.continue_script]:
+        for file in [self.submit_script, self.continue_script]:
             if file is not None:
-                (self.model_dir/file).chmod(0o766) # set permission
+                (self.model_dir / file).chmod(0o766)  # set permission
 
         self.set_status('INSTANTIATED')
 
@@ -459,7 +462,7 @@ class Model(ModelBaseClass, journal):
            If None then the cmd will simply be ran.
         :param fake_function -- if provided no submission  will be done. Instead, this function will be used to generate fake obs.
           Designed for testing code that runs whole algorithms. Takes one argument -- dict of parameters.
-        :outputDir -- path to where output goes. Used for post-processing.
+        :param outputDir -- path to where output goes. Used for post-processing.
           If None default from engine.submit will be used
         :return: The jobid of the post-process submission. None if nothing submitted (fake_fn set or continuing)
 
@@ -488,14 +491,13 @@ class Model(ModelBaseClass, journal):
             self.process()  # and process.
             return None  # nothing submitted.
         # real stuff.
-        # setup env.
-        #self.setup_model_env()  # now have env (and other stuff) setup.
         # first sort out the post-processing.
         if not self.continuable():
             if self.post_process_cmd is not None:  # check self.post_process_cmd is None and fail if not!
                 raise ValueError(f"Have post_process_cmd {self.post_process_cmd} should be None")
-            pp_cmd = [str(self.set_status_script), '-config_path', str(self.config_path), 'PROCESSED']  # post-process cmd.
-            run_time = self.post_process.get('runTime',1800)  # get the runTime.
+            pp_cmd = [str(self.set_status_script),  str(self.config_path),
+                      'PROCESSED']  # post-process cmd.
+            run_time = self.post_process.get('runTime', 1800)  # get the runTime.
             run_code = self.post_process.get('runCode', run_info.get('runCode'))
             # and the run_code -- default is value in run_info but use value from post_process if we have it.
             pp_cmd = engine.submit_cmd(pp_cmd, f"PP_{self.name}",
@@ -530,7 +532,8 @@ class Model(ModelBaseClass, journal):
         Generate the submission command. Over-ride this for your own model.
         :param run_info -- run_info block.
         :param engine -- engine info.
-        If status is INSTANTIATED or PERTURBED then this runs engine.connect_fn on  ["submit.sh"] and if CONTINUE runs on  ["continue.sh"]
+        If status is INSTANTIATED or PERTURBED then this runs engine.submit_cmd on  [self.submit_script] and
+        if CONTINUE runs on  [self.continue_script]
         output should go to model_dir/'model_output' which will be created if it does not exist.
         """
         if self.status in ['INSTANTIATED', 'PERTURBED']:
@@ -541,7 +544,7 @@ class Model(ModelBaseClass, journal):
             raise ValueError(f"Status {self.status} not expected ")
         script = self.model_dir / script
         runCode = run_info.get('runCode')
-        runTime = run_info.get('runTime')
+        runTime = run_info.get('runTime',2000) # 2000 seconds as default.
         # need to (potentially) modify model script so runTime and runCode are set.
         # but in this case just use the submit.
         outdir = self.model_dir / 'model_output'
@@ -650,7 +653,7 @@ class Model(ModelBaseClass, journal):
 
         input_file = self.model_dir / self._post_process_input  # generate json file to hold post process info
         logging.debug(f"Dumping post_process to {input_file}")
-        output = dict(postProcess=self.post_process) # wrap post process in dict
+        output = dict(postProcess=self.post_process)  # wrap post process in dict
         with open(input_file, 'w') as fp:
             json.dump(output, fp)
         # dump the post-processing dict for the post-processing to  pick up.
