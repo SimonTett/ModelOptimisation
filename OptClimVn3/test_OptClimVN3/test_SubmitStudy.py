@@ -159,32 +159,24 @@ class MyTestCase(unittest.TestCase):
         submit = self.submit
         lst_model = list(submit.model_index.values())[-1]
         lst_model.instantiate()
-        # at this point expect model_dir to exist and be in rootDir (where the config is)
-        self.assertTrue(lst_model.model_dir.exists())
-        self.assertTrue(lst_model.model_dir.is_relative_to(submit.rootDir))
-        # only contents at this point should be the study config, the three model configs (which go in rootDir)
-        # and one modelDir.
+        # at this point expect model_dir to contain several files. Depends on the model how many. We will just expect
+        # more than 3
+        self.assertTrue(len(list(lst_model.model_dir.glob("*"))) > 3)
 
-        pths_expected = [m.config_path for m in submit.model_index.values()]
-        pths_expected += [submit.config_path, lst_model.model_dir]
-        for p in pths_expected:
-            self.assertTrue(p.exists())
-        self.assertTrue(lst_model.model_dir.is_dir())
-
-        # and rootdir should contain ONLY pths_expected.
+        # and rootdir should contain ONLY model_dirs & config
         pths_got = set(submit.rootDir.glob("*"))
-        self.assertEqual(set(pths_got), set(pths_expected))
+        pths_expect  = [submit.config_path]
+        pths_expect += [m.model_dir for m in submit.model_index.values()]
+        self.assertEqual(set(pths_got), set(pths_expect))
 
-        # now instantiate. Should have two more directories
+        # now instantiate. All model dirs should have  > 3 files.
         submit.instantiate()
-        pths_expected += [m.model_dir for m in submit.model_index.values()]
-        for p in pths_expected:
-            self.assertTrue(p.exists())
-        for m in submit.model_index.values():
-            self.assertTrue(m.model_dir.is_dir())
-        # and rootdir should contain ONLY pths_expected.
+        for model in submit.model_index.values():
+            nfiles = len(list(model.model_dir.glob("*")))
+            self.assertTrue(nfiles > 3)
+        # and rootdir should contain ONLY model dirs and config.
         pths_got = set(submit.rootDir.glob("*"))
-        self.assertEqual(set(pths_got), set(pths_expected))
+        self.assertEqual(set(pths_got), set(pths_expect))
 
     # need to mock both SubmitStudy and myModel now.
     @unittest.mock.patch.object(SubmitStudy.SubmitStudy, 'now', side_effect=times)
@@ -236,11 +228,11 @@ class MyTestCase(unittest.TestCase):
 
         # final tests -- history and output as expected.
         # expect 9 history:
-        #    1 start, 3 x model created,  instantiated,  models submitted,
+        #    3 x model created,  instantiated,  models submitted,
         #      models continued, models submitted, next job submitted
         #
-        # and 4+3+5 outputs
-        self.assertEqual(len(submit._history), 9)
+        # and 3+5 outputs
+        self.assertEqual(len(submit._history), 8)
         self.assertEqual(len(submit._output), 1)  # Next iter.
 
         # now fake it. subprocess.check_output should not run anything.

@@ -467,8 +467,7 @@ class SubmitStudy(model_base, Study, journal):
             if fake_fn is not None:
                 raise ValueError('Faking and continuing')
             for model in models_to_continue:
-                pp_jid = model.submit_model(run_info, self.engine,
-                                            outputDir=output_dir)
+                pp_jid = model.submit_model(run_info, self.engine)
                 logging.debug(f"Continuing {model.name} ")
 
             logging.info(f"Continued {len(models_to_continue)} models and done")
@@ -486,8 +485,7 @@ class SubmitStudy(model_base, Study, journal):
         # submit models! Faking if necessary.
         pp_jids = []  # list of job ids from post-processing
         for model in model_list:  # submit model and post-processing
-            pp_jid = model.submit_model(run_info, self.engine,
-                                        outputDir=output_dir, fake_function=fake_fn)
+            pp_jid = model.submit_model(run_info, self.engine,fake_function=fake_fn)
             if pp_jid is not None:  # got a post-processing jid.
                 pp_jids.append(pp_jid)  # add it to the list
 

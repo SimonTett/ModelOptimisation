@@ -475,7 +475,9 @@ class ModelTestCase(unittest.TestCase):
             # args is a tuple of the arguments (just one list in this case)
             name =  f"{model.name}{model.run_count:05d}"
             outdir = model.model_dir / 'model_output'
-            scmd = (self.engine.submit_cmd([str(model.model_dir/'submit.sh')],name,outdir=outdir,time=2000),)
+            scmd = (self.engine.submit_cmd(['submit.sh'],name,
+                                           rundir=model.model_dir,
+                                           outdir=outdir,time=2000),)
             self.assertEqual(mock_chk.call_args.args,scmd)
             self.assertEqual(mock_chk.call_args.kwargs, kw_args)
             # expect result to be "123456" # a fake jobid
@@ -486,7 +488,10 @@ class ModelTestCase(unittest.TestCase):
             self.assertEqual(v, [f"Status set to SUBMITTED in {model.model_dir}"])
             self.assertEqual(model.post_process_cmd,['qrls','123456'])
             sub_script = [str(model.set_status_script),str(model.config_path),'PROCESSED']
-            expect_output = dict(cmd=self.engine.submit_cmd(sub_script,f"PP_{model.name}",time=1800,hold=True),result='Your job 123456')
+            expect_output = dict(cmd=self.engine.submit_cmd(sub_script,f"PP_{model.name}",
+                                                            outdir = model.model_dir/'PP_output',
+                                                            rundir= model.model_dir,
+                                                            time=1800,hold=True),result='Your job 123456')
             got = list(model._output.values())[0][0]
             self.assertEqual(got,expect_output)
 
@@ -499,7 +504,9 @@ class ModelTestCase(unittest.TestCase):
             kw_args = dict(text=True)
             name =  f"{model.name}{model.run_count:05d}"
             outdir = model.model_dir / 'model_output'
-            scmd = (self.engine.submit_cmd([str(model.model_dir/'continue.sh')],name,outdir=outdir,time=2000),)
+            scmd = (self.engine.submit_cmd([str('continue.sh')],name,
+                                           rundir=model.model_dir,
+                                           outdir=outdir,time=2000),)
             self.assertEqual(mock_chk.call_args.args, scmd)
             self.assertEqual(mock_chk.call_args.kwargs, kw_args)
 
@@ -509,7 +516,10 @@ class ModelTestCase(unittest.TestCase):
             self.assertEqual(v, [f"Status set to SUBMITTED in {model.model_dir}"])
             self.assertEqual(model.post_process_cmd,['qrls','123456'])
             sub_script = [str(model.set_status_script), str(model.config_path), 'PROCESSED']
-            expect_output = dict(cmd=self.engine.submit_cmd(sub_script, f"PP_{model.name}", time=1800, hold=True),
+            expect_output = dict(cmd=self.engine.submit_cmd(sub_script, f"PP_{model.name}",
+                                                            rundir=model.model_dir,
+                                                            outdir=model.model_dir/'PP_output',
+                                                            time=1800, hold=True),
                                  result='Your job 123456')
             got = list(model._output.values())[0][0]
             self.assertEqual(got, expect_output)

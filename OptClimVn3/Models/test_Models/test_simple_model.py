@@ -112,7 +112,7 @@ class Test_simple_model(unittest.TestCase):
         model = self.model
         outdir = model.model_dir / 'model_output'
         expected_cmd = eng.submit_cmd([model.submit_script,str(model.StudyConfig_path)],
-                                      f"{model.name}{model.run_count:05d}", outdir, time=30)
+                                      f"{model.name}{model.run_count:05d}", outdir, rundir=model.model_dir,time=30)
         self.assertEqual(cmd,expected_cmd)
 
     def test_dump_load(self):

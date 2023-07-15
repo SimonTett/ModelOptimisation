@@ -449,7 +449,6 @@ class Model(ModelBaseClass, journal):
     def submit_model(self, run_info: dict,
                      engine: engine.abstractEngine,
                      fake_function: typing.Optional[typing.Callable] = None,
-                     outputDir: typing.Optional[pathlib.Path] = None
                      ) -> typing.Optional[str]:
         """
         Submit  a model and its post-processing.
@@ -500,15 +499,16 @@ class Model(ModelBaseClass, journal):
             run_time = self.post_process.get('runTime', 1800)  # get the runTime.
             run_code = self.post_process.get('runCode', run_info.get('runCode'))
             # and the run_code -- default is value in run_info but use value from post_process if we have it.
-            outputDir = self.model_dir/'pp_output' # post processing output goes in Model Dir
+            outputDir = self.model_dir/'PP_output' # post processing output goes in Model Dir
             outputDir.mkdir(exist_ok=True,parents=True)
             pp_cmd = engine.submit_cmd(pp_cmd, f"PP_{self.name}",
                                        outdir=outputDir,
                                        hold=True,
                                        time=run_time,
+                                       rundir = self.model_dir,
                                        run_code=run_code)  # generate the submit cmd.
             # note the post-processing is submitted "held".It needs to be released once the model
-            # has actually finished. That could require multiple simulations. So we don't tag it on the model
+            # has actually finished. That could require multiple simulations. So we don't hold it on the model
             # and explicitly release_job it.
             output = self.run_cmd(pp_cmd)  # submit the post-processing job. Note it is held.
             logging.debug(f"post-processing run {pp_cmd} and got {output}")
@@ -544,7 +544,6 @@ class Model(ModelBaseClass, journal):
             script = self.continue_script
         else:
             raise ValueError(f"Status {self.status} not expected ")
-        script = self.model_dir / script
         runCode = run_info.get('runCode')
         runTime = run_info.get('runTime',2000) # 2000 seconds as default.
         # need to (potentially) modify model script so runTime and runCode are set.
