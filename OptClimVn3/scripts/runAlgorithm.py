@@ -46,9 +46,8 @@ import StudyConfig
 
 import genericLib
 import logging
+import shutil
 
-
-print("Known models are ", Model.known_models())
 
 ## main script
 
@@ -59,6 +58,8 @@ parser.add_argument("-d", "--dir", help="path to root directory where model runs
 parser.add_argument("jsonFile", help="json file that defines the study")
 parser.add_argument("--delete", action='store_true',
                     help="Delete the configuration")
+parser.add_argument("--purge", action='store_true',
+                    help="purge the configuration by deleting the directory. Will ask if OK.")
 parser.add_argument("-v", "--verbose", action='count', default=0,
                     help="level of logging info level= 1 = info, level = 2 = debug ")
 parser.add_argument("--dryrun", action='store_true',
@@ -87,7 +88,7 @@ jsonFile = pathlib.Path(os.path.expanduser(os.path.expandvars(args.jsonFile)))
 delete = args.delete
 monitor = args.monitor
 fail = args.fail
-
+purge = args.purge
 if verbose == 1:
     logging.basicConfig(level=logging.INFO, force=True)
 elif verbose > 1:
@@ -95,19 +96,35 @@ elif verbose > 1:
 else:
     pass
 
-configData = StudyConfig.readConfig(filename=jsonFile)  # parse the jsonFile.
-
-args_not_for_restart = ['--delete']  # arguments to be removed from the restart cmd
-restartCMD = [arg for arg in sys.argv if arg not in args_not_for_restart]  # generate restart cmd.
-if dry_run or read_only:
-    restartCMD = None  # no restarting!
-
-logging.info("Running from config %s named %s" % (jsonFile, configData.name()))
-
 if args.dir is not None:
     rootDir = Model.expand(args.dir)  # directory defined so set rootDir
 else:  # set rootDir to cwd/name
     rootDir = pathlib.Path.cwd() / configData.name()  # default path
+ 
+
+if purge: # purging data? Do early so as to minimize amount of output user sees before this.
+    result = input(f">>>Going to delete all in {rootDir}<<<. OK ? (yes if so): ") 
+    if result.lower() in ['yes']:
+        print(f"Deleting all files in {rootDir} and continuing")
+        shutil.rmtree(rootDir, onerror=genericLib.errorRemoveReadonly)
+    else:
+        print(f"Nothing deleted.")
+
+logging.info(f"Known models are {', '.join(Model.known_models())}")
+
+configData = StudyConfig.readConfig(filename=jsonFile)  # parse the jsonFile.
+
+args_not_for_restart = ['--delete','--purge']  # arguments to be removed from the restart cmd
+restartCMD = [arg for arg in sys.argv if arg not in args_not_for_restart]  # generate restart cmd.
+# because of way SGE (and maybe SLURM work) the cmd will not be runAlgorithm so fix it back!
+restartCMD[0]=Model.expand('$OPTCLIMTOP/OptClimVn3/scripts/runAlgorithm.py') # need full path.
+if dry_run or read_only:
+    restartCMD = None  # no restarting!
+
+logging.info(f"restartCMD is {restartCMD}")
+logging.info("Running from config %s named %s" % (jsonFile, configData.name()))
+
+
 
 config_path = rootDir / (configData.name() + ".scfg")
 

@@ -9,7 +9,7 @@ import re
 import platform
 from Model import Model
 import engine  # need the engine!
-
+import pathlib
 
 
 class simple_model(Model):
@@ -30,6 +30,8 @@ class simple_model(Model):
         self.StudyConfig_path = None  # setup StudyConfig_path attribute.
         if study is not None:
             self.StudyConfig_path = study.config.fileName()  # store the path to the config.
+            if not self.StudyConfig_path.is_absolute(): # not absolute so make it so
+                self.StudyConfig_path = pathlib.Path.cwd()/self.StudyConfig_path
         self.submit_script ='run_simple_model.py'
         self.continue_script = None # no continue script
 
@@ -112,8 +114,9 @@ class simple_model(Model):
         # just use the submit.
         outdir = self.model_dir / 'model_output'
         outdir.mkdir(parents=True, exist_ok=True)
-        cmd = engine.submit_cmd([script, str(self.StudyConfig_path)], f"{self.name}{self.run_count:05d}", outdir,
-                                run_code=runCode, time=runTime)
+        cmd = engine.submit_cmd([script, str(self.StudyConfig_path)], 
+                                f"{self.name}{self.run_count:05d}", outdir,
+                                run_code=runCode, time=runTime,rundir=self.model_dir)
 
         return cmd
 

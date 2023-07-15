@@ -124,6 +124,12 @@ class journal:
         try:
             logging.debug(f"Running {' '.join(cmd_to_run)}")
             output = subprocess.check_output(cmd_to_run, **args)  # run cmd
+        except subprocess.CalledProcessError as e:
+            print("Failed")
+            print("stdout\n",e.output)
+            print("="*60)
+            print("stderr\n",e.stderr)
+            raise
         except FileNotFoundError as e:  # cmd not found
             raise subprocess.CalledProcessError(
                 returncode=e.errno,

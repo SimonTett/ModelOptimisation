@@ -39,7 +39,7 @@ def submission_engine(computer):
     return setup_engine(engine_name=engine_name, connect_fn=connect_fn)
 
 
-def ssh_cmd(node: str, cmd: list[str], rundir: typing.Optional[pathlib.Path] = None) -> list[str]:
+def ssh_cmd(node: str, cmd: list[str], rundir: typing.Optional[pathlib.Path|str] = None) -> list[str]:
     """
     Generic ssh command. Assumes that filesystems match on all nodes.
      Either write a function for your machine which calls this or use functools.partial.
@@ -53,8 +53,9 @@ def ssh_cmd(node: str, cmd: list[str], rundir: typing.Optional[pathlib.Path] = N
     """
     if rundir is None:
         rundir = '$PWD'  # path at time of running (on linux systems)
-    s = f"cd {str(rundir)}; export PYTHONPATH=$PYTHONPATH ; export PATH=$PATH; " + " ".join(cmd)
+    s = f"cd {str(rundir)}; export PYTHONPATH=$PYTHONPATH ; export PATH=$PATH; export OPTCLIMTOP=$OPTCLIMTOP; " + " ".join([str(c) for c in cmd])
     # run_cmd (which will eventually run the command) will expand env variables with values, at the time it is run.
+    logging.debug(f"{s} will be run on {node}")
     return ['ssh', node, s]
 
 

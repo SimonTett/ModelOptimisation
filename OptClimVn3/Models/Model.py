@@ -500,6 +500,8 @@ class Model(ModelBaseClass, journal):
             run_time = self.post_process.get('runTime', 1800)  # get the runTime.
             run_code = self.post_process.get('runCode', run_info.get('runCode'))
             # and the run_code -- default is value in run_info but use value from post_process if we have it.
+            outputDir = self.model_dir/'pp_output' # post processing output goes in Model Dir
+            outputDir.mkdir(exist_ok=True,parents=True)
             pp_cmd = engine.submit_cmd(pp_cmd, f"PP_{self.name}",
                                        outdir=outputDir,
                                        hold=True,
@@ -551,7 +553,8 @@ class Model(ModelBaseClass, journal):
         outdir.mkdir(parents=True, exist_ok=True)
 
         cmd = engine.submit_cmd([str(script)], f"{self.name}{self.run_count:05d}", outdir,
-                                run_code=runCode, time=runTime)
+                                run_code=runCode, time=runTime,rundir=self.model_dir)
+        breakpoint()
 
         return cmd
 

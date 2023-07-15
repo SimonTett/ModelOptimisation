@@ -100,7 +100,9 @@ class SubmitStudy(model_base, Study, journal):
         self.config_path = config_path
 
         self.name_values = None  # init the counters for names.
-        self.update_history(f"Created SubmitStudy {self}")
+        self.update_history(None)  # init history.
+        self.store_output(None, None)  # init store output
+
         self.iter_keys = dict()  # key iteration pairs.
 
     def __repr__(self):
@@ -139,14 +141,14 @@ class SubmitStudy(model_base, Study, journal):
         model_dir = self.rootDir / name
         if model_dir.exists():
             raise ValueError(f"model_dir {model_dir} already exists")
-        config_path = self.rootDir / (name + '.mcfg')
+        config_path = model_dir/ (name + '.mcfg') # create model config in model dir
         if config_path.exists():
             raise ValueError(f"config_path {config_path} already exists")
         paramDir = copy.deepcopy(params)
         paramDir.update(self.config.fixedParams())  # and bring in any fixed params there are
         reference = paramDir.pop('reference', self.refDir)
         model_name = paramDir.pop('model_name', self.model_name)
-        post_process = self.config.get('post_process')
+        post_process = self.config.getv('postProcess')
         study = self.to_study()  # convert SubmitStudy to Study
         model = Model.model_init(model_name, name=name,
                                  reference=reference,
@@ -499,9 +501,10 @@ class SubmitStudy(model_base, Study, journal):
         # now (re)submit this entire script so that the next iteration in the algorithm can be ran
         if (next_iter_cmd is not None) and (len(pp_jids) > 0):
             # submit the next job in the iteration if have one and submitted post-processing.
-            next_job_name = 'RE' + configName
+            iter_count = np.max(list(self.iter_keys.values()))  # iteration we are at.
+            next_job_name = f"{configName}_{iter_count}"
             run_next_submit = self.engine.submit_cmd(next_iter_cmd, next_job_name, outdir=output_dir,
-                                                     run_code=runCode, rundir=self.rootDir,
+                                                     run_code=runCode,
                                                      hold=pp_jids)
             output = self.run_cmd(run_next_submit)
             logging.info(f"Next iteration cmd is {run_next_submit} with output:{output}")
