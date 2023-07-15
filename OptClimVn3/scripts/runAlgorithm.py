@@ -64,7 +64,7 @@ parser.add_argument("-v", "--verbose", action='count', default=0,
                     help="level of logging info level= 1 = info, level = 2 = debug ")
 parser.add_argument("--dryrun", action='store_true',
                     help="if set do not submit any jobs but do instantiate models. Good for testing")
-parser.add_argument("--readOnly", action='store_true', help="read data but do not instantiate or submit jobs.")
+parser.add_argument("--readonly", action='store_true', help="read data but do not instantiate or submit jobs.")
 parser.add_argument("-t", "--test", action='store_true',
                     help='If set run fake function rather than submitting models.')
 parser.add_argument("-m", "--monitor", action='store_true', help='Producing monitoring plot after running')
@@ -82,7 +82,7 @@ parser.add_argument("--fail", help=helpStr,
 args = parser.parse_args()
 verbose = args.verbose
 dry_run = args.dryrun
-read_only = args.readOnly
+read_only = args.readonly
 testRun = args.test
 jsonFile = pathlib.Path(os.path.expanduser(os.path.expandvars(args.jsonFile)))
 delete = args.delete
@@ -166,7 +166,11 @@ if rSUBMIT is None:  # no configuration exists. So create it.
 if not (dry_run or read_only):  # not dry running or read only.
     # so first deal with failed models and then models that are already instantiated and so need running.
     # This happens if not all models that were instantiated were submitted.
-    failed_models = rSUBMIT.failed_models()
+    failed_models = rSUBMIT.failed_models() # TODO FIXME. THIS DOES NOT WORK
+    # Alt test for a model failure is if the model status is RUNNING but the model not
+    # in the Q (because it should either be FAILED, SUCEEDED or PROCESSED)
+    # If status is SUCEEDED then and PP job not in the Q then something went wrong with 
+    # PP. 
     if len(failed_models):  # Some runs failed. Use fail to decide what to do
         logging.info(f"{failed_models} models failed. {rSUBMIT}")
         if fail == 'fail':

@@ -554,7 +554,6 @@ class Model(ModelBaseClass, journal):
 
         cmd = engine.submit_cmd([str(script)], f"{self.name}{self.run_count:05d}", outdir,
                                 run_code=runCode, time=runTime,rundir=self.model_dir)
-        breakpoint()
 
         return cmd
 

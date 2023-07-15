@@ -6,7 +6,7 @@
     "Name": "dfols_r",
     "Name_comment": "Study Name",
     "baseRunID": "d7",
-    "baseRunID_comment": "base for runID. .",
+    "baseRunID_comment": "base for runID",
     "run_info": {
         "runTime": 60,
         "runTime_comment": "Time in seconds for run. Should be enough for simple_model",
@@ -15,11 +15,11 @@
         "machineName": "eddie",
         "machineName_comment": "Name of machine to submit runs to",
 	"ssh_node": "login03.ecdf.ed.ac.uk",
-	"ssh_node_comment","If not null then name of machine to ssh in order to submit to Q -- NOT IMPLEMENTED",
+	"ssh_node_comment":"If not null then name of machine to ssh in order to submit to Q -- NOT IMPLEMENTED",
         "modelName": "simple_model",
         "modelName_comment": "Name of model that is ran",
         "maxRuns": 5,
-        "maxRuns_comment": "Maximum number of runs to do in parallel. Runs submited is 2x this + 1. DOES NOT WORK",
+        "maxRuns_comment": "Maximum number of runs to do in parallel. Runs submited is 2x this + 1. DOES NOT WORK"
         },
     "run_info_comment": "Information  for run_info. Must include machineName and modelName. Can include other keys for use in submission. Useful ones are runTime, runCode & maxRuns ",
     "optimiseFunction": null,
