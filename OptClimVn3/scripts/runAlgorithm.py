@@ -95,7 +95,7 @@ elif verbose > 1:
     logging.basicConfig(level=logging.DEBUG, force=True)
 else:
     pass
-
+configData = StudyConfig.readConfig(filename=jsonFile)  # parse the jsonFile.
 if args.dir is not None:
     rootDir = Model.expand(args.dir)  # directory defined so set rootDir
 else:  # set rootDir to cwd/name
@@ -112,12 +112,12 @@ if purge: # purging data? Do early so as to minimize amount of output user sees 
 
 logging.info(f"Known models are {', '.join(Model.known_models())}")
 
-configData = StudyConfig.readConfig(filename=jsonFile)  # parse the jsonFile.
+
 
 args_not_for_restart = ['--delete','--purge']  # arguments to be removed from the restart cmd
 restartCMD = [arg for arg in sys.argv if arg not in args_not_for_restart]  # generate restart cmd.
 # because of way SGE (and maybe SLURM work) the cmd will not be runAlgorithm so fix it back!
-restartCMD[0]=Model.expand('$OPTCLIMTOP/OptClimVn3/scripts/runAlgorithm.py') # need full path.
+# restartCMD[0]=str(Model.expand('$OPTCLIMTOP/OptClimVn3/scripts/runAlgorithm.py')) # need full path.
 if dry_run or read_only:
     restartCMD = None  # no restarting!
 
@@ -159,7 +159,7 @@ if config_path.exists():  # config file exists. Read it in.
 
 if rSUBMIT is None:  # no configuration exists. So create it.
     # We can get here either because config_path does not exist or we deleted the config.
-    rSUBMIT = runSubmit.runSubmit(configData, rootDir=rootDir, config_path=config_path)
+    rSUBMIT = runSubmit.runSubmit(configData, rootDir=rootDir, config_path=config_path,next_iter_cmd=restartCMD)
     logging.debug(f"Created new runSubmit {rSUBMIT}")
 
 # We might  have runs to do so check that and run them if so.
@@ -168,9 +168,9 @@ if not (dry_run or read_only):  # not dry running or read only.
     # This happens if not all models that were instantiated were submitted.
     failed_models = rSUBMIT.failed_models() # TODO FIXME. THIS DOES NOT WORK
     # Alt test for a model failure is if the model status is RUNNING but the model not
-    # in the Q (because it should either be FAILED, SUCEEDED or PROCESSED)
-    # If status is SUCEEDED then and PP job not in the Q then something went wrong with 
-    # PP. 
+    # in the Q (because it should either be FAILED, SUCCEEDED or PROCESSED). That would set status to FAILED
+    # If status is SUCCEEDED  and PP job not in the Q then something went wrong with
+    # PP. Do not want to set FAILED at that point -- probably have FAILED_PP. User to fix that!
     if len(failed_models):  # Some runs failed. Use fail to decide what to do
         logging.info(f"{failed_models} models failed. {rSUBMIT}")
         if fail == 'fail':
@@ -184,7 +184,7 @@ if not (dry_run or read_only):  # not dry running or read only.
             if fail == 'delete':  # delete model
                 rSUBMIT.delete_model(model)
     #  submit models and exit -- only those that are submittable will be submitted.
-    nModels = rSUBMIT.submit_all_models(restartCMD, fake_fn=fakeFn)
+    nModels = rSUBMIT.submit_all_models(fake_fn=fakeFn)
     # this handles both models that are instantiated or those that need continuing.
     # see submit_all_models for details.
     if nModels > 0:  # submitted some models
@@ -231,7 +231,7 @@ while True:  # loop indefinetly so can have fake_fn. This really to test code/al
         if dry_run:  # nothing gets submitted or faked. So exit
             logging.info(f"dry_run -- exiting")
             break
-        nModels = rSUBMIT.submit_all_models(restartCMD, fake_fn=fakeFn)  # this also saves the config.
+        nModels = rSUBMIT.submit_all_models(fake_fn=fakeFn)  # this also saves the config.
         finalConfig = rSUBMIT.runConfig(scale=True, add_cost=wantCost)  # generate final configuration
         logging.info(f"On iteration {iter_count} submitted {nModels} models")
         try:

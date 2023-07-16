@@ -50,7 +50,8 @@ class MyTestCase(unittest.TestCase):
         refDir = refDir/'reference'
         config = StudyConfig.readConfig(cpth)
         config.baseRunID('ZZ')
-        submit = SubmitStudy.SubmitStudy(config, model_name='myModel', rootDir=testDir)
+
+        submit = SubmitStudy.SubmitStudy(config, model_name='myModel', rootDir=testDir,next_iter_cmd=['run myself'])
         # create some models
         models=[]
         for param in [dict(VF1=3, CT=1e-4), dict(VF1=2.4, CT=1e-4), dict(VF1=2.6, CT=1e-4)]:
@@ -186,7 +187,7 @@ class MyTestCase(unittest.TestCase):
 
         # set up the fake rtn output
         submit = copy.deepcopy(self.submit)
-        job_nos = range(34567,34567+2*len(submit.model_index)) # job numbers
+        job_nos = range(34567,34567+(1+2*len(submit.model_index))) # job numbers
         output = [f"Job submitted {item}" for  item in job_nos]
         # list of sequential jobs.,
         with unittest.mock.patch("subprocess.check_output",
@@ -197,7 +198,7 @@ class MyTestCase(unittest.TestCase):
             submit.instantiate()  # instantiate all models.
             submit.submit_all_models()
             # run submit -- should submit the three * (pp process and  models). so 6 times
-            self.assertEqual(mck_output.call_count, 6)
+            self.assertEqual(mck_output.call_count, 7)
             # expect that the ob id is every 2nd job_no (as a str)
             # so lets check that.
             for model,jno in zip(submit.model_index.values(),job_nos[0::2]):
@@ -219,16 +220,16 @@ class MyTestCase(unittest.TestCase):
                 mj = job_nos[indx*2+1] # jid for start job. Continue job should have this +100
                 self.assertEqual(model.model_jids,[str(mj),str(mj+100)])
 
-        # final actual run test. Next job is submitted.
-        output ='Next Submitted 345679'
+        # final actual run test. Turn of next iteration.
+        submit.next_iter_cmd=None
         with unittest.mock.patch("subprocess.check_output",
-                                 autospec=True, return_value=output) as mck_output:
+                                 autospec=True, side_effect=output) as mck_output:
             for m in submit.model_index.values():
                 m.status = 'INSTANTIATED'
                 m.pp_jid = None # set post_process_cmd back to None.
                 m.model_jids = [] # and model list to empty
-            submit.submit_all_models(next_iter_cmd=['run myself'])
-            self.assertEqual(mck_output.call_count, 7)  # 7 cases. 3 x (model + pp submit) + one next job.
+            submit.submit_all_models()
+            self.assertEqual(mck_output.call_count, 6)  # 7 cases. 3 x (model + pp submit) + one next job.
 
         # final tests -- history and output as expected.
         # expect 9 history:
@@ -254,7 +255,7 @@ class MyTestCase(unittest.TestCase):
                                  autospec=True, return_value="some value 345678") as mck_output:
             submit = copy.deepcopy(self.submit)
             submit.instantiate()  # instantiate all models.
-            submit.submit_all_models(next_iter_cmd=['run myself'], fake_fn=fake_function)
+            submit.submit_all_models(fake_fn=fake_function)
             mck_output.assert_not_called()
 
     dt = datetime.datetime(2022, 1, 1, 0, 0, 0)

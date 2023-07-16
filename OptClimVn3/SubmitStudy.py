@@ -49,7 +49,8 @@ class SubmitStudy(model_base, Study, journal):
                  refDir: Optional[pathlib.Path] = None,
                  models: Optional[List[Model]] = None,
                  model_name: Optional[str] = None,
-                 config_path: Optional[pathlib.Path] = None):
+                 config_path: Optional[pathlib.Path] = None,
+                 next_iter_cmd: typing.Optional[typing.List[str]]  = None):
         """
         Create ModelSubmit instance
         :param config: configuration information
@@ -60,9 +61,10 @@ class SubmitStudy(model_base, Study, journal):
         :param model_name: Name of model type to create. If None value in config is used
         :param models -- list of models.
         :param config_path -- where configuration should be stored. If None default is root_dir/name
+        :param next_iter_cmd -- command to run next iteration.
         :return: instance SubmitStudy with the following public attributes :
 
-            next_job_id -- the next job id
+
             refDir -- path for reference directory
             model_name -- name of the model being used
             run_info -- information for submitting runs.
@@ -71,12 +73,14 @@ class SubmitStudy(model_base, Study, journal):
             name_values -- used to generate name. Set to None to reset counter.
             iter_keys -- dict indexed by key with iteration count.
             iter_count -- current iteration count.
+            next_iter_cmd -- the command to run the next iteration.
+            next_iter_jids -- the jobs ids of all submitted next_iter_cmd jobs
 
 
 
         """
         super().__init__(config, name=name, models=models, rootDir=rootDir)
-        self.next_job_id = None  # no next job (yet)
+
 
         if refDir is None:
             refDir = self.expand(str(config.referenceConfig()))
@@ -101,6 +105,8 @@ class SubmitStudy(model_base, Study, journal):
         self.store_output(None, None)  # init store output
 
         self.iter_keys = dict()  # key iteration pairs.
+        self.next_iter_cmd = next_iter_cmd
+        self.next_iter_jids = []  # no next jobs (yet)
 
     def __repr__(self):
         """
@@ -415,25 +421,18 @@ class SubmitStudy(model_base, Study, journal):
             logging.warning(f"Ran out of names name_values = {self.name_values}")
         return name  # return name
 
-    def submit_all_models(self, next_iter_cmd: Optional[list] = None,
-                          fake_fn: Optional[Callable] = None):
+    def submit_all_models(self, fake_fn: Optional[Callable] = None):
         """
         Submit models, the post-processing and the next iteration in the algorithm to job control system.
-
-        :param next_iter_cmd -- The command to submit to run the next iteration.
-         If None then no next iteration will be submitted.
         :param fake_fn:Function to fake model runs -- will skip most stages including post-processing.
           fake and anything to be continued will generate an error.  No pp or next submission will be done if provided,
         :return: number of models submitted
 
         Does the following:
-            1) Submits the post-processing jobs as a task array in held state.
-                 Jobs continuing (as they failed) will not have a post-processing job as their post-processing job will still be
-                   in the system. Nor will they have a next job to release_job (As that will already be in the system).
-                   if any continue jobs submit those and be done.
-            2) Submits  resubmit so once the array of post-processing jobs has completed the next bit of the algorithm gets ran.
-            3) Submits the model simulations -- which once each one has run will release_job the appropriate post-processing task
-            4) When all the post-processing jobs are done the resubmission will be ran.
+            1) Submits the models & post processing jobs
+            2) If any post-processing jobs were submitted then submits  self.next_iter_cmd
+               so once the  post-processing jobs has completed the next bit of the algorithm gets ran.
+            3) When all the post-processing jobs are done the resubmission will be ran.
 
         This algorithm is not particularly robust to failure -- if anything fails the various jobs will be sitting around
         Releasing them will be quite tricky! You can always kill everything, remove any continuing models and start again.
@@ -448,8 +447,7 @@ class SubmitStudy(model_base, Study, journal):
         models_to_continue = self.models_to_continue()  # models that need continuing.
         config = self.config
         configName = config.name()
-        run_info = config.run_info()
-        runCode = config.runCode()  # NB with current implementation this is the same as run_info.get('runCode')
+
         maxRuns = self.config.maxRuns()
 
         output_dir = self.rootDir / 'jobOutput'  # directory where output goes for post-processing and next stage.
@@ -458,20 +456,20 @@ class SubmitStudy(model_base, Study, journal):
         if (maxRuns is not None) and (maxRuns > len(models_to_continue)):
             models_to_continue = models_to_continue[0:maxRuns]
             logging.debug(f"Truncating models_to_continue to {maxRuns}")
-        ## work out postprocess script path
+
         if len(models_to_continue) > 0:  # (re)submit  models that need continuing and exit
             if fake_fn is not None:
                 raise ValueError('Faking and continuing not allowed')
             for model in models_to_continue:
-                model_jid = model.submit_model()
-                logging.debug(f"Continuing {model.name}  run submitted as job {model_jid}")
+                pp_jid = model.submit_model()
+                logging.debug(f"Continuing {model.name}  ")
 
             logging.info(f"Continued {len(models_to_continue)} models and done")
             self.update_history(f"Continued {len(models_to_continue)} models")
             self.dump_config()  # and write out the Study
             return len(models_to_continue)
             # nothing else to do -- next stage is still sitting  in the Q waiting to be released.
-            # Will be submitted once all the post-proceessing jobs have been run.
+            # Will be submitted once all the post-processing jobs have been run.
 
         # No runs to continue so let's submit new runs
         # Deal with maxRuns.
@@ -485,7 +483,7 @@ class SubmitStudy(model_base, Study, journal):
             pp_jids.append( model.submit_model(fake_function=fake_fn))
 
 
-        if fake_fn is not None:
+        if fake_fn:
             logging.info(f"Faked {len(model_list)} jobs")
             self.update_history(f"Faked {len(model_list)} jobs")
             # if faking will have Nones so remove them from pp_jids. This allows the possibility of mixing them
@@ -496,20 +494,22 @@ class SubmitStudy(model_base, Study, journal):
             self.update_history(f"Submitted {len(model_list)} models")
 
         # now (re)submit this entire script so that the next iteration in the algorithm can be ran
-        # All the pp_jids should be not None.
+        # All the pp_jids should be not None. We remove the None whens if Faking it.
 
-        if (next_iter_cmd is not None) and (len(pp_jids) > 0):
+        if (self.next_iter_cmd is not None) and (len(pp_jids) > 0):
             # submit the next job in the iteration if have one and submitted post-processing.
+            run_info = config.run_info()
+            runCode = config.runCode()  # NB with current implementation this is the same as run_info.get('runCode')
             iter_count = np.max(list(self.iter_keys.values()))  # iteration we are at.
             next_job_name = f"{configName}_{iter_count}"
-            run_next_submit = self.engine.submit_cmd(next_iter_cmd, next_job_name, outdir=output_dir,
+            run_next_submit = self.engine.submit_cmd(self.next_iter_cmd, next_job_name, outdir=output_dir,
                                                      run_code=runCode,
                                                      hold=pp_jids)
             output = self.run_cmd(run_next_submit)
             logging.info(f"Next iteration cmd is {run_next_submit} with output:{output}")
             jid = self.engine.job_id(output)  # extract the actual job id.
             logging.info(f"Job ID for next iteration is {jid}")
-            self.next_job_id = jid
+            self.next_iter_jids.append(jid) # append jid to list of jobs. That way if have problems in previous jobs can get info back.
             self.update_history(f"Submitted next job with ID {jid}")
 
         self.dump_config()  # and write ourselves out
