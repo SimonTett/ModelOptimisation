@@ -38,7 +38,7 @@ class Test_simple_model(unittest.TestCase):
 
         # set up another model properly
         params = dict(vf1=2.3,rhcrit=0.5)
-        model = simple_model('model002',reference=self.refDir,
+        model = simple_model('model002',reference=self.refDir,run_info=dict(submit_engine='SGE'),
                                           model_dir=self.submit.rootDir/'model002',
                                           study=self.submit.to_study(),parameters=params)
         self.model = model
@@ -87,8 +87,9 @@ class Test_simple_model(unittest.TestCase):
     def test_set_params(self):
         params = self.model.parameters
         model = simple_model('model001',reference=self.refDir,
-                                          model_dir=self.submit.rootDir/'model001',
-                                          study=self.submit.to_study(),parameters=params)
+                                        run_info=dict(submit_engine='SGE'),
+                                        model_dir=self.submit.rootDir/'model001',
+                                        study=self.submit.to_study(),parameters=params)
         model.model_dir.mkdir(exist_ok=True,parents=True)
         model.set_params(params)
         with open(model.model_dir/'params.json','r') as fp:
@@ -106,8 +107,8 @@ class Test_simple_model(unittest.TestCase):
         # test that submit_cmd is as expected.
         self.model.instantiate() # create the model on disk.
         run_info=dict()
-        eng = engine.submission_engine('SGE') # SGE cmd
-        cmd = self.model.submit_cmd(run_info,eng)
+        eng = engine.abstractEngine.create_engine('SGE') # SGE cmd
+        cmd = self.model.submit_cmd()
         self.assertIsInstance(cmd,list)
         model = self.model
         outdir = model.model_dir / 'model_output'

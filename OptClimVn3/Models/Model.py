@@ -77,13 +77,8 @@ class Model(ModelBaseClass, journal):
                  model_dir: pathlib.Path = pathlib.Path.cwd(),
                  config_path: typing.Optional[pathlib.Path] = None,
                  status: str = "CREATED",
-                 fake: bool = False,
-                 submission_count: int = 0,
-                 run_count: int = 0,
-                 perturb_count: int = 0,
                  parameters: typing.Optional[dict] = None,
-                 post_process_cmd: typing.Optional[typing.List] = None,
-                 simulated_obs: typing.Optional[pd.Series] = None,
+                 run_info: typing.Optional[dict] = None,
                  study: typing.Optional["Study"] = None):
         """
         Initialise the Model class.
@@ -97,10 +92,6 @@ class Model(ModelBaseClass, journal):
         :param config_path: Where configuration will be created.
                If not defined (or None) will be model_dir/(self.name+".mcfg")
         :param status -- model status. Default = "CREATED"
-        :param fake -- if True model is faking running/post-processing
-        :param submission_count -- no of times model has been submitted
-        :param run_count -- no of times model has been running
-        :param perturb_count -- no of times model has been perturbed.
         :param parameters -- dict of parameters names and values.
         :param post_process -- dict for post-processing. If None no post-processing will be done.
          Dict will be made available to post-processing code.
@@ -114,9 +105,14 @@ class Model(ModelBaseClass, journal):
                 output_file -- name of the output file from the post-processing
                 runTime -- time in seconds for the post-processing.
           This should be constructed in the  setup using the StudyConfig.
-        :param post_process_cmd -- command to run or release_job the post-processing.
-        Only used when status gets set to COMPLETED.
-        :param simulated_obs -- value of simulated_obs.
+        :param run_info -- A dict containing information for engine creating and submission of the model and post-processing.
+           engine setup defined from run_info. run_info must include the key:
+             submit_engine which provides the submission engine.
+           other keys are:
+            ssh_node -- the hostname of the machine to ssh to (if needed) to interact with the job control system
+            runTime the time (seconds) for job
+            runCode  the code to use to run the job.
+
         :param study -- a study. This is there in case model wants to interrogate it at init time.
         It is recommended that study **not** be stored as an attribute.
            If you do take great care and worry about recursion as study stores models.
@@ -131,13 +127,13 @@ class Model(ModelBaseClass, journal):
         name -- name of the model
         status -- status of the model
         post_process -- post-processing information. See Model.set_post_process for details.
-        post_process_cmd_script -- cmd to be run for post-processing.
-        post_process_cmd -- cmd to run the post-processing. Depends on your submission/job management system
         fake -- If True model is faked.
         perturb_count -- no of times perturbation has been done.
         parameters -- dict of parameters/values
         set_status_script -- path to script that sets_status. Your model will need to call this.
-
+        engine -- submission engine.
+        pp_jid -- post-processing job ids. This gets released when model status changes to SUCCEEDS
+        model_jids -- list of model job ids.
         Private attributes:
           _post_process_input -- name of input file for post-procesing
           _post_process_output -- name of input file for post-processing
@@ -146,24 +142,8 @@ class Model(ModelBaseClass, journal):
 
         """
         # set up default values.
-        self.post_process = {}  # where all post-processing info stored.
-        self.post_process_cmd_script = None  # cmd (list) to be run for post-processing.
-        self._post_process_input = None  # filename where input for post-processing goes
-        self._post_process_output = None  # filename where output for post-processing goes.
-        self.fake = fake  # did we fake the model? Changed at submission.
-        self.perturb_count = perturb_count  # how many times have we perturbed the model?
-        self.submission_count = submission_count  # how mamy times have we submitted the model?
-        self.run_count = run_count  # how many times has the model been run
 
-        self.update_history(None)  # init history.
-        self.store_output(None, None)  # init store output
-
-        if parameters is None:
-            parameters = {}
-        else:
-            parameters = copy.deepcopy(parameters)
-        # TODO check that parameters exist in lookup.
-
+        # Generall attributes
         self.name = name
 
         if config_path is None:
@@ -178,23 +158,56 @@ class Model(ModelBaseClass, journal):
         if status not in self.allowed_status:
             raise ValueError(f"Status {status} not in " + " ".join(self.allowed_status))
 
-        self.parameters = parameters
-        self.post_process_cmd = post_process_cmd
-        # attributes that get defined based on inputs or are just fixed.
+        # attributes to do with post-processing
+        self.post_process = {}  # where all post-processing info stored.
+        self.post_process_cmd_script = None  # cmd (list) to be run for post-processing.
+        self._post_process_input = None  # filename where input for post-processing goes
+        self._post_process_output = None  # filename where output for post-processing goes.
+        # post processing info
         if post_process is not None:
             self.set_post_process(post_process)
+
+        # attributes to do with model meta-information.
+        self.fake = False  # did we fake the model? Changed at submission.
+        self.perturb_count = 0  # how many times have we perturbed the model?
+        self.submission_count = 0  # how mamy times have we submitted the model?
+        self.run_count = 0  # how many times has the model been run
+
+        # history and output
+        self.update_history(None)  # init history.
+        self.store_output(None, None)  # init store output
+
+        # parameters
+        if parameters is None:
+            parameters = {}
+        else:
+            parameters = copy.deepcopy(parameters)
+        # TODO check that parameters exist in lookup.
+        self.parameters = parameters
+
+        # "system" stuff. Things to do with actually submitting  a model and the post-processing.
+        self.run_info = {}  # make it an empty dict.
+        self.engine = None  # make it None and then overwrite based on run_info
+        if run_info is not None:
+            self.run_info = copy.deepcopy(run_info)  # copy the run_info into Model.
+            self.engine = engine.abstractEngine.create_engine(run_info['submit_engine'],
+                                                              ssh_node=run_info.get('ssh_node'))
+        self.model_jids = []  # list of all model job ids submitted.
+        self.pp_jid = None  # post-processing job id
         # setup submit and continue script
         self.submit_script = "submit.sh"
         self.continue_script = "continue.sh"
-        # setup path to where script that sets status is. TODO: Is this actually needed?
+        # setup path to where script that sets status is.
         root = self.expand("$OPTCLIMTOP/OptClimVn3")
         script_pth = root / "scripts/set_model_status.py"
         self.set_status_script = script_pth
 
+        # Set status
         self.status = status
         if self.status == 'CREATED':  # creating model for the first time
             self.update_history("CREATING model")
-        self.simulated_obs = simulated_obs
+        # and simulated obs.
+        self.simulated_obs = None
 
     def set_post_process(self, post_process: typing.Optional[dict] = None):
 
@@ -446,8 +459,7 @@ class Model(ModelBaseClass, journal):
     #     logging.debug(f"Wrote config path to {outpath}. $OPTCLIM_MODEL_PATH = {os.environ['OPTCLIM_MODEL_PATH']}")
     #     return True  # we worked!
 
-    def submit_model(self, run_info: dict,
-                     engine: engine.abstractEngine,
+    def submit_model(self,
                      fake_function: typing.Optional[typing.Callable] = None,
                      ) -> typing.Optional[str]:
         """
@@ -455,23 +467,21 @@ class Model(ModelBaseClass, journal):
         Post-processing gets submitted first but held.
         Model gets cmd to release_job post-processing included before it gets submitting.
 
-        :param run_info -- dict of information for running. runTime & runCode used here.
-        :param engine: -- engine (see engine) for details.
-          Contract for this is that it takes in a list (cmd) and transforms it.
-           If None then the cmd will simply be ran.
+
         :param fake_function -- if provided no submission  will be done. Instead, this function will be used to generate fake obs.
           Designed for testing code that runs whole algorithms. Takes one argument -- dict of parameters.
-        :param outputDir -- path to where output goes. Used for post-processing.
-          If None default from engine.submit will be used
-        :return: The jobid of the post-process submission. None if nothing submitted (fake_fn set or continuing)
+
+        :return: The jobid of the post-process job  submitted. (If a post-processing job submitted)
+            Post processing runs after model has completed and at time of submission we don't know what the final model job id is -- because it might self continue.
 
         Example:
-         model.submit_model(config.run_info(),engine=SGE_engine)
+         model.submit_model()
         """
         status = 'SUBMITTED'
+        pp_jid = None # unless we do something will have no pp job.
         # deal with fake_function.
-        if fake_function is not None:  # handle fake function
-            self.post_process_cmd = None  # no cmd to run as we just run it!
+        if fake_function:  # handle fake function
+            self.pp_jid= None  # no cmd to run as we just run it!
             self.simulated_obs = fake_function(self.parameters).rename(self.name)  # compute the simulated_obs
             if not isinstance(self.simulated_obs, pd.Series):
                 raise ValueError(f"{fake_function} did not return pandas series. Returned {self.simulated_obs}")
@@ -488,53 +498,55 @@ class Model(ModelBaseClass, journal):
             self.running()  # running stuff
             self.succeeded()  # succeeded stuff
             self.process()  # and process.
-            return None  # nothing submitted.
-        # real stuff.
+            return pp_jid  # no post-processing submitted.
+
+        # Actually running a model now
         # first sort out the post-processing.
-        if not self.continuable():
-            if self.post_process_cmd is not None:  # check self.post_process_cmd is None and fail if not!
-                raise ValueError(f"Have post_process_cmd {self.post_process_cmd} should be None")
-            pp_cmd = [str(self.set_status_script),  str(self.config_path),
-                      'PROCESSED']  # post-process cmd.
+        if self.continuable(): # Model would like to continue. So no pp submission.
+            # But check have a pp_jid and fail if not
+            if self.pp_jid is None:
+                raise ValueError(f"self.pp_jid is None. Should be set to a job id of a post-processing job")
+        else: # starting so generate and submit a post processing job.
+            if self.pp_jid is not None:  # self.pp_jid should be None. Fail if not!
+                raise ValueError(f"Have pp_jid {self.pp_jid} should be None")
+            pp_cmd = [str(self.set_status_script), str(self.config_path), 'PROCESSED']
+            # post-process cmd. Which gets submitted now and the job id recorded.
             run_time = self.post_process.get('runTime', 1800)  # get the runTime.
-            run_code = self.post_process.get('runCode', run_info.get('runCode'))
+            run_code = self.post_process.get('runCode', self.run_info.get('runCode'))
             # and the run_code -- default is value in run_info but use value from post_process if we have it.
-            outputDir = self.model_dir/'PP_output' # post processing output goes in Model Dir
-            outputDir.mkdir(exist_ok=True,parents=True)
-            pp_cmd = engine.submit_cmd(pp_cmd, f"PP_{self.name}",
-                                       outdir=outputDir,
-                                       hold=True,
-                                       time=run_time,
-                                       rundir = self.model_dir,
-                                       run_code=run_code)  # generate the submit cmd.
+            outputDir = self.model_dir / 'PP_output'  # post-processing output goes in Model Dir
+            outputDir.mkdir(exist_ok=True, parents=True)
+            pp_cmd = self.engine.submit_cmd(pp_cmd, f"PP_{self.name}",
+                                            outdir=outputDir,
+                                            hold=True,
+                                            time=run_time,
+                                            rundir=self.model_dir,
+                                            run_code=run_code)  # generate the submit cmd.
             # note the post-processing is submitted "held".It needs to be released once the model
             # has actually finished. That could require multiple simulations. So we don't hold it on the model
-            # and explicitly release_job it.
-            output = self.run_cmd(pp_cmd)  # submit the post-processing job. Note it is held.
+            # and instead will explicitly release it when status gets set to SUCCEEDED
+            output = self.run_cmd(pp_cmd)  # submit the post-processing job.
             logging.debug(f"post-processing run {pp_cmd} and got {output}")
-            pp_jid = engine.job_id(output)  # extract the job-ID.
-            release_cmd = engine.release_job(pp_jid)  # and generate the release_job job cmd.
-            self.post_process_cmd = release_cmd  # store it! So when model releases the post-processing cmd it will run.
-            logging.debug(f"self.post_process_cmd  is {self.post_process_cmd}")
-        else:
-            pp_jid = None  # no post-processing got submitted.
-        # submit the model!
-        cmd = self.submit_cmd(run_info, engine)
-        # actual running model can update status.
-        output = self.run_cmd(cmd)
+            pp_jid = self.engine.job_id(output)  # extract the job-ID.
+            self.pp_jid = pp_jid
+
+        # Done submitting (if needed) a post-processing job. Now submit the model!
+        # Model has been modified so that will run model.set_status("SUCCEEDED")
+        # which will release the post-processing job.
+        cmd = self.submit_cmd() # cmd that submits the model.
+        output = self.run_cmd(cmd) # and run the command
+        jid = self.engine.job_id(output) # and work out the job id.
+        self.model_jids.append(jid) # list of all job ids.
         logging.debug(f"Model submission: ran {cmd} and got {output}")
-        self.submission_count += 1
+        self.submission_count += 1 # increase time.
         self.set_status(status)
 
-        return pp_jid  # return the post-processing jid
+        return pp_jid  # return the submission  jid
 
-    def submit_cmd(self, run_info: dict,
-                   engine: engine.abstractEngine) -> typing.List[str]:
+    def submit_cmd(self) -> typing.List[str]:
         """"
         Generate the submission command. Over-ride this for your own model.
-        :param run_info -- run_info block.
-        :param engine -- engine info.
-        If status is INSTANTIATED or PERTURBED then this runs engine.submit_cmd on  [self.submit_script] and
+        If status is INSTANTIATED or PERTURBED then this runs self.engine.submit_cmd on  [self.submit_script] and
         if CONTINUE runs on  [self.continue_script]
         output should go to model_dir/'model_output' which will be created if it does not exist.
         """
@@ -544,15 +556,15 @@ class Model(ModelBaseClass, journal):
             script = self.continue_script
         else:
             raise ValueError(f"Status {self.status} not expected ")
-        runCode = run_info.get('runCode')
-        runTime = run_info.get('runTime',2000) # 2000 seconds as default.
+        runCode = self.run_info.get('runCode')
+        runTime = self.run_info.get('runTime', 2000)  # 2000 seconds as default.
         # need to (potentially) modify model script so runTime and runCode are set.
         # but in this case just use the submit.
         outdir = self.model_dir / 'model_output'
         outdir.mkdir(parents=True, exist_ok=True)
 
-        cmd = engine.submit_cmd([str(script)], f"{self.name}{self.run_count:05d}", outdir,
-                                run_code=runCode, time=runTime,rundir=self.model_dir)
+        cmd = self.engine.submit_cmd([str(script)], f"{self.name}{self.run_count:05d}", outdir,
+                                run_code=runCode, time=runTime, rundir=self.model_dir)
 
         return cmd
 
@@ -613,24 +625,22 @@ class Model(ModelBaseClass, journal):
 
     def succeeded(self):
         """
-        Run the post-processing job by running self.post_process_cmd
+        Run the post-processing job by releasing self.jid
         Then set status to SUCCEEDED
         :return: output from running self.post_process_cmd
         """
 
         status = 'SUCCEEDED'
 
-        if self.post_process_cmd is not None:
-            # release_job the post-processing job. But really system specific.
-            # just run the post-processing cmd as a sub-shell.
-            # That hopefully, eventually, does model.post_process()!
-            # On eddie this will be something like qrls NNNNNNNN.x
-            result = self.run_cmd(self.post_process_cmd, cwd=self.model_dir)
+        if self.pp_jid is not None:
+            # release_job the post-processing job.
+            cmd = self.engine.release_job(self.pp_jid)
+            result = self.run_cmd(cmd)
             # will raise an error if it failed.
-            logging.info(f"Ran post-processing cmd {self.post_process_cmd}")
+            logging.info(f"Ran post-processing cmd {cmd}")
             output = result
         else:
-            logging.info("No post-processing processing cmd")
+            logging.info("No post-processing processing jid")
             output = None  # no output.
 
         self.set_status(status)

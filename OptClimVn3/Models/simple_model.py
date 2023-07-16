@@ -95,16 +95,13 @@ class simple_model(Model):
         logging.debug(f"Dumped parameters to {out_file}")
 
     # over write submit_cmd
-    def submit_cmd(self, run_info:dict,
-                   engine: engine) -> typing.List[str]:
+    def submit_cmd(self) -> typing.List[str]:
         """"
         Generate the submission command.
-        :param run_info # run_info. only runTime and runCode are used
-        :param engine # engine for submission.
         If status is INSTANTIATED or PERTURBED then submit to the Q run_simple_model.py
         """
-        runTime = run_info.get('runTime', 30)  # default is 30 seconds.
-        runCode = run_info.get('runCode')
+        runTime = self.run_info.get('runTime', 30)  # default is 30 seconds.
+        runCode = self.run_info.get('runCode')
         if self.status in ['INSTANTIATED', 'PERTURBED']:
             script = self.submit_script
         elif self.status == 'CONTINUE':
@@ -114,7 +111,7 @@ class simple_model(Model):
         # just use the submit.
         outdir = self.model_dir / 'model_output'
         outdir.mkdir(parents=True, exist_ok=True)
-        cmd = engine.submit_cmd([script, str(self.StudyConfig_path)], 
+        cmd = self.engine.submit_cmd([script, str(self.StudyConfig_path)],
                                 f"{self.name}{self.run_count:05d}", outdir,
                                 run_code=runCode, time=runTime,rundir=self.model_dir)
 

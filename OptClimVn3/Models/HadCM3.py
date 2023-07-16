@@ -74,7 +74,7 @@ class HadCM3(Model):
 
         self.submit_script = 'SUBMIT'
         self.continue_script = 'SUBMIT.cont'
-        self.post_process_file = 'post_process.sh'
+        self.post_process_file = 'post_process.sh' # extra attributed needed.
         # self.runInfo=dict()
 
     def Name(self):

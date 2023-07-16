@@ -11,6 +11,7 @@ import unittest
 import Study
 import StudyConfig
 import SubmitStudy
+import engine
 from Model import Model
 import copy
 import pandas as pd
@@ -45,10 +46,10 @@ class MyTestCase(unittest.TestCase):
         testDir = pathlib.Path(self.tmpDir.name)
         optclim3 = Model.expand('$OPTCLIMTOP/OptClimVn3/')
         refDir = optclim3/'configurations/example_Model'
-        cpth = refDir/"dfols14param_opt3.json"
+        cpth = refDir/"configurations/dfols14param_opt3.json"
+        refDir = refDir/'reference'
         config = StudyConfig.readConfig(cpth)
         config.baseRunID('ZZ')
-        config.machine_name('SGE') # eddie (which is default config has a connect_fn. raw SGE does not!)
         submit = SubmitStudy.SubmitStudy(config, model_name='myModel', rootDir=testDir)
         # create some models
         models=[]
@@ -185,10 +186,9 @@ class MyTestCase(unittest.TestCase):
 
         # set up the fake rtn output
         submit = copy.deepcopy(self.submit)
-
-        rtn_job_output = ['postprocess submitted 345678.10'] *len(submit.model_index) # array of pp jobs as no next job wanted
-        model_output = ['Model submitted 34567'] * len(submit.model_index)
-        output = [item for sublist in zip(rtn_job_output, model_output) for item in sublist]
+        job_nos = range(34567,34567+2*len(submit.model_index)) # job numbers
+        output = [f"Job submitted {item}" for  item in job_nos]
+        # list of sequential jobs.,
         with unittest.mock.patch("subprocess.check_output",
                                  autospec=True, side_effect=output) as mck_output:
             submit.submit_all_models()
@@ -198,31 +198,35 @@ class MyTestCase(unittest.TestCase):
             submit.submit_all_models()
             # run submit -- should submit the three * (pp process and  models). so 6 times
             self.assertEqual(mck_output.call_count, 6)
-            # expect that the post process cmd is ['qrls',jid]
+            # expect that the ob id is every 2nd job_no (as a str)
             # so lets check that.
-            for indx, model in enumerate(submit.model_index.values()):
-                self.assertEqual(model.post_process_cmd, ['qrls', f"345678"])
+            for model,jno in zip(submit.model_index.values(),job_nos[0::2]):
+                self.assertEqual(model.pp_jid,str(jno))
 
         # now have the models all fail and then continue.  Should only have three cases -- the models
-        # All status should be submitted and the post-process cmd should be unchanged
+        # All status should be submitted and the jid cmd should be unchanged
+        output_continue = [f"Job submitted {item+100}" for item in job_nos[1::2]]
         with unittest.mock.patch("subprocess.check_output",
-                                 autospec=True, side_effect=model_output) as mck_output:
+                                 autospec=True, side_effect=output_continue) as mck_output:
             for model in submit.model_index.values():
                 model.status = "CONTINUE"
             submit.submit_all_models()
             self.assertEqual(mck_output.call_count, 3)  # three cases
             # check models are as expected.
-            for indx, model in enumerate(submit.model_index.values()):
+            for indx,model in enumerate(submit.model_index.values()):
                 self.assertEqual(model.status, "SUBMITTED")
-                self.assertEqual(model.post_process_cmd, ['qrls', f"345678"])
+                self.assertEqual(model.pp_jid, str(job_nos[indx*2]))
+                mj = job_nos[indx*2+1] # jid for start job. Continue job should have this +100
+                self.assertEqual(model.model_jids,[str(mj),str(mj+100)])
 
         # final actual run test. Next job is submitted.
-        output = rtn_job_output + ['Next Submitted 345679'] + model_output
+        output ='Next Submitted 345679'
         with unittest.mock.patch("subprocess.check_output",
-                                 autospec=True, side_effect=output) as mck_output:
+                                 autospec=True, return_value=output) as mck_output:
             for m in submit.model_index.values():
                 m.status = 'INSTANTIATED'
-                m.post_process_cmd = None # set post_process_cmd back to None.
+                m.pp_jid = None # set post_process_cmd back to None.
+                m.model_jids = [] # and model list to empty
             submit.submit_all_models(next_iter_cmd=['run myself'])
             self.assertEqual(mck_output.call_count, 7)  # 7 cases. 3 x (model + pp submit) + one next job.
 
@@ -290,7 +294,7 @@ class MyTestCase(unittest.TestCase):
         # and evil hack for config
         expected_dict['config'] = vars(expected_dict['config'])
         # and engine
-        expected_dict['engine'] = self.submit.computer
+        expected_dict['engine'] = engine.sge_engine()
         self.assertEqual(study_dict, expected_dict)
 
     def test_iterations(self):

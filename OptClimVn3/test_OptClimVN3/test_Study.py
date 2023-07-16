@@ -39,8 +39,9 @@ class TestStudy(unittest.TestCase):
             if status == 'PROCESSED':
                 sim_obs = self.fake_fn(params).rename(name)
 
-            model = Model(name, reference=reference_dir, simulated_obs=sim_obs, parameters=params,
+            model = Model(name, reference=reference_dir,  parameters=params,
                           config_path=direct / (name + '.mcfg'), status=status)
+            model.simulated_obs = sim_obs # actually set the simulated obs.
             model.dump_model()
             self.models.append(model)
 

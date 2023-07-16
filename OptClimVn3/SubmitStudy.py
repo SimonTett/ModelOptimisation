@@ -49,8 +49,7 @@ class SubmitStudy(model_base, Study, journal):
                  refDir: Optional[pathlib.Path] = None,
                  models: Optional[List[Model]] = None,
                  model_name: Optional[str] = None,
-                 config_path: Optional[pathlib.Path] = None,
-                 computer: Optional[str] = None):
+                 config_path: Optional[pathlib.Path] = None):
         """
         Create ModelSubmit instance
         :param config: configuration information
@@ -61,14 +60,12 @@ class SubmitStudy(model_base, Study, journal):
         :param model_name: Name of model type to create. If None value in config is used
         :param models -- list of models.
         :param config_path -- where configuration should be stored. If None default is root_dir/name
-        :param computer -- computer on which model is being ran. If None then config wil be used.
         :return: instance SubmitStudy with the following public attributes :
 
             next_job_id -- the next job id
-            post_process_id -- the jid of the task array (or equiv) for the post processing
             refDir -- path for reference directory
             model_name -- name of the model being used
-            computer -- name of the computer being used
+            run_info -- information for submitting runs.
             engine -- functions to handle different job submission engines. Currently, only SGE and SLURM are supported.
             config_path -- path to where config is stored.
             name_values -- used to generate name. Set to None to reset counter.
@@ -80,7 +77,6 @@ class SubmitStudy(model_base, Study, journal):
         """
         super().__init__(config, name=name, models=models, rootDir=rootDir)
         self.next_job_id = None  # no next job (yet)
-        self.post_process_jid = None  # no post process job (yet)
 
         if refDir is None:
             refDir = self.expand(str(config.referenceConfig()))
@@ -90,10 +86,11 @@ class SubmitStudy(model_base, Study, journal):
             model_name = self.config.model_name()
         self.model_name = model_name
 
-        if computer is None:
-            computer = self.config.machine_name()
-        self.computer = computer  # really needed for dumping/loading.
-        self.engine = engine.submission_engine(computer)  # engine & submit for this computer.
+        self.run_info = config.run_info()
+        self.engine = engine.abstractEngine.create_engine(self.run_info['submit_engine'],
+                                            ssh_node=self.run_info.get('ssh_node'))
+
+        # engine & submit for this computer.
 
         if config_path is None:
             config_path = self.rootDir / (self.name + '.scfg')
@@ -149,6 +146,7 @@ class SubmitStudy(model_base, Study, journal):
         reference = paramDir.pop('reference', self.refDir)
         model_name = paramDir.pop('model_name', self.model_name)
         post_process = self.config.getv('postProcess')
+        run_info = self.config.run_info()
         study = self.to_study()  # convert SubmitStudy to Study
         model = Model.model_init(model_name, name=name,
                                  reference=reference,
@@ -156,7 +154,8 @@ class SubmitStudy(model_base, Study, journal):
                                  config_path=config_path,
                                  parameters=params,
                                  post_process=post_process,
-                                 study=study
+                                 study=study,
+                                 run_info=run_info
                                  )
         key = self.key_for_model(model)
         if key in self.model_index:
@@ -290,9 +289,7 @@ class SubmitStudy(model_base, Study, journal):
         """
 
         dct = super().to_dict()
-        # deal with engine
-        logging.debug(f"Converting engine to {self.computer}")
-        dct['engine'] = self.computer
+
         logging.debug(f"Replacing models in model_index with config_path")
         m2 = dict()
         for key, model in dct['model_index'].items():
@@ -324,8 +321,7 @@ class SubmitStudy(model_base, Study, journal):
         # create the SubmitStudy object
         obj = cls(config)
         obj.fill_attrs(dct)  # fill in the rest of the objects attributes.
-        # deal with the engine.
-        obj.engine = engine.submission_engine(obj.computer)  # regenerate the engine.
+
         # load up models.
         model_index = dict()
         for key, path in obj.model_index.items():  # iterate over the paths (which is how we represent the models)
@@ -465,38 +461,43 @@ class SubmitStudy(model_base, Study, journal):
         ## work out postprocess script path
         if len(models_to_continue) > 0:  # (re)submit  models that need continuing and exit
             if fake_fn is not None:
-                raise ValueError('Faking and continuing')
+                raise ValueError('Faking and continuing not allowed')
             for model in models_to_continue:
-                pp_jid = model.submit_model(run_info, self.engine)
-                logging.debug(f"Continuing {model.name} ")
+                model_jid = model.submit_model()
+                logging.debug(f"Continuing {model.name}  run submitted as job {model_jid}")
 
             logging.info(f"Continued {len(models_to_continue)} models and done")
             self.update_history(f"Continued {len(models_to_continue)} models")
-            self.dump_config()  # and write out the config
+            self.dump_config()  # and write out the Study
             return len(models_to_continue)
             # nothing else to do -- next stage is still sitting  in the Q waiting to be released.
+            # Will be submitted once all the post-proceessing jobs have been run.
 
-        # No runs to continue so let's submit.
+        # No runs to continue so let's submit new runs
         # Deal with maxRuns.
-        if (maxRuns is not None) and (maxRuns > len(model_list)):  # need to truncate run?
+        if (maxRuns is not None) and (maxRuns > len(model_list)):  # need to truncate no of runs?
             logging.debug(f"Reducing to {maxRuns} models.")
             model_list = model_list[0:maxRuns]
 
         # submit models! Faking if necessary.
         pp_jids = []  # list of job ids from post-processing
         for model in model_list:  # submit model and post-processing
-            pp_jid = model.submit_model(run_info, self.engine,fake_function=fake_fn)
-            if pp_jid is not None:  # got a post-processing jid.
-                pp_jids.append(pp_jid)  # add it to the list
+            pp_jids.append( model.submit_model(fake_function=fake_fn))
+
 
         if fake_fn is not None:
             logging.info(f"Faked {len(model_list)} jobs")
             self.update_history(f"Faked {len(model_list)} jobs")
+            # if faking will have Nones so remove them from pp_jids. This allows the possibility of mixing them
+            pp_jids = [pp_jid for pp_jid in pp_jids if pp_jid is not None]
+            # note that engine.submit handles an empty hold list.
         else:
             logging.info(f"Submitted {len(model_list)} jobs")
             self.update_history(f"Submitted {len(model_list)} models")
 
         # now (re)submit this entire script so that the next iteration in the algorithm can be ran
+        # All the pp_jids should be not None.
+
         if (next_iter_cmd is not None) and (len(pp_jids) > 0):
             # submit the next job in the iteration if have one and submitted post-processing.
             iter_count = np.max(list(self.iter_keys.values()))  # iteration we are at.

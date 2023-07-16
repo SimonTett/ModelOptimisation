@@ -1,4 +1,4 @@
-""""
+"""
 Provide generic functions for job submission, job release_job, killing a job and extracting a jobid
 Provides implementations for SGE and SLURM. You might find your version of SGE or SLURM has subtle changes
 to extract the job-id. If so extend the relevant class and modify setup_engine.
@@ -11,106 +11,67 @@ import subprocess
 import typing
 import pathlib
 from abc import ABCMeta, abstractmethod
-from time import sleep
+from model_base import model_base, journal  # so can save things. The default to_dict, from_dict should work.
 
 
-def submission_engine(computer):
-    """
-    This should be modified if porting OptClim to a new computer system
-
-    :param computer: name of computer. If SGE or SLURM then these will be used.
-     Currently known computers are eddie, archer or ARC. eddie uses sge while the other two use slurm
-    :return: the submission engine  (None if not needed)
-    """
-
-    connect_fn = None
-    if computer in ['SGE', 'SLURM']:  # Generic SGE/SLURM
-        engine_name = computer
-    elif computer == 'eddie':  # Edinburgh cluster
-        engine_name = 'SGE'
-        connect_fn = eddie_ssh
-    elif computer == 'archer':  # UK national super-computer
-        engine_name = 'SLURM'
-    elif computer == 'ARC':  # Oxford cluster.
-        engine_name = 'SLURM'
-    else:
-        raise ValueError(f"Unknown computer {computer}")
-
-    return setup_engine(engine_name=engine_name, connect_fn=connect_fn)
-
-
-def ssh_cmd(node: str, cmd: list[str], rundir: typing.Optional[pathlib.Path|str] = None) -> list[str]:
-    """
-    Generic ssh command. Assumes that filesystems match on all nodes.
-     Either write a function for your machine which calls this or use functools.partial.
-    :param node: name of node to ssh to.
-    :param cmd: command to run
-    :param rundir: Where to run the command.
-       If not provided command will be run in current working dir when the generated command is run.
-        This assumes you are running the command with  journal.run_cmd(). See doc for that method.
-        If rundir is a shell var then it will be expanded when the command is run if journal.run_cmd is used.
-    :return: modified cmd which includes ssh
-    """
-    if rundir is None:
-        rundir = '$PWD'  # path at time of running (on linux systems)
-    s = f"cd {str(rundir)}; export PYTHONPATH=$PYTHONPATH ; export PATH=$PATH; export OPTCLIMTOP=$OPTCLIMTOP; " + " ".join([str(c) for c in cmd])
-    # run_cmd (which will eventually run the command) will expand env variables with values, at the time it is run.
-    logging.debug(f"{s} will be run on {node}")
-    return ['ssh', node, s]
-
-
-def eddie_ssh(cmd: list[str], rundir: typing.Optional[pathlib.Path] = None) -> list[str]:
-    """
-    Example submit function for ssh on eddie. Calls ssh_cmd with node set to login03.ecdf.ed.ac.uk
-    :param cmd: command to submit -- should be a list.
-    :param rundir: Where to run the command.
-       If not provided command will be run in current working dir when the generated command is run.
-        This assumes you are running the command with  journal.run_cmd(). See doc for that method.
-        If rundir is a shell var then it will be expanded when the command is run if journal.run_cmd is used.
-    :return: modified cmd which includes ssh.
-    """
-    rcmd = ssh_cmd('login03.ecdf.ed.ac.uk', cmd, rundir=rundir)
-    return rcmd
-
-
-allowed_eng = typing.Literal['SGE', 'SLURM']
-
-connect_sig = typing.Callable[[list[str], typing.Optional[pathlib.Path]], list[str]]
-
-
-def setup_engine(engine_name: allowed_eng = 'SGE',
-                 connect_fn: typing.Optional[connect_sig] = None) -> abstractEngine:
-    """
-    Create an engine (used by submission system)
-    :param engine_name: name of engine wanted.
-    :param connect_fn: name of function to generation connection to host where sge/slurm exists.
-    Sets up engines which hold cmds for SGE or slurm respectively. See class engine.
-    """
-    if engine_name == 'SGE':
-        return sge_engine(connect_fn=connect_fn)
-    elif engine_name == 'SLURM':
-        return slurm_engine(connect_fn=connect_fn)
-    else:
-        raise ValueError(f"Do not know what to do with engine_name = {engine_name}")
-
-
-class abstractEngine(metaclass=ABCMeta):
+class abstractEngine(model_base, journal):
     """
     Abstract class for Engines. Inherit and implement for your own class.
     """
+    allowed_eng = typing.Literal['SGE', 'SLURM']  # allowed engines
 
-    # TODO -- have submit_cmd return output and jobid.
-    def __init__(self, connect_fn: typing.Optional[typing.Callable] = None):
+    @classmethod
+    def create_engine(cls, engine_name: allowed_eng = 'SGE',
+                      ssh_node: typing.Optional[str] = None) -> abstractEngine:
+        """
+        Create an engine (used by submission system)
+        :param engine_name: name of engine wanted.
+        :param ssh_node: node to ssh to where engine can submit things
+        Sets up engines which hold cmds for SGE or slurm respectively. .
+        """
+
+        if engine_name == 'SGE':
+            return sge_engine(ssh_node=ssh_node)
+        elif engine_name == 'SLURM':
+            return slurm_engine(ssh_node=ssh_node)
+        else:
+            raise ValueError(f"Do not know what to do with engine_name = {engine_name}")
+
+    def __init__(self, ssh_node: typing.Optional[str] = None):
         """
         Initialise an Engine instance
-        :param connect_fn_fn: function for submission. Will be ran on all methods.
+        :param: ssh_node -- if not None then the name of the host to run commands on.
         """
-        self.connect_fn = connect_fn
+        self.ssh_node = ssh_node
+
+    def connect_fn(self,
+                   cmd: list[str],
+                   rundir: typing.Optional[pathlib.Path | str] = None) -> list[str]:
+        """
+        Connect command. Assumes that filesystems match on all nodes and runs commands on self.ssh_node
+         If self.ssh_node is None -- just returns the cmd
+        :param cmd: command to run
+        :param rundir: Where to run the command.
+           If not provided command will be run in current working dir when the generated command is run.
+            This assumes you are running the command with  journal.run_cmd(). See doc for that method.
+            If rundir is a shell var then it will be expanded when the command is run if journal.run_cmd is used.
+        :return: modified cmd which includes ssh
+        """
+        if self.ssh_node is None:
+            return cmd
+
+        if rundir is None:
+            rundir = '$PWD'  # path at time of running (on linux systems)
+        s = f"cd {str(rundir)}; export PYTHONPATH=$PYTHONPATH ; export PATH=$PATH; export OPTCLIMTOP=$OPTCLIMTOP; " + \
+            " ".join([str(c) for c in cmd])
+        # run_cmd (which will eventually run the command) will expand env variables with values, at the time it is run.
+        logging.debug(f"{s} will be run on {self.ssh_node}")
+        return ['ssh', self.ssh_node, s]
 
     def __eq__(self, other):
         """
         Test if two engines are the same.
-        types must be the same and connect_fn the same. If fn then have the same name
+        types must be the same and ssh_nodes must also be the same
         :param other: other engine
         :return: True or False
         """
@@ -118,16 +79,8 @@ class abstractEngine(metaclass=ABCMeta):
         if type(self) != type(other):
             print(f"Types differ {type(self)} != {type(other)}")
             return False
-        if type(self.connect_fn) != type(other.connect_fn):
-            print(f"Connect fns types differ {type(self.connect_fn) != type(other.connect_fn)}")
-            return False
-        if self.connect_fn is None:
-            return True  # we are both None.
-        if callable(self.connect_fn) and (self.connect_fn.__name__ != other.connect_fn.__name__):
-            print(f"Connect fn names differ: {self.connect_fn.__name__} != {other.connect_fn.__name__} ")
-        if self.connect_fn != other.connect_fn:
-            print(f"connect_fn differ {self.connect_fn} != {other.connect_fn}")
-            return False
+        if self.ssh_node != other.ssh_node:
+            print(f"ssh_nodes differ {self.ssh_node} != {other.ssh_node}")
 
         return True
 
@@ -152,9 +105,9 @@ class abstractEngine(metaclass=ABCMeta):
         :param name: name of job
         :param outdir: Directory where output will be put.
              If None will be set to cwd/output.
-        :param rundir: Directory where job will be ran.
+        :param rundir: Directory where job will run.
            If None will run in current working dir when command is run.
-        :param run_code: If provided, code to use to run the job
+        :param run_code: If provided, code to use to run the job.
         :param hold: If provided as a string or list of strings,
         this (these) jobids will need to successfully run before cmd is ran.
           If provided as a bool then job will held if hold_jid is True.
@@ -268,8 +221,7 @@ class sge_engine(abstractEngine):
         if n_tasks is not None:  # want to run a task array
             submit_cmd += ['-t', f'1:{n_tasks}']
         submit_cmd += cmd
-        if callable(self.connect_fn):
-            submit_cmd = self.connect_fn(submit_cmd, rundir=rundir)
+        submit_cmd = self.connect_fn(submit_cmd, rundir=rundir)
         return submit_cmd
 
     def release_job(self, jobid: str) -> typing.List[str]:
@@ -278,9 +230,9 @@ class sge_engine(abstractEngine):
         :param jobid: jobid to release_job
         :return: cmd to release_job job
         """
-        cmd = ['qrls', jobid]  # qrls: Command to release_job a job
-        if callable(self.connect_fn):
-            cmd = self.connect_fn(cmd)
+        cmd = ['qrls', jobid]  # qrls: Command to release a job
+
+        cmd = self.connect_fn(cmd)
         return cmd
 
     def kill_job(self, jobid: str) -> typing.List[str]:
@@ -290,8 +242,8 @@ class sge_engine(abstractEngine):
         :return: cmd to kill a job.
         """
         cmd = ['qdel', jobid]  # qdel: command to delete a job
-        if callable(self.connect_fn):
-            cmd = self.connect_fn(cmd)
+
+        cmd = self.connect_fn(cmd)
         return cmd
 
     def job_id(self, output: str) -> str:
@@ -305,16 +257,14 @@ class sge_engine(abstractEngine):
 
     def job_status(self, job_id: str, full_output: bool = False) -> str:
         """
-        Return the status of a job. Tuple will contain strings
+        Return the status of a job. Tuple will contain strings. Needs to actually run.
+        Could be turned into a gen command then parse the output.
         :param job_id: job id for status to be checked.
         :param full_output If True will return (raw) full output
         :return: One of 'Running','Held','Error','Suspended','Queuing',"Failed"
         """
-        # cmd = ["qstat","-j",job_id,"|","grep","status"]
-        cmd = ['qstat']
-        cmd = f'qstat | grep {job_id}'
-        if callable(self.connect_fn):
-            cmd = self.connect_fn(cmd)
+        cmd = [f'qstat | grep {job_id}']
+        cmd = self.connect_fn(cmd)  #
         result = subprocess.run(cmd, capture_output=True, text=True, shell=True)
         if result.returncode == 1:
             return "notFound"
@@ -391,8 +341,8 @@ class slurm_engine(abstractEngine):
         if n_tasks is not None:
             submit_cmd += ['-a', f'1-{n_tasks}']  # -a =  task array
         submit_cmd += cmd
-        if callable(self.connect_fn):
-            submit_cmd = self.connect_fn(submit_cmd, rundir=rundir)
+
+        submit_cmd = self.connect_fn(submit_cmd, rundir=rundir)
         return submit_cmd
 
     def release_job(self, jobid: str) -> typing.List:
@@ -402,8 +352,8 @@ class slurm_engine(abstractEngine):
         :return: a list of things that can be ran!
         """
         cmd = ['scontrol', 'release_job', jobid]  # Command to release_job a job
-        if callable(self.connect_fn):
-            cmd = self.connect_fn(cmd)
+
+        cmd = self.connect_fn(cmd)
         return cmd
 
     def kill_job(self, jobid: str) -> typing.List:
@@ -413,8 +363,8 @@ class slurm_engine(abstractEngine):
         :return: command to be ran (a list)
         """
         cmd = ['scancel', jobid]
-        if callable(self.connect_fn):
-            cmd = self.connect_fn(cmd)
+
+        cmd = self.connect_fn(cmd)
         return cmd
 
     def job_id(self, output: str) -> str:
@@ -437,8 +387,8 @@ class slurm_engine(abstractEngine):
         cmd = ["squeue", f"--job_ids={job_id}", '--long']  # get the output in long form for specified job.
         if not full_output:
             cmd += ['--noheader']
-        if callable(self.connect_fn):
-            cmd = self.connect_fn(cmd)
+
+        self.connect_fn(cmd)
         result = subprocess.check_output(cmd, text=True)
         if full_output:
             return result

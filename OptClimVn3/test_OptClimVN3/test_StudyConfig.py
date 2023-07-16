@@ -34,7 +34,7 @@ class testStudyConfig(unittest.TestCase):
         :return:
         """
         root = importlib.resources.files("OptClimVn3")
-        configFile = root / 'configurations/example_Model/dfols14param_opt3.json'
+        configFile = root / 'configurations/example_Model/configurations/dfols14param_opt3.json'
         self.config = StudyConfig.readConfig(configFile)
         # generate fake -lookup tables
 
@@ -167,7 +167,7 @@ class testStudyConfig(unittest.TestCase):
         """
 
         ref = self.config.referenceConfig()
-        expect = self.config.expand("$OPTCLIMTOP/OptClimVn3/configurations/example_Model")
+        expect = self.config.expand("$OPTCLIMTOP/OptClimVn3/configurations/example_Model/reference")
         self.assertEqual(ref, expect)
 
         # test we can set it

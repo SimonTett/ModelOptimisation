@@ -2183,8 +2183,10 @@ class OptClimConfigVn3(OptClimConfigVn2):
         """
         Return name of Machine in config file. Fails if not defined
         """
+        raise NotImplementedError # should not be called. Just extract run_info
         self.set_run_info(machineName=value)
         return self.run_info()['machineName']
+
 
     def model_name(self,value:typing.Optional[str]=None) -> str:
         """
