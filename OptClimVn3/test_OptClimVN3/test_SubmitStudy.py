@@ -2,6 +2,7 @@
 Test cases for SubmitStudy classes
 """
 import datetime
+import typing
 import importlib.resources
 import pathlib
 import tempfile
@@ -12,10 +13,12 @@ import Study
 import StudyConfig
 import SubmitStudy
 import engine
+import genericLib
 from Model import Model
 import copy
 import pandas as pd
-
+from ModelBaseClass import register_param
+from namelist_var import namelist_var
 
 def gen_time():
     # used to mock Model.now()
@@ -28,7 +31,6 @@ def gen_time():
 
 class myModel(Model):
     pass
-
 
 # class that inherits from Model.,
 times = gen_time()
@@ -70,12 +72,16 @@ class MyTestCase(unittest.TestCase):
         :return:
         """
         params = dict(VF1=2.2, RHCRIT=3)
+        paramD = copy.deepcopy(params)
+        paramD.update(self.submit.config.fixedParams())
         model = self.submit.create_model(params, dump=False)
         self.assertTrue(isinstance(model, Model))
-        self.assertEqual(model.parameters, params)
+        self.assertEqual(model.parameters, paramD)
         # now create one that goes to disk,
-        params.update(VF1=2.1)
+        for dct in [params,paramD]:
+            dct.update(VF1=2.1)
         model2 = self.submit.create_model(params)
+        self.assertEqual(model2.parameters,paramD)
         self.submit.dump_config(dump_models=True)
         # as dump_models is True expect SubmitStudy obj on disk and model as well.
         # load them and compare.
@@ -260,8 +266,11 @@ class MyTestCase(unittest.TestCase):
             obs_count = 0
             for k, v in param.items():
                 oname = f"obs{obs_count}"
-                sim_obs[oname] = v ** 2
-                obs_count += 1
+                try:
+                    sim_obs[oname] = v ** 2
+                    obs_count += 1
+                except TypeError: # multiplication not defined
+                    pass
             return pd.Series(sim_obs)
 
         with unittest.mock.patch("subprocess.check_output",

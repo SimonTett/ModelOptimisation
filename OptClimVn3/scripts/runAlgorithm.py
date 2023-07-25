@@ -117,14 +117,6 @@ logging.info(f"Known models are {', '.join(Model.known_models())}")
 
 
 
-args_not_for_restart = ['--delete','--purge']  # arguments to be removed from the restart cmd
-restartCMD = [arg for arg in sys.argv if arg not in args_not_for_restart]  # generate restart cmd.
-# because of way SGE (and maybe SLURM work) the cmd will not be runAlgorithm so fix it back!
-# restartCMD[0]=str(Model.expand('$OPTCLIMTOP/OptClimVn3/scripts/runAlgorithm.py')) # need full path.
-if dry_run or read_only:
-    restartCMD = None  # no restarting!
-
-logging.info(f"restartCMD is {restartCMD}")
 logging.info("Running from config %s named %s" % (jsonFile, configData.name()))
 
 
@@ -162,6 +154,9 @@ if config_path.exists():  # config file exists. Read it in.
 
 if rSUBMIT is None:  # no configuration exists. So create it.
     # We can get here either because config_path does not exist or we deleted the config.
+    args_not_for_restart = ['--delete','--purge']  # arguments to be removed from the restart cmd
+    restartCMD = [arg for arg in sys.argv if arg not in args_not_for_restart]  # generate restart cmd.
+    logging.info(f"restartCMD is {restartCMD}")
     rSUBMIT = runSubmit.runSubmit(configData, rootDir=rootDir, config_path=config_path,next_iter_cmd=restartCMD)
     logging.debug(f"Created new runSubmit {rSUBMIT}")
 

@@ -70,7 +70,13 @@ class simple_model(Model):
                     print(f"import subprocess {modifystr}") # import subprocess.
                     print("\n".join(self.create_cmd('RUNNING',modifystr)))
                 elif re.match(r'^\s*exit\([1-9]\)', line):  # Failed
-                    print("  \n".join(self.create_cmd('FAILED',modifystr,indent=4)))
+                    # 50/50 chance it sets FAILED or just crashed!
+                    cmd = " \n".join(self.create_cmd('FAILED',modifystr,indent=8))
+                    print(f"""
+    if np.random.uniform(0,1.0) < 0.5: {modifystr}
+        pass # nothing done {modifystr}
+    else: {modifystr}
+{cmd}""") # cmd alreayd has indention included.
                     print(line[0:-1])  # print out the original line.
                 elif re.match(r'^\s*exit\(0\)', line):  # Succeeded
                     print("\n".join(self.create_cmd('SUCCEEDED', modifystr)))

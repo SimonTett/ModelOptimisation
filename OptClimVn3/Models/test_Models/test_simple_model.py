@@ -7,12 +7,12 @@ import SubmitStudy
 import tempfile
 import pathlib
 import engine
-from simple_model import simple_model
-from Model import Model
+from Models import *
 import StudyConfig
 import shutil
 import re
 import subprocess
+import os
 """
 Test simple_model.
 """
@@ -81,8 +81,8 @@ class Test_simple_model(unittest.TestCase):
             for line in f:
                 if re.search(modifyStr, line): count += 1
 
-        # expect sevent modifications -- import, 2xstart, 2xfail and 2succeeded.
-        self.assertEqual(count,7)
+        # expect sevent modifications -- import, 2xstart, 5xfail and 2succeeded.
+        self.assertEqual(count,10)
 
 
     def test_set_params(self):
@@ -122,7 +122,7 @@ class Test_simple_model(unittest.TestCase):
         m = self.model
         m.instantiate()
         m.dump_model()
-        m2 = Model.load_model(m.config_path)
+        m2 = m.load_model(m.config_path)
         m2 == m
         self.assertEqual(m,m2)
 
@@ -137,12 +137,16 @@ class Test_simple_model(unittest.TestCase):
         else:
             cmd = ["./"+str(model.submit_script),str(model.StudyConfig_path)]
 
-
+        # fake env so ID can be found.
+        vars = ['JOB_ID','SLURM_JOB_ID']
+        for v in vars:
+            os.environ[v]= '123456'
         result=subprocess.run(cmd,cwd=model.model_dir,check=True,text=True)
-        # on linux note that shell=True requires a strong to be passed not a 
+        # on linux note that shell=True requires a string to be passed not a 
         # list.
         model2 = simple_model.load_model(model.config_path)
         self.assertEqual(model2.status,'SUCCEEDED')
+        self.assertEqual(model2.model_jids,['123456'])
 
 
 

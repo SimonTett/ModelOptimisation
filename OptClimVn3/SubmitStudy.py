@@ -80,6 +80,8 @@ class SubmitStudy(model_base, Study, journal):
 
         """
         super().__init__(config, name=name, models=models, rootDir=rootDir)
+        self.rootDir.mkdir(parents=True, exist_ok=True)  # create it if need be.
+
 
         if refDir is None:
             refDir = self.expand(str(config.referenceConfig()))
@@ -155,7 +157,7 @@ class SubmitStudy(model_base, Study, journal):
                                  reference=reference,
                                  model_dir=model_dir,
                                  config_path=config_path,
-                                 parameters=params,
+                                 parameters=paramDir,
                                  post_process=post_process,
                                  study=study,
                                  engine=self.engine,
@@ -541,7 +543,7 @@ class SubmitStudy(model_base, Study, journal):
         :return: Study
         """
 
-        study = Study(self.config)
+        study = Study(self.config,name=self.name,rootDir=self.rootDir)
         for key, var in vars(self).items():
             if hasattr(study, key):
                 setattr(study, key, copy.deepcopy(var))  # make a copy of var and add it as an attribute to study

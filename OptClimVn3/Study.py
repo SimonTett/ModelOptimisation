@@ -60,7 +60,6 @@ class Study():
             self.rootDir = pathlib.Path.cwd() / self.name  # default path
         else:
             self.rootDir = rootDir
-        self.rootDir.mkdir(parents=True, exist_ok=True)  # create it if need be.
 
 
 

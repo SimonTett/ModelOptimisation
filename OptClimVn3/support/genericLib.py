@@ -31,12 +31,15 @@ def fake_fn(config: OptClimConfigVn3, params: dict) -> pd.Series:
     logging.debug("faking with params: " + str(params))
     # remove ensembleMember param.
     params.pop('ensembleMember', None)  # remove ensembleMember as a key.
-
     pranges = config.paramRanges()
     tgt = config.targets()
     min_p = pranges.loc['minParam', :]
     max_p = pranges.loc['maxParam', :]
     scale_params = max_p - min_p
+    keys = list(params.keys())
+    for k in keys:
+        if k not in pranges.index:
+            params.pop(k)
     param_series = pd.Series(params).combine_first(config.standardParam())  # merge in the std params
     pscale = (param_series - min_p) / scale_params
     pscale -= 0.5  # tgt is at params = 0.5
