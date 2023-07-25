@@ -208,10 +208,15 @@ class JSON_Encoder(json.JSONEncoder):
          "__cls__name__" : name of the class of the object.
          "object": the serialized version of the object
 
-        Also see decode with reverses this.
+        Also see decode which reverses this.
         """
         try:
             result = dict(__cls__name__=obj.__class__.__name__, object=obj_to_from_dict.obj_to_value(obj))
             return result
         except TypeError:
-            super().default(obj)
+            try:
+                super().default(obj)
+            except TypeError: # something gone wrong. Say what!
+                print(f"Failed to serialize {obj} of type{obj} and class {obj.__class__.__name__}")
+                print(f"Know about {' '.join(list(obj_to_from_dict.FROM_VALUE.keys()))}")
+                raise

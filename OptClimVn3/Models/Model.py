@@ -54,9 +54,9 @@ class Model(ModelBaseClass, journal):
     @classmethod
     def from_dict(cls, dct: dict):
         """
-        Initialises using name and reference values in dct (popping them out so they don't get added twice)
+        Initializes using name and reference values in dct (popping them out so they don't get added twice)
         Then copies keys to attributes in obj
-        but only those that  exist after initialisation.
+        but only those that  exist after initialization.
         This is really a factory method
         :param dct: dict containing information needed by class_name.from_dict()
         :return: initialised object
@@ -78,10 +78,11 @@ class Model(ModelBaseClass, journal):
                  config_path: typing.Optional[pathlib.Path] = None,
                  status: str = "CREATED",
                  parameters: typing.Optional[dict] = None,
+                 engine: typing.Optional[engine.abstractEngine] = None,
                  run_info: typing.Optional[dict] = None,
                  study: typing.Optional["Study"] = None):
         """
-        Initialise the Model class.
+        Initialize the Model class.
 
         :param name -- name of model
         :param reference -- reference directory. Should be a pathlib.Path
@@ -105,11 +106,8 @@ class Model(ModelBaseClass, journal):
                 output_file -- name of the output file from the post-processing
                 runTime -- time in seconds for the post-processing.
           This should be constructed in the  setup using the StudyConfig.
-        :param run_info -- A dict containing information for engine creating and submission of the model and post-processing.
-           engine setup defined from run_info. run_info must include the key:
-             submit_engine which provides the submission engine.
+        :param run_info -- A dict containing information for submission of the model and post-processing.
            other keys are:
-            ssh_node -- the hostname of the machine to ssh to (if needed) to interact with the job control system
             runTime the time (seconds) for job
             runCode  the code to use to run the job.
 
@@ -143,7 +141,8 @@ class Model(ModelBaseClass, journal):
         """
         # set up default values.
 
-        # Generall attributes
+        # General attributes
+
         self.name = name
 
         if config_path is None:
@@ -171,7 +170,6 @@ class Model(ModelBaseClass, journal):
         self.fake = False  # did we fake the model? Changed at submission.
         self.perturb_count = 0  # how many times have we perturbed the model?
         self.submission_count = 0  # how mamy times have we submitted the model?
-        self.run_count = 0  # how many times has the model been run
 
         # history and output
         self.update_history(None)  # init history.
@@ -187,13 +185,12 @@ class Model(ModelBaseClass, journal):
 
         # "system" stuff. Things to do with actually submitting  a model and the post-processing.
         self.run_info = {}  # make it an empty dict.
-        self.engine = None  # make it None and then overwrite based on run_info
+        self.engine = engine  # make it None and then overwrite based on run_info
         if run_info is not None:
             self.run_info = copy.deepcopy(run_info)  # copy the run_info into Model.
-            self.engine = engine.abstractEngine.create_engine(run_info['submit_engine'],
-                                                              ssh_node=run_info.get('ssh_node'))
-        self.model_jids = []  # list of all model job ids submitted.
+        self.model_jids = []  # list of all model job ids running came across.
         self.pp_jid = None  # post-processing job id
+        self.submitted_jid = None # job id of last submitted model submitted.
         # setup submit and continue script
         self.submit_script = "submit.sh"
         self.continue_script = "continue.sh"
@@ -502,7 +499,7 @@ class Model(ModelBaseClass, journal):
 
         # Actually running a model now
         # first sort out the post-processing.
-        if self.continuable(): # Model would like to continue. So no pp submission.
+        if self.is_continuable(): # Model would like to continue. So no pp submission.
             # But check have a pp_jid and fail if not
             if self.pp_jid is None:
                 raise ValueError(f"self.pp_jid is None. Should be set to a job id of a post-processing job")
@@ -536,7 +533,7 @@ class Model(ModelBaseClass, journal):
         cmd = self.submit_cmd() # cmd that submits the model.
         output = self.run_cmd(cmd) # and run the command
         jid = self.engine.job_id(output) # and work out the job id.
-        self.model_jids.append(jid) # list of all job ids.
+        self.submitted_jid = jid # model will
         logging.debug(f"Model submission: ran {cmd} and got {output}")
         self.submission_count += 1 # increase time.
         self.set_status(status)
@@ -563,18 +560,42 @@ class Model(ModelBaseClass, journal):
         outdir = self.model_dir / 'model_output'
         outdir.mkdir(parents=True, exist_ok=True)
 
-        cmd = self.engine.submit_cmd([str(script)], f"{self.name}{self.run_count:05d}", outdir,
+        cmd = self.engine.submit_cmd([str(script)], f"{self.name}{len(self.model_jids):05d}", outdir,
                                 run_code=runCode, time=runTime, rundir=self.model_dir)
 
         return cmd
 
-    def running(self):
+    def running(self) -> typing.Optional[str]:
         """
-        Set status to running & increment run_count
-        :return:
+        Set status to running, store current job id & increment run_count
+        :return: current job id
         """
-        self.run_count += 1
+        if not self.fake: # faking so no job id.
+            my_jid = self.engine.my_job_id()
+            logging.debug(f"My jobid is {my_jid}")
+
+        else:
+            my_jid = None
+
+        self.model_jids.append(my_jid)
         self.set_status('RUNNING')
+        return my_jid
+
+    def guess_failed(self) -> bool:
+        """
+        Guess of a model has failed.
+          STATUS = RUNNING and status of last model jobid is unKnown likely means model has failed.
+        :return: True if guessed FAILED, False if not
+        """
+
+        if self.status == "RUNNING":
+            model_jid = self.model_jids[-1]
+            stat = self.engine.job_status(model_jid)
+            if stat == "notFound": # no job found.
+                logging.debug(f"Could not find status for jid:{model_jid} for model {self}. Setting status to FAILED")
+                self.set_failed() # we have failed.
+                return True
+        return False # this model is not having its status changed.
 
     def set_failed(self):
         """
@@ -748,20 +769,27 @@ class Model(ModelBaseClass, journal):
         """
         return self.status in ["CONTINUE", "INSTANTIATED", "PERTURBED"]
 
-    def failed(self) -> bool:
+    def is_failed(self) -> bool:
         """
         Return True if model has failed
         :return:
         """
         return self.status in ['FAILED']
 
-    def continuable(self) -> bool:
+    def is_continuable(self) -> bool:
         """
-
+        Return True if model is continuable.
         :return: Return True if model is continuable.
         """
 
         return self.status in ['CONTINUE']
+
+    def is_running(self) -> bool:
+        """
+        Return True if model is running.
+        :return: True if model if status is RUNNING
+        """
+        return self.status in ['RUNNING']
 
     def delete(self):
         """

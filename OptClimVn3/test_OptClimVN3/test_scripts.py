@@ -6,7 +6,10 @@ import tempfile
 import Model
 import platform
 import shutil
+
+import engine
 import genericLib
+import os
 
 import StudyConfig
 from runSubmit import runSubmit # so we can test if we have one!
@@ -16,8 +19,10 @@ class testScripts(unittest.TestCase):
 
     def setup_model(self):
         cpath = Model.Model.expand("$OPTCLIMTOP/OptClimVn3/configurations/example_simple_model")
+        eng = engine.abstractEngine.create_engine('SGE')
+
         model = Model.Model('test_model',
-                            reference=cpath,
+                            reference=cpath,engine=eng,
                             config_path=self.tempDir / 'testmodel.mcfg',
                             model_dir=self.tempDir / 'testmodel',
                             parameters=dict(pone=2, pthree=3),
@@ -45,6 +50,9 @@ class testScripts(unittest.TestCase):
     def test_set_model_status(self):
         # test set_model_status works
         # need  a model with status = "SUBMITTED" setup_model does that.
+
+        os.environ['JOB_ID']='123456'
+        os.environ['SLURM_JOB_ID']='123456'
         pth = self.script_dir/"set_model_status.py"
         self.assertTrue(pth.exists())
         model = self.setup_model()

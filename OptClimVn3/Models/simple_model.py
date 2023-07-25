@@ -112,7 +112,7 @@ class simple_model(Model):
         outdir = self.model_dir / 'model_output'
         outdir.mkdir(parents=True, exist_ok=True)
         cmd = self.engine.submit_cmd([script, str(self.StudyConfig_path)],
-                                f"{self.name}{self.run_count:05d}", outdir,
+                                f"{self.name}{len(self.model_jids):05d}", outdir,
                                 run_code=runCode, time=runTime,rundir=self.model_dir)
 
         return cmd

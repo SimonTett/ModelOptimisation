@@ -37,8 +37,9 @@ class Test_simple_model(unittest.TestCase):
         self.testDir2 = testDir2
 
         # set up another model properly
+        eng = engine.abstractEngine.create_engine('SGE')
         params = dict(vf1=2.3,rhcrit=0.5)
-        model = simple_model('model002',reference=self.refDir,run_info=dict(submit_engine='SGE'),
+        model = simple_model('model002',reference=self.refDir,engine=eng,
                                           model_dir=self.submit.rootDir/'model002',
                                           study=self.submit.to_study(),parameters=params)
         self.model = model
@@ -113,7 +114,7 @@ class Test_simple_model(unittest.TestCase):
         model = self.model
         outdir = model.model_dir / 'model_output'
         expected_cmd = eng.submit_cmd([model.submit_script,str(model.StudyConfig_path)],
-                                      f"{model.name}{model.run_count:05d}", outdir, rundir=model.model_dir,time=30)
+                                      f"{model.name}{len(model.model_jids):05d}", outdir, rundir=model.model_dir,time=30)
         self.assertEqual(cmd,expected_cmd)
 
     def test_dump_load(self):

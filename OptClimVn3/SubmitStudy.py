@@ -50,7 +50,7 @@ class SubmitStudy(model_base, Study, journal):
                  models: Optional[List[Model]] = None,
                  model_name: Optional[str] = None,
                  config_path: Optional[pathlib.Path] = None,
-                 next_iter_cmd: typing.Optional[typing.List[str]]  = None):
+                 next_iter_cmd: typing.Optional[typing.List[str]] = None):
         """
         Create ModelSubmit instance
         :param config: configuration information
@@ -81,7 +81,6 @@ class SubmitStudy(model_base, Study, journal):
         """
         super().__init__(config, name=name, models=models, rootDir=rootDir)
 
-
         if refDir is None:
             refDir = self.expand(str(config.referenceConfig()))
         self.refDir = refDir
@@ -89,10 +88,11 @@ class SubmitStudy(model_base, Study, journal):
         if model_name is None:
             model_name = self.config.model_name()
         self.model_name = model_name
+        self.run_info = copy.deepcopy(config.run_info()) # copy run_info as modifying it.
+        eng = engine.abstractEngine.create_engine(self.run_info.pop('submit_engine'),
+                                                     ssh_node=self.run_info.pop('ssh_node', None))
 
-        self.run_info = config.run_info()
-        self.engine = engine.abstractEngine.create_engine(self.run_info['submit_engine'],
-                                            ssh_node=self.run_info.get('ssh_node'))
+        self.engine = eng
 
         # engine & submit for this computer.
 
@@ -122,8 +122,6 @@ class SubmitStudy(model_base, Study, journal):
 
         return s
 
-
-
     def create_model(self, params: dict, dump: bool = True) -> Model:
         """
         Create a model, update list of created models and index of models.
@@ -136,15 +134,14 @@ class SubmitStudy(model_base, Study, journal):
         If you need functionality beyond this you may want to inherit from SubmitStudy and
           override create_model to meet your needs
         :param dump: If True dump  self (using self.dump_config method)
-        :param dump: If True and dump is True then dump all models.
-        :return: Key but self.model_index will be updated.
+        :return: Model created (or that already exists)
         """
 
         name = self.gen_name()
         model_dir = self.rootDir / name
         if model_dir.exists():
             raise ValueError(f"model_dir {model_dir} already exists")
-        config_path = model_dir/ (name + '.mcfg') # create model config in model dir
+        config_path = model_dir / (name + '.mcfg')  # create model config in model dir
         if config_path.exists():
             raise ValueError(f"config_path {config_path} already exists")
         paramDir = copy.deepcopy(params)
@@ -161,6 +158,7 @@ class SubmitStudy(model_base, Study, journal):
                                  parameters=params,
                                  post_process=post_process,
                                  study=study,
+                                 engine=self.engine,
                                  run_info=run_info
                                  )
         key = self.key_for_model(model)
@@ -275,7 +273,7 @@ class SubmitStudy(model_base, Study, journal):
 
         :return: a list of models that are marked to continue
         """
-        models_to_continue = [model for model in self.model_index.values() if model.continuable()]
+        models_to_continue = [model for model in self.model_index.values() if model.is_continuable()]
 
         return models_to_continue
 
@@ -285,7 +283,14 @@ class SubmitStudy(model_base, Study, journal):
         :return: list of models that have failed
         """
 
-        return [model for model in self.model_index.values() if model.failed()]
+        return [model for model in self.model_index.values() if model.is_failed()]
+
+    def running_models(self) -> List[Model]:
+        """
+
+        :return: List of models that are running
+        """
+        return [model for model in self.model_index.values() if model.is_running()]
 
     def to_dict(self) -> dict:
         """
@@ -480,8 +485,7 @@ class SubmitStudy(model_base, Study, journal):
         # submit models! Faking if necessary.
         pp_jids = []  # list of job ids from post-processing
         for model in model_list:  # submit model and post-processing
-            pp_jids.append( model.submit_model(fake_function=fake_fn))
-
+            pp_jids.append(model.submit_model(fake_function=fake_fn))
 
         if fake_fn:
             logging.info(f"Faked {len(model_list)} jobs")
@@ -509,11 +513,25 @@ class SubmitStudy(model_base, Study, journal):
             logging.info(f"Next iteration cmd is {run_next_submit} with output:{output}")
             jid = self.engine.job_id(output)  # extract the actual job id.
             logging.info(f"Job ID for next iteration is {jid}")
-            self.next_iter_jids.append(jid) # append jid to list of jobs. That way if have problems in previous jobs can get info back.
+            self.next_iter_jids.append(
+                jid)  # append jid to list of jobs. That way if have problems in previous jobs can get info back.
             self.update_history(f"Submitted next job with ID {jid}")
 
         self.dump_config()  # and write ourselves out
         return len(model_list)  # all done now
+
+    def guess_failed(self):
+        """
+        Set status of running models to failed using model.guess_failed()
+        :return: List of models that were guessed to have failed. Their status will be FAILED.
+        """
+        models_guess_fail = []
+        for model in self.running_models():
+            failed = model.guess_failed()  # guess if running model has actually failed.
+            if failed:
+                models_guess_fail.append(model)
+        logging.info(f"{len(models_guess_fail)} Models were set to FAILED.")
+        return models_guess_fail
 
     def to_study(self) -> Study:
         """
@@ -529,6 +547,3 @@ class SubmitStudy(model_base, Study, journal):
                 setattr(study, key, copy.deepcopy(var))  # make a copy of var and add it as an attribute to study
 
         return study
-
-
-

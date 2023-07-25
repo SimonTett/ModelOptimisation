@@ -7,6 +7,7 @@ import pathlib
 import subprocess
 from time import sleep
 import tempfile
+import os
 
 
 class MyTestCase(unittest.TestCase):
@@ -20,11 +21,29 @@ class MyTestCase(unittest.TestCase):
     def test_expect_instance(self):
         """ Very generic tests. Just checks get expected type.
         But at least runs each method """
+        os.environ['JOB_ID']='123456'
+        os.environ['SLURM_JOB_ID']='123456'
         for eng in [self.sge_engine, self.slurm_engine]:
             self.assertIsInstance(eng.submit_cmd(['ls'], 'fred'), list)
             self.assertIsInstance(eng.release_job('45645'), list)
             self.assertIsInstance(eng.kill_job('45645'), list)
             self.assertIsInstance(eng.job_id('Submitted job 123456'), str)
+            self.assertIsInstance(eng.my_job_id(),str)
+
+    def test_my_job_id(self):
+        # test my_job_id
+        vars = ['JOB_ID','SLURM_JOB_ID']
+        for v in vars:
+            os.environ[v]= '123456'
+
+        for eng in [self.sge_engine, self.slurm_engine]:
+            self.assertEqual(eng.my_job_id(), "123456")
+        # remove env vars. Should get None
+        for v in vars:
+            del(os.environ[v])
+        for eng in [self.sge_engine, self.slurm_engine]:
+            with self.assertRaises(ValueError):
+                eng.my_job_id()
 
     def test_run_cmds(self):
         # test commands work. Needs to be done on a system basis. 

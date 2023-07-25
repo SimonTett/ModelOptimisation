@@ -199,10 +199,20 @@ class MyTestCase(unittest.TestCase):
             submit.submit_all_models()
             # run submit -- should submit the three * (pp process and  models). so 6 times
             self.assertEqual(mck_output.call_count, 7)
+            # and now run the models -- which means we need to model my_job_id
+            models = submit.model_index.values()
+            model_job_nos = range(123456, 123456 + len(models))  # job numbers
+            with unittest.mock.patch("engine.sge_engine.my_job_id",autospec=True,
+                                     side_effect=[str(jid) for jid in model_job_nos]):
+                for m in models:
+                    m.running()
+
             # expect that the ob id is every 2nd job_no (as a str)
+            # and model_jid is as model_job_nos
             # so lets check that.
-            for model,jno in zip(submit.model_index.values(),job_nos[0::2]):
+            for model,jno,mjid in zip(submit.model_index.values(),job_nos[0::2],model_job_nos):
                 self.assertEqual(model.pp_jid,str(jno))
+                self.assertEqual(model.model_jids,[str(mjid)])
 
         # now have the models all fail and then continue.  Should only have three cases -- the models
         # All status should be submitted and the jid cmd should be unchanged
@@ -214,11 +224,14 @@ class MyTestCase(unittest.TestCase):
             submit.submit_all_models()
             self.assertEqual(mck_output.call_count, 3)  # three cases
             # check models are as expected.
-            for indx,model in enumerate(submit.model_index.values()):
-                self.assertEqual(model.status, "SUBMITTED")
-                self.assertEqual(model.pp_jid, str(job_nos[indx*2]))
-                mj = job_nos[indx*2+1] # jid for start job. Continue job should have this +100
-                self.assertEqual(model.model_jids,[str(mj),str(mj+100)])
+            model_job_nos2 = range(123456+100, 123456+100 + len(models))  # job numbers
+            with unittest.mock.patch("engine.sge_engine.my_job_id",autospec=True,side_effect=[str(jid) for jid in model_job_nos2]):
+                for indx,model in enumerate(submit.model_index.values()):
+                    self.assertEqual(model.status, "SUBMITTED")
+                    self.assertEqual(model.pp_jid, str(job_nos[indx*2]))
+                    model.running() # model gets to run.
+                    mj = [str(model_job_nos[indx]),str(model_job_nos2[indx])] # jid for start job. Continue job should have this +100
+                    self.assertEqual(model.model_jids,mj)
 
         # final actual run test. Turn of next iteration.
         submit.next_iter_cmd=None
@@ -314,6 +327,48 @@ class MyTestCase(unittest.TestCase):
         self.assertEqual(len(iters), 2)
         self.assertEqual(len(iters[1]),1) # and 1 models.
         self.assertEqual(iters[1][0],new_model)
+
+    def test_guess_failed(self):
+        # test guess_failed
+        # 1) Setup up Submit object with models. Then set their status to Running with the ids set.
+        submit = self.submit
+        submit.instantiate() # instantiate all the models
+        # then set status to RUNNING and set up model_jids
+        jid='123456'
+        for model in submit.model_index.values():
+            model.status='RUNNING'
+            model.model_jids.append(jid)
+            jid=str(int(jid)+1)
+
+        with unittest.mock.patch('engine.sge_engine.job_status',autospec=True,return_value='notFound') as mck:
+            failed_models = submit.guess_failed()
+            self.assertEqual(len(failed_models),3)
+            for model in failed_models:
+                self.assertEqual(model.status,"FAILED")
+
+        # now try again but mocking job_status to Queuing. Status of model should be RUNNING
+        for model in submit.model_index.values():
+            model.status='RUNNING'
+
+        with unittest.mock.patch('engine.sge_engine.job_status',autospec=True,return_value='Queuing') as mck:
+            failed_models = submit.guess_failed()
+            self.assertEqual(len(failed_models),0)
+            for model in submit.model_index.values():
+                self.assertEqual(model.status,"RUNNING")
+
+    def test_running_models(self):
+        # test running_models works
+        submit = self.submit
+        # nothing is running so expect no running models
+        rmodels = submit.running_models()
+        self.assertEqual(len(rmodels),0)
+        # now make models running!
+        submit.instantiate()
+        # set the status to RUNNING
+        for model in submit.model_index.values():
+            model.status = "RUNNING"
+        rmodels = submit.running_models()
+        self.assertEqual(rmodels,list(submit.model_index.values()))
 
 if __name__ == '__main__':
     unittest.main()

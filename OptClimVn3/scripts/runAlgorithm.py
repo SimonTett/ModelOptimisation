@@ -79,6 +79,8 @@ helpStr = """Behaviour for models that failed. Choices are:
 parser.add_argument("--fail", help=helpStr,
                     default='fail',
                     choices=['fail', 'continue', 'perturb', 'perturbc', 'delete'])
+
+parser.add_argument("--guess_fail", action='store_true',help="If set then use guess_fail to see if Running models have failed and set them failed.")
 args = parser.parse_args()
 verbose = args.verbose
 dry_run = args.dryrun
@@ -89,6 +91,7 @@ delete = args.delete
 monitor = args.monitor
 fail = args.fail
 purge = args.purge
+guess_fail = args.guess_fail
 if verbose == 1:
     logging.basicConfig(level=logging.INFO, force=True)
 elif verbose > 1:
@@ -166,11 +169,9 @@ if rSUBMIT is None:  # no configuration exists. So create it.
 if not (dry_run or read_only):  # not dry running or read only.
     # so first deal with failed models and then models that are already instantiated and so need running.
     # This happens if not all models that were instantiated were submitted.
-    failed_models = rSUBMIT.failed_models() # TODO FIXME. THIS DOES NOT WORK
-    # Alt test for a model failure is if the model status is RUNNING but the model not
-    # in the Q (because it should either be FAILED, SUCCEEDED or PROCESSED). That would set status to FAILED
-    # If status is SUCCEEDED  and PP job not in the Q then something went wrong with
-    # PP. Do not want to set FAILED at that point -- probably have FAILED_PP. User to fix that!
+    if guess_fail: # guess if models have failed. See Model.guess_failed to see how that is done.
+        models_guess_failed = rSUBMIT.guess_failed()
+    failed_models = rSUBMIT.failed_models()
     if len(failed_models):  # Some runs failed. Use fail to decide what to do
         logging.info(f"{failed_models} models failed. {rSUBMIT}")
         if fail == 'fail':

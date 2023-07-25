@@ -7,6 +7,7 @@ to extract the job-id. If so extend the relevant class and modify setup_engine.
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 import typing
 import pathlib
@@ -39,7 +40,7 @@ class abstractEngine(model_base, journal):
 
     def __init__(self, ssh_node: typing.Optional[str] = None):
         """
-        Initialise an Engine instance
+        Initialize an Engine instance
         :param: ssh_node -- if not None then the name of the host to run commands on.
         """
         self.ssh_node = ssh_node
@@ -145,15 +146,23 @@ class abstractEngine(model_base, journal):
         """
         pass
 
+    @abstractmethod
     def job_status(self, job_id: str, full_output: bool = False) -> str:
         """
-        Return the status of a job. Tuple will contain strings
+        Return the status of a job.
         :param job_id: job id for status to be checked.
         :param full_output If True will return (raw) full output
-        :return: One of 'Running','Held','Error','Suspended','Finished'
+        :return: One of 'notFound','Running','Held','Error','Queuing','Suspended',f'Failed {status} or full output
         """
         pass
 
+    @abstractmethod
+    def my_job_id(self) -> str :
+        """
+        Return job id of calling process.
+        :return: the job id of the process. Fails if not found
+        """
+        pass
     # end of abstract functions
 
 
@@ -283,7 +292,18 @@ class sge_engine(abstractEngine):
         else:
             logging.warning(f"Got unknown status {status} from {result}")
 
-        return "Failed"
+        return f"Failed {status}"
+
+    def my_job_id(self) -> str:
+        """
+
+        :return: the job id of the process. Uses $JOB_ID env var to get it.
+        """
+        try:
+            id = os.environ["JOB_ID"]
+        except KeyError:
+            raise ValueError("No JOB_ID environment variable found. Are you running in SGE env? ")
+        return id
 
 
 class slurm_engine(abstractEngine):
@@ -412,3 +432,14 @@ class slurm_engine(abstractEngine):
         else:
             return_code = codes[status]
             return return_code
+
+    def my_job_id(self) -> str:
+        """
+        Return the process job id.
+        :return: the job id of the process. Uses SLURM_JOB_ID env var to get it.
+        """
+        try:
+            id = os.environ["SLURM_JOB_ID"]
+        except KeyError:
+            raise ValueError("No SLURM_JOB_ID environment variable found. Are you running in SLURM env? ")
+        return id
