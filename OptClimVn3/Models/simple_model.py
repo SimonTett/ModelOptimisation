@@ -33,7 +33,7 @@ class simple_model(Model):
             if not self.StudyConfig_path.is_absolute(): # not absolute so make it so
                 self.StudyConfig_path = pathlib.Path.cwd()/self.StudyConfig_path
         self.submit_script ='run_simple_model.py'
-        self.continue_script = None # no continue script
+        self.continue_script = self.submit_script # continue is just submit
 
     def create_cmd(self, status:str, modifystr:str,indent:int=0) -> typing.List[str]:
         """
@@ -111,7 +111,7 @@ class simple_model(Model):
         if self.status in ['INSTANTIATED', 'PERTURBED']:
             script = self.submit_script
         elif self.status == 'CONTINUE':
-            raise ValueError("No CONTINUE allowed for run_simple_model.py")
+            script = self.continue_script
         else:
             raise ValueError(f"Status {self.status} not expected ")
         # just use the submit.
@@ -125,8 +125,8 @@ class simple_model(Model):
 
     def perturb(self, parameters: typing.Optional[dict] = None):
         """
-        Does nothing so will raise an error
-        :param parameters: dict of parameters to set.
+        Sets fail_probability to 0.0 so stopping and random failure.
         :return: Nada!
         """
-        raise NotImplementedError
+        return super().perturb(parameters=dict(fail_probability=0.0))
+

@@ -274,7 +274,8 @@ class sge_engine(abstractEngine):
         """
         cmd = [f'qstat | grep {job_id}']
         cmd = self.connect_fn(cmd)  #
-        result = subprocess.run(cmd, capture_output=True, text=True, shell=True)
+        cmd = [os.path.expandvars(c) for c in cmd]
+        result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode == 1:
             return "notFound"
         result.check_returncode()

@@ -10,8 +10,8 @@ import tempfile
 import os
 
 
-class MyTestCase(unittest.TestCase):
-    # first tests for engines
+class TestEngine(unittest.TestCase):
+    # tests for engines
 
     def setUp(self) -> None:
 
@@ -110,7 +110,7 @@ class MyTestCase(unittest.TestCase):
         release_cmd = eng.release_job(jid_1)
         subprocess.check_output(release_cmd, text=True)
         all_done = True
-        while sleep_time < 120:  # sleep up to 120 seconds or all jobs done
+        while sleep_time < 240:  # sleep up to 240 seconds or all jobs done
             all_done = True
             for job_id in jobs:
                 status = eng.job_status(job_id)

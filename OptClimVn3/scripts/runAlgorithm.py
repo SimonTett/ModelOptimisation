@@ -69,14 +69,14 @@ parser.add_argument("-t", "--test", action='store_true',
                     help='If set run fake function rather than submitting models.')
 parser.add_argument("-m", "--monitor", action='store_true', help='Producing monitoring plot after running')
 
-helpStr = """Behaviour for models that failed. Choices are:
+fail_help_str = """Behaviour for models that failed. Choices are:
                 fail (default), 
                 continue (continue run with no changes)), 
                 perturb (perturb run, restart run), 
                 perturbc (perturb run, continue run),
                 delete (delete model).
             These cases will be submitted (unless delete or fail are choice)"""
-parser.add_argument("--fail", help=helpStr,
+parser.add_argument("--fail", help=fail_help_str,
                     default='fail',
                     choices=['fail', 'continue', 'perturb', 'perturbc', 'delete'])
 
@@ -166,11 +166,15 @@ if not (dry_run or read_only):  # not dry running or read only.
     # This happens if not all models that were instantiated were submitted.
     if guess_fail: # guess if models have failed. See Model.guess_failed to see how that is done.
         models_guess_failed = rSUBMIT.guess_failed()
+    # test for RUNNING models. If any fail.
+    running_models = rSUBMIT.running_models()
+    if len(running_models) > 0:
+        raise ValueError(f"{rSUBMIT} has {len(running_models)} running. Try --guess_fail if those have failed. Otherwise wait...")
     failed_models = rSUBMIT.failed_models()
     if len(failed_models):  # Some runs failed. Use fail to decide what to do
         logging.info(f"{failed_models} models failed. {rSUBMIT}")
         if fail == 'fail':
-            raise ValueError(f"{rSUBMIT} has FAILED models. Use --fail choice ")
+            raise ValueError(f"{rSUBMIT} has FAILED models. Try --fail option: \n"+fail_help_str)
         for model in failed_models:
             logging.debug(f"Dealing with fail = {fail} for model {model}")
             if fail in ['perturb', 'perturbc']:

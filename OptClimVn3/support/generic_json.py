@@ -139,14 +139,16 @@ class obj_to_from_dict:
         :param values: values to use to initialise object with
         :return: object
         """
+        conv_fn = cls.FROM_VALUE.get(class_name)
 
-        try:
-            obj = cls.FROM_VALUE[class_name](values)
-            logging.debug(f"Created a {class_name} object from {values}")
-            return obj
-        except KeyError:
+        if conv_fn is None: # failed ot find conversion function.
             errMsg = f"Did not find {class_name}. Allowed classes are " + " ".join(cls.FROM_VALUE.keys())
             raise KeyError(errMsg)
+
+        obj = conv_fn(values)
+        logging.debug(f"Created a {class_name} object from {values}")
+        return obj
+
 
     @classmethod
     def obj_to_value(cls, obj):

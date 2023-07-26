@@ -111,10 +111,10 @@ class journal:
         """
         Run a command using subprocess.check_output and record output.
         :param cmd: command to run. Any shell variables ($VARNAME) in the cmd will be expanded at the time of running.
-        :**kwargs -- kwargs to be passed to subprocess.check_output. Will update defaults which is just text=True
+        :**kwargs -- kwargs to be passed to subprocess.check_output. Will update defaults which is just text=True and stderr=subprocess.DEVNULL 
         :return: output from running command
         """
-        args = dict(text=True)  #
+        args = dict(text=True, stderr=subprocess.DEVNULL)  #
         # issue is that fileNotFound will get returned if a file does not exist. Would need to
         # convert to subprocess.CalledProcessError
         args.update(**kwargs)
