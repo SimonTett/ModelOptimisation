@@ -18,23 +18,66 @@ import json
 from model_base import journal
 from ModelBaseClass import ModelBaseClass, register_param
 from namelist_var import namelist_var
-import engine
+from engine import abstractEngine
 
-
-# from Study import Study
+type_status = typing.Literal['CREATED', 'INSTANTIATED', 'SUBMITTED',
+                             'RUNNING', 'FAILED', 'PERTURBED', 'CONTINUE',
+                             'SUCCEEDED', 'PROCESSED']  # allowed strings for status
 
 
 class Model(ModelBaseClass, journal):
+    # type definitions for attributes.
+    name: str
+    config_path: pathlib.Path
+    reference: pathlib.Path
+    model_dir: pathlib.Path
+    post_process: dict
+    post_process_cmd_script: typing.Optional[list[str]]
+    fake: bool
+    perturb_count: int
+    submission_count: int
+    parameters: dict
+    parameters_no_key: dict
+    run_info: dict
+    engine: abstractEngine
+    pp_jid: typing.Optional[str]
+    model_jids: list[str]
+    submitted_jid: typing.Optional[str]
+    submit_script: pathlib.Path
+    continue_script: pathlib.Path
+    set_status_script: pathlib.Path
+    status: type_status
+    simulated_obs: typing.Optional[pd.Series]
+    _post_process_input: typing.Optional[str]
+    _post_process_output: typing.Optional[str]
+
     """
     Abstract model class. Any class that inherits from this will have name lookup.
-
     Also provides top-level methods and class methods.
     Model.load_model() will load a model from disk. An object of the appropriate class will be returned as long as that
     class inherits from Model.
-    As it inherits from history it has methods to update history,output nad run commands.
-
+    As it inherits from history it has methods to update history,output and run commands.
+    public attributes: (Be careful if you  change them)
+        model_dir -- directory where model information is stored
+        reference --  where the reference configuration came from.
+        config_path -- where the configuration is to be written to (or was read from).
+        name -- name of the model
+        status -- status of the model
+        post_process -- post-processing information. See Model.set_post_process for details.
+        fake -- If True model is faked.
+        perturb_count -- no of times perturbation has been done.
+        parameters -- dict of parameters/values. Used to generate key and set values.
+        parameters_no_key -- dict of parameters/values. Overrides parameters to set values.
+        set_status_script -- path to script that sets_status. Your model will need to call this.
+        engine -- submission engine.
+        pp_jid -- post-processing job id. This gets released when model status changes to SUCCEEDS
+        model_jids -- list of model job ids.
+        
+        Private attributes:
+          _post_process_input -- name of input file for post-procesing
+          _post_process_output -- name of output file for post-processing
+        Note that update_history and store_output (see Journal for doc for those) set up private attributes.
     """
-    # logging.getLogger(__name__) # setup logger for the class.
     post_proccess_json = "post_process.json"  # where post-process info gets written
     status_info = dict(CREATED=None,
                        INSTANTIATED=["CREATED"],  # Instantiate a model requires it to have been created
@@ -76,9 +119,9 @@ class Model(ModelBaseClass, journal):
                  post_process: typing.Optional[dict] = None,
                  model_dir: pathlib.Path = pathlib.Path.cwd(),
                  config_path: typing.Optional[pathlib.Path] = None,
-                 status: str = "CREATED",
+                 status: type_status = "CREATED",
                  parameters: typing.Optional[dict] = None,
-                 engine: typing.Optional[engine.abstractEngine] = None,
+                 engine: typing.Optional[abstractEngine] = None,
                  run_info: typing.Optional[dict] = None,
                  study: typing.Optional["Study"] = None):
         """
@@ -115,29 +158,6 @@ class Model(ModelBaseClass, journal):
         It is recommended that study **not** be stored as an attribute.
            If you do take great care and worry about recursion as study stores models.
            Note that this implementation does not take use study
-
-        All (except study) are stored as attributes and are publicly available
-          though user should be careful if they modify them.
-        public attributes:
-        model_dir -- directory where model information is stored
-        reference --  where the reference configuration came from.
-        config_path -- where the configuration is to be written to (or was read from).
-        name -- name of the model
-        status -- status of the model
-        post_process -- post-processing information. See Model.set_post_process for details.
-        fake -- If True model is faked.
-        perturb_count -- no of times perturbation has been done.
-        parameters -- dict of parameters/values
-        set_status_script -- path to script that sets_status. Your model will need to call this.
-        engine -- submission engine.
-        pp_jid -- post-processing job ids. This gets released when model status changes to SUCCEEDS
-        model_jids -- list of model job ids.
-        Private attributes:
-          _post_process_input -- name of input file for post-procesing
-          _post_process_output -- name of input file for post-processing
-
-          Note that update_history and store_output (see Journal for doc for those) set up private attributes.
-
         """
         # set up default values.
 
@@ -182,6 +202,7 @@ class Model(ModelBaseClass, journal):
             parameters = copy.deepcopy(parameters)
         # TODO check that parameters exist in lookup.
         self.parameters = parameters
+        self.parameters_no_key = {}  # parameters that do not generate key and augment/modify parameters.
 
         # "system" stuff. Things to do with actually submitting  a model and the post-processing.
         self.run_info = {}  # make it an empty dict.
@@ -190,10 +211,10 @@ class Model(ModelBaseClass, journal):
             self.run_info = copy.deepcopy(run_info)  # copy the run_info into Model.
         self.model_jids = []  # list of all model job ids running came across.
         self.pp_jid = None  # post-processing job id
-        self.submitted_jid = None # job id of last submitted model submitted.
+        self.submitted_jid = None  # job id of last submitted model submitted.
         # setup submit and continue script
-        self.submit_script = "submit.sh"
-        self.continue_script = "continue.sh"
+        self.submit_script = pathlib.Path("submit.sh")
+        self.continue_script = pathlib.Path("continue.sh")
         # setup path to where script that sets status is.
         root = self.expand("$OPTCLIMTOP/OptClimVn3")
         script_pth = root / "scripts/set_model_status.py"
@@ -317,20 +338,21 @@ class Model(ModelBaseClass, journal):
 
         return self.dump(self.config_path)  # call the  *dump* method.
 
-    def gen_params(self, parameters: typing.Optional[dict] = None):
+    def gen_params(self, parameters: typing.Optional[dict] = None) -> typing.Iterable:
         """
         Get iterable  of namelist/vars  to set.
-        :param parameters: If none use self.parameters else use this
-        Calls self.param_info.gen_parameters using self.parameters.
+        :param parameters: If None use self.parameters augmented by self.parameters_no_key
+        Calls self.param_info.gen_parameters to actually work out what namelists and values are to be set,
         then verifies  have iterable of namelist,value pairs.
-        .or some models you may want to override this method to deal with
+        For some models you may want to override this method to deal with
           other ways of setting parameters.
            This implementation deals with namelists and functions that return None,
-        :return: a iterable of  namelist, value pairs
+        :return: an iterable of  namelist, value pairs
         Example: model.gen_param_set()
         """
         if parameters is None:
             parameters = copy.deepcopy(self.parameters)
+            parameters.update(self.parameters_no_key)  # augment/update from parameters_no_key
         else:
             self.update_history(f"Setting parameters using parameters {parameters} rather than self.parameters")
 
@@ -352,7 +374,7 @@ class Model(ModelBaseClass, journal):
         nl = self.gen_params(parameters=parameters)
         namelist_var.nl_modify(nl, dirpath=self.model_dir)  # patch the namelists.
 
-    def changed_nl(self):
+    def changed_nl(self) -> dict:
         """
         Return namelists that have been changed. Note does not actually change anything about the model.
         :return: set of namelists indexed by file.
@@ -370,7 +392,7 @@ class Model(ModelBaseClass, journal):
         self.model_dir.mkdir(parents=True, exist_ok=True)  # create the directory if needed.
         shutil.copytree(self.reference, self.model_dir, symlinks=True, dirs_exist_ok=True)  # copy from reference.
 
-    def set_status(self, new_status: str, check_existing: bool = True) -> None:
+    def set_status(self, new_status: type_status, check_existing: bool = True) -> None:
         """
         Set the status of Model.
         Checks that new status is allowed and consistent with current status
@@ -425,47 +447,18 @@ class Model(ModelBaseClass, journal):
 
         return None
 
-    # def setup_model_env(self) -> bool:
-    #     """
-    #     Method to set up stuff for model_status_script to get model_config
-    #     This function does it by setting up env var OPTCLIM_MODEL_PATH and
-    #       writing out the json file model_dir/OPTCLIM_MODEL_PATH.json with model_config stored in it.
-    #       Uses generic json dump to do so.
-    #       Idea is that this gets run just before a model is actually submitted. As model run
-    #         is then expected to run the status update script.
-    #     both model_config and model_dir should exist. If they do not or are not a file or dir respectively
-    #       a value error will be raised.
-    #     :param model_config: path to model configuration.
-    #     :param model_dir: path to model_dir. Model assumed to run in that
-    #     :return: True if successful; False if Not though will actually fail!
-    #     """
-    #     if not self.model_dir.exists():
-    #         raise ValueError(f"Model_dir {self.model_dir} does not exists")
-    #     if not self.model_dir.is_dir():
-    #         raise ValueError(f"Model_dir {self.model_dir} is not a directory")
-    #     if not self.config_path.exists():
-    #         raise ValueError(f"Model config {self.config_path} does not exist")
-    #     if not self.config_path.is_file():
-    #         raise ValueError(f"Model config {self.config_path} is not a file")
-    #     config_info = dict(config_path=self.config_path)
-    #     outpath = self.model_dir / "OPTCLIM_MODEL_PATH.json"
-    #     with open(outpath, 'wt') as fp:
-    #         generic_json.dump(config_info, fp)
-    #
-    #     os.environ['OPTCLIM_MODEL_PATH'] = str(self.config_path)  # set up the environment.
-    #     logging.debug(f"Wrote config path to {outpath}. $OPTCLIM_MODEL_PATH = {os.environ['OPTCLIM_MODEL_PATH']}")
-    #     return True  # we worked!
-
     def submit_model(self,
-                     fake_function: typing.Optional[typing.Callable[[dict],pd.Series]] = None,
+                     fake_function: typing.Optional[typing.Callable[[dict], pd.Series]] = None,
                      ) -> typing.Optional[str]:
         """
         Submit a model and its post-processing.
         Post-processing gets submitted first but held.
         Model gets cmd to release_job post-processing included before it gets submiteded.
 
-        :param fake_function -- if provided, no submission will be done. Instead, this function will be used to generate fake obs.
-          Designed for testing code that runs whole algorithms. Takes one argument -- dict of parameters. Returns pandas series.
+        :param fake_function -- if provided, no submission will be done.
+          Instead, this function will be used to generate fake obs.
+          Designed for testing code that runs whole algorithms.
+          Takes one argument -- dict of parameters. Returns pandas series.
 
         :return: The jobid of the post-process job submitted. (If a post-processing job submitted)
             Post processing runs after the model has completed.
@@ -474,11 +467,11 @@ class Model(ModelBaseClass, journal):
         Example:
          model.submit_model()
         """
-        status = 'SUBMITTED'
-        pp_jid = None # unless we do something will have no pp job.
+        status: type_status = 'SUBMITTED'
+        pp_jid = None  # unless we do something will have no pp job.
         # deal with fake_function.
         if fake_function:  # handle fake function
-            self.pp_jid= None  # no cmd to run as we just run it!
+            self.pp_jid = None  # no cmd to run as we just run it!
             self.simulated_obs = fake_function(self.parameters).rename(self.name)  # compute the simulated_obs
             if not isinstance(self.simulated_obs, pd.Series):
                 raise ValueError(f"{fake_function} did not return pandas series. Returned {self.simulated_obs}")
@@ -499,11 +492,11 @@ class Model(ModelBaseClass, journal):
 
         # Actually running a model now
         # first sort out the post-processing.
-        if self.is_continuable(): # Model would like to continue. So no pp submission.
+        if self.is_continuable():  # Model would like to continue. So no pp submission.
             # But check have a pp_jid and fail if not
             if self.pp_jid is None:
                 raise ValueError(f"self.pp_jid is None. Should be set to a job id of a post-processing job")
-        else: # starting so generate and submit a post processing job.
+        else:  # starting so generate and submit a post processing job.
             if self.pp_jid is not None:  # self.pp_jid should be None. Fail if not!
                 raise ValueError(f"Have pp_jid {self.pp_jid} should be None")
             pp_cmd = [str(self.set_status_script), str(self.config_path), 'PROCESSED']
@@ -530,12 +523,12 @@ class Model(ModelBaseClass, journal):
         # Done submitting (if needed) a post-processing job. Now submit the model!
         # Model has been modified so that will run model.set_status("SUCCEEDED")
         # which will release the post-processing job.
-        cmd = self.submit_cmd() # cmd that submits the model.
-        output = self.run_cmd(cmd) # and run the command
-        jid = self.engine.job_id(output) # and work out the job id.
-        self.submitted_jid = jid # model will
+        cmd = self.submit_cmd()  # cmd that submits the model.
+        output = self.run_cmd(cmd)  # and run the command
+        jid = self.engine.job_id(output)  # and work out the job id.
+        self.submitted_jid = jid  # model will
         logging.debug(f"Model submission: ran {cmd} and got {output}")
-        self.submission_count += 1 # increase time.
+        self.submission_count += 1  # increase time.
         self.set_status(status)
 
         return pp_jid  # return the submission  jid
@@ -561,7 +554,7 @@ class Model(ModelBaseClass, journal):
         outdir.mkdir(parents=True, exist_ok=True)
 
         cmd = self.engine.submit_cmd([str(script)], f"{self.name}{len(self.model_jids):05d}", outdir,
-                                run_code=runCode, time=runTime, rundir=self.model_dir)
+                                     run_code=runCode, time=runTime, rundir=self.model_dir)
 
         return cmd
 
@@ -570,7 +563,7 @@ class Model(ModelBaseClass, journal):
         Set status to running, store current job id & increment run_count
         :return: current job id
         """
-        if not self.fake: # faking so no job id.
+        if not self.fake:  # faking so no job id.
             my_jid = self.engine.my_job_id()
             logging.debug(f"My jobid is {my_jid}")
 
@@ -591,11 +584,11 @@ class Model(ModelBaseClass, journal):
         if self.status == "RUNNING":
             model_jid = self.model_jids[-1]
             stat = self.engine.job_status(model_jid)
-            if stat == "notFound": # no job found.
+            if stat == "notFound":  # no job found.
                 logging.debug(f"Could not find status for jid:{model_jid} for model {self}. Setting status to FAILED")
-                self.set_failed() # we have failed.
+                self.set_failed()  # we have failed.
                 return True
-        return False # this model is not having its status changed.
+        return False  # this model is not having its status changed.
 
     def set_failed(self):
         """
@@ -608,8 +601,8 @@ class Model(ModelBaseClass, journal):
         """
         Set status to PERTURBED. Will need to be continued or submitted which requires submission information.
         :param parameters: dict of parameters & values to use to generate random perturbation.
-        This will update existing parameters.
-        Will aso increase perturb_count by 1 so algorithm can adjust if multiple perturbations done,
+        This will update parameters_no_key so key generation is unaffected and
+          increase perturb_count by 1 so algorithm can adjust if multiple perturbations done,
         :return:None
 
         This likely needs overwriting for specific models as parameters will be set.
@@ -621,13 +614,14 @@ class Model(ModelBaseClass, journal):
         """
         if parameters is None:
             parameters = {}
-            logging.debug("Setting pertrub parameters to empty dict")
-        self.parameters.update(parameters)  # update parameters
+            logging.debug("Setting perturb parameters to empty dict")
+
+        self.parameters_no_key = copy.deepcopy(parameters)  # set parameters_no_key to the perturbed parameters
         self.set_params()  # set parameter values
         self.update_history(f'Perturbed using {parameters}')  # so at least we can find out what was done
         self.perturb_count += 1
         self.set_status('PERTURBED')
-        logging.debug(f"set parameters to {parameters}")
+        logging.debug(f" parameters_no_key is now {self.parameters_no_key}")
 
     def continue_simulation(self):
         """
@@ -651,7 +645,7 @@ class Model(ModelBaseClass, journal):
         :return: output from running self.post_process_cmd
         """
 
-        status = 'SUCCEEDED'
+        status: type_status = 'SUCCEEDED'
 
         if self.pp_jid is not None:
             # release_job the post-processing job.
@@ -678,7 +672,7 @@ class Model(ModelBaseClass, journal):
          arg#2 can be .json or .csv or .nc
         :return: output from post-processing.
         """
-        status = 'PROCESSED'
+        status: type_status = 'PROCESSED'
         if self.fake:  # faking?
             self.set_status(status)  # just update the status
             return
@@ -787,7 +781,7 @@ class Model(ModelBaseClass, journal):
     def is_running(self) -> bool:
         """
         Return True if model is running.
-        :return: True if model if status is RUNNING
+        :return: True if model status is RUNNING
         """
         return self.status in ['RUNNING']
 
@@ -809,6 +803,26 @@ class Model(ModelBaseClass, journal):
         :return:None
         """
         raise NotImplementedError("Implement archive for your model")
+
+    def key(self, fpFmt: str = '%.4g') -> str:
+        """
+        Generate key from keys and values in self.parameters.
+        This should be unique (to some rounding on float parameters)
+        :param fpFmt -- format to convert float to string. (Default is %.4g)
+        :return: a tuple as an index. tuple is key_name, value in sorted order of key_name.
+        """
+        keys = []
+        paramKeys = sorted(self.parameters.keys())  # fixed ordering
+        # Iterate over sorted parameter names.
+        for k in paramKeys:  # iterate over keys in sorted order.
+            keys.append(k)
+            v = self.parameters[k]
+            if isinstance(v, float):
+                keys.append(fpFmt % v)  # float point number so use formatter.
+            else:  # just append the value.
+                keys.append(repr(v))  # use the object repr method.
+        keys = tuple(keys)  # convert to tuple
+        return str(keys)  # and then to a string.
 
     @register_param("ensembleMember")
     def ens_member(self, ensMember: typing.Optional[int]) -> None:

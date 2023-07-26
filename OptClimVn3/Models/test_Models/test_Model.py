@@ -247,10 +247,10 @@ class ModelTestCase(unittest.TestCase):
                             _post_process_input='input.json',
                             _post_process_output='sim_obs.json',
                             post_process_cmd_script=cmd, fake=False, simulated_obs=None,
-                            perturb_count=0, config_path=self.testDir / "test_model.mcfg",
+                            perturb_count=0, parameters_no_key= {},config_path=self.testDir / "test_model.mcfg",
                             status='CREATED', _history=model._history,engine=None,pp_jid=None,run_info={},model_jids=[],
-                            submission_count=0,continue_script='continue.sh',
-                            submit_script='submit.sh',submitted_jid=None,
+                            submission_count=0,continue_script=pathlib.Path('continue.sh'),
+                            submit_script=pathlib.Path('submit.sh'),submitted_jid=None,
                             set_status_script= self.model.expand("$OPTCLIMTOP/OptClimVn3/scripts/set_model_status.py"))
 
         dct = model.to_dict()
@@ -475,7 +475,7 @@ class ModelTestCase(unittest.TestCase):
             self.assertEqual(result, "123456")
             mock_chk.assert_called()  # actually got called
             self.assertEqual(model.pp_jid,'123456')
-            kw_args = dict(text=True)
+
             # args is a tuple of the arguments (just one list in this case)
             name =  f"{model.name}{len(model.model_jids):05d}"
             outdir = model.model_dir / 'model_output'
@@ -483,7 +483,7 @@ class ModelTestCase(unittest.TestCase):
                                            rundir=model.model_dir,
                                            outdir=outdir,time=2000),)
             self.assertEqual(mock_chk.call_args.args,scmd)
-            self.assertEqual(mock_chk.call_args.kwargs, kw_args)
+
 
             # also expect changes in status & history
             self.assertEqual(len(model._history), 2)
@@ -508,14 +508,14 @@ class ModelTestCase(unittest.TestCase):
             self.assertEqual(model.pp_jid,'123456') # should not change
             self.assertEqual(result,None) # continuing model so now jid!
             mock_chk.assert_called()  # actually got called
-            kw_args = dict(text=True)
+
             name =  f"{model.name}{len(model.model_jids):05d}"
             outdir = model.model_dir / 'model_output'
             scmd = (self.eng.submit_cmd([str('continue.sh')],name,
                                            rundir=model.model_dir,
                                            outdir=outdir,time=2000),)
             self.assertEqual(mock_chk.call_args.args, scmd)
-            self.assertEqual(mock_chk.call_args.kwargs, kw_args)
+
 
             # also expect changes in status & history,
             self.assertEqual(len(model._history), 2)
@@ -614,7 +614,7 @@ class ModelTestCase(unittest.TestCase):
         v['VF1'] *= (1 + 1e-7)  # small perturb
         with self.assertLogs(level='DEBUG') as log:
             model.perturb(v)
-        self.assertEqual(log.output[-1], f"DEBUG:root:set parameters to {v}")
+        self.assertEqual(log.output[-1], f"DEBUG:root: parameters_no_key is now {v}")
         self.assertEqual(len(model._history),    5)
         # expect 5 bits of history. Created, Modified,Instantiated, perturbed using and setting status
         p = model.read_values('VF1')
@@ -794,6 +794,24 @@ class ModelTestCase(unittest.TestCase):
         pp.pop('script')
         with self.assertRaises(ValueError):
             model = Model('fred',self.refDir,post_process=pp)
+
+    def test_key(self):
+        """
+        Tests for key
+        :return:
+        """
+
+        # test key for mixed params is as expected
+        pDict = {'zz': 1.02, 'aa': 1, 'nn': [0, 1]}
+        expect = str(('aa', '1', 'nn', '[0, 1]', 'zz', '1.02'))
+        self.model.parameters=pDict
+        key = self.model.key()
+        self.assertEqual(key, expect)
+        # test that small real differences don't cause any differences.
+        pDict = {'zz': 1.0200001, 'aa': 1, 'nn': [0, 1]}
+        self.model.parameters=pDict
+        key = self.model.key()
+        self.assertEqual(key, expect)
 
 
 if __name__ == '__main__':

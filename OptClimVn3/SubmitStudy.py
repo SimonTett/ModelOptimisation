@@ -48,7 +48,7 @@ class SubmitStudy(model_base, Study, journal):
     """
      provides methods to support working out which models need to be submitted. Creates new models and submits them.
     If you want to view a study just use the Study class. 
-    Attributes, beyond Study ones, are:
+    Attributes, beyond model_base, Study & journal ones, are:
         refDir -- path for reference directory
         model_name -- name of the model being used
         run_info -- information for submitting runs.

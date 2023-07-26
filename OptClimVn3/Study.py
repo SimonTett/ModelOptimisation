@@ -119,13 +119,14 @@ class Study():
         :param fpFmt: floating point format for floats
         :return: key
         """
-        key = self.key(model.parameters, fpFmt=fpFmt)  # Generate key.
+        #key = self.key(model.parameters, fpFmt=fpFmt)  # Generate key.
+        key = model.key(fpFmt=fpFmt)
         return key
 
     @staticmethod
     def key(parameters: typing.Mapping, fpFmt: str = '%.4g') -> str:
         """
-        Generate key from keys and values in paramDict. There should include all fixed and variable parameters.
+        Generate key from keys and values in parameters. There should include all fixed and variable parameters.
         This should be unique (to some rounding on float parameters)
         :param parameters -- a dictionary (or something that behaves likes a dict) of variable parameters.
         :param fpFmt -- format to convert float to string. (Default is %.4g)

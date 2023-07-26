@@ -32,7 +32,7 @@ class journal:
         Routine updates existing values so that multiple updates in a short time will preserve _history.
         Short time defined as less than precision of str(now))
         :param message:message text to be stored.
-        If message is None then  self.history will be created and the control returns
+        If message is None then  self._history will be created and the control returns
         :return:
         """
         if not hasattr(self, '_history'):  # no history so create it as an empty dict
@@ -73,11 +73,11 @@ class journal:
 
     def store_output(self, cmd: typing.Optional[list], result: typing.Optional[str]):
         """
-        Store output and cmd ran in self.output with key the time.
-           If self.output does not exist it will be created.
+        Store output and cmd ran in self._output with key the time.
+           If self._output does not exist it will be created.
         :param cmd: command that was ran
         :param result: result from the command
-        If both  are None then only the creatuion of output will be done
+        If both  are None then only the creation of _output will be done
         :return: Nothing
         """
         if not hasattr(self, '_output'):  # no output so create it as an empty dict
