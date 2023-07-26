@@ -37,14 +37,16 @@ def fake_fn(config: OptClimConfigVn3, params: dict) -> pd.Series:
     max_p = pranges.loc['maxParam', :]
     scale_params = max_p - min_p
     keys = list(params.keys())
-    for k in keys:
-        if k not in pranges.index:
+    for k in keys: # remove parameters that do not have a range.
+        if k not in pranges.columns:
             params.pop(k)
     param_series = pd.Series(params).combine_first(config.standardParam())  # merge in the std params
     pscale = (param_series - min_p) / scale_params
     pscale -= 0.5  # tgt is at params = 0.5
     result = 100 * (pscale + pscale ** 2)
-    # this fn has one minima and  no maxima between the boundaries and the minima. So should be easy to optimise.
+    if np.any(result.isnull()):
+        raise ValueError("Got null in result")
+    # this fn has one minimum and  no maxima between the boundaries and the minima. So should be easy to optimise.
     result = result.to_numpy()
     while (len(tgt) > result.shape[-1]):
         result = np.append(result, result, axis=-1)

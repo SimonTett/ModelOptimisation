@@ -24,10 +24,20 @@ from StudyConfig import OptClimConfigVn3
 
 
 class Study():
+    # class attribute type information.
+    config: OptClimConfigVn3
+    name: str
+    rootDir: pathlib.Path
+    model_index: dict
     """
     Class to support a study.  This class provides support for reading info
-    from a study -- both in progress or completed, and displaying them.  But does not
-    handle submitting models or realizing that a new one needs to be generated.
+    from a study -- both in progress or completed, and displaying them. 
+    Does not handle submitting models or realizing that a new one needs to be generated.
+    An instance has the following attributes:
+    config -- configuration
+    name -- name of the study.
+    rootDir -- path to where stuff is
+    model_index -- dict containing models indexed by model keys. 
     """
 
     def __init__(self, config: OptClimConfigVn3,
@@ -44,10 +54,8 @@ class Study():
         :param config_path: path to where config
         :param models -- list of models.
         """
-        if config is None:
-            self.config = None
-        else:
-            self.config = copy.deepcopy(config)
+
+        self.config = copy.deepcopy(config)
 
         if name is None:
             name = config.name()

@@ -112,6 +112,7 @@ class runSubmit(SubmitStudy):
         empty = pd.Series(np.repeat(np.nan, nObs), index=obsNames)
         for indx in range(0, nsim):  # iterate over the simulations.
             pDict = dict(zip(paramNames, use_params[indx, :]))  # create dict with names and values.
+            pDict.update(self.config.fixedParams())
             ensObs = []
             for ensembleMember in range(0, nEns):
                 pDict.update(ensembleMember=ensembleMember)

@@ -34,11 +34,33 @@ __version__ = '0.9'
 
 
 class SubmitStudy(model_base, Study, journal):
+    # typing information for class attributes
+    refDir: pathlib.Path
+    model_name: str
+    run_info:dict
+    engine:engine.abstractEngine
+    config_path: pathlib.Path
+    name_values: typing.Optional[list[int]]
+    iter_keys: dict
+    next_iter_cmd: typing.Optional[list[str]]
+    next_iter_jids: list
+
+    """
+     provides methods to support working out which models need to be submitted. Creates new models and submits them.
+    If you want to view a study just use the Study class. 
+    Attributes, beyond Study ones, are:
+        refDir -- path for reference directory
+        model_name -- name of the model being used
+        run_info -- information for submitting runs.
+        engine -- functions to handle different job submission engines.
+        config_path -- path to where config is stored.
+        name_values -- used to generate name. Set to None to reset counter.
+        iter_keys -- dict indexed by key with iteration count.
+        next_iter_cmd -- the command to run the next iteration.
+        next_iter_jids -- the jobs ids of all submitted next_iter_cmd jobs
     """
 
-    provides methods to support working out which models need to be submitted. Creates new models and submits them.
-    If you want to view a study just use the Study class
-    """
+
 
     fn_type = Callable[[Mapping], pd.Series]  # type hint for fakeFn
 
@@ -127,7 +149,7 @@ class SubmitStudy(model_base, Study, journal):
     def create_model(self, params: dict, dump: bool = True) -> Model:
         """
         Create a model, update list of created models and index of models.
-        :param   params: dictionary of "variable" parameters which are generated algorithmically.
+        :param   params: dictionary of parameters to create the model.
          The following parameters are special and handled differently:
            * reference -- the reference directory. If not there (or None) then self.refDir is used.
            * model_name -- the model type to be created. If not in params then then self.model_name is used.
@@ -147,7 +169,6 @@ class SubmitStudy(model_base, Study, journal):
         if config_path.exists():
             raise ValueError(f"config_path {config_path} already exists")
         paramDir = copy.deepcopy(params)
-        paramDir.update(self.config.fixedParams())  # and bring in any fixed params there are
         reference = paramDir.pop('reference', self.refDir)
         model_name = paramDir.pop('model_name', self.model_name)
         post_process = self.config.getv('postProcess')
@@ -170,7 +191,7 @@ class SubmitStudy(model_base, Study, journal):
         self.update_history(f"Created Model {model}")
         if dump:
             self.dump_config()  # and configuration
-        logging.info(f"Created model {model} with parameters {params}")
+        logging.info(f"Created model {model} with parameters {model.parameters}")
         return model
 
     def update_iter(self, models: List[Model]) -> int:
@@ -478,7 +499,7 @@ class SubmitStudy(model_base, Study, journal):
             # nothing else to do -- next stage is still sitting  in the Q waiting to be released.
             # Will be submitted once all the post-processing jobs have been run.
 
-        # No runs to continue so let's submit new runs
+        # No runs to continue, so let's submit new runs
         # Deal with maxRuns.
         if (maxRuns is not None) and (maxRuns > len(model_list)):  # need to truncate no of runs?
             logging.debug(f"Reducing to {maxRuns} models.")

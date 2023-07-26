@@ -457,19 +457,19 @@ class Model(ModelBaseClass, journal):
     #     return True  # we worked!
 
     def submit_model(self,
-                     fake_function: typing.Optional[typing.Callable] = None,
+                     fake_function: typing.Optional[typing.Callable[[dict],pd.Series]] = None,
                      ) -> typing.Optional[str]:
         """
-        Submit  a model and its post-processing.
+        Submit a model and its post-processing.
         Post-processing gets submitted first but held.
-        Model gets cmd to release_job post-processing included before it gets submitting.
+        Model gets cmd to release_job post-processing included before it gets submiteded.
 
+        :param fake_function -- if provided, no submission will be done. Instead, this function will be used to generate fake obs.
+          Designed for testing code that runs whole algorithms. Takes one argument -- dict of parameters. Returns pandas series.
 
-        :param fake_function -- if provided no submission  will be done. Instead, this function will be used to generate fake obs.
-          Designed for testing code that runs whole algorithms. Takes one argument -- dict of parameters.
-
-        :return: The jobid of the post-process job  submitted. (If a post-processing job submitted)
-            Post processing runs after model has completed and at time of submission we don't know what the final model job id is -- because it might self continue.
+        :return: The jobid of the post-process job submitted. (If a post-processing job submitted)
+            Post processing runs after the model has completed.
+             At the time of submission we don't know what the final model job id is -- because it might self continue.
 
         Example:
          model.submit_model()

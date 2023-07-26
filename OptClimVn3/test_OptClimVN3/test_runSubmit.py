@@ -354,6 +354,7 @@ class testRunSubmit(unittest.TestCase):
         varParamNames = configData.paramNames()
         def fn_opt(param_v):  # function for optimisation,
             pDict = dict(zip(varParamNames, param_v))
+            pDict.update(configData.fixedParams())
             sim_obs = fake_fn(configData,pDict)
             if scale:
                 sim_obs *= configData.scales()
