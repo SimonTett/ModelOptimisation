@@ -14,6 +14,7 @@ import pathlib
 from abc import ABCMeta, abstractmethod
 from model_base import model_base, journal  # so can save things. The default to_dict, from_dict should work.
 
+my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 
 class abstractEngine(model_base, journal):
     """
@@ -66,7 +67,7 @@ class abstractEngine(model_base, journal):
         s = f"cd {str(rundir)}; export PYTHONPATH=$PYTHONPATH ; export PATH=$PATH; export OPTCLIMTOP=$OPTCLIMTOP; " + \
             " ".join([str(c) for c in cmd])
         # run_cmd (which will eventually run the command) will expand env variables with values, at the time it is run.
-        logging.debug(f"{s} will be run on {self.ssh_node}")
+        my_logger.debug(f"{s} will be run on {self.ssh_node}")
         return ['ssh', self.ssh_node, s]
 
     def __eq__(self, other):
@@ -200,7 +201,7 @@ class sge_engine(abstractEngine):
 
         if outdir is None:
             outdir = pathlib.Path.cwd() / 'output'
-            logging.debug(f"Set outdir to {outdir}")
+            my_logger.debug(f"Set outdir to {outdir}")
 
         submit_cmd = ['qsub', '-l', f'h_vmem={mem}M', '-l', f'h_rt={time}',
                       '-V',
@@ -275,7 +276,10 @@ class sge_engine(abstractEngine):
         cmd = [f'qstat | grep {job_id}']
         cmd = self.connect_fn(cmd)  #
         cmd = [os.path.expandvars(c) for c in cmd]
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        shell= False
+        if len(cmd) == 1: # original output so need shell. ssh seems to run shell!
+            shell=True
+        result = subprocess.run(cmd, capture_output=True, text=True,shell=shell)
         if result.returncode == 1:
             return "notFound"
         result.check_returncode()
@@ -291,7 +295,7 @@ class sge_engine(abstractEngine):
         elif status == 'qw':
             return "Queuing"
         else:
-            logging.warning(f"Got unknown status {status} from {result}")
+            my_logger.warning(f"Got unknown status {status} from {result}")
 
         return f"Failed {status}"
 
@@ -340,7 +344,7 @@ class slurm_engine(abstractEngine):
         """
         if outdir is None:
             outdir = pathlib.Path.cwd() / 'output'
-            logging.debug(f"Set outdir to {outdir}")
+            my_logger.debug(f"Set outdir to {outdir}")
         submit_cmd = ['sbatch', f'--mem={mem}', f'--mincpus={n_cores}', f'--time={time}',
                       '--output', f'{outdir}/%x_%A_%a.out', '--error', f'{outdir}/%x_%A_%a.err',
                       '-J', name]

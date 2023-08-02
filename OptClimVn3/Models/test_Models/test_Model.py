@@ -97,9 +97,6 @@ class ModelTestCase(unittest.TestCase):
 
         # test faking!
 
-        # logger = logging.getLogger(__name__)
-        logging.basicConfig(format='%(asctime)s %(module)s   %(levelname)s: %(message)s',
-                            datefmt='%Y-%m-%d %H:%M:%S', level=logging.DEBUG)
         # create a model and store it.
         tmpDir = tempfile.TemporaryDirectory()
         testDir = pathlib.Path(tmpDir.name)  # used throughout.
@@ -346,7 +343,7 @@ class ModelTestCase(unittest.TestCase):
                 self.model.set_status(status)
             # only check first log entry which is the status change.
             self.assertEqual(log.output[0],
-                             f"DEBUG:root:Changing status from {omodel.status} to {self.model.status}")
+                             f"DEBUG:OPTCLIM.Model:Changing status from {omodel.status} to {self.model.status}")
             # check status is as expected
             self.assertEqual(self.model.status, status)
             nhist += 1  # 1 more history entry
@@ -614,7 +611,7 @@ class ModelTestCase(unittest.TestCase):
         v['VF1'] *= (1 + 1e-7)  # small perturb
         with self.assertLogs(level='DEBUG') as log:
             model.perturb(v)
-        self.assertEqual(log.output[-1], f"DEBUG:root: parameters_no_key is now {v}")
+        self.assertEqual(log.output[-1], f"DEBUG:OPTCLIM.Model: parameters_no_key is now {v}")
         self.assertEqual(len(model._history),    5)
         # expect 5 bits of history. Created, Modified,Instantiated, perturbed using and setting status
         p = model.read_values('VF1')
@@ -650,7 +647,7 @@ class ModelTestCase(unittest.TestCase):
             with self.assertLogs() as log:
                 r = model.succeeded()
             expected = self.eng.release_job(model.pp_jid)
-            self.assertEqual(log.output[0], f'INFO:root:Ran post-processing cmd {expected}')
+            self.assertEqual(log.output[0], f'INFO:OPTCLIM.Model:Ran post-processing cmd {expected}')
             self.assertEqual(model.status, 'SUCCEEDED')
             self.assertEqual(r, 'Ran PP')
             self.assertEqual(len(model._history), 2)
@@ -815,5 +812,4 @@ class ModelTestCase(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.DEBUG)
     unittest.main()

@@ -8,6 +8,7 @@ import f90nml
 import numpy as np
 
 from model_base import model_base
+my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -45,7 +46,7 @@ class namelist_var(model_base):
             value = namelists[self.namelist].get(self.nl_var.lower(),self.default)
         except KeyError: # namelist does not exist. Use default value
             value = self.default
-            logging.info(f"Failed to read {self.namelist} returning {self.default} for {self.nl_var}")
+            my_logger.info(f"Failed to read {self.namelist} returning {self.default} for {self.nl_var}")
         if value is None:
             raise KeyError(f"{self} not found")
         return value
@@ -89,7 +90,7 @@ class namelist_var(model_base):
         else:
             namelists = f90nml.read(filepath)
             cls._file_cache[filepath] = namelists
-            logging.info(f"Read in data from {filepath}")
+            my_logger.info(f"Read in data from {filepath}")
         if make_copy:
             namelists = copy.deepcopy(namelists)
         return namelists
@@ -118,19 +119,19 @@ class namelist_var(model_base):
             if path not in file_dict.keys():  # got this file? if not add it in.
                 if update:
                     file_dict[path] = cls.file_cache(path, clean=clean)  # not got it so use cache
-                    logging.debug(f"Updating namelists in {path}")
+                    my_logger.debug(f"Updating namelists in {path}")
                 else:
                     file_dict[path] = f90nml.namelist.Namelist()  # initialise to empty namelist.
-                    logging.debug(f"Setting {path} empty")
+                    my_logger.debug(f"Setting {path} empty")
 
             if nl.namelist.lower() not in file_dict[path].keys():
-                logging.debug(f"Setting {nl.namelist.lower()} to empty")
+                my_logger.debug(f"Setting {nl.namelist.lower()} to empty")
                 file_dict[path][nl.namelist.lower()] = f90nml.namelist.Namelist()
 
             file_dict[path][nl.namelist.lower()][nl.nl_var.lower()] = value
             if isinstance(value,np.ndarray): # convert numpy arrays.
                 file_dict[path][nl.namelist.lower()][nl.nl_var.lower()] = value.tolist()
-            logging.debug(f"Setting {nl}  to {value}")
+            my_logger.debug(f"Setting {nl}  to {value}")
         return file_dict
 
     @classmethod
@@ -151,7 +152,7 @@ class namelist_var(model_base):
         for filepath, nl_patch in namelists.items():
             bak_file = filepath.with_name(filepath.name + ".bak")
             shutil.copy2(filepath, bak_file, follow_symlinks=False)  # keep symlinks as symlinks.
-            logging.debug(f" {filepath} copied to {bak_file}")
+            my_logger.debug(f" {filepath} copied to {bak_file}")
             with tempfile.NamedTemporaryFile(dir=dirpath, delete=False, mode='w') as tmpNL:
                 # control how namelist is output.
                 nl_patch.end_comma = True
@@ -163,7 +164,7 @@ class namelist_var(model_base):
                 tmpNL.close()
             filepath.unlink() # remove the input file
             pathlib.Path(tmpNL.name).rename(filepath) # move temp file to original location.
-            logging.info(f"Modified {filepath}")
+            my_logger.info(f"Modified {filepath}")
         cls.clean_cache()  # cache now "dirty" (been modified) and so needs to  be cleaned.
         return True  # modification succeeded
 

@@ -24,7 +24,7 @@ from Model import Model
 from model_base import model_base, journal
 from Study import Study
 from StudyConfig import OptClimConfigVn3, dictFile
-
+import shutil
 # check we are version 3.9 or above.
 
 if (sys.version_info.major < 3) or (sys.version_info.major == 3 and sys.version_info.minor < 9):
@@ -32,6 +32,8 @@ if (sys.version_info.major < 3) or (sys.version_info.major == 3 and sys.version_
 
 __version__ = '0.9'
 
+
+my_logger=logging.getLogger(f"OPTCLIM.{__name__}")
 
 class SubmitStudy(model_base, Study, journal):
     # typing information for class attributes
@@ -59,7 +61,6 @@ class SubmitStudy(model_base, Study, journal):
         next_iter_cmd -- the command to run the next iteration.
         next_iter_jids -- the jobs ids of all submitted next_iter_cmd jobs
     """
-
 
 
     fn_type = Callable[[Mapping], pd.Series]  # type hint for fakeFn
@@ -191,7 +192,7 @@ class SubmitStudy(model_base, Study, journal):
         self.update_history(f"Created Model {model}")
         if dump:
             self.dump_config()  # and configuration
-        logging.info(f"Created model {model} with parameters {model.parameters}")
+        my_logger.info(f"Created model {model} with parameters {model.parameters}")
         return model
 
     def update_iter(self, models: List[Model]) -> int:
@@ -254,15 +255,15 @@ class SubmitStudy(model_base, Study, journal):
 
         obj = cls.load(config_path)
         if not isinstance(obj, SubmitStudy):
-            logging.warning(f"Expected instance of SubmitStudy got {type(obj)}")
+            my_logger.warning(f"Expected instance of SubmitStudy got {type(obj)}")
         if config is not None:
-            logging.info("Updating configuration")
+            my_logger.info("Updating configuration")
             obj.config = copy.deepcopy(config)
         if Study:  # convert to a study
             obj = obj.to_study()
             return obj
         if not config_path.samefile(obj.config_path):
-            logging.info(f"Modifying config path from  {obj.config_path} to {config_path}")
+            my_logger.info(f"Modifying config path from  {obj.config_path} to {config_path}")
             obj.config_path = config_path
             obj.update_history(f"Modified config path from  {obj.config_path} to {config_path}")
 
@@ -279,7 +280,7 @@ class SubmitStudy(model_base, Study, journal):
             model.instantiate()  # model state will be written out.
         iter_count = self.update_iter(models)  # update iteration info
         self.update_history(f'Instantiated {len(models)} models on iteration {iter_count}')
-        logging.info(f"Instantiated {len(models)} models")
+        my_logger.info(f"Instantiated {len(models)} models")
         return iter_count
 
     def models_to_submit(self) -> List[Model]:
@@ -324,7 +325,7 @@ class SubmitStudy(model_base, Study, journal):
 
         dct = super().to_dict()
 
-        logging.debug(f"Replacing models in model_index with config_path")
+        my_logger.debug(f"Replacing models in model_index with config_path")
         m2 = dict()
         for key, model in dct['model_index'].items():
             m2[key] = model.config_path
@@ -360,16 +361,16 @@ class SubmitStudy(model_base, Study, journal):
         model_index = dict()
         for key, path in obj.model_index.items():  # iterate over the paths (which is how we represent the models)
             if path.exists():
-                logging.debug(f"Loading model from {path}")
+                my_logger.debug(f"Loading model from {path}")
                 # verify key is as expected.
                 model = Model.load_model(path)  # load the model.
                 got_key = obj.key_for_model(model)
                 if key != got_key:  # key changed. TODO. deal with ensembleMember which seems to be truncated.
-                    logging.warning(f"Key has changed from {key} to {got_key} for model {model}")
+                    my_logger.warning(f"Key has changed from {key} to {got_key} for model {model}")
                     raise ValueError
                 model_index[got_key] = model
             else:
-                logging.warning(f"Failed to find {path} so ignoring.")
+                my_logger.warning(f"Failed to find {path} so ignoring.")
 
         obj.model_index = model_index  # overwrite the index
         return obj
@@ -388,10 +389,22 @@ class SubmitStudy(model_base, Study, journal):
 
         # remove the config_path.
         self.config_path.unlink(missing_ok=True)  # remove the config path.
-        # reset values count (used to generate name) to 0.
         # remove the directory.
+        shutil.rmtree(self.rootDir,ignore_errors=True)
+
+        # reset values count (used to generate name) to 0.
         self.name_values = None  # start again!
+        # kill any resubmission job running
+        if len(self.next_iter_jids) > 0:
+            curr_resub_id = self.next_iter_jids[-1]
+            status = self.engine.job_status(curr_resub_id)
+            if status not in ['notFound']:
+                cmd = self.engine.kill_job(curr_resub_id)
+                self.run_cmd(cmd)
+                my_logger.info(f"Killed resubmission job id:{curr_resub_id}")
+
         self.update_history("Deleted")
+        
 
     def delete_model(self, model):
         """
@@ -405,7 +418,7 @@ class SubmitStudy(model_base, Study, journal):
             raise ValueError(f"Something wrong popped model {m} is not the same as model: {model}")
         model.delete()
         self.iter_keys.pop(key)  # remove it from the iteration info.
-        logging.info("Deleted model with key {key}")
+        my_logger.info("Deleted model with key {key}")
 
     def gen_name(self, reset=False):
         """
@@ -446,7 +459,7 @@ class SubmitStudy(model_base, Study, journal):
         # give a warning if run out of names
 
         if (maxDigits > 0) & (self.name_values == [radix] * maxDigits):
-            logging.warning(f"Ran out of names name_values = {self.name_values}")
+            my_logger.warning(f"Ran out of names name_values = {self.name_values}")
         return name  # return name
 
     def submit_all_models(self, fake_fn: Optional[Callable] = None):
@@ -481,18 +494,19 @@ class SubmitStudy(model_base, Study, journal):
         output_dir = self.rootDir / 'jobOutput'  # directory where output goes for post-processing and next stage.
         # try and create the outputDir
         output_dir.mkdir(parents=True, exist_ok=True)
-        if (maxRuns is not None) and (maxRuns > len(models_to_continue)):
-            models_to_continue = models_to_continue[0:maxRuns]
-            logging.debug(f"Truncating models_to_continue to {maxRuns}")
 
         if len(models_to_continue) > 0:  # (re)submit  models that need continuing and exit
             if fake_fn is not None:
                 raise ValueError('Faking and continuing not allowed')
+            if (maxRuns is not None) and (maxRuns < len(models_to_continue)):
+                models_to_continue = models_to_continue[0:maxRuns]
+                my_logger.debug(f"Truncating models_to_continue to {maxRuns}")
+
             for model in models_to_continue:
                 pp_jid = model.submit_model()
-                logging.debug(f"Continuing {model.name}  ")
+                my_logger.debug(f"Continuing {model.name}  ")
 
-            logging.info(f"Continued {len(models_to_continue)} models and done")
+            my_logger.info(f"Continued {len(models_to_continue)} models")
             self.update_history(f"Continued {len(models_to_continue)} models")
             self.dump_config()  # and write out the Study
             return len(models_to_continue)
@@ -501,8 +515,8 @@ class SubmitStudy(model_base, Study, journal):
 
         # No runs to continue, so let's submit new runs
         # Deal with maxRuns.
-        if (maxRuns is not None) and (maxRuns > len(model_list)):  # need to truncate no of runs?
-            logging.debug(f"Reducing to {maxRuns} models.")
+        if (maxRuns is not None) and (maxRuns < len(model_list)):  # need to truncate no of runs?
+            my_logger.debug(f"Reducing to {maxRuns} models.")
             model_list = model_list[0:maxRuns]
 
         # submit models! Faking if necessary.
@@ -511,13 +525,13 @@ class SubmitStudy(model_base, Study, journal):
             pp_jids.append(model.submit_model(fake_function=fake_fn))
 
         if fake_fn:
-            logging.info(f"Faked {len(model_list)} jobs")
+            my_logger.info(f"Faked {len(model_list)} jobs")
             self.update_history(f"Faked {len(model_list)} jobs")
             # if faking will have Nones so remove them from pp_jids. This allows the possibility of mixing them
             pp_jids = [pp_jid for pp_jid in pp_jids if pp_jid is not None]
             # note that engine.submit handles an empty hold list.
         else:
-            logging.info(f"Submitted {len(model_list)} jobs")
+            my_logger.info(f"Submitted {len(model_list)} jobs")
             self.update_history(f"Submitted {len(model_list)} models")
 
         # now (re)submit this entire script so that the next iteration in the algorithm can be ran
@@ -533,9 +547,9 @@ class SubmitStudy(model_base, Study, journal):
                                                      run_code=runCode,
                                                      hold=pp_jids)
             output = self.run_cmd(run_next_submit)
-            logging.info(f"Next iteration cmd is {run_next_submit} with output:{output}")
+            my_logger.info(f"Next iteration cmd is {run_next_submit} with output:{output}")
             jid = self.engine.job_id(output)  # extract the actual job id.
-            logging.info(f"Job ID for next iteration is {jid}")
+            my_logger.info(f"Job ID for next iteration is {jid}")
             self.next_iter_jids.append(
                 jid)  # append jid to list of jobs. That way if have problems in previous jobs can get info back.
             self.update_history(f"Submitted next job with ID {jid}")
@@ -553,7 +567,7 @@ class SubmitStudy(model_base, Study, journal):
             failed = model.guess_failed()  # guess if running model has actually failed.
             if failed:
                 models_guess_fail.append(model)
-        logging.info(f"{len(models_guess_fail)} Models were set to FAILED.")
+        my_logger.info(f"{len(models_guess_fail)} Models were set to FAILED.")
         return models_guess_fail
 
     def to_study(self) -> Study:

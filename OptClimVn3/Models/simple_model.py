@@ -10,9 +10,11 @@ import platform
 from Model import Model
 import engine  # need the engine!
 import pathlib
+import copy
 
-
+my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 class simple_model(Model):
+    StudyconfigPath:pathlib.Path
     # simple model.. Need to have personal version of submit_cmd, modify_model, perturb and set_params
     # all other methods are as Model.
 
@@ -88,17 +90,21 @@ class simple_model(Model):
     def set_params(self, parameters: typing.Optional[dict] = None):
         """
         For simple_model just dump stuff to a json file
-        :param parameters: parameters to be written out
+        :param parameters: parameters to be written out. 
+        if not specified then add self.parameters_no_key  to self.parameters
+         and dump that.
         :return: Nada
         """
 
         out_file = self.model_dir / "params.json"
         if parameters is None:
-            parameters = self.parameters
+            parameters = copy.deepcopy(self.parameters)
+            parameters.update(self.parameters_no_key)
+            
         with open(out_file, 'w') as fp:
             json.dump(parameters, fp, allow_nan=False)
 
-        logging.debug(f"Dumped parameters to {out_file}")
+        my_logger.debug(f"Dumped parameters to {out_file}")
 
     # over write submit_cmd
     def submit_cmd(self) -> typing.List[str]:

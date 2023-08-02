@@ -60,6 +60,7 @@ class TestEngine(unittest.TestCase):
         # hardwired logging dir as /tmp/ does not appear to be accessible
         # from sge on eddie. 
         log_pth = pathlib.Path("/exports/csce/eddie/geos/groups/OPTCLIM/tmp_test_engine/")
+        log_pth.mkdir(exist_ok=True,parents=True) 
         for file in log_pth.glob("*"):
             file.unlink()
         tdir = tempfile.TemporaryDirectory()
@@ -122,7 +123,7 @@ class TestEngine(unittest.TestCase):
 
             print(f"Sleeping for {sleep_time}")
             sleep(sleep_time)
-            sleep_time *= 2  # double time.
+            sleep_time *= 1.25  # increase time by 25%.
         self.assertTrue(all_done)  # we should have completed.
         # lets see what is in log_pth
         files = list(log_pth.glob("*"))

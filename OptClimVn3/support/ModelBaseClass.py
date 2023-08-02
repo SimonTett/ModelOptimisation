@@ -7,6 +7,8 @@ import copy
 import typing
 import pathlib
 
+my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
+
 # code from David de Klerk 2023-04-13
 
 def register_param(name: str) -> typing.Callable:
@@ -48,11 +50,11 @@ class ModelBaseClass(model_base):
         for name, member in cls.__dict__.items():
             # Loop through all members of the subclass and populate param_info
             # accordingly. These should all be functions.
-            logging.debug(f"Processing member {name}")
+            my_logger.debug(f"Processing member {name}")
             if getattr(member, '_is_param', False):
                 param_name = getattr(member, '_name')
                 my_param_info.register(param_name, member)
-                logging.info(f"Registered param {param_name}")
+                my_logger.info(f"Registered param {param_name}")
         return my_param_info  # should be merged into rest of param_info.
 
     def __init_subclass__(cls, **kwargs):
@@ -74,23 +76,23 @@ class ModelBaseClass(model_base):
         for bcls in reversed(cls.__bases__):  # iterate over base classes updating parameters from them.
             parent_param_info = getattr(bcls, 'param_info', param_info())
             my_param_info.update(parent_param_info)  # update overwrites existing info for named parameters.
-            logging.info(f"Updated param_info from {bcls}")
+            my_logger.info(f"Updated param_info from {bcls}")
         if hasattr(cls, 'param_info'):  # Already got param_info. Update from it
             my_param_info.update(cls.param_info)
-            logging.info(f"Updated param_info from {cls.param_info}")
+            my_logger.info(f"Updated param_info from {cls.param_info}")
         my_param_info.update(cls.register_functions())
 
         cls.param_info = copy.deepcopy(my_param_info)
         ModelBaseClass.register_class(cls)
         # register the class for subsequent creation. This allows model_init to work.
-        logging.info(f"Registered {cls.__name__}")
+        my_logger.info(f"Registered {cls.__name__}")
 
     @classmethod
     def register_class(cls, newcls: typing.Any):
         """
         Register class
         """
-        logging.info(f"Registering class {newcls.__name__}")
+        my_logger.info(f"Registering class {newcls.__name__}")
         ModelBaseClass.class_registry[newcls.__name__] = newcls
 
     @classmethod
@@ -103,10 +105,10 @@ class ModelBaseClass(model_base):
         if name is None:
             name = cls.__name__
 
-        logging.info(f"Removing {name} from registry")
+        my_logger.info(f"Removing {name} from registry")
         r = ModelBaseClass.class_registry.pop(name, None)
         if r is None:
-            logging.warning(f"{name} not in registry")
+            my_logger.warning(f"{name} not in registry")
         return r
 
     @classmethod
@@ -131,7 +133,7 @@ class ModelBaseClass(model_base):
         except KeyError:
             raise ValueError(f"Failed to find {class_name}. Allowed classes are " + " ".join(cls.class_registry.keys()))
         result = newcls(*args, **kwargs)
-        logging.debug(f"Created {class_name}")
+        my_logger.debug(f"Created {class_name}")
         return result
 
     @classmethod
@@ -157,7 +159,7 @@ class ModelBaseClass(model_base):
         """
         for varname, value in param_info.items():
             cls.param_info.register(varname, value, duplicate=duplicate)
-            logging.debug(f"Registered {varname} with {value}")
+            my_logger.debug(f"Registered {varname} with {value}")
 
     @classmethod
     def update_from_file(cls, filepath: pathlib.Path, duplicate=True):

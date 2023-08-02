@@ -34,7 +34,8 @@ import numpy as np
 import pandas as pd
 import xarray  # TODO -- consider removing dependence on xarray
 
-__version__ = '0.3.0'
+__version__ = '3.0.0'
+my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 
 
 # functions available to everything.
@@ -657,7 +658,7 @@ class OptClimConfig(dictFile):
                                 # minor pain is that np.diag returns a numpy array so we have to remake the DataFrame
                                 cov[k] = pd.DataFrame(np.diag(np.diag(cov[k])), index=obsNames, columns=obsNames,
                                                       dtype=float)
-                                logging.info("Diagonalising " + k)
+                                my_logger.info("Diagonalising " + k)
                     except ValueError as exception:  # error in readCovariance
                         bad_reads += [str(exception)]
             if len(bad_reads) > 0:  # failed somehow. Raie ValueError.
@@ -1536,7 +1537,7 @@ class OptClimConfig(dictFile):
         :param value: If not None (default is None) then set the value f
         :return: maximum number of runs to be done.
         """
-
+        
         if value is not None:  # value provided? If so set and save it.
             self.setv('maxRuns', value)
 
@@ -1843,8 +1844,6 @@ class OptClimConfigVn2(OptClimConfig):
         Note needs matplotlib
         """
         # get a bunch of annoying messages from matplotlib so turn them off...
-        import logging
-        logging.getLogger('matplotlib.font_manager').disabled = True
         cost = self.cost()
         if len(cost) == 0:
             return  # nothing to plot
@@ -1999,6 +1998,33 @@ class OptClimConfigVn3(OptClimConfigVn2):
     2) Have generic way of dealing with dataframes and make all methods use and
        return pandas series or dataframes as appropriate.
     """
+    def __init__(self,config:dictFile):
+        """
+        Process all INCLUDE stuff
+        Call super clas __init__ method and then add comment_end attribute 
+        set to "_comment"
+        """
+        includes=dict()
+        for key,value in config.Config.items():
+            if isinstance(value,str) and value.startswith("INCLUDE "):
+                my_logger.debug(f"Include from {value}")
+                inc,pth = value.split(maxsplit=1)
+                includes[key+"_INCLUDE_comment"]=pth # raw path so can see what done
+
+                pth = os.path.expanduser(os.path.expandvars(pth))
+                pth=pathlib.Path(pth)
+                my_logger.debug(f"Reading in {pth}")
+                with open(pth,'rt') as fp:
+                    dct = json.load(fp)
+                includes[key]=dct
+        # now have a bunch of stuff in includes which we will use to update config.
+        if (len(includes) > 0):
+            my_logger.info(f"Updating the following keys: {' '.join(includes.keys())}")
+            config.Config.update(includes)
+                
+        super().__init__(config) # call super class init
+        self.comment_end='_comment' # define what a comment looks like.
+
     def __eq__(self, other:OptClimConfigVn3) -> bool:
         """
         Work out if two OptClimConfigVn3 objects are identical. Compares the two Config attributes.
@@ -2131,7 +2157,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
         soln = OptimResults(*range(0, 9))  # create empty OptimResults object
         for k, v in dct.items():  # fill in the instances
             if not hasattr(soln, k):
-                logging.warning(f"Would like to set attr {k} in soln but does not exist")
+                my_logger.warning(f"Would like to set attr {k} in soln but does not exist")
             setattr(soln, k, v)  # regardless will set the attribute.
 
         return soln
@@ -2201,12 +2227,57 @@ class OptClimConfigVn3(OptClimConfigVn2):
         :param value: If not None (default is None) then set the value
         :return: maximum number of runs to be done.
         """
+        #if value is not None: # got a value to set then set value
         self.set_run_info(maxRuns=value)
-
+        
         mx = self.run_info().get('maxRuns',None)
         if (mx is not None) and (mx < 1):
             raise ValueError(f"maxRuns {mx} < 1")
         # no default -- up to calling application to decide.
         return mx
 
+    
+    def strip_comment(self,dct:dict) -> dct:
+        """
+        Recursively remove all keys ending in _comment from a dct. 
+        :param: dct -- dict to have all _comment keys removed. 
+        Defined by self.comment_end
+        :return dct with all keys ending with _comment removed.
+        """
+        result_dct={}
+        for key,value in dct.items():
+            if isinstance(value,dict): # a dict -- call strip_comment
+                my_logger.debug(f"Copying {key} as dict")
+                result_dct[key]=self.strip_comment(value)
+            elif isinstance(key,str) and  key.endswith(self.comment_end):
+                my_logger.debug(f"Ignoring {key}") 
+            else:
+                my_logger.debug(f"Copying {key}") 
+                result_dct[key]=value # just take the value across.
+        
+        return result_dct
 
+    def logging_config(self,cfg:typing.Optional[dict]=None)-> dict:
+        """
+        Extract logging configuation from studyConfig. 
+        You can pass this straight into logging.config.dictConfig() to set up logging. Users are responsabile that this dict is correct etc. 
+        All comments will be removed. 
+
+        This is designed for codes that make use of the library.
+
+        :param: cfg -- if not None set the value of logging to this value.
+          
+        """
+        if cfg is not None: # got something so use it to set the value
+            self.setv("logging",cfg) 
+
+        cfg = self.getv("logging") # get it
+
+        if cfg is None:#got nothing so set it to a dict with version=1
+            cfg = dict(version=1)
+
+        cfg = self.strip_comment(cfg)
+        return cfg
+    
+
+        

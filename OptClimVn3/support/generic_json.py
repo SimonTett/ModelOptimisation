@@ -41,6 +41,8 @@ import numpy as np
 import pandas as pd
 import pathlib
 import typing
+my_logger = logging.getLogger("OPTCLIM."+__name__) # logging for generic_json
+
 
 def dump(obj,fp,*args,**kwargs):
     """
@@ -119,7 +121,7 @@ class obj_to_from_dict:
         """
         name = mycls.__name__
         cls.TO_VALUE[name] = method
-        logging.info(f"Registered {method.__qualname__} for {name} in TO_VALUE")
+        my_logger.info(f"Registered {method.__qualname__} for {name} in TO_VALUE")
     @classmethod
     def register_FROM_VALUE(cls, mycls,classmethod):
         """
@@ -130,7 +132,7 @@ class obj_to_from_dict:
         """
         name = mycls.__name__
         cls.FROM_VALUE[name] = classmethod
-        logging.info(f"Registered {classmethod.__qualname__} for {name} in FROM_VALUE")
+        my_logger.info(f"Registered {classmethod.__qualname__} for {name} in FROM_VALUE")
     @classmethod
     def value_to_obj(cls, class_name: str, values: dict | list):
         """
@@ -146,7 +148,7 @@ class obj_to_from_dict:
             raise KeyError(errMsg)
 
         obj = conv_fn(values)
-        logging.debug(f"Created a {class_name} object from {values}")
+        my_logger.debug(f"Created a {class_name} object from {values}")
         return obj
 
 
@@ -166,7 +168,7 @@ class obj_to_from_dict:
             raise TypeError(errMsg)
 
         result = method(obj)
-        logging.debug(f"Converted {name} to {result} using {method.__name__}")
+        my_logger.debug(f"Converted {name} to {result} using {method.__name__}")
         return result
 
     @classmethod
@@ -193,7 +195,7 @@ class obj_to_from_dict:
             if len(dct) > 0:
                 raise TypeError("Invalid dct")
             obj = cls.value_to_obj(name, data)
-            logging.debug(f"Created a {name} object {obj}")
+            my_logger.debug(f"Created a {name} object {obj}")
 
             return obj
         else:

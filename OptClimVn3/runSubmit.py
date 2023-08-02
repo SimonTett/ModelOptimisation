@@ -11,7 +11,7 @@ import optclim_exceptions
 import warnings
 import functools
 
-
+my_logger=logging.getLogger(f"OPTCLIM.{__name__}")
 class runSubmit(SubmitStudy):
     """
           Class   to deal with running various algorithms. (not all of which are optimization).
@@ -124,10 +124,9 @@ class runSubmit(SubmitStudy):
                 elif model.status != "PROCESSED": # not processed so raise ValueError and complain.
                     # TODO add in random generation to allow look ahead
                     raise ValueError(f"model status != PROCESSED = {model.status}")
-                    #logging.warning(f"{model} has not been processed. Setting obs to array of nan's")
                     obs = empty
                 else:  # got a model.
-                    logging.info(f"Using existing model {model}")
+                    my_logger.debug(f"Using existing model {model}")
                     obsNames = self.config.obsNames()
                     obs = model.simulated_obs  # get obs from the model
                     # if obs is None raise an error -- something gone badly wrong.
@@ -154,7 +153,7 @@ class runSubmit(SubmitStudy):
 
             # compute ensemble-mean if needed
             if ensemble_average and (len(ensObs) > 1):
-                logging.debug("Computing ensemble average")
+                my_logger.debug("Computing ensemble average")
                 ensObs = pd.DataFrame(ensObs)
                 ensObs = [ensObs.mean(axis=0)]
 
@@ -238,7 +237,7 @@ class runSubmit(SubmitStudy):
         """
 
 
-        logging.debug(f"in rangeAwarePerturbations with {baseVals}")
+        my_logger.debug(f"in rangeAwarePerturbations with {baseVals}")
         # derive the centre-of-valid-range
         centres = (parLimits.loc['minParam', :] + parLimits.loc['maxParam', :]) * 0.5
         deltaParam = np.abs(steps)

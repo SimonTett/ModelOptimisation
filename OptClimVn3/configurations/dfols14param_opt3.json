@@ -22,6 +22,7 @@
         "maxRuns_comment": "Maximum number of runs to do in parallel"
         },
     "run_info_comment": "Information  for run_info. Must include machineName and modelName. Can include other keys for use in submission. Useful ones are runTime, runCode & maxRuns ",
+    "logging":"INCLUDE $OPTCLIMTOP/OptClimVn3/configurations/log_config.ijson",
     "optimiseFunction": null,
     "optimiseFunction_comment": "Name of optimisation function to run. null gives default",
     "runUpgrade_vn4": "For vn4 add list of things to do here!",

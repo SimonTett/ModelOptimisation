@@ -10,12 +10,12 @@ import datetime
 
 import generic_json
 
+my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 
 class journal:
     """
     Provide history information, ability to run commands and record output.
     """
-
     @staticmethod
     def now():
         """
@@ -45,7 +45,7 @@ class journal:
         h = self._history.get(dtkey, [])  # get any existing history for this time
         h += [message]  # add on the message
         self._history[dtkey] = h  # store it back again.
-        logging.debug(f"Updated history at {dtkey} ")
+        my_logger.debug(f"Updated history at {dtkey} ")
 
     def last_history_key(self) -> typing.Optional[str]:
         """
@@ -122,7 +122,7 @@ class journal:
         # using expandvars so any shell variables in command are expanded.
         # this little code fragment from chatGPT (with a bit of nudging/editing) traps that.
         try:
-            logging.debug(f"Running {' '.join(cmd_to_run)}")
+            my_logger.debug(f"Running {' '.join(cmd_to_run)}")
             output = subprocess.check_output(cmd_to_run, **args)  # run cmd
         except subprocess.CalledProcessError as e:
             print("Failed")
@@ -162,6 +162,7 @@ class model_base:
     dump(self, config_path: pathlib.Path) -> Any:
         Write object (as json) to config_path.
     """
+
 
     def __init_subclass__(cls, *args, **kwargs):
         # obscure python. See https://peps.python.org/pep-0487/#new-ways-of-using-classes
@@ -204,7 +205,7 @@ class model_base:
             if hasattr(self, name):
                 setattr(self, name, value)
             else:
-                logging.warning(f"Did not setattr for {name} as not in obj")
+                my_logger.warning(f"Did not setattr for {name} as not in obj")
 
     def to_dict(self):
         """
@@ -217,6 +218,7 @@ class model_base:
 
         return dct
 
+    # class methods.
     @classmethod
     def load(cls, file: pathlib.Path):
         """
@@ -231,11 +233,11 @@ class model_base:
             cfg = generic_json.load(fp)
             # this runs all the magic needed to create objects that we know about
         for k, v in vars(cfg).items():  # debug info.
-            logging.debug(f"{k}: {v} ")
-        logging.info(f"Read configuration from {file}")
+            my_logger.debug(f"{k}: {v} ")
+        my_logger.info(f"Read configuration from {file}")
         return cfg
 
-    # class methods.
+
 
     def __eq__(self, other):
         """
@@ -286,7 +288,7 @@ class model_base:
         config_path.parent.mkdir(parents=True, exist_ok=True)
         with open(config_path, "w") as fp:
             result = generic_json.dump(self, fp, indent=2)  # JSON encoder does the magic needed
-        logging.info(f"Wrote to {config_path}")
+        my_logger.info(f"Wrote to {config_path}")
         return result
 
     @classmethod

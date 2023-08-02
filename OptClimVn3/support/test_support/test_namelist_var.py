@@ -1,4 +1,3 @@
-import logging
 import pathlib
 import shutil
 import tempfile
@@ -15,8 +14,6 @@ class namelist_var_TestCase(unittest.TestCase):
         :return:
         """
         # copy reference case to tempdir.
-        logging.basicConfig(format='%(asctime)s %(module)s.%(funcName)s %(levelname)s: %(message)s',
-                            datefmt='%Y-%m-%d %H:%M:%S', level=logging.INFO)
 
         tmpDir = tempfile.TemporaryDirectory()
         testDir = pathlib.Path(tmpDir.name)  # used throughout.

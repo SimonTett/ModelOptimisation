@@ -93,9 +93,9 @@ class TestParamInfo(unittest.TestCase):
             p.register('VF1', 'new_nl_var5')  # overwrite
             p.register('RHCRIT2', set_RHCRIT2)
         self.assertEqual(log.output, [
-            f"INFO:root:Overwriting VF1 and removing ['new_nl_var1']",
-            f"DEBUG:root:Set VF1 to new_nl_var5",
-            f"DEBUG:root:Parameter RHCRIT2 uses method {set_RHCRIT2.__qualname__} ",
+            f"INFO:OPTCLIM.param_info:Overwriting VF1 and removing ['new_nl_var1']",
+            f"DEBUG:OPTCLIM.param_info:Set VF1 to new_nl_var5",
+            f"DEBUG:OPTCLIM.param_info:Parameter RHCRIT2 uses method {set_RHCRIT2.__qualname__} ",
         ])
 
     def test_param(self):
@@ -125,9 +125,9 @@ class TestParamInfo(unittest.TestCase):
             a = p.param(None, 'VF1', 42)
             b = p.param(None, 'RHCRIT', 10)
         self.assertEqual(log.output,
-                         [f"DEBUG:root:Parameter VF1 set {nl_var1} to 42",
-                          f"DEBUG:root:Parameter VF1 set {nl_var2} to 42",
-                          f"DEBUG:root:Parameter RHCRIT called {set_RHCRIT.__qualname__} with 10 and returned {[(nl_var1a, [10] * 19), (nl_var2a, [10] * 10)]}"])
+                         [f"DEBUG:OPTCLIM.param_info:Parameter VF1 set {nl_var1} to 42",
+                          f"DEBUG:OPTCLIM.param_info:Parameter VF1 set {nl_var2} to 42",
+                          f"DEBUG:OPTCLIM.param_info:Parameter RHCRIT called {set_RHCRIT.__qualname__} with 10 and returned {[(nl_var1a, [10] * 19), (nl_var2a, [10] * 10)]}"])
 
         # test failures
         p.param_constructors['fred'] = 2
@@ -232,7 +232,7 @@ FN [function: {fn.__qualname__} ]
             tfile.close()
             with self.assertLogs(level=logging.WARNING) as log:
                 p.update_from_file(file, duplicate=True)
-            self.assertEqual(log.output, ["WARNING:root:Function TestParamInfo.fn not found. Likely some discrepancy"])
+            self.assertEqual(log.output, ["WARNING:OPTCLIM.param_info:Function TestParamInfo.fn not found. Likely some discrepancy"])
 
     def test_update(self):
         """

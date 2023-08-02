@@ -1,5 +1,5 @@
 {
-    "history": "Test config for DFOLS algorithm and Vn3 of OptClim. Perturbing 14 parameters and suing simple_model",
+    "history": "Test config for DFOLS algorithm and Vn3 of OptClim. Perturbing 7 parameters and using simple_model. has random fail in.",
     "Developer_comment": "StudyConfig.py provides methods that work with this configuration file. Remember to change them if you change structure of this.",
     "version": 3,
     "version_comment": "Version ID",
@@ -18,12 +18,10 @@
 	    "ssh_node_comment":"If not null then name of machine which has access to engine. Will ssh to this machine to submit commands",
         "modelName": "simple_model",
         "modelName_comment": "Name of model that is ran. MUST be provided",
-        "maxRuns": 3,
-        "maxRuns_comment": "Maximum number of runs to do in parallel. Runs submitted is 2x this + 1. "
+        "maxRuns": 5,
+        "maxRuns_comment": "Maximum number of runs to do in parallel. Runs submitted is 2x this + 1. DOES NOT WORK"
         },
     "run_info_comment": "Information  for run_info. Must include system_name and modelName. Can include other keys for use in submission. Useful ones are runTime, runCode & maxRuns ",
-    "logging":"INCLUDE $OPTCLIMTOP/OptClimVn3/configurations/log_config.ijson", 
-    "logging_comment":"Including log configuarion info.",
     "optimiseFunction": null,
     "optimiseFunction_comment": "Name of optimisation function to run. null gives default",
     "runUpgrade_vn4": "For vn4 add list of things to do here!",
@@ -70,7 +68,8 @@
         "fixedParams": {
             "comment": " List of parameters and values that are fixed and not modified in optimisation. Set to null to use default values",
             "START_TIME": "1998-12-01",
-            "RUN_TARGET": "P6Y4M"
+            "RUN_TARGET": "P6Y4M",
+	    "fail_probability":0.4
         },
         "fixedScale": false,
         "fixedScale_comment": "If true then scalable fixedParams range from 0 to 1 where 0 means min value; 1 max value.",

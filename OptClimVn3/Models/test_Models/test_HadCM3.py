@@ -60,7 +60,6 @@ class testHadCM3(unittest.TestCase):
         Setup case
         :return:
         """
-        logging.basicConfig(level=logging.DEBUG)
         parameters = dict(CT=1e-4, EACF=0.5, ENTCOEF=3.0, ICE_SIZE=30e-6,
                           RHCRIT=0.7, VF1=1.0, CW=2e-4, DYNDIFF=12.0, KAY_GWAVE=2e4,
                           ASYM_LAMBDA=0.15, CHARNOCK=0.012, G0=10.0, Z0FSEA=1.3e-3, ALPHAM=0.5,

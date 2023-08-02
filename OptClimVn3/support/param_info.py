@@ -9,6 +9,7 @@ import pandas as pd
 
 from model_base import model_base
 from namelist_var import namelist_var
+my_logger = logging.getLogger(f"OPTCLIM.{__name__}") # so this module has its own logging.
 
 
 class param_info(model_base):
@@ -28,7 +29,6 @@ class param_info(model_base):
 
     Example:
     """
-
     def __init__(self):
         """
         Initialise the params instance by setting param_constructors to an empty dict
@@ -67,7 +67,7 @@ class param_info(model_base):
         if not duplicate:
             try:
                 var = self.param_constructors.pop(parameter)
-                logging.info(f"Overwriting {parameter} and removing {var}")
+                my_logger.info(f"Overwriting {parameter} and removing {var}")
                 for v in var:
                     self.got_vars.remove(v)  # remove v from set of things we already have.
                     if callable(v):  # remove the function info.
@@ -85,9 +85,9 @@ class param_info(model_base):
         if callable(var_to_set):
             fname = var_to_set.__qualname__
             self.known_functions[fname] = var_to_set
-            logging.debug(f"Parameter {parameter} uses method {fname} ")
+            my_logger.debug(f"Parameter {parameter} uses method {fname} ")
         else:
-            logging.debug(f"Set {parameter} to {var_to_set}")
+            my_logger.debug(f"Set {parameter} to {var_to_set}")
 
     def read_param(self, model, parameter: str):
         """
@@ -103,11 +103,11 @@ class param_info(model_base):
                            " ".join(list(self.param_constructors.keys())))
         if callable(stuff):  # is it a callable
             result = stuff(model, None)  # callable. Run it in inverse mode.
-            logging.debug(f"Called {stuff.__qualname__} with inverse and got {result} ")
+            my_logger.debug(f"Called {stuff.__qualname__} with inverse and got {result} ")
 
         elif isinstance(stuff, namelist_var):
             result = stuff.read_value(dirpath=model.model_dir)
-            logging.debug(f"Read data from {stuff}")
+            my_logger.debug(f"Read data from {stuff}")
         else:
             raise NotImplementedError(f"Do not know how to deal with {stuff} of type {type(stuff)}")
         return result
@@ -131,7 +131,7 @@ class param_info(model_base):
                 err_msg = f"Parameter {parameter} with {value} and method {s}  returned odd output. Should  either be: " \
                           f"None, a tuple (nl,value) or list of such tuples "
                 r = s(model, value)  # run the function
-                logging.debug(f"Parameter {parameter} called {s.__qualname__} with {value} and returned {r}")
+                my_logger.debug(f"Parameter {parameter} called {s.__qualname__} with {value} and returned {r}")
                 # check output.
                 if r is None:  # function did something but returned nothing.
                     continue
@@ -147,7 +147,7 @@ class param_info(model_base):
 
             else:  # singleton so extend result with tuple (s, value)
                 result.append((s, value))
-                logging.debug(f"Parameter {parameter} set {s} to {value}")
+                my_logger.debug(f"Parameter {parameter} set {s} to {value}")
 
         return result
 
@@ -184,7 +184,7 @@ class param_info(model_base):
                     d['filepath'] = str(d['filepath'])
                     series.append(pd.Series(d))
                 else:
-                    logging.warning(f"Do not how to deal with type {type(value)}")
+                    my_logger.warning(f"Do not how to deal with type {type(value)}")
         df = pd.DataFrame(series)
         # want fixed ordering of columns in df.
         ordering = ['parameter', 'type']
@@ -217,18 +217,18 @@ class param_info(model_base):
                 nl = namelist_var(filepath=pathlib.Path(row.loc['filepath']), namelist=row.loc['namelist'],
                                   nl_var=row.loc['nl_var'], default=row.loc['default'],name=name)
                 self.register(param, nl, duplicate=duplicate)
-                logging.debug(f"Registered {nl} for parameter {param}")
+                my_logger.debug(f"Registered {nl} for parameter {param}")
             elif typ == 'function':
                 # check we have it and warn if not.
                 fname = row.loc["function_name"]
                 if fname not in self.known_functions.keys():
-                    logging.warning(f"Function {fname} not found. Likely some discrepancy")
-                logging.debug(f"Got function {fname} for parameter {param}")
+                    my_logger.warning(f"Function {fname} not found. Likely some discrepancy")
+                my_logger.debug(f"Got function {fname} for parameter {param}")
                 continue
             else:
                 raise NotImplementedError(f"No implementation for type {type}")
 
-        logging.info(f"Registered {len(parameter_df.index)} parameters")
+        my_logger.info(f"Registered {len(parameter_df.index)} parameters")
 
     def print_parameters(self):
         """
@@ -273,11 +273,11 @@ class param_info(model_base):
             for value in lst:
                 if (isinstance(value, list)) and (value[0] == 'function'):
                     # if decoding function then remember to modify self.known_functions.
-                    logging.debug(f"{key} is function = {value[1]}")
+                    my_logger.debug(f"{key} is function = {value[1]}")
                     continue
                 values.append(value)
                 obj.got_vars.add(value)  # list of things we have.
-                logging.debug(f"{key} set to {value}")
+                my_logger.debug(f"{key} set to {value}")
             if len(values) > 0:  # got something?
                 obj.param_constructors[key] = values
         return obj

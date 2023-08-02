@@ -33,21 +33,17 @@ if os.name == 'nt':
 if (display is None) or (not display):  # no display defined
     matplotlib.use('Agg')  # needed for "headless" nodes
 
+import logging
 import argparse  # parse command line arguments
 import functools
 import os
 import sys
 import pathlib
 import numpy as np
-from Models import *  # imports all models we know about. See Models/__init__.py Import this before anything else.
-import optclim_exceptions
-import runSubmit
-import StudyConfig
-
-import genericLib
-import logging
 import shutil
-
+import StudyConfig
+import genericLib
+# do minimum startup stuff. Really so can have logging
 
 ## main script
 
@@ -62,6 +58,7 @@ parser.add_argument("--purge", action='store_true',
                     help="purge the configuration by deleting the directory. Will ask if OK.")
 parser.add_argument("-v", "--verbose", action='count', default=0,
                     help="level of logging info level= 1 = info, level = 2 = debug ")
+parser.add_argument("--clean",help="Do not do anything but --delete and and --purge (if set)",action='store_true')
 parser.add_argument("--dryrun", action='store_true',
                     help="if set do not submit any jobs but do instantiate models. Good for testing")
 parser.add_argument("--readonly", action='store_true', help="read data but do not instantiate or submit jobs.")
@@ -88,17 +85,35 @@ read_only = args.readonly
 testRun = args.test
 jsonFile = pathlib.Path(os.path.expanduser(os.path.expandvars(args.jsonFile)))
 delete = args.delete
+clean = args.clean
 monitor = args.monitor
 fail = args.fail
 purge = args.purge
 guess_fail = args.guess_fail
-if verbose == 1:
-    logging.basicConfig(level=logging.INFO, force=True)
-elif verbose > 1:
-    logging.basicConfig(level=logging.DEBUG, force=True)
-else:
-    pass
+
 configData = StudyConfig.readConfig(filename=jsonFile)  # parse the jsonFile.
+# logging stuff. 
+if verbose == 1:
+    level=logging.INFO
+if verbose > 1:
+    level=logging.DEBUG
+if verbose: # turn on logging
+    my_logger = genericLib.setup_logging(
+        level=level,
+        log_config=configData.logging_config()
+    )
+
+# import rest of stuff. Have logging on so can see various auto-stuff in the 
+# class definitions
+
+from Models import *  # imports all models we know about. See Models/__init__.py Import this before anything else.
+import optclim_exceptions
+import runSubmit
+
+
+
+
+
 if args.dir is not None:
     rootDir = Model.expand(args.dir)  # directory defined so set rootDir
 else:  # set rootDir to cwd/name
@@ -113,11 +128,8 @@ if purge: # purging data? Do early so as to minimize amount of output user sees 
     else:
         print(f"Nothing deleted.")
 
-logging.info(f"Known models are {', '.join(Model.known_models())}")
-
-
-
-logging.info("Running from config %s named %s" % (jsonFile, configData.name()))
+my_logger.info(f"Known models are {', '.join(Model.known_models())}")
+my_logger.info("Running from config %s named %s" % (jsonFile, configData.name()))
 
 
 
@@ -142,23 +154,28 @@ monitor_file = rootDir / (jsonFile.stem + "_monitor.png")
 
 rSUBMIT = None  # set it to None
 if config_path.exists():  # config file exists. Read it in.
-    logging.info(f"Reading status from {config_path}")
+    my_logger.info(f"Reading status from {config_path}")
     rSUBMIT = runSubmit.runSubmit.load_SubmitStudy(config_path)
     if not isinstance(rSUBMIT, runSubmit.runSubmit):
         raise ValueError(f"Something wrong")
 
     if delete:  # delete the config
-        logging.info(f"Deleting existing config {rSUBMIT}")
+        my_logger.info(f"Deleting existing config {rSUBMIT}")
         rSUBMIT.delete()  # should clean dir.
         rSUBMIT = None  # remove it.
+if clean:
+    if not (purge or delete):
+        my_logger.warning("Set --purge or --delete when cleaning if you want cleaning!")
+    my_logger.info("Cleaned. So exiting")
+    exit(0)
 
 if rSUBMIT is None:  # no configuration exists. So create it.
     # We can get here either because config_path does not exist or we deleted the config.
     args_not_for_restart = ['--delete','--purge']  # arguments to be removed from the restart cmd
     restartCMD = [arg for arg in sys.argv if arg not in args_not_for_restart]  # generate restart cmd.
-    logging.info(f"restartCMD is {restartCMD}")
+    my_logger.info(f"restartCMD is {restartCMD}")
     rSUBMIT = runSubmit.runSubmit(configData, rootDir=rootDir, config_path=config_path,next_iter_cmd=restartCMD)
-    logging.debug(f"Created new runSubmit {rSUBMIT}")
+    my_logger.debug(f"Created new runSubmit {rSUBMIT}")
 
 # We might  have runs to do so check that and run them if so.
 if not (dry_run or read_only):  # not dry running or read only.
@@ -172,11 +189,11 @@ if not (dry_run or read_only):  # not dry running or read only.
         raise ValueError(f"{rSUBMIT} has {len(running_models)} running. Try --guess_fail if those have failed. Otherwise wait...")
     failed_models = rSUBMIT.failed_models()
     if len(failed_models):  # Some runs failed. Use fail to decide what to do
-        logging.info(f"{failed_models} models failed. {rSUBMIT}")
+        my_logger.info(f"{len(failed_models)} models failed. {rSUBMIT}")
         if fail == 'fail':
             raise ValueError(f"{rSUBMIT} has FAILED models. Try --fail option: \n"+fail_help_str)
         for model in failed_models:
-            logging.debug(f"Dealing with fail = {fail} for model {model}")
+            my_logger.debug(f"Dealing with fail = {fail} for model {model}")
             if fail in ['perturb', 'perturbc']:
                 model.perturb()  # perturb  model
             if fail in ['perturbc', 'continue']:  # model to continue
@@ -188,7 +205,7 @@ if not (dry_run or read_only):  # not dry running or read only.
     # this handles both models that are instantiated or those that need continuing.
     # see submit_all_models for details.
     if nModels > 0:  # submitted some models
-        logging.info(f"Submitted {nModels}. rSubmit: {rSUBMIT}")
+        my_logger.info(f"Submitted {nModels}. rSubmit: {rSUBMIT}")
         exit(0)  # just exit.
 
 # check status is only PROCESSED.
@@ -197,7 +214,7 @@ if np.any(status != 'PROCESSED'):
     raise ValueError(f"Have unexpected status rSUBMIT:{rSUBMIT}")
 
 algorithmName = configData.optimise()['algorithm'].upper()
-logging.debug(f"Algorithm is {algorithmName}")
+my_logger.debug(f"Algorithm is {algorithmName}")
 if algorithmName in ['RUNOPTIMISED', 'JACOBIAN']:
     wantCost = False
 else:
@@ -223,23 +240,23 @@ while True:  # loop indefinetly so can have fake_fn. This really to test code/al
         break  # we have finished running algorithm so can exit and go to final clear up.
     except optclim_exceptions.runModelError:  # error which triggers need to instantiate and run more models.
         if read_only:
-            logging.info(f"read_only -- exiting")
+            my_logger.info(f"read_only -- exiting")
             break  # exit the loop -- we are done as in read_only mode.
         iter_count = rSUBMIT.instantiate()  # instantiate all cases that need instantiation.
         # This also generates iteration information.
-        logging.info(f"Instantiated {rSUBMIT}")
+        my_logger.info(f"Instantiated {rSUBMIT}")
         if dry_run:  # nothing gets submitted or faked. So exit
-            logging.info(f"dry_run -- exiting")
+            my_logger.info(f"dry_run -- exiting")
             break
         nModels = rSUBMIT.submit_all_models(fake_fn=fakeFn)  # this also saves the config.
         finalConfig = rSUBMIT.runConfig(scale=True, add_cost=wantCost)  # generate final configuration
-        logging.info(f"On iteration {iter_count} submitted {nModels} models")
+        my_logger.info(f"On iteration {iter_count} submitted {nModels} models")
         try:
-            logging.info(f"Last cost is {float(finalConfig.cost().iloc[-1])}")
+            my_logger.info(f"Last cost is {float(finalConfig.cost().iloc[-1])}")
         except IndexError:  # no cost.
             pass
         if fakeFn is None:  # no fake fn so time to exit. This is "normal" behaviour.
-            logging.info("Exiting")
+            my_logger.info("Exiting")
             break  # exit the run forever loop as no more runs should be submitted on this go.
         else:  # reload the configuration (and all models).
             # This necessary as writing out/reading in changes (slightly) the floating point value of some values

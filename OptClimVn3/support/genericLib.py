@@ -17,9 +17,54 @@ import numpy as np
 import pandas as pd
 from StudyConfig import OptClimConfigVn3
 import logging
+import logging.config
 import copy
 
+my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 
+def setup_logging(level:typing.Optional(int) = None,
+                  rootname:typing.Optional[str] = None,
+                  log_config:typing.Optional[dict]=None):
+    """
+    Setup logging. 
+    :param: level: level of logging . If None logging.WARNIG will be used
+    :param: rootname: rootname for logging. if None OPTCLIM will be used. 
+    :param: log_config config dict for logging.config --
+          see https://docs.python.org/3/library/logging.config.html
+          If not None will only be used if level is not None and the actual 
+          value of level will be ignored. 
+    """
+    
+    if rootname is None:
+        rootname  = 'OPTCLIM'
+    
+    optclim_logger = logging.getLogger(rootname) # get OPTCLIM root logger
+
+    # need both debuuging turned on and a logigng config 
+    # to use the logging_cong
+    if level is not None and log_config is not None:
+        logging.debug("Using log_config to set up logging")
+        logging.config.dictConfig(log_config) # assume this is sensible
+        return optclim_logger
+
+    if level is None:
+        level = logging.WARNING
+        
+    # set up a sensible default logging behaviour. 
+
+    optclim_logger.handlers.clear() #  clear any existing handles there are
+    optclim_logger.setLevel(level) # set the level
+    
+    console_handler = logging.StreamHandler()
+    fmt = '%(levelname)s:%(name)s:%(funcName)s: %(message)s'
+    formatter = logging.Formatter(fmt)
+    console_handler.setFormatter(formatter)
+
+    optclim_logger.addHandler(console_handler) # turning this on gives duplicate messages. FIXME.
+    optclim_logger.propagate = False # stop propogation to root level.
+# see https://jdhao.github.io/2020/06/20/python_duplicate_logging_messages/
+    return optclim_logger
+        
 def fake_fn(config: OptClimConfigVn3, params: dict) -> pd.Series:
     """
     Wee test fn for trying out things.
@@ -28,7 +73,7 @@ def fake_fn(config: OptClimConfigVn3, params: dict) -> pd.Series:
     returns  "fake" data as a pandas Series
     """
     params = copy.deepcopy(params)
-    logging.debug("faking with params: " + str(params))
+    my_logger.debug("faking with params: " + str(params))
     # remove ensembleMember param.
     params.pop('ensembleMember', None)  # remove ensembleMember as a key.
     pranges = config.paramRanges()
@@ -76,7 +121,7 @@ def parse_isoduration( s: str | typing.List) -> typing.List|str:
         return n.replace(',', '.'), s  # to handle like "P0,5Y"
 
     if isinstance(s, str):
-        logging.debug("Parsing {str}")
+        my_logger.debug(f"Parsing {str}")
         if s[0] != 'P':
             raise ValueError("ISO 8061 demands durations start with P")
         s = s.split('P', 1)[-1]  # Remove prefix
@@ -97,7 +142,7 @@ def parse_isoduration( s: str | typing.List) -> typing.List|str:
             durn.append(float(d))
     elif isinstance(s, list) and len(s) == 6:  # invert list
         durn = 'P'
-        logging.debug("Converting {s} to string")
+        my_logger.debug("Converting {s} to string")
         for element, chars in zip(s, ['Y', 'M', 'D', 'H', 'M', 'S']):
             if element != 0:
                 if isinstance(element, float) and element.is_integer():
@@ -307,8 +352,8 @@ def std_post_process_setup(parser: argparse.ArgumentParser) -> typing.Tuple[argp
     else:  # nothing to do
         pass
 
-    logging.debug("Post Process data")
+    my_logger.debug("Post Process data")
     for key, value in post_process.items():
-        logging.debug(f"{key}:{value}")
+        my_logger.debug(f"{key}:{value}")
 
     return args,  post_process

@@ -8,6 +8,7 @@ import pathlib
 import platform
 import tempfile
 import unittest
+import json
 
 import numpy as np
 import numpy.testing as nptest
@@ -800,6 +801,21 @@ class testStudyConfig(unittest.TestCase):
                 pdtest.assert_frame_equal(vn,v)
 
 
+    def test_init(self):
+        # test init works --  in particular that INCLUDE works as expected.
+        log_cfg_file = "$OPTCLIMTOP/OptClimVn3/configurations/log_config.ijson"
+        config=dict(logging=f"INCLUDE {log_cfg_file}",version=3)
+        df=StudyConfig.dictFile(Config_dct=config)
+        c=StudyConfig.OptClimConfigVn3(df)
+        with open(os.path.expandvars(log_cfg_file),'rt') as fp:
+            expect_log_cfg = json.load(fp)
+        # check logging info is as expected
+        self.assertEqual(expect_log_cfg,c.getv('logging'))
+        # and that logging_INCLUDE_comment is raw path
+        self.assertEqual(log_cfg_file,c.getv('logging_INCLUDE_comment'))
+
+
+            
 
 
 if __name__ == "__main__":

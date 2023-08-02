@@ -13,7 +13,6 @@ import numpy.testing as nptest
 import tempfile
 import namelist_var
 import param_info
-logging.basicConfig(level=logging.DEBUG)
 from model_base import model_base # so we can detect my own derived types.
 
 

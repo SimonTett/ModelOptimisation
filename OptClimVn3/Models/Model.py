@@ -19,11 +19,11 @@ from model_base import journal
 from ModelBaseClass import ModelBaseClass, register_param
 from namelist_var import namelist_var
 from engine import abstractEngine
+my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 
 type_status = typing.Literal['CREATED', 'INSTANTIATED', 'SUBMITTED',
                              'RUNNING', 'FAILED', 'PERTURBED', 'CONTINUE',
                              'SUCCEEDED', 'PROCESSED']  # allowed strings for status
-
 
 class Model(ModelBaseClass, journal):
     # type definitions for attributes.
@@ -109,7 +109,7 @@ class Model(ModelBaseClass, journal):
             if hasattr(obj, name):
                 setattr(obj, name, value)
             else:
-                logging.warning(f"Did not setattr for {name} as not in obj")
+                my_logger.warning(f"Did not setattr for {name} as not in obj") 
         return obj
 
     # methods now.
@@ -411,7 +411,7 @@ class Model(ModelBaseClass, journal):
             raise ValueError(
                 f"Expected current status {self.status}  to be one of " + " ".join(
                     expected_status) + f" as changing to {new_status}")
-        logging.debug(f"Changing status from {self.status} to {new_status}")
+        my_logger.debug(f"Changing status from {self.status} to {new_status}")
         self.update_history(f"Status set to {new_status} in {self.model_dir}")
         self.status = new_status
         self.dump_model()  # write to disk
@@ -481,8 +481,8 @@ class Model(ModelBaseClass, journal):
             if np.any(null):
                 raise ValueError("Fake function produced null values at: " + ", ".join(self.simulated_obs.index[null]))
             self.fake = True  # we are faking it!
-            logging.info(f"Using fake functions {fake_function.__name__}")
-            logging.info(f"Faking {self.name}")
+            my_logger.info(f"Using fake functions {fake_function.__name__}")
+            my_logger.info(f"Faking {self.name}")
             # work through rest of order.
             self.set_status(status)
             self.running()  # running stuff
@@ -516,7 +516,7 @@ class Model(ModelBaseClass, journal):
             # has actually finished. That could require multiple simulations. So we don't hold it on the model
             # and instead will explicitly release it when status gets set to SUCCEEDED
             output = self.run_cmd(pp_cmd)  # submit the post-processing job.
-            logging.debug(f"post-processing run {pp_cmd} and got {output}")
+            my_logger.debug(f"post-processing run {pp_cmd} and got {output}")
             pp_jid = self.engine.job_id(output)  # extract the job-ID.
             self.pp_jid = pp_jid
 
@@ -527,7 +527,7 @@ class Model(ModelBaseClass, journal):
         output = self.run_cmd(cmd)  # and run the command
         jid = self.engine.job_id(output)  # and work out the job id.
         self.submitted_jid = jid  # model will
-        logging.debug(f"Model submission: ran {cmd} and got {output}")
+        my_logger.debug(f"Model submission: ran {cmd} and got {output}")
         self.submission_count += 1  # increase time.
         self.set_status(status)
 
@@ -565,7 +565,7 @@ class Model(ModelBaseClass, journal):
         """
         if not self.fake:  # faking so no job id.
             my_jid = self.engine.my_job_id()
-            logging.debug(f"My jobid is {my_jid}")
+            my_logger.debug(f"My jobid is {my_jid}")
 
         else:
             my_jid = None
@@ -585,7 +585,7 @@ class Model(ModelBaseClass, journal):
             model_jid = self.model_jids[-1]
             stat = self.engine.job_status(model_jid)
             if stat == "notFound":  # no job found.
-                logging.debug(f"Could not find status for jid:{model_jid} for model {self}. Setting status to FAILED")
+                my_logger.debug(f"Could not find status for jid:{model_jid} for model {self}. Setting status to FAILED")
                 self.set_failed()  # we have failed.
                 return True
         return False  # this model is not having its status changed.
@@ -614,14 +614,14 @@ class Model(ModelBaseClass, journal):
         """
         if parameters is None:
             parameters = {}
-            logging.debug("Setting perturb parameters to empty dict")
+            my_logger.debug("Setting perturb parameters to empty dict")
 
         self.parameters_no_key = copy.deepcopy(parameters)  # set parameters_no_key to the perturbed parameters
         self.set_params()  # set parameter values
         self.update_history(f'Perturbed using {parameters}')  # so at least we can find out what was done
         self.perturb_count += 1
         self.set_status('PERTURBED')
-        logging.debug(f" parameters_no_key is now {self.parameters_no_key}")
+        my_logger.debug(f" parameters_no_key is now {self.parameters_no_key}")
 
     def continue_simulation(self):
         """
@@ -652,10 +652,10 @@ class Model(ModelBaseClass, journal):
             cmd = self.engine.release_job(self.pp_jid)
             result = self.run_cmd(cmd)
             # will raise an error if it failed.
-            logging.info(f"Ran post-processing cmd {cmd}")
+            my_logger.info(f"Ran post-processing cmd {cmd}")
             output = result
         else:
-            logging.info("No post-processing processing jid")
+            my_logger.info("No post-processing processing jid")
             output = None  # no output.
 
         self.set_status(status)
@@ -678,7 +678,7 @@ class Model(ModelBaseClass, journal):
             return
 
         input_file = self.model_dir / self._post_process_input  # generate json file to hold post process info
-        logging.debug(f"Dumping post_process to {input_file}")
+        my_logger.debug(f"Dumping post_process to {input_file}")
         output = dict(postProcess=self.post_process)  # wrap post process in dict
         with open(input_file, 'w') as fp:
             json.dump(output, fp)
@@ -706,22 +706,22 @@ class Model(ModelBaseClass, journal):
         if fileType == '.nc':  # netcdf
             ds = xarray.load_dataset(post_process_file)
             obs = {var: float(ds[var]) for var in ds.data_vars if ds[var].size == 1}
-            logging.debug("netcdf file got " + " ".join(obs.keys()))
+            my_logger.debug("netcdf file got " + " ".join(obs.keys()))
 
         elif fileType == '.json':  # json file
             with open(post_process_file, 'r') as fp:
                 obs = json.load(fp)
-            logging.debug("json file got " + " ".join(obs.keys()))
+            my_logger.debug("json file got " + " ".join(obs.keys()))
 
         elif fileType == '.csv':  # data is a csv file.
             obsdf = pd.read_csv(post_process_file, header=None, index_col=False)
             obs = obsdf.to_dict()
-            logging.debug("csv file got " + " ".join(obs.keys()))
+            my_logger.debug("csv file got " + " ".join(obs.keys()))
 
         else:  # don't know what to do. So raise an error
             raise NotImplementedError(f"Do not recognize {fileType}")
 
-        logging.info(f"Read {fileType} data from {post_process_file}")
+        my_logger.info(f"Read {fileType} data from {post_process_file}")
         obs = pd.Series(obs).rename(self.name)
         self.simulated_obs = obs
 
@@ -751,7 +751,7 @@ class Model(ModelBaseClass, journal):
             except (KeyError, FileNotFoundError):
                 if fail:
                     raise
-                logging.warning(f"Parameter {parameter} not found in {self.name}")
+                my_logger.warning(f"Parameter {parameter} not found in {self.name}")
                 result[parameter] = None
 
         return result
@@ -787,11 +787,31 @@ class Model(ModelBaseClass, journal):
 
     def delete(self):
         """
-        Delete all on disk stuff. Do by deleting all files in self.model_dir and self.config_path
+        Delete all on disk stuff. Do by deleting all files in self.model_dir and self.config_path. 
+        
         :return: None
         """
+
+        
+        if len(self.model_jids) > 0: # got some models to kill
+            curr_model_id = self.model_jids[-1]
+            status = self.engine.job_status(curr_model_id)
+            if status not in ['notFound']:
+                cmd = self.engine.kill_job(curr_model_id)
+                self.run_cmd(cmd)
+                my_logger.debug(f"Killed model job id:{curr_model_id}")
+            else:
+                my_logger.debug(f"Job {curr_model_id} not found.")
+
+        if self.pp_jid is not None: # got a post-processing job.
+            status = self.engine.job_status(self.pp_jid)
+            if status not in ['notFound']:
+                cmd=self.engine.kill_job(self.pp_jid)
+                self.run_cmd(cmd)
+                my_logger.debug(f"Killed post-processing job id:{self.pp_jid}")
+            
         shutil.rmtree(self.model_dir, ignore_errors=True)
-        logging.info(f"Deleted everything in {self.model_dir}")
+        my_logger.info(f"Deleted everything in {self.model_dir}")
         self.config_path.unlink(missing_ok=True)
         return True
 
@@ -835,10 +855,10 @@ class Model(ModelBaseClass, journal):
 
         inverse = (ensMember is None)
         if inverse:
-            logging.warning("Can not invert ensMember")
+            my_logger.warning("Can not invert ensMember")
             return None
 
-        logging.warning(f"Nothing set for {ensMember}. Override in your own model")
+        my_logger.warning(f"Nothing set for {ensMember}. Override in your own model")
 
         return None
 

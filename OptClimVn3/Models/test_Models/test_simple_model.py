@@ -26,7 +26,7 @@ class Test_simple_model(unittest.TestCase):
         testDir = pathlib.Path(self.tmpDir.name)
         testDir2 = pathlib.Path(self.tmpDir2.name)
         optclim3 = simple_model.expand('$OPTCLIMTOP/OptClimVn3/')
-        refDir = optclim3/'configurations/example_simple_model'
+        refDir = optclim3/'configurations/example_simple_model/reference'
         self.refDir = refDir
         cpth = optclim3/"configurations/dfols14param_opt3.json"
         config = StudyConfig.readConfig(cpth)
