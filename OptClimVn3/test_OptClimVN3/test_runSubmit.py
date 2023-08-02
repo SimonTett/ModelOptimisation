@@ -3,13 +3,12 @@ Place to put tests for Submit.
 """
 
 import copy
-import logging
 import pathlib  # make working with file paths easier.
 import shutil
 import tempfile
 import typing
 import unittest
-
+import unittest.mock
 import numpy as np
 import numpy.testing as nptest
 import pandas as pd
@@ -33,7 +32,7 @@ def fake_run(rSubmit: runSubmit, scale: bool = True) -> typing.Callable:
     rSubmit.submit_all_models(fake_fn=fake_function)
     return fake_function
 
-
+import engine
 
 class testRunSubmit(unittest.TestCase):
     """
@@ -223,7 +222,8 @@ class testRunSubmit(unittest.TestCase):
         expect = fk_fn(pDict).rename(result.name)
         pdtest.assert_series_equal(expect, result)
 
-    def test_runOptimized(self):
+    @unittest.mock.patch.object(engine.sge_engine,'job_status', autospec=True, return_value='notFound')
+    def test_runOptimized(self,mck):
         """
 
         test runOptimized!
@@ -420,8 +420,8 @@ class testRunSubmit(unittest.TestCase):
         #    expect to be within 0.01% of the expected soln. If random covariance done then this will be a
         # lot bigger
         pdtest.assert_series_equal(best, expectparam, rtol=1e-4)
-
-    def test_runJacobian(self):
+    @unittest.mock.patch.object(engine.sge_engine,'job_status', autospec=True, return_value='notFound')
+    def test_runJacobian(self,mck):
         """
         test runJacobian!
 
