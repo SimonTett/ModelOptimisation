@@ -1,0 +1,105 @@
+{
+    "_comment": "Information relevant to parameters.",
+    "defaultParams": {
+        "comment": "Default parameter values for HadAM3. null values or not set mean don't modify. Checked against wiki 11/5/17 ",
+        "CT": 0.0001,
+        "EACF": 0.5,
+        "ENTCOEF": 3.0,
+        "ICE_SIZE": 3e-05,
+        "RHCRIT": 0.7,
+        "VF1": 1.0,
+        "CW": 0.0002,
+        "CW_comment": "Seed parameter which  affects CW_SEA & CW_LAND",
+        "DYNDIFF": 12.0,
+        "DYNDIFF_comment": "Seed parameter which affects DIFF_COEFF, DIFF_COEFF_Q, DIFF_EXP & DIFF_EXP_Q",
+        "KAY_GWAVE": 20000.0,
+        "KAY_GWAVE_comment": "Seed parameter which also affects KAY_LEE_GWAVE",
+        "ASYM_LAMBDA": 0.15,
+        "CHARNOCK": 0.012,
+        "CHARNOCK_comment": "Note this is Murphy et al, 200X and is different from that reported in Yamazaki et al, 2013",
+        "G0": 10.0,
+        "Z0FSEA": 0.0013,
+        "ALPHAM": 0.5,
+        "ALPHAM_comment": "Seed parameter which affects DTICE and ALPHAM",
+        "START_TIME": null,
+        "START_TIME_comment": "Start_time as ISO string (YYYY-MM-DD)",
+        "RUN_TARGET": null,
+        "RUN_TARGET_comment": "Run target -- as an ISO period string "
+    },
+    "minmax": {
+        "comment": "Defines the minimum and maximum ranges for the parameters. Must be defined for ALL parameters used in GN optimisation,",
+        "CT": [
+            5e-05,
+            0.0004
+        ],
+        "EACF": [
+            0.5,
+            0.7
+        ],
+        "ENTCOEF": [
+            0.6,
+            9.0
+        ],
+        "ICE_SIZE": [
+            2.5e-05,
+            4e-05
+        ],
+        "RHCRIT": [
+            0.6,
+            0.9
+        ],
+        "VF1": [
+            0.5,
+            2.0
+        ],
+        "CW": [
+            1e-4,
+            2e-3
+        ],
+        "DYNDIFF": [
+            6.0,
+            24.0
+        ],
+        "KAY_GWAVE": [
+            10000.0,
+            20000.0
+        ],
+        "ASYM_LAMBDA": [
+            0.05,
+            0.5
+        ],
+        "CHARNOCK": [
+            0.012,
+            0.02
+        ],
+        "G0": [
+            5.0,
+            20.0
+        ],
+        "Z0FSEA": [
+            0.0002,
+            0.005
+        ],
+        "ALPHAM": [
+            0.5,
+            0.65
+        ]
+    },
+    "steps": {
+        "comment": "Steps for perturbations -- norm around 10% of the range. If not specified 10% will be used. Values below are from 7 parameter cases described in Tett et al, 2017 (GMDD. They are not particualry optimal",
+        "CT": 1e-05,
+        "EACF": 0.02,
+        "ENTCOEF": 0.15,
+        "ICE_SIZE": 1.5e-06,
+        "RHCRIT": 0.01,
+        "VF1": 0.1,
+        "CW": 0.0002,
+        "DYNDIFF": 2.0,
+        "KAY_GWAVE": 400000.0,
+        "ASYM_LAMBDA": 0.15,
+        "CHARNOCK": 0.003,
+        "G0": 4.0,
+        "Z0FSEA": 0.002,
+        "ALPHAM": 0.06
+    }
+}

@@ -16,6 +16,8 @@ Provides classes and methods suitable for manipulating study configurations.  In
 
 """
 from __future__ import annotations
+
+import functools
 import typing
 import copy
 import datetime
@@ -44,7 +46,6 @@ def readConfig(filename):
     """
     Read a configuration and return object of the appropriate version.
     :param filename: name of file (or filepath) to read.
-    :param ordered:  read in as a ordered dict rather than a dict.
     :return: Configuration of appropriate type
     """
     path = pathlib.Path(os.path.expandvars(filename)).expanduser()
@@ -76,7 +77,7 @@ class NumpyEncoder(json.JSONEncoder):
     # which provides numpy aware JSON encoder and decoder.
     # TODO extend to work with pandas datarray and series
     # which can be done using .to_json() method then adding info about type
-    # in json output. 
+    # in json output.
     def default(self, obj):
         """
         if input object is a ndarray it will be converted into a OrderedDict
@@ -1637,7 +1638,7 @@ class OptClimConfigVn2(OptClimConfig):
         :return: a list of parameter names from the configuration files
         """
 
-        keys = self.Config['Parameters']['initParams'].keys()  # return a copy of the list.
+        keys = self.getv['Parameters']['initParams'].keys()  # return a copy of the list.
         # remove comment keys
         keys = [k for k in keys if 'comment' not in k]
         return keys
@@ -2014,6 +2015,8 @@ class OptClimConfigVn3(OptClimConfigVn2):
                 pth = os.path.expanduser(os.path.expandvars(pth))
                 pth=pathlib.Path(pth)
                 my_logger.debug(f"Reading in {pth}")
+                if not pth.exists():
+                    raise ValueError(f"{pth} does not exist.")
                 with open(pth,'rt') as fp:
                     dct = json.load(fp)
                 includes[key]=dct
@@ -2237,7 +2240,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
         return mx
 
     
-    def strip_comment(self,dct:dict) -> dct:
+    def strip_comment(self,dct:dict) -> dict:
         """
         Recursively remove all keys ending in _comment from a dct. 
         :param: dct -- dict to have all _comment keys removed. 
@@ -2257,10 +2260,11 @@ class OptClimConfigVn3(OptClimConfigVn2):
         
         return result_dct
 
-    def logging_config(self,cfg:typing.Optional[dict]=None)-> dict:
+    def logging_config(self,cfg:typing.Optional[dict]=None)-> typing.Optional[dict]:
         """
-        Extract logging configuation from studyConfig. 
-        You can pass this straight into logging.config.dictConfig() to set up logging. Users are responsabile that this dict is correct etc. 
+        Extract logging configuration from studyConfig.
+        You can pass this straight into logging.config.dictConfig() to set up logging.
+        Users are responsible that this dict is correct etc.
         All comments will be removed. 
 
         This is designed for codes that make use of the library.
@@ -2273,11 +2277,103 @@ class OptClimConfigVn3(OptClimConfigVn2):
 
         cfg = self.getv("logging") # get it
 
-        if cfg is None:#got nothing so set it to a dict with version=1
-            cfg = dict(version=1)
+        if cfg is None:#got nothing so return None
+            return None
 
         cfg = self.strip_comment(cfg)
         return cfg
     
 
+    def beginParam(self,
+                   begin: typing.Optional[pd.Series] = None,
+                   paramNames: typing.Optional[typing.List[str]] = None,
+                   scale: bool = False) -> pd.Series:
+
+        """
+        get the begin parameter values for the study. These are specified in the JSON file in initial block
+        Any values not specified use the standard values
+        :param begin -- if not None then set begin values to this.
+           No scaling is done  and initScale will be set False.
+        :param paramNames: Optional names of parameters to use.
+        :param scale (default False). If True scale parameters by their range so 0 is minimum and 1 is maximum
+        :return: pandas series of begin parameter values.
+        """
+
+        initial = self.getv('initial')
+
+        if begin is not None: # values to set.
+            begin = begin.to_dict()  # convert from pandas series to dict for internal storage
+            initial["initParams"] = begin
+            initial["initScale"] = False
+
+        begin = initial.get('initParams')
+        scaleRange = initial.get("initScale")  # want to scale ranges?
+
+        if paramNames is None:
+            paramNames = self.paramNames()
+        beginValues = {}  # empty dict
+        standard = self.standardParam(paramNames=paramNames)
+
+        range = self.paramRanges(paramNames=paramNames)  # get param range
+
+        for p in paramNames:  # list below is probably rather slow and could be sped up!
+            beginValues[p] = begin.get(p)
+            if beginValues[p] is None:
+                beginValues[p] = standard[p]  # Will trigger an error if standard[p] does not exist
+            else:
+                if scaleRange:  # values are specified as 0-1
+                    beginValues[p] = beginValues[p] * range.loc['rangeParam', p] + range.loc['minParam', p]
+            if scale:  # want to return params  in range 0-1
+                beginValues[p] = (beginValues[p] - range.loc['minParam', p]) / range.loc['rangeParam', p]
+
+        beginValues = pd.Series(beginValues, dtype=float)[paramNames]  # order in the same way for everything.
+
+        # verify values are within range
+        if scale:
+            L = beginValues.gt(1.0) | beginValues.lt(0.0)
+        else:
+            L = range.loc['maxParam', :].lt(beginValues) | beginValues.lt(range.loc['minParam', :])
+
+        if np.any(L):
+            print("L  \n", L)
+            print("begin: \n", beginValues)
+            print("range: \n", range)
+            print("Parameters out of range", beginValues[L].index)
+            raise ValueError("Parameters out of range: ")
+
+        return beginValues.astype(float).rename(self.name())
+
+
+    def fixedParams(self) -> dict:
+        """
+        :return: a dict of all the fixed parameters. All names ending _comment or called comment will be excluded
+        """
+        initial = self.getv('initial')
+
+        fix = copy.copy(initial.get('fixedParams', None))
+        if fix is None: return {}  # nothing found so return empty dir
+        # remove comments
+        fix = self.strip_comment(fix)
+
+        # deal with Nones and see if have default value. Code nicked from initParams
+        paramNames = fix.keys()  # parameters we have.
+        standard = self.standardParam(all=True)  # get all the standard values
+
+        for p in paramNames:  # list below is probably rather slow and could be sped up!
+            if fix[p] is None and standard.get(p) is not None:  # fixed param is None and standard is not None
+                fix[p] = standard[p]  # set fixed value to standard value
+
+        return fix
+
+
+    def paramNames(self, paramNames:typing.Optional[list[str]]=None) -> list[str]:
+        """
+        :param paramNames -- a set of paramNames to overwrite existing values. Should be a list
+        :return: a list of parameter names from the configuration files
+        """
+
+        initial = self.getv('initial')
+        initial = self.strip_comment(initial)
+        keys = list(initial['initParams'].keys())  # return a copy of the list.
+        return keys
         

@@ -69,7 +69,7 @@ class testStudyConfig(unittest.TestCase):
             dict(VF1=1.0, RHCRIT=0.0, ICE_SIZE=0.0, ENTCOEF=1.0, EACF=0.0, CT=1.0, CW=1.0, DYNDIFF=1.0, KAY_GWAVE=1.0,
                  ASYM_LAMBDA=0.0, CHARNOCK=1.0, G0=0.0, Z0FSEA=0.0,
                  ALPHAM=0.0))  # values from config file which has scaling.
-        self.assertTrue(self.config.Config['Parameters'].get("initScale"))
+        self.assertTrue(self.config.Config['initial'].get("initScale"))
         ranges = self.config.paramRanges(paramNames=expect.index)
         expect = expect * ranges.loc['rangeParam', :] + ranges.loc['minParam', :]  # scale parameters
         expect = expect.rename(self.config.name())
@@ -78,7 +78,7 @@ class testStudyConfig(unittest.TestCase):
         params.sort()
         expectKeys = list(expect.keys())
         expectKeys.sort()
-        self.assertListEqual(params, expectKeys, msg='Parameters differ')
+        self.assertEqual(params, expectKeys, msg='Parameters differ')
         # may need to scale expect.
 
         got = self.config.beginParam()
@@ -87,7 +87,7 @@ class testStudyConfig(unittest.TestCase):
         pdtest.assert_series_equal(expect, got)
 
         # add test case to deal with scaling within beginParam & nulls (which get standard values)
-        Params = self.config.getv('Parameters')  # get the parameters block.
+        Params = self.config.getv('initial')  # get the initial block.
         for p in Params['initParams'].keys():
             Params['initParams'][p] = None  # set value to None
         Params['initScale'] = True
@@ -99,7 +99,7 @@ class testStudyConfig(unittest.TestCase):
         setp = ranges.loc['maxParam', :]
         p = self.config.beginParam(begin=setp)
         self.assertTrue(setp.equals(p), msg='getParams not  as expected')
-        self.assertFalse(self.config.Config['Parameters']["initScale"])
+        self.assertFalse(self.config.Config['initial']["initScale"])
 
     def test_Covariances(self):
         """
@@ -302,7 +302,7 @@ class testStudyConfig(unittest.TestCase):
         expect = dict(START_TIME="1998-12-01", RUN_TARGET='P6Y4M')
         self.assertEqual(expect, fix, msg='fix not as expected')
         # test cases with none work.
-        values = self.config.Config['Parameters']['fixedParams']
+        values = self.config.Config['initial']['fixedParams']
         values['VF1'] = None  # should overwrite values in array.
         values['CW'] = None  # as above
         values['ALPHAM'] = None

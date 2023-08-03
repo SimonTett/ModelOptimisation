@@ -16,7 +16,7 @@ class test_post_process(unittest.TestCase):
         self.direct = direct
         self.tempDir = pathlib.Path(direct.name)
         self.script_dir = genericLib.expand("$OPTCLIMTOP/OptClimVn3/Models/post_process_scripts")
-        self.config = genericLib.expand("$OPTCLIMTOP/OptClimVn3/configurations/dfols7param_test.json")
+        self.config = genericLib.expand("$OPTCLIMTOP/OptClimVn3/configurations/dfols14param_opt3.json")
         self.assertTrue(self.script_dir.exists())  # this should not fail!
 
     def tearDown(self) -> None:

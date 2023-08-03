@@ -22,39 +22,10 @@
         "maxRuns_comment": "Maximum number of runs to do in parallel"
         },
     "run_info_comment": "Information  for run_info. Must include machineName and modelName. Can include other keys for use in submission. Useful ones are runTime, runCode & maxRuns ",
-    "optimiseFunction": null,
-    "optimiseFunction_comment": "Name of optimisation function to run. null gives default",
     "runUpgrade_vn4": "For vn4 add list of things to do here!",
-    "Parameters": {
-        "comment": "Information relevant to parameters.",
-        "defaultParams": {
-            "comment": "Default parameter values for HadAM3. null values or not set mean don't modify. Checked against wiki 11/5/17 ",
-            "CT": 0.0001,
-            "EACF": 0.5,
-            "ENTCOEF": 3.0,
-            "ICE_SIZE": 3e-05,
-            "RHCRIT": 0.7,
-            "VF1": 1.0,
-            "CW": 0.0002,
-            "CW_comment": "Seed parameter which  affects CW_SEA & CW_LAND",
-            "DYNDIFF": 12.0,
-            "DYNDIFF_comment": "Seed parameter which affects DIFF_COEFF, DIFF_COEFF_Q, DIFF_EXP & DIFF_EXP_Q",
-            "KAY_GWAVE": 20000.0,
-            "KAY_GWAVE_comment": "Seed parameter which also affects KAY_LEE_GWAVE",
-            "ASYM_LAMBDA": 0.15,
-            "CHARNOCK": 0.012,
-            "CHARNOCK_comment": "Note this is Murphy et al, 200X and is different from that reported in Yamazaki et al, 2013",
-            "G0": 10.0,
-            "Z0FSEA": 0.0013,
-            "ALPHAM": 0.5,
-            "ALPHAM_comment": "Seed parameter which affects DTICE and ALPHAM",
-            "START_TIME": null,
-            "START_TIME_comment": "Start_time as ISO string (YYYY-MM-DD)",
-            "RUN_TARGET": null,
-            "RUN_TARGET_comment": "Run target -- as an ISO period string "
-        },
+    "initial": {
         "initParams": {
-            "comment": "Intial values for parameters to be optimised. Set to null to use default values.  ",
+            "_comment": "Initial values for parameters to be optimised. Set to null to use default values.  ",
             "VF1": 1.0,
             "RHCRIT": 0.0,
             "ICE_SIZE": 0.0,
@@ -73,89 +44,14 @@
         "initScale": true,
         "initScale_comment": "If true then startParams range from 0 to 1 where 0 means min value; 1 max value.",
         "fixedParams": {
-            "comment": " List of parameters and values that are fixed and not modified in optimisation. Set to null to use default values",
+            "_comment": " List of parameters and values that are fixed and not modified in optimisation. Set to null to use default values",
             "START_TIME": "1998-12-01",
             "RUN_TARGET": "P6Y4M"
         },
         "fixedScale": false,
-        "fixedScale_comment": "If true then scalable fixedParams range from 0 to 1 where 0 means min value; 1 max value.",
-        "minmax": {
-            "comment": "Defines the minimum and maximum ranges for the parameters. Must be defined for ALL parameters used in GN optimisation,",
-            "CT": [
-                5e-05,
-                0.0004
-            ],
-            "EACF": [
-                0.5,
-                0.7
-            ],
-            "ENTCOEF": [
-                0.6,
-                9.0
-            ],
-            "ICE_SIZE": [
-                2.5e-05,
-                4e-05
-            ],
-            "RHCRIT": [
-                0.6,
-                0.9
-            ],
-            "VF1": [
-                0.5,
-                2.0
-            ],
-            "CW": [
-                1e-4,
-                2e-3
-            ],
-            "DYNDIFF": [
-                6.0,
-                24.0
-            ],
-            "KAY_GWAVE": [
-                10000.0,
-                20000.0
-            ],
-            "ASYM_LAMBDA": [
-                0.05,
-                0.5
-            ],
-            "CHARNOCK": [
-                0.012,
-                0.02
-            ],
-            "G0": [
-                5.0,
-                20.0
-            ],
-            "Z0FSEA": [
-                0.0002,
-                0.005
-            ],
-            "ALPHAM": [
-                0.5,
-                0.65
-            ]
-        },
-        "steps": {
-            "comment": "Steps for perturbations -- norm around 10% of the range. If not specified 10% will be used. Values below are from 7 parameter cases described in Tett et al, 2017 (GMDD. They are not particualry optimal",
-            "CT": 1e-05,
-            "EACF": 0.02,
-            "ENTCOEF": 0.15,
-            "ICE_SIZE": 1.5e-06,
-            "RHCRIT": 0.01,
-            "VF1": 0.1,
-            "CW": 0.0002,
-            "DYNDIFF": 2.0,
-            "KAY_GWAVE": 400000.0,
-            "ASYM_LAMBDA": 0.15,
-            "CHARNOCK": 0.003,
-            "G0": 4.0,
-            "Z0FSEA": 0.002,
-            "ALPHAM": 0.06
-        }
+        "fixedScale_comment": "If true then scalable fixedParams range from 0 to 1 where 0 means min value; 1 max value."
     },
+    "Parameters": "INCLUDE $OPTCLIMTOP/OptClimVn3/configurations/parameters_hadam3.ijson",
     "study": {
         "comment": "Parameters that specify the study. Used by framework and not by optimisation routines",
         "referenceModelDirectory": "$OPTCLIMTOP/OptClimVn3/configurations/example_Model/reference",
@@ -201,71 +97,7 @@
         "constraintName": "netflux_global",
         "constraintName_comment": "Name of constraint variable -- target value defined by targets/constraintName. "
     },
-    "optimise": {
-        "comment": "Parameters to control optimisation. This is used within DFOLS optimisation routines AND not by framework",
-        "algorithm": "DFOLS",
-        "algorithm_comment": "Algorithm wanted.",
-        "sigma": true,
-        "sigma_comment": "If True use constraint weights",
-        "mu": 0.01,
-        "mu_comment": "The inverse weighting given to the constraint -- it gets wt 1/(2mu). If Null then no constraint should be applied",
-        "dfols":{
-        "growing.ndirs_initial": null,
-        "growing.ndirs_initial_comment": "the number of perturbations on first iteration. If not specified then will make Nparm perturbtions",
-        "rhobeg": 0.18,
-        "rhobeg_comment": "Radius of parameter trust region at start",
-        "rhoend": 0.1,
-        "rhoend_comment": "Radius of paramater trust region for termination (for our purpose this is in normalised parameters)",
-        "maxfun": 50,
-        "maxfun_comment": "Maximum number of model evaluations to be done. Default is O(1000). reduced to 90 so have data to do a mid-point look at  ",
-        "scaling_within_bounds": true,
-        "scaling_within_bounds_comment": "Scale internally so all in range 0 to 1",
-        "namedSettings": {
-            "logging.save_poisedness": true,
-            "logging.save_poisedness_comment": "whether or not  to calculate geometry statistics as part of diagnostic information",
-            "init.random_initial_directions": true,
-            "init.random_initial_directions_comment": "If true perturb in random directions. If false perturb along co-ordinate axis.",
-            "init.run_in_parallel": true,
-            "init.run_in_parallel_comment": "Run initial cases in parallel",
-            "noise.additive_noise_level": 21.0,
-            "noise.additive_noise_level_comment": "Estimate of noise in cost function. Used in termination -- nb cost fn is sum of squares **not** sum of squares/nObs. ",
-            "logging.save_diagnostic_info": true,
-            "logging.save_diagnostic_info_comment": "Save logging info",
-            "logging.save_xk": true,
-            "logging.save_xk_comment": "Save the full vector of trial values ",
-            "noise.quit_on_noise_level": true,
-            "noise.quit_on_noise_level_comment": "quit/restart if all trial evaluations are within noise level of last iteration",
-            "general.check_objfun_for_overflow": false,
-            "general.check_objfun_for_overflow_comment": "Presumably check that function behaves itself",
-            "slow.history_for_slow": 2,
-            "slow.history_for_slow_comment": "No of past successful iterations to look at to decide if slow or not",
-            "slow.thresh_for_slow": 0.1,
-            "slow.thresh_for_slow_comment": "Log cost function  change for slow converegence",
-            "slow.max_slow_iters": 5,
-            "slow.max_slow_iters_comment": "The number of itertions (once slow determined) to decide making slow progress",
-            "restarts.use_restarts": true,
-            "restarts.use_restarts_comment": "Restart when slow convergence or too noisy",
-            "restarts.use_soft_restarts": true,
-            "restarts.use_soft_restarts_comment": "Use soft restart -- reuse some existing points when  restarting",
-            "restarts.soft.num_geom_steps": 3,
-            "restarts.soft.num_geom_steps_comment": "How many extra runs to be done when restarting",
-            "restarts.increase_npt": false,
-            "restarts.increase_npt_comment": "Increase number of points when restarting",
-            "restarts.increase_npt_amt_comment": "Number of points to increase by in restarts.increase_npt set when restarting",
-            "restarts.max_unsuccessful_restarts": 100,
-            "restarts.max_unsuccessful_restarts_comment": "Number of consecutive restarts allowed when no progress made",
-            "restarts.hard.increase_ndirs_initial_amt": 1,
-            "restarts.hard.increase_ndirs_initial_amt_comment": "How many points to increase by  when doing hard restart (not using any exisiting pts)",
-            "restarts.max_npt": null,
-            "restarts.max_npt_comment": "Maximum number of points/model evals in each restart",
-            "tr_radius.gamma_dec": 0.8,
-            "tr_radius.alpha1": 0.9,
-            "tr_radius.alpha2": 0.95
-            },
-            "NamedSettings_comment": "Settings for named parameters that get passed into dfols via user_params"
-        },
-        "dfols_comment": "Settings for DFOLS"
-    },
+    "optimise":  "INCLUDE $OPTCLIMTOP/OptClimVn3/configurations/optimise_dfols.ijson",
     "postProcess": {
         "comment": "Options to control post processing. Details depend on your post processing script.",
         "script": "$OPTCLIMTOP/OptClimVn3/scripts/comp_obs.py",
