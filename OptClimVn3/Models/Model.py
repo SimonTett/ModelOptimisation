@@ -756,6 +756,12 @@ class Model(ModelBaseClass, journal):
 
         return result
 
+    def is_instantiable(self) -> bool:
+        """
+        Return True if model is instantiable -- which means its status is CREATED
+        :return:
+        """
+        return self.status in ["CREATED"]
     def is_submittable(self) -> bool:
         """
         Return True if model is submittable -- which means its status is CONTINUE or INSTANTIATED or PERTURBED
@@ -847,7 +853,7 @@ class Model(ModelBaseClass, journal):
     @register_param("ensembleMember")
     def ens_member(self, ensMember: typing.Optional[int]) -> None:
         """
-        Do nothing as perturbing initial conditions is model specific. But needed
+        Do nothing as perturbing initial conditions is model-specific. But needed
          for test cases.
         :param ensMember: ensemble member. The ensemble member wanted.
         :return: None (for now) as nothing done.

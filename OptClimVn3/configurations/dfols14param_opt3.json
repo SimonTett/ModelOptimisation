@@ -19,7 +19,9 @@
         "modelName": "HadCM3",
         "modelName_comment": "Name of model that is ran",
         "maxRuns": null,
-        "maxRuns_comment": "Maximum number of runs to do in parallel"
+        "maxRuns_comment": "Maximum number of runs to do in parallel",
+        "max_model_simulations": null,
+        "max_model_simulations_comment": "Maximum number of simulations to do in total"
         },
     "run_info_comment": "Information  for run_info. Must include submit_engine and modelName. Can include other keys for use in submission. Useful ones are runTime, runCode & maxRuns ",
     "logging":"INCLUDE $OPTCLIMTOP/OptClimVn3/configurations/log_config.ijson",

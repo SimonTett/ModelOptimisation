@@ -115,7 +115,7 @@ class dictFile(dict):
     extends dict to prove save and load methods.
     """
 
-    def __init__(self, filename:typing.Optional[str]=None,
+    def __init__(self, filename: typing.Optional[str] = None,
                  Config_dct: typing.Optional[dict] = None):
         """
         Initialise dictFile object from file or from dict (which is fairly awful way)
@@ -126,7 +126,7 @@ class dictFile(dict):
 
         if filename is not None:
             if Config_dct is not None:
-                raise  ValueError("Do not specify Config_dct and file")
+                raise ValueError("Do not specify Config_dct and file")
             path = pathlib.Path(os.path.expandvars(filename)).expanduser()
             try:
                 with path.open(mode='r') as fp:
@@ -227,6 +227,7 @@ class dictFile(dict):
         :return: path to filename
         """
         return self._filename
+
     def to_StudyConfig(self) -> OptClimConfigVn3:
         """
         Convert a dictfile to an OptClimVn3
@@ -1538,7 +1539,7 @@ class OptClimConfig(dictFile):
         :param value: If not None (default is None) then set the value f
         :return: maximum number of runs to be done.
         """
-        
+
         if value is not None:  # value provided? If so set and save it.
             self.setv('maxRuns', value)
 
@@ -1999,36 +2000,37 @@ class OptClimConfigVn3(OptClimConfigVn2):
     2) Have generic way of dealing with dataframes and make all methods use and
        return pandas series or dataframes as appropriate.
     """
-    def __init__(self,config:dictFile):
+
+    def __init__(self, config: dictFile):
         """
         Process all INCLUDE stuff
         Call super clas __init__ method and then add comment_end attribute 
         set to "_comment"
         """
-        includes=dict()
-        for key,value in config.Config.items():
-            if isinstance(value,str) and value.startswith("INCLUDE "):
+        includes = dict()
+        for key, value in config.Config.items():
+            if isinstance(value, str) and value.startswith("INCLUDE "):
                 my_logger.debug(f"Include from {value}")
-                inc,pth = value.split(maxsplit=1)
-                includes[key+"_INCLUDE_comment"]=pth # raw path so can see what done
+                inc, pth = value.split(maxsplit=1)
+                includes[key + "_INCLUDE_comment"] = pth  # raw path so can see what done
 
                 pth = os.path.expanduser(os.path.expandvars(pth))
-                pth=pathlib.Path(pth)
+                pth = pathlib.Path(pth)
                 my_logger.debug(f"Reading in {pth}")
                 if not pth.exists():
                     raise ValueError(f"{pth} does not exist.")
-                with open(pth,'rt') as fp:
+                with open(pth, 'rt') as fp:
                     dct = json.load(fp)
-                includes[key]=dct
+                includes[key] = dct
         # now have a bunch of stuff in includes which we will use to update config.
         if (len(includes) > 0):
             my_logger.info(f"Updating the following keys: {' '.join(includes.keys())}")
             config.Config.update(includes)
-                
-        super().__init__(config) # call super class init
-        self.comment_end='_comment' # define what a comment looks like.
 
-    def __eq__(self, other:OptClimConfigVn3) -> bool:
+        super().__init__(config)  # call super class init
+        self.comment_end = '_comment'  # define what a comment looks like.
+
+    def __eq__(self, other: OptClimConfigVn3) -> bool:
         """
         Work out if two OptClimConfigVn3 objects are identical. Compares the two Config attributes.
         :param other: another OptClimConfigVn3
@@ -2177,21 +2179,29 @@ class OptClimConfigVn3(OptClimConfigVn2):
         """
 
         run_info = self.getv("run_info")
-        if run_info is None: # if it is None set it to an empty dict.
-            self.setv("run_info",{})
+        if run_info is None:  # if it is None set it to an empty dict.
+            self.setv("run_info", {})
             run_info = self.getv("run_info")
 
         return run_info
 
-    def set_run_info(self,**kwargs) -> dict:
+    def set_run_info(self,
+                     setNone: bool = False,
+                     **kwargs) -> dict:
+        """
+        Set named value in set
+        :param setNone: If True then if value is None set it. Otherwise, only if value is not None set it.
+        :param kwargs: Key, value pairs to set.
+        :return:
+        """
         run_info = self.run_info()
-        for k,v in kwargs.items():
-            if v is not None:
+        for k, v in kwargs.items():
+            if (v is not None) or setNone:
                 run_info[k] = v
 
         return run_info
 
-    def runCode(self,value:typing.Optional[str]=None) -> str:
+    def runCode(self, value: typing.Optional[str] = None) -> str:
         """
         value: If not None runCode will be set to this
         :return: the runCode (or None)
@@ -2199,7 +2209,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
         self.set_run_info(runCode=value)
         return self.run_info().get("runCode")
 
-    def runTime(self,value:typing.Optional[int]=None) -> int:
+    def runTime(self, value: typing.Optional[int] = None) -> int:
         """
 
         :return: the run time (or None)
@@ -2207,60 +2217,72 @@ class OptClimConfigVn3(OptClimConfigVn2):
         self.set_run_info(runTime=value)
         return self.run_info().get("runTime")
 
-    def machine_name(self,value:typing.Optional[str]=None) -> str:
+    def machine_name(self, value: typing.Optional[str] = None) -> str:
 
         """
         Return name of Machine in config file. Fails if not defined
         """
-        raise NotImplementedError # should not be called. Just extract run_info
+        raise NotImplementedError  # should not be called. Just extract run_info
         self.set_run_info(machineName=value)
         return self.run_info()['machineName']
 
-
-    def model_name(self,value:typing.Optional[str]=None) -> str:
+    def model_name(self, value: typing.Optional[str] = None) -> str:
         """
-        :return name of model to be created. Should have been registered. And must exist in run_info.
+        :return name of the model to be created. Should have been registered. And must exist in run_info.
         """
         self.set_run_info(modelName=value)
         return self.run_info()["modelName"]
 
-    def maxRuns(self, value:typing.Optional[int]=None) -> int|None:
+    def maxRuns(self, value: typing.Optional[int] = None) -> int | None:
         """
         Get/set the maximum numbers of runs
         :param value: If not None (default is None) then set the value
         :return: maximum number of runs to be done.
         """
-        #if value is not None: # got a value to set then set value
+        # if value is not None: # got a value to set then set value
         self.set_run_info(maxRuns=value)
-        
-        mx = self.run_info().get('maxRuns',None)
+
+        mx = self.run_info().get('maxRuns', None)
         if (mx is not None) and (mx < 1):
             raise ValueError(f"maxRuns {mx} < 1")
         # no default -- up to calling application to decide.
         return mx
 
-    
-    def strip_comment(self,dct:dict) -> dict:
+    def max_model_simulations(self, value: typing.Optional[int] = None) -> typing.Optional[int]:
+        """
+        The maximum total number of simulations that should be submitted. Taken from run_info/max_model_sims
+        :param value: If not None set max_model_sims to this value. Should be integer > 0
+        :return: The value of max_model_sims or None if not found.
+        """
+
+        self.set_run_info(max_model_simulations=value)
+        mx = self.run_info().get('max_model_simulations', None)
+        if (mx is not None) and (mx < 1):  # should be > 0 if provided.
+            raise ValueError(f"maxRuns {mx} < 1")
+        # no default -- up to calling application to decide what to do..
+        return mx
+
+    def strip_comment(self, dct: dict) -> dict:
         """
         Recursively remove all keys ending in _comment from a dct. 
         :param: dct -- dict to have all _comment keys removed. 
         Defined by self.comment_end
         :return dct with all keys ending with _comment removed.
         """
-        result_dct={}
-        for key,value in dct.items():
-            if isinstance(value,dict): # a dict -- call strip_comment
+        result_dct = {}
+        for key, value in dct.items():
+            if isinstance(value, dict):  # a dict -- call strip_comment
                 my_logger.debug(f"Copying {key} as dict")
-                result_dct[key]=self.strip_comment(value)
-            elif isinstance(key,str) and  key.endswith(self.comment_end):
-                my_logger.debug(f"Ignoring {key}") 
+                result_dct[key] = self.strip_comment(value)
+            elif isinstance(key, str) and key.endswith(self.comment_end):
+                my_logger.debug(f"Ignoring {key}")
             else:
-                my_logger.debug(f"Copying {key}") 
-                result_dct[key]=value # just take the value across.
-        
+                my_logger.debug(f"Copying {key}")
+                result_dct[key] = value  # just take the value across.
+
         return result_dct
 
-    def logging_config(self,cfg:typing.Optional[dict]=None)-> typing.Optional[dict]:
+    def logging_config(self, cfg: typing.Optional[dict] = None) -> typing.Optional[dict]:
         """
         Extract logging configuration from studyConfig.
         You can pass this straight into logging.config.dictConfig() to set up logging.
@@ -2272,17 +2294,16 @@ class OptClimConfigVn3(OptClimConfigVn2):
         :param: cfg -- if not None set the value of logging to this value.
           
         """
-        if cfg is not None: # got something so use it to set the value
-            self.setv("logging",cfg) 
+        if cfg is not None:  # got something so use it to set the value
+            self.setv("logging", cfg)
 
-        cfg = self.getv("logging") # get it
+        cfg = self.getv("logging")  # get it
 
-        if cfg is None:#got nothing so return None
+        if cfg is None:  # got nothing so return None
             return None
 
         cfg = self.strip_comment(cfg)
         return cfg
-    
 
     def beginParam(self,
                    begin: typing.Optional[pd.Series] = None,
@@ -2301,7 +2322,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
 
         initial = self.getv('initial')
 
-        if begin is not None: # values to set.
+        if begin is not None:  # values to set.
             begin = begin.to_dict()  # convert from pandas series to dict for internal storage
             initial["initParams"] = begin
             initial["initScale"] = False
@@ -2343,7 +2364,6 @@ class OptClimConfigVn3(OptClimConfigVn2):
 
         return beginValues.astype(float).rename(self.name())
 
-
     def fixedParams(self) -> dict:
         """
         :return: a dict of all the fixed parameters. All names ending _comment or called comment will be excluded
@@ -2365,8 +2385,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
 
         return fix
 
-
-    def paramNames(self, paramNames:typing.Optional[list[str]]=None) -> list[str]:
+    def paramNames(self, paramNames: typing.Optional[list[str]] = None) -> list[str]:
         """
         :param paramNames -- a set of paramNames to overwrite existing values. Should be a list
         :return: a list of parameter names from the configuration files
@@ -2376,4 +2395,3 @@ class OptClimConfigVn3(OptClimConfigVn2):
         initial = self.strip_comment(initial)
         keys = list(initial['initParams'].keys())  # return a copy of the list.
         return keys
-        

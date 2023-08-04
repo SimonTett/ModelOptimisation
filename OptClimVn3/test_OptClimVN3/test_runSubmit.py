@@ -98,6 +98,8 @@ class testRunSubmit(unittest.TestCase):
 
         3)  run case with ensembleSize = 2 and 2 param vector set. Should get 2 vectors of Nan.
             Should be 6 models to run. The four models generated here + 2 models from case 2
+
+        4) Exceed max_model_simulations. Show raise an error.
         """
         # setup
         configData = copy.deepcopy(self.config)
@@ -191,6 +193,11 @@ class testRunSubmit(unittest.TestCase):
         self.assertTrue(expect.equals(result), 'SumSquare test failed')
         # and we are a series of size 1.
         self.assertEqual(result.size, 1, 'Size not as expected')
+
+        # check that optclim_exceptions.runModelError is raised when we ask for new models above the limit.
+        rSubmit.run_info['max_model_simulations']=len(rSubmit.model_index)
+        with self.assertRaises(optclim_exceptions.runModelError):
+            result = rSubmit.stdFunction(params*3)
 
     # test case for stdFunction
 

@@ -64,6 +64,8 @@ parser.add_argument("--dryrun", action='store_true',
 parser.add_argument("--readonly", action='store_true', help="read data but do not instantiate or submit jobs.")
 parser.add_argument("-t", "--test", action='store_true',
                     help='If set run fake function rather than submitting models.')
+parser.add_argument("--update_config", action='store_true',
+                    help="If set update *existing* configuration from configuration given.")
 parser.add_argument("-m", "--monitor", action='store_true', help='Producing monitoring plot after running')
 
 fail_help_str = """Behaviour for models that failed. Choices are:
@@ -90,29 +92,30 @@ monitor = args.monitor
 fail = args.fail
 purge = args.purge
 guess_fail = args.guess_fail
+update_config = args.update_config
 
 configData = StudyConfig.readConfig(filename=jsonFile)  # parse the jsonFile.
-# logging stuff. 
+
+# logging stuff.
+level = None
 if verbose == 1:
     level=logging.INFO
 if verbose > 1:
     level=logging.DEBUG
-if verbose: # turn on logging
-    my_logger = genericLib.setup_logging(
-        level=level,
-        log_config=configData.logging_config()
-    )
 
-# import rest of stuff. Have logging on so can see various auto-stuff in the 
+my_logger = genericLib.setup_logging(
+    level=level,
+    log_config=configData.logging_config()
+)
+
+
+# Import rest of stuff. Have logging on so we can see various auto-stuff in the
 # class definitions
 
-from Models import *  # imports all models we know about. See Models/__init__.py Import this before anything else.
+from Models import *  # Imports all models we know about. See Models/__init__.py
+# Import this before anything else from OptClim.
 import optclim_exceptions
 import runSubmit
-
-
-
-
 
 if args.dir is not None:
     rootDir = Model.expand(args.dir)  # directory defined so set rootDir
@@ -120,7 +123,7 @@ else:  # set rootDir to cwd/name
     rootDir = pathlib.Path.cwd() / configData.name()  # default path
  
 
-if purge: # purging data? Do early so as to minimize amount of output user sees before this.
+if purge: # purging data? Do early to minimize amount of output user sees before this.
     result = input(f">>>Going to delete all in {rootDir}<<<. OK ? (yes if so): ") 
     if result.lower() in ['yes']:
         print(f"Deleting all files in {rootDir} and continuing")
@@ -158,6 +161,9 @@ if config_path.exists():  # config file exists. Read it in.
     rSUBMIT = runSubmit.runSubmit.load_SubmitStudy(config_path)
     if not isinstance(rSUBMIT, runSubmit.runSubmit):
         raise ValueError(f"Something wrong")
+    if update_config:
+        rSUBMIT.set_config(configData)
+        # this will overwrite the existing configuration and change anything derived in it.
 
     if delete:  # delete the config
         my_logger.info(f"Deleting existing config {rSUBMIT}")
@@ -176,6 +182,7 @@ if rSUBMIT is None:  # no configuration exists. So create it.
     my_logger.info(f"restartCMD is {restartCMD}")
     rSUBMIT = runSubmit.runSubmit(configData, rootDir=rootDir, config_path=config_path,next_iter_cmd=restartCMD)
     my_logger.debug(f"Created new runSubmit {rSUBMIT}")
+
 
 # We might  have runs to do so check that and run them if so.
 if not (dry_run or read_only):  # not dry running or read only.

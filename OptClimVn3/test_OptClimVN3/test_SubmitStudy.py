@@ -3,6 +3,7 @@ Test cases for SubmitStudy classes
 """
 import datetime
 import importlib.resources
+import logging
 import pathlib
 import tempfile
 import unittest.mock  # need to mock the run case.
@@ -28,7 +29,8 @@ def gen_time():
 class myModel(Model):
     pass
 
-# class that inherits from Model.,
+
+# class that inherits from Model.
 times = gen_time()
 traverse = importlib.resources.files("Models")
 with importlib.resources.as_file(traverse.joinpath("parameter_config/example_Parameters.csv")) as pth:
@@ -67,7 +69,7 @@ class MyTestCase(unittest.TestCase):
         Test that can create a model.
         :return:
         """
-        params = dict(VF1=2.2, RHCRIT=3)
+        params = dict(VF1=2.2, ENTCOEF=3)
         paramD = copy.deepcopy(params)
         paramD.update(self.submit.config.fixedParams())
         model = self.submit.create_model(paramD, dump=False)
@@ -86,6 +88,25 @@ class MyTestCase(unittest.TestCase):
         self.assertEqual(model2, m3)
         sub2 = self.submit.load(self.submit.config_path)
         self.assertEqual(self.submit, sub2)
+        # Set the max number of simulations to the current number of models. Then try and create a model.
+        # Should get None back + some warnings.
+        self.submit.run_info['max_model_simulations']=len(self.submit.model_index)
+        paramD.update(ICE_SIZE=2.1)
+        with self.assertLogs('OPTCLIM.SubmitStudy',level="WARNING") as cm:
+            model3= self.submit.create_model(paramD)
+        self.assertIsNone(model3)
+        self.assertEqual(len(cm.output),2) # expect 2 warnings
+        # and try again but with all models instantiated
+        self.submit.instantiate()
+        paramD.update(ICE_SIZE=2.2)
+        with self.assertLogs('OPTCLIM.SubmitStudy',level="WARNING") as cm2:
+            model3= self.submit.create_model(paramD)
+        self.assertIsNone(model3)
+        self.assertEqual(len(cm2.output),1) # expect 1 warning
+        # 1st warning should be the same.
+        self.assertEqual(cm.output[0],cm2.output[0])
+
+
 
     @unittest.mock.patch.object(SubmitStudy.SubmitStudy, 'now', side_effect=times)
     def test_delete(self, mck_now):

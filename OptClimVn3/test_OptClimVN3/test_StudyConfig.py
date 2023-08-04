@@ -814,6 +814,14 @@ class testStudyConfig(unittest.TestCase):
         # and that logging_INCLUDE_comment is raw path
         self.assertEqual(log_cfg_file,c.getv('logging_INCLUDE_comment'))
 
+    def test_max_model_simulations(self):
+        # test max_model_simulations
+        config = self.config
+        config.max_model_simulations(value=10)
+        actual_sims = config.getv('run_info')['max_model_simulations']
+        self.assertEqual(actual_sims,10)
+
+
 
             
 

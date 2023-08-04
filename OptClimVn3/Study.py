@@ -5,7 +5,7 @@ Note no methods are provided to save Study objects
 SubmitStudy inherits from this and that has methods to submit models and modify state.
 """
 from __future__ import annotations
-import matplotlib.pyplot as plt # so we can plot
+import matplotlib.pyplot as plt  # so we can plot
 import datetime
 import copy
 import logging
@@ -15,15 +15,12 @@ import typing
 import numpy as np
 import pandas as pd
 
-
 from model_base import model_base
 from Models.Model import Model
 from StudyConfig import OptClimConfigVn3
 
 
-
-
-class Study():
+class Study:
     # class attribute type information.
     config: OptClimConfigVn3
     name: str
@@ -46,33 +43,29 @@ class Study():
                  models: typing.Optional[typing.List[Model]] = None):
         """
         Create read-only study instance.
-        :type rootDir:
-        :param config: configuration information
-        :param name: name of the study. If None name of config is used.
-        :param rootDir : root dir where, by default, config file will be created and where model configurations will be searched for.
-          If None will be current dir/config.name()
-        :param config_path: path to where config
-        :param models -- list of models.
+        :param config: Configuration information.
+        :param name: Name of the study. If None name of config is used.
+        :param rootDir : Root dir where, by default, config file will be created and
+            where model configurations will be searched for.
+          If None will be current dir/config.name().
+        :param models : Lst of models.
         """
 
-        self.config = copy.deepcopy(config)
+        self.set_config(config)
 
-        if name is None:
+        if name is None: # NB once object exists its name cannot be changed.
             name = config.name()
-        if name is None: # still none as not defined in config
-            name= 'Unknown'
+        if name is None:  # still none as not defined in config
+            name = 'Unknown'
+        if name is not None:
+            self.name = name
 
-        self.name = name
-
-        if rootDir is None:  # no rootDir defined. Use cwd.
+        if rootDir is None:  # No rootDir defined. Use cwd.
             self.rootDir = pathlib.Path.cwd() / self.name  # default path
         else:
             self.rootDir = rootDir
 
-
-
         self.model_index = dict()
-
         if models is not None:
             for model in models:
                 key = self.key_for_model(model)
@@ -80,7 +73,14 @@ class Study():
                     raise ValueError(f"Got duplicate key {key}")
                 self.model_index[key] = model
 
+    def set_config(self, config: OptClimConfigVn3):
+        """
+        Add config to self and derive what needed from config to include in self.
 
+        :param config: A study config used to set. This is deep copied into self
+        :return: Nothing
+        """
+        self.config = copy.deepcopy(config)
 
 
     def __repr__(self):
@@ -88,6 +88,7 @@ class Study():
         Returns a string representation of Study
         :return: String containing the name of the study, number of models and model types/states -- grouped.
         """
+
         def clean_series(series):
             """
             Clean repr of a series
@@ -96,30 +97,29 @@ class Study():
             """
             return repr(series.to_dict()).replace("'", "").replace("{", "").replace("}", "")
 
-
         nmodels = len(self.model_index)
         if nmodels > 0:
-            model_types = pd.Series({m.name:m.class_name() for m in self.model_index.values()})
+            model_types = pd.Series({m.name: m.class_name() for m in self.model_index.values()})
             # pre 2.0 code. where series needs to be passed to by. 2.0+ by=None will do this.
-            model_types =  clean_series(model_types.groupby(by=model_types).count())
-            status =self.status()
+            model_types = clean_series(model_types.groupby(by=model_types).count())
+            status = self.status()
             status = clean_series(status.groupby(by=status).count())
         else:
-            model_types= ""
+            model_types = ""
             status = ""
 
         s = f"Name: {self.name} Nmodels:{nmodels}" \
             f" Status: {status} Model_Types:{model_types}"
         return s
 
-    def key_for_model(self, model:Model, fpFmt:str = '%.4g') -> str:
+    def key_for_model(self, model: Model, fpFmt: str = '%.4g') -> str:
         """
         Generate key from model
         :param model: model for which key gets generated. Uses parameters to generate the key.
         :param fpFmt: floating point format for floats
         :return: key
         """
-        #key = self.key(model.parameters, fpFmt=fpFmt)  # Generate key.
+        # key = self.key(model.parameters, fpFmt=fpFmt)  # Generate key.
         key = model.key(fpFmt=fpFmt)
         return key
 
@@ -145,7 +145,7 @@ class Study():
             else:  # just append the value.
                 keys.append(repr(v))  # use the object repr method.
         keys = tuple(keys)  # convert to tuple
-        return str(keys) # and then to a string.
+        return str(keys)  # and then to a string.
 
     def get_model(self, parameters: typing.Mapping, fpFmt: str = '%.4g') -> Model:
         """
@@ -155,12 +155,12 @@ class Study():
         :return: model that has parameters.
         """
 
-        key = self.key(parameters,fpFmt=fpFmt)
+        key = self.key(parameters, fpFmt=fpFmt)
         logging.debug(f"Key is: {key}")
         model = self.model_index.get(key, None)
         return model
 
-    def read_dir(self, direct: typing.Optional[pathlib.Path]=None, pattern:str ='*.mcfg'):
+    def read_dir(self, direct: typing.Optional[pathlib.Path] = None, pattern: str = '*.mcfg'):
         """
         Read all files that look like model config files.
         :param pattern: glob pattern to match for model config
@@ -168,7 +168,7 @@ class Study():
         :return:
         """
         if direct is None:
-            direct=self.rootDir
+            direct = self.rootDir
         if not direct.is_dir():
             raise ValueError(f"Directory {direct} is not a directory")
         files = direct.glob("**/" + pattern)
@@ -200,7 +200,7 @@ class Study():
         :return: pandas series of model status
         """
         dct = {model.name: model.status for model in self.model_index.values()}
-        return pd.Series(dct,dtype=str).rename(self.name)
+        return pd.Series(dct, dtype=str).rename(self.name)
 
     def params(self, normalize: bool = False) -> pd.DataFrame:
         """
@@ -264,12 +264,8 @@ class Study():
         cost = pd.Series(cost, index=obs.index).rename('cost ' + self.name)
         return cost
 
-
-
-
-
-    def runConfig(self, filename:typing.Optional[pathlib.Path]=None,
-                  scale:bool=True,add_cost:bool=True) -> OptClimConfigVn3:
+    def runConfig(self, filename: typing.Optional[pathlib.Path] = None,
+                  scale: bool = True, add_cost: bool = True) -> OptClimConfigVn3:
         """
         **copy** self.config and add parameters and obs to it. Modified config is returned
         :param filename - pathlib to file (or None). Will override filepath in new config
@@ -279,7 +275,7 @@ class Study():
             finalConfig.parameters() -- returns the parameters for each model simulation
             finalConfig.simObs() -- returns the simulated observations for each model simulation.
         """
-        newConfig = self.config.copy(filename=filename) # copy the config.
+        newConfig = self.config.copy(filename=filename)  # copy the config.
 
         params = self.params()  # get params & obs
         obs = self.obs()
@@ -288,7 +284,7 @@ class Study():
         newConfig.parameters(params)
         newConfig.simObs(obs)
 
-        if add_cost: # want to include cost. Which might be computed with scaling
+        if add_cost:  # want to include cost. Which might be computed with scaling
             cost = self.cost(scale=scale)
             # update newConfig
             cost = newConfig.cost(cost)
@@ -348,7 +344,7 @@ class Study():
             a = paramAx.axvline(minp, linestyle='dashed', linewidth=2, color='gray')
 
             # plot norm obs
-            obs = self.obs(scale=True,normalize=True)
+            obs = self.obs(scale=True, normalize=True)
             X = np.arange(-0.5, obs.shape[1])
             Y = np.arange(-0.5, obs.shape[0])
             cmO = obsAx.pcolormesh(Y, X, obs.T.values, vmin=-4, vmax=4, cmap=cmap)
@@ -379,5 +375,7 @@ class Study():
         return fig, (costAx, paramAx, obsAx)
 
     # end of Study
+
+
 # use model_base.__eq__ for equality. Real hack. Sure there are better ways.
 Study.__eq__ = model_base.__eq__

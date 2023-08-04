@@ -19,7 +19,9 @@
         "modelName": "simple_model",
         "modelName_comment": "Name of model that is ran. MUST be provided",
         "maxRuns": 5,
-        "maxRuns_comment": "Maximum number of runs to do in parallel. Runs submitted is 2x this + 1. DOES NOT WORK"
+        "maxRuns_comment": "Maximum number of runs to do in parallel. Runs submitted is 2x this + 1. ",
+        "max_model_simulations": 10,
+        "max_model_simulations_comment": "Maximum number of model simulations that will be done."
         },
     "run_info_comment": "Information  for run_info. Must include system_name and modelName. Can include other keys for use in submission. Useful ones are runTime, runCode & maxRuns ",
     "logging":"INCLUDE $OPTCLIMTOP/OptClimVn3/configurations/log_config.ijson", 

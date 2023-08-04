@@ -80,40 +80,25 @@ class SubmitStudy(model_base, Study, journal):
         :param name: name of the study. If None name of config is used.
         :param rootDir : root dir where new directories and configuration files are to be created.
           If None will be current dir/config.name().
-        :param refDir: Directory where reference model is. If None then config.referenceConfig() will be used.
-        :param model_name: Name of model type to create. If None value in config is used
+        :param refDir: Directory where a reference model is. If None, then config.referenceConfig() will be used.
+        :param model_name: Name of a model type to create. If None value in config is used
         :param models -- list of models.
         :param config_path -- where configuration should be stored. If None default is root_dir/name
         :param next_iter_cmd -- command to run next iteration.
         :return: instance SubmitStudy with the following public attributes :
-
-
-            refDir -- path for reference directory
-            model_name -- name of the model being used
-            run_info -- information for submitting runs.
-            engine -- functions to handle different job submission engines. Currently, only SGE and SLURM are supported.
-            config_path -- path to where config is stored.
-            name_values -- used to generate name. Set to None to reset counter.
-            iter_keys -- dict indexed by key with iteration count.
-            iter_count -- current iteration count.
-            next_iter_cmd -- the command to run the next iteration.
-            next_iter_jids -- the jobs ids of all submitted next_iter_cmd jobs
-
-
-
         """
-        super().__init__(config, name=name, models=models, rootDir=rootDir)
+        super().__init__(config, name=name, models=models, rootDir=rootDir) # this calls set_config
         self.rootDir.mkdir(parents=True, exist_ok=True)  # create it if need be.
-
-
-        if refDir is None:
+        if refDir is None: # not allowed to change refDir so set here rather than in set_config
             refDir = self.expand(str(config.referenceConfig()))
         self.refDir = refDir
 
-        if model_name is None:
-            model_name = self.config.model_name()
-        self.model_name = model_name
-        self.run_info = copy.deepcopy(config.run_info()) # copy run_info as modifying it.
+
+        if model_name is not None: # This is fixed. Even if configuation changed the model_name is fixed.
+            self.model_name = model_name
+        else:
+            self.model_name = config.model_name()
+
         eng = engine.abstractEngine.create_engine(self.run_info.pop('submit_engine'),
                                                      ssh_node=self.run_info.pop('ssh_node', None))
 
@@ -133,6 +118,20 @@ class SubmitStudy(model_base, Study, journal):
         self.next_iter_cmd = next_iter_cmd
         self.next_iter_jids = []  # no next jobs (yet)
 
+    def set_config(self, config: OptClimConfigVn3):
+        """
+        Partially set up self with the configuration. This allows updating following a change to the configuration.
+          Sets up run_info in addition to whatever the superclass method does.
+        To update from configuration simply do self.set_config(config).
+        :param config: Configuration to be used.
+        :return: nada
+        """
+        my_logger.debug("Setting configuration")
+        super().set_config(config) # call the superclass
+
+        self.run_info = copy.deepcopy(config.run_info()) # copy run_info as modifying it.
+        my_logger.debug(f"Set run_info to {self.run_info}")
+
     def __repr__(self):
         """
         String that represents a SubmitStudy. Calls superclass method and adds on info about history
@@ -147,9 +146,11 @@ class SubmitStudy(model_base, Study, journal):
 
         return s
 
-    def create_model(self, params: dict, dump: bool = True) -> Model:
+    def create_model(self, params: dict, dump: bool = True) -> typing.Optional[Model]:
         """
         Create a model, update list of created models and index of models.
+        If, by creating a model than more than self.run_info['max_model_sims'] models have been produced,
+              then no model will be created and None returned. Warnings will be generated.
         :param   params: dictionary of parameters to create the model.
          The following parameters are special and handled differently:
            * reference -- the reference directory. If not there (or None) then self.refDir is used.
@@ -161,6 +162,17 @@ class SubmitStudy(model_base, Study, journal):
         :param dump: If True dump  self (using self.dump_config method)
         :return: Model created (or that already exists)
         """
+        max_model_sims = self.run_info.get("max_model_simulations")
+        if (max_model_sims is not None) and (max_model_sims >= len(self.model_index)):
+            my_logger.warning(f"Exceeded {max_model_sims} model simulations. Returning None.")
+            models_to_run = self.models_to_instantiate()+self.models_to_continue()
+            lmodels= len(models_to_run)
+            if lmodels > 0: #got some model so instantiate
+                my_logger.warning(f"{lmodels} models still to be submitted.")
+                self.update_history(f"No more models to be created but {lmodels} existing ones to run")
+            else:
+                self.update_history("No more models to create or submit")
+            return None
 
         name = self.gen_name()
         model_dir = self.rootDir / name
@@ -282,6 +294,15 @@ class SubmitStudy(model_base, Study, journal):
         self.update_history(f'Instantiated {len(models)} models on iteration {iter_count}')
         my_logger.info(f"Instantiated {len(models)} models")
         return iter_count
+
+    def models_to_instantiate(self) -> List[Model]:
+        """
+        return a list of  models that need instantiation.
+        :return:list of models that need instantiation
+        """
+        models_to_instantiate = [model for model in self.model_index.values() if model.is_instantiable()]
+
+        return models_to_instantiate
 
     def models_to_submit(self) -> List[Model]:
         """

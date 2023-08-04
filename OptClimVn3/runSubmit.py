@@ -118,7 +118,10 @@ class runSubmit(SubmitStudy):
                 pDict.update(ensembleMember=ensembleMember)
                 model = self.get_model(pDict)
                 if model is None:  # no model so time to create one.
-                    model = self.create_model(pDict)
+                    model = self.create_model(pDict) # returns None if no model was created.
+                    if model is None:
+                        raise optclim_exceptions.runModelError
+                        # Immediately raise exception as None means no model created and nothing else can be done
                     obs = empty
 
                 elif model.status != "PROCESSED": # not processed so raise ValueError and complain.
