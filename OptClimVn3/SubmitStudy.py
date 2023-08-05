@@ -149,7 +149,7 @@ class SubmitStudy(model_base, Study, journal):
     def create_model(self, params: dict, dump: bool = True) -> typing.Optional[Model]:
         """
         Create a model, update list of created models and index of models.
-        If, by creating a model than more than self.run_info['max_model_sims'] models have been produced,
+        If, by creating a model than more than self.run_info['max_model_simsulations'] models have been produced,
               then no model will be created and None returned. Warnings will be generated.
         :param   params: dictionary of parameters to create the model.
          The following parameters are special and handled differently:
@@ -163,7 +163,7 @@ class SubmitStudy(model_base, Study, journal):
         :return: Model created (or that already exists)
         """
         max_model_sims = self.run_info.get("max_model_simulations")
-        if (max_model_sims is not None) and (max_model_sims >= len(self.model_index)):
+        if (max_model_sims is not None) and ( len(self.model_index) >= max_model_sims):
             my_logger.warning(f"Exceeded {max_model_sims} model simulations. Returning None.")
             models_to_run = self.models_to_instantiate()+self.models_to_continue()
             lmodels= len(models_to_run)

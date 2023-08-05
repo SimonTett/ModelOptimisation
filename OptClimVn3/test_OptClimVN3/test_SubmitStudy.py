@@ -90,8 +90,12 @@ class MyTestCase(unittest.TestCase):
         self.assertEqual(self.submit, sub2)
         # Set the max number of simulations to the current number of models. Then try and create a model.
         # Should get None back + some warnings.
-        self.submit.run_info['max_model_simulations']=len(self.submit.model_index)
+        self.submit.run_info['max_model_simulations']=len(self.submit.model_index)+1
         paramD.update(ICE_SIZE=2.1)
+        model3= self.submit.create_model(paramD) # should work  as still got sims to generate
+        self.assertIsInstance(model3,myModel)
+        # should not submit anything now
+        paramD.update(ICE_SIZE=2.15)
         with self.assertLogs('OPTCLIM.SubmitStudy',level="WARNING") as cm:
             model3= self.submit.create_model(paramD)
         self.assertIsNone(model3)
