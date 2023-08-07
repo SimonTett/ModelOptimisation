@@ -20,11 +20,12 @@ from typing import Optional, List, Callable, Mapping
 import engine
 import pandas as pd
 
-from Model import Model
+from  Model import Model
 from model_base import model_base, journal
 from Study import Study
 from StudyConfig import OptClimConfigVn3, dictFile
 import shutil
+import importlib
 # check we are version 3.9 or above.
 
 if (sys.version_info.major < 3) or (sys.version_info.major == 3 and sys.version_info.minor < 9):
@@ -35,10 +36,11 @@ __version__ = '0.9'
 
 my_logger=logging.getLogger(f"OPTCLIM.{__name__}")
 
-class SubmitStudy(model_base, Study, journal):
+class SubmitStudy( Study, model_base,journal):
     # typing information for class attributes
     refDir: pathlib.Path
     model_name: str
+    module_name:typing.Optional[str]
     run_info:dict
     engine:engine.abstractEngine
     config_path: pathlib.Path
@@ -53,6 +55,7 @@ class SubmitStudy(model_base, Study, journal):
     Attributes, beyond model_base, Study & journal ones, are:
         refDir -- path for reference directory
         model_name -- name of the model being used
+        module_name -- name of the module being used. 
         run_info -- information for submitting runs.
         engine -- functions to handle different job submission engines.
         config_path -- path to where config is stored.
@@ -99,6 +102,17 @@ class SubmitStudy(model_base, Study, journal):
         else:
             self.model_name = config.model_name()
 
+        self.module_name = None
+        # see if we have model_name in the list of known models. If we don't then try and load from module
+        if self.model_name not in Model.known_models():
+            self.module_name =  config.module_name(model_name=self.model_name)
+            my_logger.debug(f"Loading {self.module_name}")
+            importlib.import_module(self.module_name) # and load the module.
+        else:
+            my_logger.debug(f"Already have {self.model_name} so not loading module")
+
+
+        self.run_info = copy.deepcopy(config.run_info())  # copy run_info as modifying it.
         eng = engine.abstractEngine.create_engine(self.run_info.pop('submit_engine'),
                                                      ssh_node=self.run_info.pop('ssh_node', None))
 

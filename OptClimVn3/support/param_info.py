@@ -52,7 +52,7 @@ class param_info(model_base):
                 self.register(key, v, duplicate=duplicate)
                 duplicate = True  # anything else adds to existing list
 
-    def register(self, parameter: str, var_to_set: [typing.Callable | typing.Any], duplicate=False):
+    def register(self, parameter: str, var_to_set: [typing.Callable,typing.Any], duplicate=False):
         """
         register a namelist or callable to the parameter. An error will be raised if var_to_set has already been registered unless
            parameter is being replaced.

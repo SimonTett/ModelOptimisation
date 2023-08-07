@@ -2233,6 +2233,25 @@ class OptClimConfigVn3(OptClimConfigVn2):
         self.set_run_info(modelName=value)
         return self.run_info()["modelName"]
 
+    def module_name(self,
+                    value:typing.Optional[str]=None,
+                    model_name:typing.Optional[str]=None) -> str:
+        """
+        Returns name of module to be loaded.
+         Uses run_info['module_name']. If not present (or None) then model_name will be used
+        :param value: If not None then 'module_name' will be set to this value.
+        :param model_name: If not None then rather than using self.model_name() then model_name will be used
+        :return: Module to be loaded.
+        """
+        self.set_run_info(module_name=value) # set module_name
+        module_name = self.run_info().get('module_name')
+        if module_name is None:
+            my_logger.debug("No module_name found. Using model_name()")
+            if model_name is None:
+                model_name = self.model_name()
+            module_name = model_name
+        return module_name
+
     def maxRuns(self, value: typing.Optional[int] = None) -> int | None:
         """
         Get/set the maximum numbers of runs

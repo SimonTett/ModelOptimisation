@@ -5,13 +5,11 @@ This test routine needs OPTCLIMTOP specified sensibly. (ideally so that $OPTCLIM
 """
 
 import filecmp
-import os
 import re
 import shutil
 import tempfile
 import unittest
 import pathlib
-import logging  # TODO remove all verbose/print and use logging. Means tests need to explicitly set logging up
 import copy
 from Models import HadCM3
 import genericLib
@@ -65,7 +63,7 @@ class testHadCM3(unittest.TestCase):
                           ASYM_LAMBDA=0.15, CHARNOCK=0.012, G0=10.0, Z0FSEA=1.3e-3, ALPHAM=0.5,
                           START_TIME='1977-12-01T00:00:00', RESUBMIT_INTERVAL='P40Y',
                           ASTART='$MYDUMPS/fred.dmp',
-                           IA_N_DROP_MIN=4E7, IA_KAPPA_SCALE=0.5, IA_N_INFTY=3.75E89,
+                          #  IA_N_DROP_MIN=4E7, IA_KAPPA_SCALE=0.5, IA_N_INFTY=3.75E89,
                           SPHERICAL_ICE=False, ICE_DIFF=2.5e-5, MAX_ICE=0.99, OCN_ISODIFF=800
                           )
         self.parameters = copy.deepcopy(parameters)
@@ -132,7 +130,7 @@ class testHadCM3(unittest.TestCase):
         expect_values = {"CT": 1e-4, "EACF": 0.5, "ENTCOEF": 3.0, "ICE_SIZE": 30e-6,
                          "RHCRIT": 0.7, "VF1": 1.0, "CW": 2e-4, "DYNDIFF": 12.0, "KAY_GWAVE": 2e4,
                          'SPHERICAL_ICE': False,
-                         'IA_N_DROP_MIN': 4E7, 'IA_KAPPA_SCALE': 0.5, 'IA_N_INFTY': 3.75E89,
+                         #'IA_N_DROP_MIN': 4E7, 'IA_KAPPA_SCALE': 0.5, 'IA_N_INFTY': 3.75E89,
                          "ASYM_LAMBDA": 0.15, "CHARNOCK": 0.012, "G0": 10.0, "Z0FSEA": 1.3e-3, "ALPHAM": 0.5,
                          "ICE_DIFF": 2.5e-5, 'MAX_ICE': 0.99, 'OCN_ISODIFF': 800,
                          'RUN_TARGET': 'P180Y',
@@ -140,7 +138,10 @@ class testHadCM3(unittest.TestCase):
                          'RESUBMIT_INTERVAL': "P40Y",
                          'OSTART': '$DATAW/$RUNID.ostart', 'ASTART': '$MYDUMPS/fred.dmp',
                          'AINITIAL': '$MY_DUMPS/aeabra.daf4c10', 'OINITIAL': '$MY_DUMPS/aeabro.daf4c10',
-                         "ANTHSCA": 0.99, "NAME": "XFRED", "OHSCA": 1.2, "O2H2SCA":0.8,"VOLCSCA": 1.2}
+                         #"ANTHSCA": 0.99,
+                         "NAME": "XFRED",
+                         #"OHSCA": 1.2, "O2H2SCA":0.8,"VOLCSCA": 1.2
+                         }
 
         # check we have got all known parameters.
         expect_params = set(self.model.param_info.known_parameters())

@@ -51,7 +51,7 @@ class Study:
         :param models : Lst of models.
         """
 
-        self.set_config(config)
+        self.config = copy.deepcopy(config)
 
         if name is None: # NB once object exists its name cannot be changed.
             name = config.name()
@@ -73,13 +73,14 @@ class Study:
                     raise ValueError(f"Got duplicate key {key}")
                 self.model_index[key] = model
 
-    def set_config(self, config: OptClimConfigVn3):
+    def update_config(self, config: OptClimConfigVn3):
         """
         Add config to self and derive what needed from config to include in self.
 
         :param config: A study config used to set. This is deep copied into self
         :return: Nothing
         """
+        logging.warning("Updating self.config. Be very very careful when you do this.")
         self.config = copy.deepcopy(config)
 
 

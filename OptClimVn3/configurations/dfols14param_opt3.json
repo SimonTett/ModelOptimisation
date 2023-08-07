@@ -18,6 +18,8 @@
 	    "ssh_node_comment":"If not null then name of machine which has access to engine. Will ssh to this machine to submit commands",
         "modelName": "HadCM3",
         "modelName_comment": "Name of model that is ran",
+        "module_name": null,
+        "module_name_comment": "Name of module that contains modelName class. If not specified then modelName will be used",
         "maxRuns": null,
         "maxRuns_comment": "Maximum number of runs to do in parallel",
         "max_model_simulations": null,
@@ -101,6 +103,7 @@
         "constraintName_comment": "Name of constraint variable -- target value defined by targets/constraintName. "
     },
     "optimise": "INCLUDE $OPTCLIMTOP/OptClimVn3/configurations/optimise_dfols.ijson",
+    "optimise_comment": "Variables that control the optimisation. Depends on your algorithm",
     "postProcess": {
         "comment": "Options to control post processing. Details depend on your post processing script.",
         "script": "$OPTCLIMTOP/OptClimVn3/scripts/comp_obs.py",

@@ -112,8 +112,7 @@ my_logger = genericLib.setup_logging(
 # Import rest of stuff. Have logging on so we can see various auto-stuff in the
 # class definitions
 
-from Models import *  # Imports all models we know about. See Models/__init__.py
-# Import this before anything else from OptClim.
+from Model import  Model # root type for all Models.
 import optclim_exceptions
 import runSubmit
 

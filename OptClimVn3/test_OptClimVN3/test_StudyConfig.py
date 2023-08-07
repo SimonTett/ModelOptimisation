@@ -821,10 +821,15 @@ class testStudyConfig(unittest.TestCase):
         actual_sims = config.getv('run_info')['max_model_simulations']
         self.assertEqual(actual_sims,10)
 
-
-
-            
-
+    def test_module_name(self):
+        # test module_name works as expected.
+        config = self.config
+        config.Config['run_info']['module_name']=None # set to None
+        model_name = config.model_name()
+        module_name = config.module_name()
+        self.assertEqual(module_name,model_name)
+        module_name = config.module_name('simple_model')
+        self.assertEqual(module_name,'simple_model')
 
 if __name__ == "__main__":
     print("Running Test Cases")

@@ -7,11 +7,5 @@ ASYM_LAMBDA,namelist_var,CNTLATM,SLBC21,asym_lambda,0.15,,
 CHARNOCK,namelist_var,CNTLATM,SLBC21,charnock,0.012,,
 G0,namelist_var,CNTLATM,SLBC21,g0,10.0,,
 Z0FSEA,namelist_var,CNTLATM,SLBC21,z0fsea,0.0013,,
-OHSCA,namelist_var,CNTLATM,SLBC21,ohsca,1.0,,
-O2H2SCA,namelist_var,CNTLATM,SLBC21,o2h2sca,1.0,,
-VOLCSCA,namelist_var,CNTLATM,SLBC21,volsca,1.0,,
-ANTHSCA,namelist_var,CNTLATM,SLBC21,anthsca,1.0,,
-IA_N_DROP_MIN,namelist_var,CNTLATM,SLBC21,ia_n_drop_min,3.5e7,,
-IA_N_INFTY,namelist_var,CNTLATM,SLBC21,ia_n_infty,3.75E8,,
-IA_KAPPA_SCALE,namelist_var,CNTLATM,SLBC21,ia_kappa_scale,0.9375,,
+
 
