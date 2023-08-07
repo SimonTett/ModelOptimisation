@@ -106,10 +106,10 @@ class SubmitStudy( Study, model_base,journal):
         # see if we have model_name in the list of known models. If we don't then try and load from module
         if self.model_name not in Model.known_models():
             self.module_name =  config.module_name(model_name=self.model_name)
-            my_logger.debug(f"Loading {self.module_name}")
+            my_logger.info(f"Loading {self.module_name}")
             importlib.import_module(self.module_name) # and load the module.
         else:
-            my_logger.debug(f"Already have {self.model_name} so not loading module")
+            my_logger.info(f"Already have {self.model_name} so not loading module")
 
 
         self.run_info = copy.deepcopy(config.run_info())  # copy run_info as modifying it.
