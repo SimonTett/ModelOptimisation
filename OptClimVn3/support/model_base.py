@@ -220,16 +220,19 @@ class model_base:
 
     # class methods.
     @classmethod
-    def load(cls, file: pathlib.Path):
+    def load(cls, file: [pathlib.Path,str]):
         """
         Load an object configuration from specified file.
-        The correct type of object will be returned.
-        :param file path to file to be read in.
-        :return: model configuration of appropriate type.
+        The correct type of object will be returned. 
+        :param file path to file to be read in. 
+           If str passed then it cls.expand will be ran on it.
+        :return: Object of appropriate type.
         """
         # read it in.
 
-        with open(file, 'r') as fp:
+        file = cls.expand(file) # expand user and vars and convert str to path
+        
+        with open(file, 'rt') as fp:
             cfg = generic_json.load(fp)
             # this runs all the magic needed to create objects that we know about
         for k, v in vars(cfg).items():  # debug info.

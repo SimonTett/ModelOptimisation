@@ -269,22 +269,19 @@ class SubmitStudy( Study, model_base,journal):
                 model.dump_model()
 
     @classmethod
-    def load_SubmitStudy(cls, config_path: pathlib.Path,
-                         config: typing.Optional[OptClimConfigVn3] = None,
-                         Study: bool = False) -> Study | SubmitStudy:
+    def load_SubmitStudy(cls, config_path: [pathlib.Path,str],
+                         Study: bool = False) -> [Study,SubmitStudy]:
         """
         Load a SubmitStudy (or anything that inherits from it) from a file. The object will have config_path replaced by config_path.
         :param config_path: path to configuration to load
         :param Study: If True return a Study object. These are read-only (unless you modify by hand the attributes)
         :return: object
         """
-
+        config_path = cls.expand(config_path) 
+        # convert str to path and or expand user or env vars.
         obj = cls.load(config_path)
         if not isinstance(obj, SubmitStudy):
             my_logger.warning(f"Expected instance of SubmitStudy got {type(obj)}")
-        if config is not None:
-            my_logger.info("Updating configuration")
-            obj.config = copy.deepcopy(config)
         if Study:  # convert to a study
             obj = obj.to_study()
             return obj
