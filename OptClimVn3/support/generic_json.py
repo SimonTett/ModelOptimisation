@@ -40,6 +40,7 @@ import logging
 import numpy as np
 import pandas as pd
 import pathlib
+import importlib # so we can do imports
 import typing
 my_logger = logging.getLogger("OPTCLIM."+__name__) # logging for generic_json
 
@@ -126,7 +127,7 @@ class obj_to_from_dict:
     def register_FROM_VALUE(cls, mycls,classmethod):
         """
         Register class method that generates object from list or dict.
-        :param mycls: class for which classmethod comes from.
+        :param mycls: class for which class method comes from.
         :param classmethod: class method to be registered
         :return:
         """
@@ -191,6 +192,12 @@ class obj_to_from_dict:
 
         if "__cls__name__" in dct.keys():
             name = dct.pop("__cls__name__")
+            module = dct.pop("__module__",None)
+            if module is not None: # have a module. Let's try and import it.
+                my_logger.info(f"importing {module}")
+                mod = importlib.import_module(module)
+                # TODO check that mod has what we need. The reason for the import is to give us the decode methods...
+
             data = dct.pop("object")
             if len(dct) > 0:
                 raise TypeError("Invalid dct")
@@ -207,15 +214,24 @@ class JSON_Encoder(json.JSONEncoder):
         Called by json serialization
         :param obj: Any object
 
-        :return: Serialised object packaged in a two element dict with the following key/value pairs:
+        :return: Serialised object packaged in a three element dict with the following key/value pairs:
 
          "__cls__name__" : name of the class of the object.
+         "__module__" : name of the module where class is defined
          "object": the serialized version of the object
 
         Also see decode which reverses this.
         """
         try:
-            result = dict(__cls__name__=obj.__class__.__name__, object=obj_to_from_dict.obj_to_value(obj))
+
+            result = dict(__cls__name__=obj.__class__.__name__,
+                          object=obj_to_from_dict.obj_to_value(obj))
+            # potentially add a module in to allow auto import. Numpy objects do not have a __module__ attribute
+            try:
+                module = obj.__module__
+                result["__module__"]=module
+            except AttributeError: # no module attribute
+                pass
             return result
         except TypeError:
             try:

@@ -7,10 +7,10 @@ import argparse
 import logging
 import os
 import pathlib
-import Models # so we get all the models we need.
+from Model import Model
 
 
-allowed_keys = set(Models.Model.status_info.keys()) - {'SUBMITTED'}
+allowed_keys = set(Model.status_info.keys()) - {'SUBMITTED'}
 # this script does not handle submission of the model as that is more complex. See SubmitStudy for that.
 parser = argparse.ArgumentParser(description="""
     Set model status to something. This can have side effects depending on the status. 
@@ -36,11 +36,11 @@ for k,v in os.environ.items():
 
 logging.debug(f"Path is {pathlib.Path.cwd()}")
 # work out where config lives.
-config_path = Models.Model.expand(args.config) #
+config_path = Model.expand(args.config) #
 logging.info(f"config_path = {config_path}")
 status = args.status
 logging.info(f"Status = {status}")
-model = Models.Model.load_model(config_path)
+model = Model.load_model(config_path)
 # read model in. type of model gets worked out through saved configuration
 # and set its status. That can do lots of things. See Model methods.
 # there is enough logging in load_model to report what is being done!

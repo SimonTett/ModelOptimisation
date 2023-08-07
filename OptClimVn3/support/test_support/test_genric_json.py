@@ -94,7 +94,7 @@ class TestJsonEncoder(unittest.TestCase):
         e= JSON_Encoder()
         test=Dummy(1,2,43,66)
         got = e.default(test)
-        expect=dict(__cls__name__="Dummy",object=[1,2,43,66])
+        expect=dict(__cls__name__="Dummy",__module__=test.__module__,object=[1,2,43,66])
         self.assertEqual(expect, got)  # should be identical
         # test that unknown class works
         with self.assertRaises(TypeError):
@@ -125,7 +125,9 @@ class TestJsonEncoder(unittest.TestCase):
 
         # test encoding
         encoded = dumps(obj)
-        self.assertEqual(encoded, '{"__cls__name__": "Dummy", "object": [1, 2, 3]}')
+        expected = dict(__cls__name__="Dummy",object=[1, 2, 3],__module__=obj.__module__)
+        s_expected=str(expected).replace("'",'"')
+        self.assertEqual(encoded, s_expected)
 
         # test decoding
         decoded = loads(encoded)

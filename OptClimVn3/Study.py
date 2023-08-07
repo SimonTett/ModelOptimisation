@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 
 from model_base import model_base
-from Models.Model import Model
+from Model  import Model # root class for all models.
 from StudyConfig import OptClimConfigVn3
 
 

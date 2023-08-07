@@ -3,7 +3,7 @@ import pathlib
 import unittest
 import subprocess
 import tempfile
-import Model
+from Model import Model
 import platform
 import shutil
 
@@ -13,15 +13,15 @@ import os
 
 import StudyConfig
 from runSubmit import runSubmit # so we can test if we have one!
-from Models import * # all models defined
+
 
 class testScripts(unittest.TestCase):
 
     def setup_model(self):
-        cpath = Model.Model.expand("$OPTCLIMTOP/OptClimVn3/configurations/example_simple_model")
+        cpath = Model.expand("$OPTCLIMTOP/OptClimVn3/configurations/example_simple_model")
         eng = engine.abstractEngine.create_engine('SGE')
 
-        model = Model.Model('test_model',
+        model = Model('test_model',
                             reference=cpath,engine=eng,
                             config_path=self.tempDir / 'testmodel.mcfg',
                             model_dir=self.tempDir / 'testmodel',
@@ -35,7 +35,7 @@ class testScripts(unittest.TestCase):
         direct = tempfile.TemporaryDirectory()
         self.direct = direct
         self.tempDir = pathlib.Path(direct.name)
-        self.script_dir = Model.Model.expand("$OPTCLIMTOP/OptClimVn3/scripts")
+        self.script_dir = Model.expand("$OPTCLIMTOP/OptClimVn3/scripts")
         self.assertTrue(self.script_dir.exists()) # this failing when ran along with all tests.
 
     def tearDown(self) -> None:
@@ -68,7 +68,7 @@ class testScripts(unittest.TestCase):
             print("stdout",err.stdout)
             print("stderr",err.stderr)
             raise
-        model = Model.Model.load_model(model.config_path)
+        model = Model.load_model(model.config_path)
         self.assertEqual(model.status,'RUNNING')
         model.delete()
 
@@ -82,7 +82,7 @@ class testScripts(unittest.TestCase):
             cmd=['python']
         else:
             cmd=[]
-        config_pth = Model.Model.expand("$OPTCLIMTOP/OptClimVn3/configurations/dfols14param_opt3.json")
+        config_pth = Model.expand("$OPTCLIMTOP/OptClimVn3/configurations/dfols14param_opt3.json")
         config = StudyConfig.readConfig(config_pth)
         cmd += [str(self.script_dir/'runAlgorithm.py'),str(config_pth),"-v", "-t",
                 "-d",str(self.tempDir) ,"--delete"]
