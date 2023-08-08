@@ -935,7 +935,5 @@ class HadCM3(Model):
 
         return None
 
-
-traverse = importlib.resources.files("Models")
-with importlib.resources.as_file(traverse.joinpath("parameter_config/HadCM3_Parameters.csv")) as pth:
-    HadCM3.update_from_file(pth, duplicate=True)
+pth = HadCM3.expand("$OPTCLIMTOP/OptClimVn3/Models/parameter_config/HadCM3_Parameters.csv")
+HadCM3.update_from_file(pth, duplicate=True)

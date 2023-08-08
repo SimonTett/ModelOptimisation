@@ -15,7 +15,6 @@ import typing
 
 import numpy as np
 import pandas as pd
-from StudyConfig import OptClimConfigVn3
 import logging
 import logging.config
 import copy
@@ -65,7 +64,7 @@ def setup_logging(level:typing.Optional[int] = None,
 # see https://jdhao.github.io/2020/06/20/python_duplicate_logging_messages/
     return optclim_logger
         
-def fake_fn(config: OptClimConfigVn3, params: dict) -> pd.Series:
+def fake_fn(config: "OptClimConfigVn3", params: dict) -> pd.Series:
     """
     Wee test fn for trying out things.
     :param config -- configuration. Provides, parameter min, max & ranges and targets.
