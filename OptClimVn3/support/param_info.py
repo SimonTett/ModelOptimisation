@@ -205,6 +205,24 @@ class param_info(model_base):
         :param kwargs -- all remaining arguments are passed to read_csv.
         :return: Nothing.Modifies self in place
         """
+        def str_to_ifb(value:typing.Optional[str]) -> typing.Optional[bool,float,int]:
+            """
+            Convert a string to a bool, float or int. If None passed return None
+            :param value: value to be converted
+            :return: converted value
+            """
+            if value is None:
+                return None
+            if value.lower() == 'true':
+                result = True
+            elif value.lower() == 'false':
+                result = False
+            elif '.' in value:
+                result = float(value)
+            else:
+                result = int(value)
+
+            return result
 
         parameter_df = pd.read_csv(self.expand(filepath), **kwargs)
         parameter_df = parameter_df.replace({np.nan:None}) # replace any Nan with None. (on write out None get written as nan)
@@ -214,8 +232,13 @@ class param_info(model_base):
                 name = row.loc['name']
                 if pd.isnull(name):  # no name defined set it to param.
                     name = param
+                # convert default
+                default = row.loc['default']
+                if isinstance(default,str):
+                    default = str_to_ifb(default)
+
                 nl = namelist_var(filepath=pathlib.Path(row.loc['filepath']), namelist=row.loc['namelist'],
-                                  nl_var=row.loc['nl_var'], default=row.loc['default'],name=name)
+                                  nl_var=row.loc['nl_var'], default=default,name=name)
                 self.register(param, nl, duplicate=duplicate)
                 my_logger.debug(f"Registered {nl} for parameter {param}")
             elif typ == 'function':

@@ -26,9 +26,9 @@ class TestParamInfo(unittest.TestCase):
     def setUp(self):
         self.param_info = param_info()
         # set up test case.
-        nl_var1 = namelist_var(filepath=pathlib.Path('fred.nl'), namelist='atmos', nl_var='VF1', name='VF1')
-        nl_var2 = namelist_var(filepath=pathlib.Path('fred.nl'), namelist='atmos', nl_var='VF2', name='VF2')
-        nl_var3 = namelist_var(filepath=pathlib.Path('fred.nl'), namelist='ocean', nl_var='OCDIFF', name='OCDIFF')
+        nl_var1 = namelist_var(filepath=pathlib.Path('fred.nl'), namelist='atmos', nl_var='VF1', name='VF1',default=1)
+        nl_var2 = namelist_var(filepath=pathlib.Path('fred.nl'), namelist='atmos', nl_var='VF2', name='VF2',default=2.0)
+        nl_var3 = namelist_var(filepath=pathlib.Path('fred.nl'), namelist='ocean', nl_var='OCDIFF', name='OCDIFF',default=False)
         self.param_info.register('FN', self.fn)
         self.param_info.register('VF1', nl_var1)
         self.param_info.register('VF1', nl_var2, duplicate=True)
@@ -40,9 +40,9 @@ class TestParamInfo(unittest.TestCase):
             OCDIFF=[nl_var3]
         )
 
-        expected_df1 = pd.DataFrame([['VF1', 'namelist_var', 'fred.nl', 'atmos', 'VF1', 'VF1', np.NAN],
-                                     ['VF1', 'namelist_var', 'fred.nl', 'atmos', 'VF2', 'VF2', np.NAN],
-                                     ['OCDIFF', 'namelist_var', 'fred.nl', 'ocean', 'OCDIFF', 'OCDIFF', np.NAN]],
+        expected_df1 = pd.DataFrame([['VF1', 'namelist_var', 'fred.nl', 'atmos', 'VF1', 'VF1',1],
+                                     ['VF1', 'namelist_var', 'fred.nl', 'atmos', 'VF2', 'VF2', 2.0],
+                                     ['OCDIFF', 'namelist_var', 'fred.nl', 'ocean', 'OCDIFF', 'OCDIFF', False]],
                                     columns=['parameter', 'type', 'filepath', 'namelist', 'nl_var', 'name', 'default'])
         expected_df2 = pd.DataFrame([['FN', 'function', self.fn.__qualname__]],
                                     columns=['parameter', 'type', 'function_name'])
@@ -74,12 +74,12 @@ class TestParamInfo(unittest.TestCase):
         p.register('RHCRIT', set_RHCRIT)
         self.assertEqual(p.param_constructors['RHCRIT'], [set_RHCRIT])
         self.assertEqual(p.known_functions[set_RHCRIT.__qualname__], set_RHCRIT)
-        self.assertEqual(p.got_vars, set(['nl_var1', 'nl_var2', set_RHCRIT]))
+        self.assertEqual(p.got_vars, {'nl_var1', 'nl_var2', set_RHCRIT})
 
         # Test overwriting an existing registration
         p.register('VF1', 'new_nl_var1')
         self.assertEqual(p.param_constructors['VF1'], ['new_nl_var1'])
-        self.assertEqual(p.got_vars, set([set_RHCRIT, 'new_nl_var1', ]))
+        self.assertEqual(p.got_vars, {set_RHCRIT, 'new_nl_var1'})
         self.assertEqual(p.known_functions[set_RHCRIT.__qualname__], set_RHCRIT)
         # test adding a namelist we already have raises an error.
         with self.assertRaises(ValueError):
@@ -111,8 +111,8 @@ class TestParamInfo(unittest.TestCase):
         self.assertEqual(result, [(nl_var1, 42), (nl_var2, 42)])
 
         # Test with a callable
-        nl_var1a = namelist_var(filepath='ATMCNTL', namelist='atmos', nl_var='rhcrit')
-        nl_var2a = namelist_var(filepath='ATMCNTL', namelist='atmos', nl_var='rhcrit2')
+        nl_var1a = namelist_var(filepath=pathlib.Path('ATMCNTL'), namelist='atmos', nl_var='rhcrit')
+        nl_var2a = namelist_var(filepath=pathlib.Path('ATMCNTL'), namelist='atmos', nl_var='rhcrit2')
 
         def set_RHCRIT(model, value):
             return [(nl_var1a, [value] * 19), (nl_var2a, [value] * 10)]
