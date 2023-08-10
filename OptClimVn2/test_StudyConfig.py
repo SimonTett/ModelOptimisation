@@ -289,6 +289,13 @@ class testStudyConfig(unittest.TestCase):
         with self.assertRaises(ValueError):
             got = self.config.targets()
 
+
+    def test_check_obs(self):
+        """ test that check_obs works/fails as expected"""
+        self.config.check_obs() # should work.
+        with self.assertRaises(ValueError):
+            self.config.check_obs(obsNames=['fred1','fred2']) # should fail
+
     def test_Fixed(self):
         """
         Test can read fixed parameters

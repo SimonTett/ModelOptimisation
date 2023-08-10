@@ -4,7 +4,7 @@ A fake model for testing optimisation (or related) frameworks.
 """
 import argparse # parse command line arguments
 import collections # want ordered dict
-import exceptions
+import optclim_exceptions
 import os
 import shutil
 import stat
@@ -46,7 +46,7 @@ def fakeModel(paramV, studyCfg, obsNames=None, trace=False):
         if (int_v.sum() < 0):
             raise ValueError("int_v stuffed")
         np.random.seed(int_v.sum()) # set the seed up
-        if trace: print ": Seed set to ",int_v
+        if trace: print(": Seed set to "),int_v
 
     standardObs = studyCfg.standardObs(obsNames=use_obsNames,scale=False) # standard obs
     nobs=standardObs.shape[0]
@@ -89,7 +89,7 @@ def fakeModel(paramV, studyCfg, obsNames=None, trace=False):
     return result
 ## main code
 
-print "Running fakemodel.py"
+print("Running fakemodel.py")
 jsonFile="config.json"
 config= StudyConfig.OptClimConfig(jsonFile) # parse the jsonFile.
 m = ModelSimulation.EddieModel('./',update=True)  # read the model configuration.
@@ -100,6 +100,6 @@ rootgrp = netCDF4.Dataset('A/modelRun.nc', "w", format="NETCDF4")
 for o in obs.index:  # iterate over index in series.
     v = rootgrp.createVariable(o, 'f8')  # create the NetCDF variable
     v[:] = obs[o]  # write to it
-    print v, v[:]
-    print "====================="
-rootgrp.close()  # close the file
+    print(v, v[:])
+    print("=====================")
+rootgrp.close()  # close the f

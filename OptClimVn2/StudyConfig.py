@@ -19,6 +19,7 @@ Provides classes and methods suitable for manipulating study configurations.  In
 import copy
 import datetime
 import json
+import logging
 import os
 import pathlib
 import re
@@ -492,11 +493,42 @@ class OptClimConfig(dictFile):
             self.setv('targets', tgt)
         missing = set(obsNames) - set(tgt.keys())
         if len(missing):
-            raise ValueError("Missing some obs = "," ".join(missing))
+            raise ValueError("Missing some obs = "+" ".join(missing))
         tvalues = pd.Series({obs:tgt[obs] for obs in obsNames}) # extract the required obsNames
         if scale:
             tvalues = tvalues * self.scales(obsNames=obsNames)
         return tvalues.rename(self.name())
+
+
+    def check_obs(self,obsNames=None):
+        """
+        Check that observation related stuff is OK.
+          Check targets, scalings and covariances. Trapping errors and then reporting at end
+        :return: True if OK/False if not.
+        """
+        bad=[] # where we store all the error messages
+        try:
+            targets=self.targets(obsNames=obsNames)
+        except ValueError as exception: # missing some errors
+            bad+= ['Targets have problems '+str(exception)]
+
+        try:
+            covar = self.Covariances(obsNames=obsNames,read=True)
+        except ValueError as exception: # missing some errors
+            bad+= ['Covariances have problems '+str(exception)]
+
+        try:
+            scales = self.scales(obsNames=obsNames)
+        except ValueError as exception: # missing some errors
+            bad+= ['scales have problems '+str(exception)]
+
+        if len(bad): # something went wrong. So report all the trapped errors with a failure.
+            raise ValueError("\n".join(bad))
+            return False
+
+        return True
+
+
 
     def constraint(self, value=None):
         """
@@ -618,19 +650,24 @@ class OptClimConfig(dictFile):
         covInfo = self.getv('study', {}).get('covariance')
         # extract the covariance matrix and optionally diagonalise it.
         readData = (self._covariances is None) or read
+        bad_reads=[]
         if readData:
             for k in keys:
                 fname = covInfo.get(k, None)
-                if fname is not None:  # specified in the configuration file
-                    cov[k] = self.readCovariances(fname, obsNames=obsNames, trace=trace, dirRewrite=dirRewrite)
-                    cov[k + "File"] = fname  # store the filename
-                    if cov[k] is not None:  # got some thing to further process
-                        if covInfo.get(k + "Diagonalise", False):  # want to diagonalise the covariance
-                            # minor pain is that np.diag returns a numpy array so we have to remake the DataFrame
-                            cov[k] = pd.DataFrame(np.diag(np.diag(cov[k])), index=obsNames, columns=obsNames,
-                                                  dtype=float)
-                            if trace: print("Diagonalising " + k)
-
+                if fname is not None:  # specified in the configuration file so read it
+                    try:
+                        cov[k] = self.readCovariances(fname, obsNames=obsNames, trace=trace, dirRewrite=dirRewrite)
+                        cov[k + "File"] = fname  # store the filename
+                        if cov[k] is not None:  # got some thing to further process
+                            if covInfo.get(k + "Diagonalise", False):  # want to diagonalise the covariance
+                                # minor pain is that np.diag returns a numpy array so we have to remake the DataFrame
+                                cov[k] = pd.DataFrame(np.diag(np.diag(cov[k])), index=obsNames, columns=obsNames,
+                                                      dtype=float)
+                                logging.info("Diagonalising " + k)
+                    except ValueError as exception: # error in readCovariance
+                        bad_reads += [str(exception)]
+            if len(bad_reads) > 0: # failed somehow. Raie ValueError.
+                raise ValueError("\n".join(bad_reads))
             # make total covariance from CovIntVar and CovObsErr if both are defined.
             if cov.get('CovIntVar') is not None and cov.get(
                     'CovObsErr') is not None:  # if key not defined will "get" None
@@ -805,7 +842,7 @@ class OptClimConfig(dictFile):
         # check have required obsNames.
         missing = set(obsNames) - set(cov.index)
         if len(missing):
-            raise ValueError("Missing some obs = "," ".join(missing))
+            raise ValueError(f"Covar {covFile} Missing some obs = "+" ".join(missing))
 
         cov = cov.reindex(index=obsNames, columns=obsNames)  # extract the values comparing to olist
 

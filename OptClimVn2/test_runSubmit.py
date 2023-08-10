@@ -226,6 +226,7 @@ class testRunSubmit(unittest.TestCase):
         # and we are a series of size 1.
         self.assertEqual(result.size, 1, 'Size not as expected')
 
+
     # test case for stdFunction
 
     def test_genOptFunction(self):

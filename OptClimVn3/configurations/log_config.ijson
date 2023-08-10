@@ -1,0 +1,39 @@
+{
+	"_comment":"configuration for logging. See https://docs.python.org/3.9/library/logging.config.html#logging-config-dictschema. Use INCLUDE pathname to include in a config.",
+	"history_comment":"This version generated August 2023 by SFBT",
+	    "version": 1,
+	    "formatters": {
+		"std": {
+		    "format": "%(levelname)s:%(name)s:%(funcName)s: %(message)s",
+		    "validate": true
+		},
+		"brief": {
+		    "format": "%(levelname)s:%(name)s:  %(message)s",
+		    "validate": true
+		}
+	    },
+	    "formatters_comment":"Control formatting output",
+	    "handlers": {
+		"console": {
+		    "class": "logging.StreamHandler",
+		    "formatter": "std"
+		},
+		"consoleBrief": {
+		    "class": "logging.StreamHandler",
+		    "formatter": "brief"
+		}
+	    },
+	    "handlers_comment":"Control handlers",
+	    "loggers": {
+		"OPTCLIM": {
+		    "level": "INFO",
+		    "propagate": false,
+		    "handlers": ["console"]
+		},
+		"OPTCLIM.generic_json": {
+		    "level": "WARNING",
+		    "handlers":["consoleBrief"]
+		}
+	    },
+	    "loggers_comment":"Provides two loggers. INFO for all of OPTCLIM. WARNING for generic_json."
+	}

@@ -11,6 +11,7 @@ import shutil
 import tempfile
 import unittest
 import pathlib  # TODO move towards using pathlib away from os.path.xxxx
+import logging # TODO remove all verbose/print and use logging. Means tests need to explicitly set logging up
 
 import numpy as np
 import pandas as pd
@@ -61,6 +62,7 @@ class testHadCM3(unittest.TestCase):
         Setup case
         :return:
         """
+        logging.basicConfig(level=logging.DEBUG)
         parameters = {"CT": 1e-4, "EACF": 0.5, "ENTCOEF": 3.0, "ICE_SIZE": 30e-6,
                       "RHCRIT": 0.7, "VF1": 1.0, "CW_LAND": 2e-4, "DYNDIFF": 12.0, "KAY_GWAVE": 2e4,
                       "ASYM_LAMBDA": 0.15, "CHARNOCK": 0.012, "G0": 10.0, "Z0FSEA": 1.3e-3, "ALPHAM": 0.5,
@@ -114,20 +116,22 @@ class testHadCM3(unittest.TestCase):
         :return:
         """
         # using implicit run of setup.
-        expectObs = collections.OrderedDict()
-        for k in ['temp@500_nhx', 'temp@500_tropics', 'temp@500_shx']: expectObs[k] = None
+        expectObs = {k:None for k in ['temp@500_nhx', 'temp@500_tropics', 'temp@500_shx']}
         expectParam = {"CT": 1e-4, "EACF": 0.5, "ENTCOEF": 3.0, "ICE_SIZE": 30e-6,
                        "RHCRIT": 0.7, "VF1": 1.0, "CW_LAND": 2e-4, "DYNDIFF": 12.0, "KAY_GWAVE": 2e4,
                        "SPHERICAL_ICE": False, 'RESUBMIT_INTERVAL':'P40Y','OcnIceDiff': 2.5e-5, 'IceMaxConc': 0.99, 'OcnIsoDiff': 800,
                        "ASYM_LAMBDA": 0.15, "CHARNOCK": 0.012, "G0": 10.0, "Z0FSEA": 1.3e-3, "ALPHAM": 0.5,
                        "SCAVENGE": 2.0,'IA_N_DROP_MIN':4E7, 'IA_KAPPA_SCALE':0.5 , 'IA_N_INFTY': 3.75E89,
                        'START_TIME': [1997, 12, 1], 'RUNID': 'a0101', 'ASTART': '$MYDUMPS/fred.dmp'}
+
+        # TODO -- think about these tests. They are looking at internal structure which if change modelSimulation
+        # will break...
         self.assertEqual(self.model.get(['name']), 'a0101')
         self.assertEqual(self.model.get(['ppExePath']), 'postProcess.sh')
-        self.assertEqual(self.model.get(['observations']), expectObs)
+        self.assertEqual(self.model.get('observations'), None)
         self.assertDictEqual(self.model.get(['parameters']), expectParam)
         self.assertEqual(self.model.get(['ppOutputFile']), 'obs.nc')
-        self.assertListEqual(list(self.model.get(['observations']).keys()), list(expectObs.keys()))
+
         # test that read works. Works means no failures and have observations..
 
         m = HadCM3.HadCM3(self.dirPath, verbose=True)
@@ -138,8 +142,9 @@ class testHadCM3(unittest.TestCase):
 
         # self.assertEqual(self.model.config['refDir'], None)
         self.assertEqual(m.get(['ppOutputFile']), 'obs.nc')
-        self.assertListEqual(list(m.getObs().keys()), list(expectObs.keys()))
-        self.assertNotEqual(m.getObs(), expectObs)
+        o=m.readObs(obsNames=expectObs.keys())
+        self.assertListEqual(list(o.keys()), list(expectObs.keys()))
+        self.assertNotEqual(o, expectObs)
         # test that consistency checks work
 
         with self.assertRaises(NameError):
@@ -166,8 +171,9 @@ class testHadCM3(unittest.TestCase):
         self.assertDictEqual(m.get(['parameters']), expectParam)
         # self.assertEqual(self.model.config['refDir'], None)
         self.assertEqual(m.get(['ppOutputFile']), 'obs.nc')
-        self.assertListEqual(list(m.getObs().keys()), list(expectObs.keys()))
-        self.assertNotEqual(m.getObs(), expectObs)
+        o = m.readObs(obsNames=expectObs.keys())
+        self.assertListEqual(list(o.keys()), list(expectObs.keys()))
+        self.assertNotEqual(o, expectObs)
 
     def test_readMetaParams(self):
         """

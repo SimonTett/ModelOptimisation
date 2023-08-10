@@ -1,0 +1,8 @@
+parameter,type,filepath,namelist,nl_var,default,name,function_name
+OHSCA,namelist_var,CNTLATM,SLBC21,ohsca,1.0,,
+O2H2SCA,namelist_var,CNTLATM,SLBC21,o2h2sca,1.0,,
+VOLCSCA,namelist_var,CNTLATM,SLBC21,volsca,1.0,,
+ANTHSCA,namelist_var,CNTLATM,SLBC21,anthsca,1.0,,
+IA_N_DROP_MIN,namelist_var,CNTLATM,SLBC21,ia_n_drop_min,3.5e7,,
+IA_N_INFTY,namelist_var,CNTLATM,SLBC21,ia_n_infty,3.75E8,,
+IA_KAPPA_SCALE,namelist_var,CNTLATM,SLBC21,ia_kappa_scale,0.9375,,

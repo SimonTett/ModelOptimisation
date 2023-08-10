@@ -1,0 +1,11 @@
+parameter,type,filepath,namelist,nl_var,default,name,function_name
+VF1,namelist_var,CNTLATM,SLBC21,vf1,1.0,,
+ICE_SIZE,namelist_var,CNTLATM,SLBC21,ice_size,3e-5,,
+ENTCOEF,namelist_var,CNTLATM,SLBC21,entcoef,3.0,,
+CT,namelist_var,CNTLATM,SLBC21,ct,1e-4,,
+ASYM_LAMBDA,namelist_var,CNTLATM,SLBC21,asym_lambda,0.15,,
+CHARNOCK,namelist_var,CNTLATM,SLBC21,charnock,0.012,,
+G0,namelist_var,CNTLATM,SLBC21,g0,10.0,,
+Z0FSEA,namelist_var,CNTLATM,SLBC21,z0fsea,0.0013,,
+
+

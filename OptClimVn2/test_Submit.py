@@ -10,6 +10,7 @@ import unittest
 import numpy as np
 import numpy.testing as nptest
 import pandas as pd
+import logging
 
 import config  # need the configuration.
 from OptClimVn2 import Submit, optClimLib, ModelSimulation, StudyConfig
@@ -26,7 +27,8 @@ class testSubmit(unittest.TestCase):
         Standard setup for all test cases
         :return:
         """
-        self.verbose = False  # set True if want verbose output.
+        logging.basicConfig(level=logging.INFO)
+        self.verbose = False # TODO remove all of this
         self.tmpDir = tempfile.TemporaryDirectory()
         testDir = self.tmpDir.name
         refDir = 'test_in'

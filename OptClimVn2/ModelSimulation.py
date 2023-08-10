@@ -4,6 +4,7 @@ Provide class and methods for ModelSimulation"
 import collections
 import copy
 import json
+import logging
 import os
 import pickle
 import shutil
@@ -18,17 +19,10 @@ import warnings  # so we can turn of warnings..
 import pathlib  # TODO slowly move to use this rather than os.path
 import logging # TODO replace prints with logging.info/logging.debug
 
+import xarray
+
 import optClimLib  # provide std routines
 
-__version__ = '0.2.0'
-# subversion properties
-subversionProperties = \
-    {
-        'Date': '$Date$',
-        'Revision': '$Revision$',
-        'Author': '$Author$',
-        'HeadURL': '$HeadURL$'
-    }
 
 
 # import stdRoutines # provide standard routines.
@@ -61,6 +55,7 @@ _namedTupClass = collections.namedtuple('TupClassxx',
 
 
 # TODO -- make this a class function which is available not private.
+# or make it a dataclass with methods to handle namelists.
 class ModelSimulation(object):
     """
     Class to define Model Simulations. This class is top class that
@@ -110,14 +105,14 @@ class ModelSimulation(object):
         :returns initialised object.
         """
         # stage 1 common initialisation
-        self._convNameList = collections.OrderedDict()  # information on the variable to Namelist mapping
-        self._metaFn = collections.OrderedDict()  # functions used for meta parameters.
-        self.config = collections.OrderedDict()
-        self.dirPath = os.path.expandvars(os.path.expanduser(dirPath))  # expand dirPath and store it
+        self._convNameList = dict() # information on the variable to Namelist mapping
+        self._metaFn = dict() # functions used for meta parameters.
+        self.config = dict()
+        self.dirPath = pathlib.Path(os.path.expandvars(os.path.expanduser(dirPath))) # expand dirPath and store it
         # convert to an absolute path -- needed when jobs get submitted as don't know where we might be running from
-        self.dirPath = os.path.abspath(self.dirPath)
+        self.dirPath = self.dirPath.absolute()
         self._readOnly = True  # default is read only.
-        self._configFilePath = os.path.join(self.dirPath, self._simConfigPath)  # full path to configuration file
+        self._configFilePath = self.dirPath/self._simConfigPath  # full path to configuration file
 
         ppModifyMark = '# =insert post-process script here= # '
         self.postProcessMark = ppModifyMark
@@ -126,8 +121,7 @@ class ModelSimulation(object):
 
 
         postProcessFile = ppOutputFile
-        if postProcessFile is None:
-            postProcessFile = 'observations.nc' # TODO -- this not actuall used
+
         # verify not got create and update both set
         if create and update:
             raise Exception("Don't specify create and update")
@@ -153,7 +147,7 @@ class ModelSimulation(object):
         try:
             equal = equal and (self.refDirPath() == other.refDirPath())  # same refDir
             equal = equal and (self.getParams() == other.getParams())  # same params
-            equal = equal and (self.getObs() == other.getObs())  # same obs.
+            equal = equal and (self.readObs() == other.readObs())  # same obs.
         except AttributeError:  # when other doesn't have methods
             equal = False
 
@@ -197,18 +191,19 @@ class ModelSimulation(object):
         # for update I think failure to read is fine. We'd just return null...
         # if ObsNames set use it
 
-        if obsNames is not None:
-            if verbose:
-                print("Setting Obsnames")
-            obs = {k: None for k in obsNames}
-            config['observations'] = obs
-            # TODO -- not sure why I do this. the config was pickled so round now is just an ordered collection.
+        #if obsNames is not None:
+        #    #raise FutureWarning("Passing obsNames to readModelSimulation is deprecated")
+        #    logging.info("setting obsNames")
+        #    obs = {k: None for k in obsNames}
+        #    config['observations'] = obs
+            # TODO -- not sure why I do this. the config was pickled so right now is just an ordered collection.
+            #  And probably should not be using obsNames anyhow -- when we read the obs we read what ever is there.
         if ppOutputFile is not None:
             postProcess = config.get('postProcess', {})
             postProcess['outputPath'] = ppOutputFile
             config['postProcess'] = postProcess
         self.set(config, write=False, verbose=verbose)
-        self.readObs(verbose=verbose)  # and read the observations
+        self.readObs()  # and read the observations
         self._readOnly = not update
 
     def set(self, keys_values, write=True, verbose=False):  # suspect can do this with object methods...
@@ -269,13 +264,12 @@ class ModelSimulation(object):
                 print("Written current config to %s with mode %o " % (self._configFilePath, mode))
             os.chmod(self._configFilePath, mode)  # set its mode
 
-    def get(self, keys=None, verbose=False, default=None):
+    def get(self, keys=None, default=None):
         """
         get values from configuration.
         :param keys: keys to extract from configuration. If not defined returns the entire configuration.
           If a single string returns that value.
-        :param verbose (Optional -- default = False). If true print out some information.
-        :return: orderedDict indexed by keys
+        :return: dict indexed by keys
         """
 
         if keys is None:
@@ -310,23 +304,18 @@ class ModelSimulation(object):
         if refDirPath is not None:
             refDirPath = os.path.expandvars(os.path.expanduser(refDirPath))
         #  fill out configuration information.
-        config = collections.OrderedDict()
+        config = dict()
         if name is None:
             config['name'] = os.path.basename(self.dirPath)
         else:
             config['name'] = name
 
-        obs = collections.OrderedDict()
-        try:
-            for k in obsNames: obs[k] = None
-        except TypeError:
-            pass
 
         config['ppExePath'] = ppExePath
         config['ppOutputFile'] = ppOutputFile
         if refDirPath is not None: config['refDirPath'] = refDirPath
 
-        config['observations'] = obs
+
         config['parameters'] = parameters
 
         config['newSubmit'] = True  # default is that run starts normally.
@@ -399,68 +388,60 @@ class ModelSimulation(object):
 
         return self.get(['ppExePath'])
 
-    def readObs(self, verbose=False, justRead=False, series=False):
+    def readObs(self,series=False,obsNames=None,flush=False):
         """
         Read the post processed data.
          This default implementation reads netcdf, json or csv data and
          stores it in the configuration
-        :param verbose (default False). If true print out helpful information
-        :param justRead (default False). Just read the observations and return them. (do not use names of observations in model)
-        :param series (default False), If true return a pandas series containing the values.
-        :return: a ordered dict of observations (or pandas series) wanted. Values not found when requested will be set to None.
+        :param obsNames: If not None then return the defined names. Any missing are set to None/np.nan
+        :param series , If true return a pandas series containing the values.
+        :param flush. If True flush the cached data and read data
+        :return: a dict of observations (or pandas series) wanted. Values not found when requested will be set to None.
         """
+        obs = self.get('observations',{}).copy()
+        if (len(obs) == 0 ) or flush: #read in the data either because we don't have it or want to flush cache
+            obsFile = self.dirPath/self.ppOutputFile()
+            if not obsFile.exists(): # file does not exist. Return empty obs..
+                logging.info(f"File {obsFile} does not exist. Returning None")
+                print(f"File {obsFile} does not exist. Returning None")
+                obs = None
+                if obsNames is not None: # deal with case when obsNames provided.
+                    # replication of logic below. TODO only have this logic once.
+                    obs={k:None for k in obsNames}
+                    if series:
+                        obs=pd.Series(obs).rename(self.name())
+                return obs
 
-        obsFile = os.path.join(self.dirPath, self.ppOutputFile())
-        obs = collections.OrderedDict()
-        varsWant = self.get(['observations']).keys()  # extract keys from current obs
-        # TODO -- should read all obs values in rather than just the ones we want..
-        # see if obs file exists or json file exists. If not return dict with Nones.
-        if not os.path.exists(obsFile):
-            if verbose: print("File %s not found. Returning None " % (obsFile))
-            return None
 
-        fileType = os.path.splitext(obsFile)[1]  # type of file wanted
+            fileType = obsFile.suffix  # type of file wanted
+            #read in data. Details depend on type of file.
+            if fileType == '.nc': # netcdf
+                ds= xarray.load_dataset(obsFile)
+                obs = {var:float(ds[var] ) for var in ds.data_vars if ds[var].size == 1}
 
-        if fileType == '.nc':
-            # netcdf file so read in data allowing python stuff to raise exception if it doesn't exist or is corrupt.
-            # current implementation is missing the constraint..
-            if verbose:  # provide some helpful info.
-                print("Reading netcdf data from %s " % obsFile)
-                print("For: ", obs.keys())
+            elif fileType == '.json': # json file
+                with open(obsFile, 'r') as fp:
+                    obs = json.load(fp)
+                logging.info("json file got "+" ".join(obs.keys()))
 
-            with netCDF4.Dataset(obsFile, "r") as ofile:  # open it up for reading
-                # get depreciation warnings because netCDF4 needs to update as numpy no longer use np.bool (which I guess it does)
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    if verbose: print(f"nc file {obsFile}  got {ofile.variables.keys()}")
-                    if justRead: raise NotImplementedError("Implement justRead with netcdf4")
-                    for var in varsWant:  # loop over variables
-                        if var in ofile.variables:  # got it?
-                            obs[var] = float(ofile.variables[var][0])
-                            # this  will break if obs is not a scalar and masked
-                        else:
-                            obs[var] = None  # set to None if we don't have it.
-        elif fileType == '.json':
-            # this should just be a json file.
-            with open(obsFile, 'r') as fp:
-                obs = json.load(fp, object_pairs_hook=collections.OrderedDict)
-            if verbose: print("json file got ", obs.keys())
-            if not justRead:  # add in None for variables not present
-                for var in varsWant:  # loop over variables that we def want.
-                    obs[var] = obs.get(var, None)  # get variable returning None if not defined.
+            elif fileType == '.csv':  # data is a csv file.
+                obsdf = pd.read_csv(obsFile, header=None, index_col=False)
+                obs = obsdf.to_dict()
+                logging.info("csv file got " + " ".join(obs.keys()))
 
-        elif fileType == '.csv':  # data is a csv file.
-            obsdf = pd.read_csv(obsFile, header=None, index_col=False)
-            obs = obsdf.to_dict()
-            if not justRead:
-                for k in varsWant:  # loop overs vars we def want
-                    obs[k] = obsdf.loc[k].values
-        else:  # don't know what to do. So raise an error
-            raise NotImplementedError("Do not recognize %s" % fileType)
-        self.set({'observations': obs}, write=False)
+            else:  # don't know what to do. So raise an error
+                raise NotImplementedError(f"Do not recognize {fileType}")
+
+            logging.info(f"Read {fileType} data from {obsFile}")
+            self.set({'observations': obs.copy()}, write=False) # cache the data now
+
+        if obsNames is not None:  # Only want those observations with missing ones set to None
+            obs = {var:obs.get(var,None) for var in obsNames}
+
 
         if series:
-            obs = pd.Series(obs)  # convert to series.
+            obs = pd.Series(obs).rename(self.name())  # convert to series.
+
         return obs  # return the obs.
 
     def writeObs(self, obs, verbose=False):
@@ -475,8 +456,7 @@ class ModelSimulation(object):
         file = os.path.join(self.dirPath, file)  # full path to output
 
         fileType = os.path.splitext(file)[1]  # type of file
-        if verbose:
-            print(f"Writing data to {file}")
+        logging.info(f"Writing data to {file}")
         if fileType == '.nc':  # netcdf file
             rootgrp = netCDF4.Dataset(file, "w", format="NETCDF4")
             try:
@@ -503,22 +483,9 @@ class ModelSimulation(object):
             raise NotImplementedError("Do not recognize %s" % fileType)
 
         # have read the obs. We should set the obs
-        self.set({'observations': obs}, write=False)
+        self.set({'observations': obs.copy()}, write=False)
 
-    def getObs(self, verbose=False, series=False, justRead=False):
-        """
-        Extract the observations
-        :param verbose (optional -- default False) If True print out information
-        :param justRead (optional --default False). Passed through to readObs
-        :param series optional -- default is False). If True return as a pandas series
-        :return: an ordered  dict of the observations
-        """
-        obs = self.readObs(verbose=verbose, justRead=justRead)  # force read of data.
-        # obs = self.get("observations", verbose=verbose)
-        if series:  # wrap it as a series.
-            obs = pd.Series(obs).rename(self.name())
 
-        return obs
 
     def setParams(self, params, addParam=False, write=True, verbose=False):
         """
@@ -549,10 +516,10 @@ class ModelSimulation(object):
         :return: the parameter values
         """
 
-        p = self.get('parameters', verbose=verbose).copy()
+        p = self.get('parameters').copy()
 
         if params is not None:  # enforce particular order and select reqd values.
-            t = collections.OrderedDict()
+            t = dict()
             for pp in params: t[pp] = p.get(pp)  # should return None if pp not found
             p = t
         # convert to series if requested
@@ -659,8 +626,8 @@ class ModelSimulation(object):
         if self._readOnly:
             raise IOError("Model is read only")
 
-        params_used = collections.OrderedDict()  #
-        files = collections.OrderedDict()  # list of files to be modified.
+        params_used = dict()  #
+        files = dict()  # list of files to be modified.
         for param, value in params.items():  # extract data from conversion indexed by file --
             # could this code be moved into genVarToNameList as really a different view of the same data.
             # NO as we would need to do this only once we've finished generating namelist translate tables.
@@ -709,7 +676,7 @@ class ModelSimulation(object):
 
                 for (value, conv) in files[file]:
                     if conv.namelist not in nl:
-                        nl[conv.namelist] = collections.OrderedDict()  # don't have ordered dict so make it
+                        nl[conv.namelist] = dict()  # don't have ordered dict so make it
                     if type(value) is np.ndarray:  # convert numpy array to list for writing.
                         value = value.tolist()
                     elif isinstance(value, str):  # may not be needed at python 3
@@ -740,7 +707,7 @@ class ModelSimulation(object):
         :return:An OrderedDict with the values indexed by the param names
         """
         # TODO make work when params is a single string.
-        result = collections.OrderedDict()
+        result = dict()
         for param in params:
             # have it as meta function?
             if param in self._metaFn:  # have a meta funcion -- takes priority.
@@ -766,7 +733,7 @@ class ModelSimulation(object):
         :return: an ordered dict indexed by namelist info (if found) with values retrieved.
         """
 
-        result = collections.OrderedDict()
+        result = dict()
         namelists = {}
         # iterate over all parameters reading in namelists.
         for var in nameListVars:
