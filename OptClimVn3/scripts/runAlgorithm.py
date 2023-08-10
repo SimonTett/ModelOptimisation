@@ -161,12 +161,13 @@ if config_path.exists():  # config file exists. Read it in.
     if not isinstance(rSUBMIT, runSubmit.runSubmit):
         raise ValueError(f"Something wrong")
     if update_config:
-        rSUBMIT.set_config(configData)
+        rSUBMIT.update_config(configData)
         # this will overwrite the existing configuration and change anything derived in it.
+        # use with care
 
     if delete:  # delete the config
         my_logger.info(f"Deleting existing config {rSUBMIT}")
-        rSUBMIT.delete()  # should clean dir.
+        rSUBMIT.delete()  # should clean dir and kill runs
         rSUBMIT = None  # remove it.
 if clean:
     if not (purge or delete):
@@ -176,7 +177,7 @@ if clean:
 
 if rSUBMIT is None:  # no configuration exists. So create it.
     # We can get here either because config_path does not exist or we deleted the config.
-    args_not_for_restart = ['--delete','--purge']  # arguments to be removed from the restart cmd
+    args_not_for_restart = ['--delete','--purge','--update']  # arguments to be removed from the restart cmd
     restartCMD = [arg for arg in sys.argv if arg not in args_not_for_restart]  # generate restart cmd.
     my_logger.info(f"restartCMD is {restartCMD}")
     rSUBMIT = runSubmit.runSubmit(configData, rootDir=rootDir, config_path=config_path,next_iter_cmd=restartCMD)

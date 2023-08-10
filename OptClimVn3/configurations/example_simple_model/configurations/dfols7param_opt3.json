@@ -14,12 +14,15 @@
         "runCode_comment": "Project code to run job under.",
         "submit_engine": "SGE",
         "submit_engine_comment": "Name of engine to submit runs to. One of SGE or SLURM. MUST be provided ",
-	    "ssh_node": "login03.ecdf.ed.ac.uk",
-	    "ssh_node_comment":"If not null then name of machine which has access to engine. Will ssh to this machine to submit commands",
+	"ssh_node": "login03.ecdf.ed.ac.uk",
+	"ssh_node_comment":"If not null then name of machine which has access to engine. Will ssh to this machine to submit commands",
         "modelName": "simple_model",
         "modelName_comment": "Name of model that is ran. MUST be provided",
         "maxRuns": 5,
-        "maxRuns_comment": "Maximum number of runs to do in parallel. Runs submitted is 2x this + 1. DOES NOT WORK"
+        "maxRuns_comment": "Maximum number of runs to do in parallel. Runs submitted is 2x this + 1.",
+	"max_model_simulations":65,
+	"max_model_simulations_comment":"The maximum number of model sims to be done"
+
         },
     "run_info_comment": "Information  for run_info. Must include submit_engine and modelName. Can include other keys for use in submission. Useful ones are runTime, runCode & maxRuns ",
     "logging":"INCLUDE $OPTCLIMTOP/OptClimVn3/configurations/log_config.ijson", 

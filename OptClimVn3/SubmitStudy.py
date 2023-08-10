@@ -90,9 +90,9 @@ class SubmitStudy( Study, model_base,journal):
         :param next_iter_cmd -- command to run next iteration.
         :return: instance SubmitStudy with the following public attributes :
         """
-        super().__init__(config, name=name, models=models, rootDir=rootDir) # this calls set_config
+        super().__init__(config, name=name, models=models, rootDir=rootDir) 
         self.rootDir.mkdir(parents=True, exist_ok=True)  # create it if need be.
-        if refDir is None: # not allowed to change refDir so set here rather than in set_config
+        if refDir is None: 
             refDir = self.expand(str(config.referenceConfig()))
         self.refDir = refDir
 
@@ -132,16 +132,16 @@ class SubmitStudy( Study, model_base,journal):
         self.next_iter_cmd = next_iter_cmd
         self.next_iter_jids = []  # no next jobs (yet)
 
-    def set_config(self, config: OptClimConfigVn3):
+    def update_config(self, config: OptClimConfigVn3):
         """
         Partially set up self with the configuration. This allows updating following a change to the configuration.
           Sets up run_info in addition to whatever the superclass method does.
-        To update from configuration simply do self.set_config(config).
+        To update from configuration simply do self.update_config(config).
         :param config: Configuration to be used.
         :return: nada
         """
         my_logger.debug("Setting configuration")
-        super().set_config(config) # call the superclass
+        super().update_config(config) # call the superclass
 
         self.run_info = copy.deepcopy(config.run_info()) # copy run_info as modifying it.
         my_logger.debug(f"Set run_info to {self.run_info}")
