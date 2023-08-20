@@ -39,7 +39,7 @@ def setup_logging(level:typing.Optional[int] = None,
     
     optclim_logger = logging.getLogger(rootname) # get OPTCLIM root logger
 
-    # need both debuuging turned on and a logigng config 
+    # need both debugging turned on and a logging config
     # to use the logging_cong
     if level is not None and log_config is not None:
         logging.debug("Using log_config to set up logging")

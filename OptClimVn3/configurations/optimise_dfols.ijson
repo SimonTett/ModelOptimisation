@@ -1,5 +1,13 @@
   {
   "_comment": "Parameters to control optimisation. This is used within DFOLS optimisation routines AND not by framework",
+  "provisional":
+    {
+      "provisional_comment":"Options to control provisional evaluation. This gives parallel simulations.",
+      "max_provisional_cases":20,
+      "max_provisional_cases_comment":"The Max number of provisional cases to do. If null no provisional cases are done",
+      "rng_seed":1234567,
+      "rng_seed_comment":"The seed for the random number generator. If null a default value is used. "
+    },
   "algorithm": "DFOLS",
   "algorithm_comment": "Algorithm wanted.",
   "sigma": true,
@@ -12,18 +20,18 @@
   "rhobeg": 0.18,
   "rhobeg_comment": "Radius of parameter trust region at start",
   "rhoend": 0.1,
-  "rhoend_comment": "Radius of paramater trust region for termination (for our purpose this is in normalised parameters)",
+  "rhoend_comment": "Radius of parameter trust region for termination (for our purpose this is in normalised parameters)",
   "maxfun": 50,
-  "maxfun_comment": "Maximum number of model evaluations to be done. Default is O(1000). Reduced to 50 so have data to do a mid-point look at  ",
+  "maxfun_comment": "Maximum number of model evaluations to be done. Default is O(1000). reduced to 50 so have data to do a mid-point look at  ",
   "scaling_within_bounds": true,
   "scaling_within_bounds_comment": "Scale internally so all in range 0 to 1",
   "namedSettings": {
       "logging.save_poisedness": true,
       "logging.save_poisedness_comment": "whether or not  to calculate geometry statistics as part of diagnostic information",
-      "init.random_initial_directions": true,
-      "init.random_initial_directions_comment": "If true perturb in random directions. If false perturb along co-ordinate axis.",
-      "init.run_in_parallel": true,
-      "init.run_in_parallel_comment": "Run initial cases in parallel",
+      "init.random_initial_directions": false,
+      "init.random_initial_directions_comment": "If true perturb in random directions. If false perturb along co-ordinate axis. Set false when provisional running on.",
+      "init.run_in_parallel": false,
+      "init.run_in_parallel_comment": "Run initial cases in parallel. Set false when provisional running",
       "noise.additive_noise_level": 21.0,
       "noise.additive_noise_level_comment": "Estimate of noise in cost function. Used in termination -- nb cost fn is sum of squares **not** sum of squares/nObs. ",
       "logging.save_diagnostic_info": true,

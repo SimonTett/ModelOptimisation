@@ -809,7 +809,9 @@ def gaussNewton(function: typing.Callable,
             print("GN: paramValues: \n", paramsLS)  # , " err_constraint", err_constraint[0])
 
         # run the functions on the linesearch values
-        # obsValuesLS, constraintLS = run_fn(function, paramsLS, npt, constraint_target=constraint_target)
+        if paramsLS is None: # failed in some way.
+            break # exit the loop.
+
         obsValuesLS = run_fn(function, paramsLS, npt, constraint_target=constraint_target)
         # need to merge paramsGS and paramsLS, obsValesGN & obsValuesGN & constraintGN and constraintLS
         params = np.vstack((paramsGN, paramsLS))
@@ -818,7 +820,6 @@ def gaussNewton(function: typing.Callable,
         statusInfo, err, err_constraint, paramsGN, index, bestParam, infoLS = \
             doLineSearch(params, paramRange, obsValues, target, paramStep, cov=cov, cov_iv=cov_iv,
                          scalings=scalings,
-                         #             constraint=constraint, constraint_target=constraint_target,
                          studyJSON=optimise, trace=trace)  # run LS
 
         # add some information to the LineSearch info dict.

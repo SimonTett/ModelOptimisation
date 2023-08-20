@@ -65,14 +65,14 @@ class TestJsonEncoder(unittest.TestCase):
         :return:
         """
 
-        test = {"__cls__name__": "ndarray", "object": [1, 2, 3]}
+        test = {"__cls__name__": "ndarray", "object": dict(data=[1, 2, 3],typ='int32')}
         expect=np.array([1, 2, 3])
         got = obj_to_from_dict.decode(test)
         nptest.assert_equal(expect, got)
 
         test = dict(harry=3.2, fred=2)
         got = obj_to_from_dict.decode(test)
-        nptest.assert_equal(test,got) # shou.d be identical
+        nptest.assert_equal(test,got) # shou;d be identical
 
         # bad dict should raise a value error
         test = {"__cls__name__": "ndarray", "object": [1, 2, 3],"comment":'some comment'}
