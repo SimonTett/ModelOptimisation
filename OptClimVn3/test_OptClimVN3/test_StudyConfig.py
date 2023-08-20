@@ -831,8 +831,6 @@ class testStudyConfig(unittest.TestCase):
         module_name = config.module_name('simple_model')
         self.assertEqual(module_name,'simple_model')
 
-
-
 if __name__ == "__main__":
     print("Running Test Cases")
     unittest.main()  ## actually run the test cases

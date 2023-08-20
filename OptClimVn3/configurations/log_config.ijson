@@ -26,7 +26,7 @@
 	    "handlers_comment":"Control handlers",
 	    "loggers": {
 		"OPTCLIM": {
-		    "level": "WARNING",
+		    "level": "INFO",
 		    "propagate": false,
 		    "handlers": ["console"]
 		},

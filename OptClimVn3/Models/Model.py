@@ -791,19 +791,6 @@ class Model(ModelBaseClass, journal):
         """
         return self.status in ['RUNNING']
 
-    def is_created(self) -> bool:
-        """
-        Return True if model.status is CREATED
-        :return:
-        """
-        return self.status in ['CREATED']
-    def is_processed(self) -> bool:
-        """
-        Return True if model is processed
-        :return:
-        """
-        return self.status in ['PROCESSED']
-
     def delete(self):
         """
         Delete all on disk stuff. Do by deleting all files in self.model_dir and self.config_path. 

@@ -663,7 +663,7 @@ class OptClimConfig(dictFile):
                                 my_logger.info("Diagonalising " + k)
                     except ValueError as exception:  # error in readCovariance
                         bad_reads += [str(exception)]
-            if len(bad_reads) > 0:  # failed somehow. Raise ValueError.
+            if len(bad_reads) > 0:  # failed somehow. Raie ValueError.
                 raise ValueError("\n".join(bad_reads))
             # make total covariance from CovIntVar and CovObsErr if both are defined.
             if cov.get('CovIntVar') is not None and cov.get(
@@ -2414,31 +2414,3 @@ class OptClimConfigVn3(OptClimConfigVn2):
         initial = self.strip_comment(initial)
         keys = list(initial['initParams'].keys())  # return a copy of the list.
         return keys
-
-    def optimise(self, **kwargs) -> dict:
-        """
-        Extract and package all optimization information into one directory
-        Note this is not a copy
-        :param optimise_values
-        :param **kwargs: -- any not None will be used to update optimise
-        :return: a dict
-        """
-        optimise = self.getv('optimise', {})
-        if kwargs:  # Got some values. Update the optimise dict and put them back in
-            opt_u = {k:v for k,v in kwargs.items() if v is not None}
-            optimise.update(opt_u)
-            self.setv('optimise', optimise)
-        return optimise
-    def provisional_info(self,prov_info:typing.Optional[dict] = None)->dict:
-        """
-        Extract, and optionally set provisional support information.
-        :param prov_info: If not None then provisional information will be set to this value
-        :return: provisional_info
-        """
-        optimise = self.optimise(provisional=prov_info)
-
-
-        result = optimise.get('provisional',{})
-        return result
-
-
