@@ -245,7 +245,7 @@ while True:  # loop indefinetly so can have fake_fn. This really to test code/al
         else:
             raise ValueError(f"Don't know what to do with Algorithm: {algorithmName}")
         break  # we have finished running algorithm so can exit and go to final clear up.
-    except optclim_exceptions.runModelError:  # error which triggers need to instantiate and run more models.
+    except optclim_exceptions.submitModel:  # error which triggers need to instantiate and run more models.
         if read_only:
             my_logger.info(f"read_only -- exiting")
             break  # exit the loop -- we are done as in read_only mode.

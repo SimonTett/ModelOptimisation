@@ -163,7 +163,7 @@ class SubmitStudy( Study, model_base,journal):
     def create_model(self, params: dict, dump: bool = True) -> typing.Optional[Model]:
         """
         Create a model, update list of created models and index of models.
-        If, by creating a model than more than self.run_info['max_model_simsulations'] models have been produced,
+        If, by creating a model than more than self.run_info['max_model_simulations'] models have been produced,
               then no model will be created and None returned. Warnings will be generated.
         :param   params: dictionary of parameters to create the model.
          The following parameters are special and handled differently:
