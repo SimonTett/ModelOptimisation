@@ -476,7 +476,7 @@ class ModelTestCase(unittest.TestCase):
             # args is a tuple of the arguments (just one list in this case)
             name =  f"{model.name}{len(model.model_jids):05d}"
             outdir = model.model_dir / 'model_output'
-            scmd = (self.eng.submit_cmd(['submit.sh'],name,
+            scmd = (self.eng.submit_cmd([str(model.model_dir/'submit.sh')],name,
                                            rundir=model.model_dir,
                                            outdir=outdir,time=2000),)
             self.assertEqual(mock_chk.call_args.args,scmd)
@@ -508,7 +508,7 @@ class ModelTestCase(unittest.TestCase):
 
             name =  f"{model.name}{len(model.model_jids):05d}"
             outdir = model.model_dir / 'model_output'
-            scmd = (self.eng.submit_cmd([str('continue.sh')],name,
+            scmd = (self.eng.submit_cmd([str(model.model_dir/'continue.sh')],name,
                                            rundir=model.model_dir,
                                            outdir=outdir,time=2000),)
             self.assertEqual(mock_chk.call_args.args, scmd)

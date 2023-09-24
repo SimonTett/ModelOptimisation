@@ -41,14 +41,22 @@ class simple_model(Model):
         """
         Create the string to run a cmd to set status.
         :param status: status to set.
+        :param indent: How much to indent lines
         :return: list of strings to print to model script file
         """
+        #TODO -- add way of setting debug status for self.set_status_script
 
         cmd =[f'"{self.set_status_script}"', f'"{self.config_path}"', status]
-        cmd = [f'{self.set_status_script}', f'{self.config_path}', status]
+        cmd = [f'{self.set_status_script}', '-v',f'{self.config_path}', status] # verbose
         if platform.system() == 'Windows':
             cmd = ['python']+cmd
-        lst=[f'cmd = {cmd} {modifystr}',f'subprocess.run(cmd,check=True) {modifystr}']
+        # run command and get some diagnostics
+        lst=[f'cmd = {cmd} {modifystr}',
+             f'result = subprocess.run(cmd) {modifystr}',
+             f'if result.returncode != 0: {modifystr}',
+             f'    print(f"Command {cmd} failed") {modifystr}',
+             f'    result.check_returncode() {modifystr}'
+         ]
         space = " "*indent
         lst =[space+l for  l in lst ]
         return lst
@@ -123,9 +131,11 @@ class simple_model(Model):
         # just use the submit.
         outdir = self.model_dir / 'model_output'
         outdir.mkdir(parents=True, exist_ok=True)
-        cmd = self.engine.submit_cmd([script, str(self.StudyConfig_path)],
-                                f"{self.name}{len(self.model_jids):05d}", outdir,
-                                run_code=runCode, time=runTime,rundir=self.model_dir)
+        cmd = self.engine.submit_cmd([self.model_dir/script, str(self.StudyConfig_path)],
+                                     f"{self.name}{len(self.model_jids):05d}",
+                                     outdir,
+                                     run_code=runCode, time=runTime,
+                                     rundir=self.model_dir)
 
         return cmd
 

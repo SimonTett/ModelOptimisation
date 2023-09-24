@@ -43,6 +43,7 @@ import numpy as np
 import shutil
 import StudyConfig
 import genericLib
+import sys
 # do minimum startup stuff. Really so can have logging
 
 ## main script
@@ -53,9 +54,9 @@ parser = argparse.ArgumentParser(description="Run study")
 parser.add_argument("-d", "--dir", help="path to root directory where model runs will be created")
 parser.add_argument("jsonFile", help="json file that defines the study")
 parser.add_argument("--delete", action='store_true',
-                    help="Delete the configuration")
+                    help="Delete the configuration. Will ask of OK. If not will exit with status 1")
 parser.add_argument("--purge", action='store_true',
-                    help="purge the configuration by deleting the directory. Will ask if OK.")
+                    help="purge the configuration by deleting the directory. Will ask if OK. If not OK will exit with status 1")
 parser.add_argument("-v", "--verbose", action='count', default=0,
                     help="level of logging info level= 1 = info, level = 2 = debug ")
 parser.add_argument("--clean",help="Do not do anything but --delete and and --purge (if set)",action='store_true')
@@ -129,6 +130,7 @@ if purge: # purging data? Do early to minimize amount of output user sees before
         shutil.rmtree(rootDir, onerror=genericLib.errorRemoveReadonly)
     else:
         print(f"Nothing deleted.")
+        sys.exit(1)
 
 my_logger.info(f"Known models are {', '.join(Model.known_models())}")
 my_logger.info("Running from config %s named %s" % (jsonFile, configData.name()))
@@ -166,14 +168,22 @@ if config_path.exists():  # config file exists. Read it in.
         # use with care
 
     if delete:  # delete the config
-        my_logger.info(f"Deleting existing config {rSUBMIT}")
-        rSUBMIT.delete()  # should clean dir and kill runs
-        rSUBMIT = None  # remove it.
+        result = input(f">>>Going to delete existing configs in {rootDir}<<<. OK ? (yes if so): ") 
+        if result.lower() in ['yes']:
+            print(f"Deleting all configs in {rootDir} and continuing")
+            my_logger.info(f"Deleting existing config {rSUBMIT}")
+            rSUBMIT.delete()  # should clean dir and kill runs
+            rSUBMIT = None  # remove it.
+        else:
+            print(f"Nothing deleted.")
+            sys.exit(1) # exit.
+
+
 if clean:
     if not (purge or delete):
         my_logger.warning("Set --purge or --delete when cleaning if you want cleaning!")
     my_logger.info("Cleaned. So exiting")
-    exit(0)
+    sys.exit(0)
 
 if rSUBMIT is None:  # no configuration exists. So create it.
     # We can get here either because config_path does not exist or we deleted the config.

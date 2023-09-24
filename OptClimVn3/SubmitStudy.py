@@ -347,6 +347,12 @@ class SubmitStudy( Study, model_base,journal):
         :return: List of models that are running
         """
         return [model for model in self.model_index.values() if model.is_running()]
+    def submitted_models(self) -> List[Model]:
+        """
+
+        :return: List of models that are running
+        """
+        return [model for model in self.model_index.values() if model.is_submitted()]
 
     def to_dict(self) -> dict:
         """
@@ -591,12 +597,16 @@ class SubmitStudy( Study, model_base,journal):
 
     def guess_failed(self):
         """
-        Set status of running models to failed using model.guess_failed()
+        Set status of running or submitted models to failed using model.guess_failed()
         :return: List of models that were guessed to have failed. Their status will be FAILED.
         """
         models_guess_fail = []
         for model in self.running_models():
             failed = model.guess_failed()  # guess if running model has actually failed.
+            if failed:
+                models_guess_fail.append(model)
+        for model in self.submitted_models():
+            failed = model.guess_failed()
             if failed:
                 models_guess_fail.append(model)
         my_logger.info(f"{len(models_guess_fail)} Models were set to FAILED.")

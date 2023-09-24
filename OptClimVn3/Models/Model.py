@@ -84,7 +84,7 @@ class Model(ModelBaseClass, journal):
                        SUBMITTED=['INSTANTIATED', 'PERTURBED', 'CONTINUE'],
                        # Submitting needs it to have been instantiated, perturbed or to be continued.
                        RUNNING=["SUBMITTED"],  # running needed it should have been submitted
-                       FAILED=["RUNNING"],  # Failed means it should have been running
+                       FAILED=["RUNNING","SUBMITTED"],  # Failed means it should have been running or SUBMITTED
                        PERTURBED=["FAILED"],  # Allowed to perturb a model after it failed.
                        CONTINUE=["FAILED", "PERTURBED"],
                        # failed can just be continued or can be perturbed. For example ran out of time or disk space
@@ -553,9 +553,8 @@ class Model(ModelBaseClass, journal):
         outdir = self.model_dir / 'model_output'
         outdir.mkdir(parents=True, exist_ok=True)
 
-        cmd = self.engine.submit_cmd([str(script)], f"{self.name}{len(self.model_jids):05d}", outdir,
+        cmd = self.engine.submit_cmd([str(self.model_dir/script)], f"{self.name}{len(self.model_jids):05d}", outdir,
                                      run_code=runCode, time=runTime, rundir=self.model_dir)
-
         return cmd
 
     def running(self) -> typing.Optional[str]:
@@ -577,17 +576,22 @@ class Model(ModelBaseClass, journal):
     def guess_failed(self) -> bool:
         """
         Guess of a model has failed.
-          STATUS = RUNNING and status of last model jobid is unKnown likely means model has failed.
+          STATUS = RUNNING or SUBMITTED and status of last model jobid is unKnown likely means model has failed.
         :return: True if guessed FAILED, False if not
         """
 
-        if self.status == "RUNNING":
-            model_jid = self.model_jids[-1]
+        if self.status in ["RUNNING","SUBMITTED"]:
+            if self.status == "RUNNING":
+                model_jid = self.model_jids[-1]
+            else:
+                model_jid = self.submitted_jid
+                
             stat = self.engine.job_status(model_jid)
             if stat == "notFound":  # no job found.
                 my_logger.debug(f"Could not find status for jid:{model_jid} for model {self}. Setting status to FAILED")
                 self.set_failed()  # we have failed.
                 return True
+                
         return False  # this model is not having its status changed.
 
     def set_failed(self):
@@ -791,9 +795,17 @@ class Model(ModelBaseClass, journal):
         """
         return self.status in ['RUNNING']
 
+    def is_submitted(self) -> bool:
+        """
+        Return True if model is submitted.
+        :return: True if model status is SUBMITTED
+        """
+        return self.status in ['SUBMITTED']
+
     def delete(self):
         """
         Delete all on disk stuff. Do by deleting all files in self.model_dir and self.config_path. 
+        Also remove all associated jobs.
         
         :return: None
         """
@@ -815,6 +827,7 @@ class Model(ModelBaseClass, journal):
                 cmd=self.engine.kill_job(self.pp_jid)
                 self.run_cmd(cmd)
                 my_logger.debug(f"Killed post-processing job id:{self.pp_jid}")
+            self.pp_jid = None # killed it so should be no post processing job
             
         shutil.rmtree(self.model_dir, ignore_errors=True)
         my_logger.info(f"Deleted everything in {self.model_dir}")

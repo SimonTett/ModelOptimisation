@@ -119,12 +119,14 @@ class journal:
         # convert to subprocess.CalledProcessError
         args.update(**kwargs)
         cmd_to_run = [os.path.expandvars(c) for c in cmd]
+        cmd_report = " ".join(cmd_to_run)
         # using expandvars so any shell variables in command are expanded.
         # this little code fragment from chatGPT (with a bit of nudging/editing) traps that.
         try:
             my_logger.debug(f"Running {' '.join(cmd_to_run)}")
             output = subprocess.check_output(cmd_to_run, **args)  # run cmd
         except subprocess.CalledProcessError as e:
+            print(cmd_report)
             print("Failed")
             print("stdout\n",e.output)
             print("="*60)
