@@ -34,8 +34,8 @@ class testStudyConfig(unittest.TestCase):
         Standard setup for all test cases
         :return:
         """
-        root = importlib.resources.files("OptClimVn3")
-        configFile = root / 'configurations/example_Model/configurations/dfols14param_opt3.json'
+        root = "/BIGDATA2/sysu_atmos_wjliang_1/FG3/newModelOptimisation/OptClimVn3"  # importlib.resources.files("OptClimVn3") #liangwj
+        configFile = root + "/configurations/example_Model/configurations/dfols14param_opt3.json"  # / 'configurations/example_Model/configurations/dfols14param_opt3.json' #liangwj
         self.config = StudyConfig.readConfig(configFile)
         # generate fake -lookup tables
 
