@@ -25,8 +25,8 @@ class TestStudy(unittest.TestCase):
         self.direct = direct
         # Define simulated observations and parameters
         params = {f'param{pcnt}': float(pcnt) for pcnt in range(1, 100)}
-        optclim_root = importlib.resources.files("OptClimVn3")
-        config = StudyConfig.readConfig(optclim_root / "configurations/dfols14param_opt3.json")
+        optclim_root = "/BIGDATA2/sysu_atmos_wjliang_1/FG3/newModelOptimisation/OptClimVn3"  # importlib.resources.files("OptClimVn3") #liangwj
+        config = StudyConfig.readConfig(optclim_root + "/configurations/dfols14param_opt3.json")  # liangwj + /
         reference_dir = pathlib.Path(optclim_root).parent / 'Configurations/xnmea'
         self.reference  = reference_dir
         self.config = config
