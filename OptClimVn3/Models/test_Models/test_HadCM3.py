@@ -215,8 +215,8 @@ class testHadCM3(unittest.TestCase):
         # better to count the number of lines with ## modified at the end.
         modifyStr = '## modified *$'
         shutil.copy2(self.refDir / 'SCRIPT', self.model.model_dir)
-        resource = importlib.resources.files("OptClimVn3")
-        set_status_script = pathlib.Path(resource.joinpath("scripts/set_model_status.py"))
+        resource = "/BIGDATA2/sysu_atmos_wjliang_1/FG3/newModelOptimisation/OptClimVn3"  # importlib.resources.files("OptClimVn3")  #liangwj
+        set_status_script = "/BIGDATA2/sysu_atmos_wjliang_1/FG3/newModelOptimisation/OptClimVn3/scripts/set_model_status.py"  # pathlib.Path(resource.joinpath("scripts/set_model_status.py")) #liangwj
         self.model.modifyScript(set_status_script)
         file = self.model.model_dir / 'SCRIPT'
         count = 0
