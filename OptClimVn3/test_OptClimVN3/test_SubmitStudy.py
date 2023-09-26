@@ -17,6 +17,10 @@ from Model import Model
 import copy
 import pandas as pd
 
+import os#liangwj
+from contextlib import contextmanager#liangwj
+import shutil #liangwj
+
 def gen_time():
     # used to mock Model.now()
     time = datetime.datetime(2000, 1, 11, 0, 0, 0)
@@ -25,6 +29,20 @@ def gen_time():
         time += timedelta
         yield time
 
+#+++++++++++++liangwj+++++++++
+@contextmanager
+def open_as_file(path):
+	temp_dir = tempfile.mkdtemp()
+	temp_path = os.path.join(temp_dir, os.path.basename(path))
+
+	shutil.copy2(path, temp_path)
+
+	try:
+		yield temp_path
+	finally:
+		shutil.rmtree(temp_dir)
+#+++++++++++++liangwj+++++++++
+
 
 class myModel(Model):
     pass
@@ -32,9 +50,15 @@ class myModel(Model):
 
 # class that inherits from Model.
 times = gen_time()
-traverse = importlib.resources.files("Models")
-with importlib.resources.as_file(traverse.joinpath("parameter_config/example_Parameters.csv")) as pth:
-    myModel.update_from_file(pth)
+# traverse = importlib.resources.files("Models")
+# with importlib.resources.as_file(traverse.joinpath("parameter_config/example_Parameters.csv")) as pth:
+#     myModel.update_from_file(pth)
+
+#+++++++++++++liangwj+++++++++
+path_to_file = "/BIGDATA2/sysu_atmos_wjliang_1/FG3/newModelOptimisation/OptClimVn3/Models/parameter_config/example_Parameters.csv"
+with open_as_file(path_to_file) as pth:
+    myModel.update_from_file(pth)   #liangwj
+#+++++++++++++liangwj+++++++++
 
 
 class MyTestCase(unittest.TestCase):
