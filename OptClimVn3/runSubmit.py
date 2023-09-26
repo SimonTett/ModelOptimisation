@@ -10,6 +10,7 @@ import pandas as pd
 import optclim_exceptions
 import warnings
 import functools
+from GAMIL3_new import GAMIL3_new    #liangwj
 
 my_logger=logging.getLogger(f"OPTCLIM.{__name__}")
 class runSubmit(SubmitStudy):
