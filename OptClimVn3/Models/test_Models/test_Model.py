@@ -25,6 +25,23 @@ from Models import Model
 from Model import register_param
 from namelist_var import namelist_var
 
+#++++++++++++++liangwj++++++++++++++
+from contextlib import contextmanager
+import tempfile
+import shutil
+@contextmanager
+def open_as_file(path):
+	temp_dir = tempfile.mkdtemp()
+	temp_path = os.path.join(temp_dir, os.path.basename(path))
+
+	shutil.copy2(path, temp_path)
+
+	try:
+		yield temp_path
+	finally:
+		shutil.rmtree(temp_dir)
+#++++++++++++++liangwj++++++++++++++
+
 
 
 def gen_time():
@@ -72,12 +89,21 @@ class myModel(Model):
 
 
 # myModel.update_from_file(myModel.expand("$OPTCLIMTOP/OptClimVn3/Models/tests/example_Parameters.csv"), duplicate=False)
-traverse = importlib.resources.files("Models")
-with importlib.resources.as_file(traverse.joinpath("parameter_config/example_Parameters.csv")) as pth:
-    myModel.update_from_file(pth)
 
-root_pth  = importlib.resources.files("OptClimVn3")
-config = StudyConfig.readConfig(root_pth/"configurations/dfols14param_opt3.json")
+#++++++++++++liangwj+++++++++++
+path_to_file = "/BIGDATA2/sysu_atmos_wjliang_1/FG3/newModelOptimisation/OptClimVn3/Models/parameter_config/example_Parameters.csv"
+with open_as_file(path_to_file) as pth:
+    myModel.update_from_file(pth)
+root_pth  = "/BIGDATA2/sysu_atmos_wjliang_1/FG3/newModelOptimisation/OptClimVn3"
+config = StudyConfig.readConfig("/BIGDATA2/sysu_atmos_wjliang_1/FG3/newModelOptimisation/OptClimVn3/configurations/dfols14param_opt3.json")
+#++++++++++++liangwj+++++++++++
+
+# traverse = importlib.resources.files("Models")
+# with importlib.resources.as_file(traverse.joinpath("parameter_config/example_Parameters.csv")) as pth:
+#     myModel.update_from_file(pth)
+#
+# root_pth  = importlib.resources.files("OptClimVn3")
+# config = StudyConfig.readConfig(root_pth/"configurations/dfols14param_opt3.json")
 
 def fake_function(param):
     return genericLib.fake_fn(config,param)
