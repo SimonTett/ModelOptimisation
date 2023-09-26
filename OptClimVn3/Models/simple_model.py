@@ -12,6 +12,8 @@ import engine  # need the engine!
 import pathlib
 import copy
 
+from pathlib import Path #liangwj
+
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 class simple_model(Model):
     StudyconfigPath:pathlib.Path
@@ -34,7 +36,7 @@ class simple_model(Model):
             self.StudyConfig_path = study.config.fileName()  # store the path to the config.
             if not self.StudyConfig_path.is_absolute(): # not absolute so make it so
                 self.StudyConfig_path = pathlib.Path.cwd()/self.StudyConfig_path
-        self.submit_script ='run_simple_model.py'
+        self.submit_script =self.model_dir / 'run_simple_model.py'#'run_simple_model.py'  #liangwj
         self.continue_script = self.submit_script # continue is just submit
 
     def create_cmd(self, status:str, modifystr:str,indent:int=0) -> typing.List[str]:
