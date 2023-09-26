@@ -26,6 +26,7 @@ from Study import Study
 from StudyConfig import OptClimConfigVn3, dictFile
 import shutil
 import importlib
+from GAMIL3_new import GAMIL3_new    #liangwj
 # check we are version 3.9 or above.
 
 if (sys.version_info.major < 3) or (sys.version_info.major == 3 and sys.version_info.minor < 9):
@@ -201,7 +202,7 @@ class SubmitStudy( Study, model_base,journal):
         post_process = self.config.getv('postProcess')
         run_info = self.config.run_info()
         study = self.to_study()  # convert SubmitStudy to Study
-        model = Model.model_init(model_name, name=name,
+        model = Model.model_init(model_name, name=name,  #liangwj  =model_name class_name='GAMIL3_new',
                                  reference=reference,
                                  model_dir=model_dir,
                                  config_path=config_path,
