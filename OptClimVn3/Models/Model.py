@@ -19,6 +19,9 @@ from model_base import journal
 from ModelBaseClass import ModelBaseClass, register_param
 from namelist_var import namelist_var
 from engine import abstractEngine
+
+from pathlib import Path #liangwj
+
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 
 type_status = typing.Literal['CREATED', 'INSTANTIATED', 'SUBMITTED',
@@ -258,7 +261,7 @@ class Model(ModelBaseClass, journal):
 
         interp = pp.pop('interp', None)
         input_file = pp.pop('input_file', 'input.json')
-        output_file = pp.pop('output_file', 'sim_obs.json')
+        output_file = pp.pop('output_file', 'output.json')  #liangwj
 
         self._post_process_input = input_file
         self._post_process_output = output_file
@@ -280,6 +283,7 @@ class Model(ModelBaseClass, journal):
         pp_cmd += [input_file, output_file]
         self.post_process_cmd_script = pp_cmd  # assumed to be running in model_dir
         self.post_process = pp  #
+        print(self.post_process_cmd_script, self.post_process, "post_process_cmd_script_liangwj")
 
     def compare_objects(self, other):
         """
@@ -688,8 +692,11 @@ class Model(ModelBaseClass, journal):
             json.dump(output, fp)
         # dump the post-processing dict for the post-processing to  pick up.
 
-        post_process_output = self.model_dir / self._post_process_output
-        result = self.run_cmd(self.post_process_cmd_script, cwd=self.model_dir)  #
+        post_process_output = self.model_dir / self._post_process_output  #output.json文件应该产出在self.model_dir下
+        result = self.run_cmd(self.post_process_cmd_script, cwd=self.model_dir)  #"/BIGDATA2/sysu_atmos_wjliang_1/FG3/run/"+str(self.model_dir)[83:]+"/atm/hist")#self.model_dir)  #liangwj
+
+        print(self.post_process_cmd_script, "post_process_cmd_script_liangwj")
+        print(post_process_output, "liangwj_pptest")
 
         # get in the simulated obs which also sets them 
         self.read_simulated_obs(post_process_output)
