@@ -29,8 +29,8 @@ import importlib
 from GAMIL3_new import GAMIL3_new    #liangwj
 # check we are version 3.9 or above.
 
-if (sys.version_info.major < 3) or (sys.version_info.major == 3 and sys.version_info.minor < 9):
-    raise Exception("Only works at 3.9+ ")
+if (sys.version_info.major < 3) or (sys.version_info.major == 3 and sys.version_info.minor < 8):
+    raise Exception("Only works at 3.8+ ")
 
 __version__ = '0.9'
 

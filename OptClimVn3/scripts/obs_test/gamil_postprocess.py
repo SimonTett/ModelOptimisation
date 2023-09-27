@@ -403,19 +403,23 @@ def do_work():
     # work out the files if needed
     if args.dir is None:
         cwd = pathlib.Path.cwd()
-        rootdir = pathlib.Path("../../run")/cwd.name/path #pathlib.Path("/BIGDATA2/sysu_atmos_wjliang_1/FG3/run/amip1d_nudging/atm/hist")#self.model_dir  #pathlib.Path.cwd()/path   #liangwj
+        rootdir = pathlib.Path("/BIGDATA2/sysu_atmos_wjliang_1/FG3/run")/cwd.name/path #pathlib.Path("/BIGDATA2/sysu_atmos_wjliang_1/FG3/run/amip1d_nudging/atm/hist")#self.model_dir  #pathlib.Path.cwd()/path   #liangwj
     else:
         rootdir = pathlib.Path(args.dir)
     files = list(rootdir.glob('*gamil.h0.*.nc'))#[3:] #从201101开始
     files_1=[str(i) for i in files]
     # print(str(files[0])[-10:-6])
-    # print(str(files[1])[-5:-3])
+    #print(files_1)
 
-    #================liangwj================
-    sorted_file_paths = sorted(files_1, key=lambda x: extract_year_month(x))
-    files=[pathlib.Path(i) for i in sorted_file_paths][3:]
+    # #================liangwj================
+    # sorted_file_paths = sorted(files_1, key=lambda x: extract_year_month(x))
+    # files=[pathlib.Path(i) for i in sorted_file_paths][3:]
+    # # ================liangwj================
+    # print(files,len(files),"PP info")
+    
+    files=[pathlib.Path(i) for i in files_1]
     # ================liangwj================
-    print(files,len(files))
+    print(files,len(files),"PP info")
 
 
     #print(files,"datafiles in progress")

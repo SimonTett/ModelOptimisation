@@ -1,5 +1,5 @@
 # STUB for CESM. Needs proper writing and testing.
-from Model import Model
+from Model import Model,type_status
 import pathlib
 import typing
 import os
@@ -13,15 +13,16 @@ print(my_logger,"my_logger")
 
 class GAMIL3_new(Model):
 
-    def __init__(self,name,
-                 reference=None,
-                 model_dir=None,
-                 config_path=None,
-                 parameters={},
-                 post_process=None,
-                 study=None,
-                 engine=None,
-                 run_info=None):
+    def __init__(self,name: str,
+                 reference: pathlib.Path,
+                 post_process: typing.Optional[dict] = None,
+                 model_dir: pathlib.Path = pathlib.Path.cwd(),
+                 config_path: typing.Optional[pathlib.Path] = None,
+                 status: type_status = "CREATED",
+                 parameters: typing.Optional[dict] = None,
+                 engine: typing.Optional["abstractEngine"] = None,
+                 run_info: typing.Optional[dict] = None,
+                 study: typing.Optional["Study"] = None):
 
 
         # no parameters should be provided unless create or update provided
