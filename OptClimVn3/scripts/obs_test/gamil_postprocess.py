@@ -403,7 +403,7 @@ def do_work():
     # work out the files if needed
     if args.dir is None:
         cwd = pathlib.Path.cwd()
-        rootdir = pathlib.Path("../../run")/cwd.name/path #pathlib.Path("/BIGDATA2/sysu_atmos_wjliang_1/FG3/run/amip1d_nudging/atm/hist")#self.model_dir  #pathlib.Path.cwd()/path   #liangwj
+        rootdir = pathlib.Path("../../../run")/cwd.name/path #pathlib.Path("/BIGDATA2/sysu_atmos_wjliang_1/FG3/run/amip1d_nudging/atm/hist")#self.model_dir  #pathlib.Path.cwd()/path   #liangwj
     else:
         rootdir = pathlib.Path(args.dir)
     files = list(rootdir.glob('*gamil.h0.*.nc'))#[3:] #从201101开始
