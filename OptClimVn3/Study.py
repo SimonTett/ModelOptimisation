@@ -277,6 +277,7 @@ class Study:
             finalConfig.simObs() -- returns the simulated observations for each model simulation.
         """
         newConfig = self.config.copy(filename=filename)  # copy the config.
+        # TODO -- read in and store the covariances.
 
         params = self.params()  # get params & obs
         obs = self.obs()

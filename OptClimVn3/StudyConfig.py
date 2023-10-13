@@ -268,7 +268,7 @@ class OptClimConfig(dictFile):
         Return OptClimConfig object -- likely called using readConfig
         :param config: -- a dictFile configuration. Information will be copied from here. 
         """
-        self._covariances = None  # where we store the covariances.
+        self._covariances = None  # where we store the covariances. #TODO -- include this in the covariances.
         self.__dict__.update(config.__dict__)  # just copy the values across!
 
     def version(self):
@@ -1822,18 +1822,6 @@ class OptClimConfigVn2(OptClimConfig):
             perturbation = perturbation / param.loc['rangeParam', :]
 
         return perturbation.astype(float).rename(self.name())
-
-    def cacheFile(self):
-        """
-        Get the pathname relative to the study directory of the cache file.
-        This file holds information (directories in current design) on model simulation directories.
-        :return:  filename relative to studyDir
-        TODO: Don't think this used so remove it.
-        """
-        raise NotImplementedError("cacheFile probably dead")
-        fileStore = self.Config.get('studyCacheFile', 'cache_file.json')
-        if fileStore is None: fileStore = 'cache_file.json'
-        return fileStore
 
     # do some plotting
     def plot(self, figName='monitor', monitorFile=None):

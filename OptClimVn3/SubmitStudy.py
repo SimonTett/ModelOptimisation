@@ -14,22 +14,26 @@ import pathlib
 import string
 import sys
 import typing
+import shutil
+import importlib
+import tarfile
+from typing import Optional, List, Callable, Mapping
 
 import numpy as np
-from typing import Optional, List, Callable, Mapping
-import engine
 import pandas as pd
 
+
+
+import engine
 from  Model import Model
 from model_base import model_base, journal
 from Study import Study
 from StudyConfig import OptClimConfigVn3, dictFile
-import shutil
-import importlib
-# check we are version 3.9 or above.
 
-if (sys.version_info.major < 3) or (sys.version_info.major == 3 and sys.version_info.minor < 9):
-    raise Exception("Only works at 3.9+ ")
+# check we are version 3.8 or above.
+
+if (sys.version_info.major < 3) or (sys.version_info.major == 3 and sys.version_info.minor < 8):
+    raise Exception("Only works at 3.8+ ")
 
 __version__ = '0.9'
 
@@ -272,7 +276,8 @@ class SubmitStudy( Study, model_base,journal):
     def load_SubmitStudy(cls, config_path: [pathlib.Path,str],
                          Study: bool = False) -> [Study,SubmitStudy]:
         """
-        Load a SubmitStudy (or anything that inherits from it) from a file. The object will have config_path replaced by config_path.
+        Load a SubmitStudy (or anything that inherits from it) from a file.
+        The object will have its config_path replaced by config_path passed in.
         :param config_path: path to configuration to load
         :param Study: If True return a Study object. These are read-only (unless you modify by hand the attributes)
         :return: object
@@ -416,7 +421,7 @@ class SubmitStudy( Study, model_base,journal):
     def delete(self):
         """
         Clean up SubmitStudy configuration by deleting all models and removing self.config_path.
-        Internal structure will be updated so gen_name goes back to start and will return xxxx0...0
+        The Internal structure will be updated so gen_name goes back to start and will return xxxx0...0
         """
         # Step 1 -- delete models
         for key, model in self.model_index.items():
@@ -443,6 +448,67 @@ class SubmitStudy( Study, model_base,journal):
 
         self.update_history("Deleted")
         
+    def archive(self, archive_file:Optional[pathlib.Path] = None,
+                extra_paths:List[pathlib.Path] = []) -> pathlib.Path:
+        """
+        Archive SubmitStudy and all its model configurations.
+        Archive will be a tar file with all paths relative to self.rootDir
+        :param archive_file: path to where archive file goes or None.
+           If None name is self.rootDir/(config_path.stem+".tar")
+        :param extra_paths -- a list of extra paths to be archived. For example, final_json and monitor paths.
+          Should be specified relative to rootDir.
+        :return path to archive file.
+
+        """
+        if archive_file is None: # no archive file defined
+            archive_file = self.rootDir/(self.config_path.stem+".tar")
+
+        self.dump_config(dump_models=False)
+        # Dump the configuration but not the models. Will leave that to model.archive()
+        # TODO generate a manifest file and add that. Manifest tells us what the config file is called.
+        # For now use the assumption that is is the .csfg file?
+        pths=[self.config_path.relative_to(self.rootDir)]+extra_paths
+        with tarfile.open(archive_file, "w",dereference=True) as archive:
+            for path in pths:
+                full_path = self.rootDir/path
+                if full_path.exists():
+                    archive.add(full_path, path)
+                    my_logger.info(f"Added {full_path} as {path} to archive")
+            for model in self.model_index.values(): # deal with individual models
+                model.archive(archive,root=self.rootDir)
+
+        return archive_file
+
+    @classmethod
+    def unarchive(cls, archive_path:pathlib.Path,
+                  direct:typing.Optional[pathlib.Path] = None):
+        """
+        Unarchive -- extract data from tar file
+        :param archive_path: path to archive
+        :param direct: where data is to be extracted
+        :return: Study object.
+        """
+        if direct is None:
+            direct = pathlib.Path(".")
+        with tarfile.open(archive_path,'r') as archive:
+            names = archive.getnames()
+            # check all names are relative -- i.e. are not absolute.
+            bad_paths=[]
+            for name in names:
+                if pathlib.Path(name).is_absolute():
+                    bad_paths += name
+            if len(bad_paths) > 0:
+                raise ValueError(f"Have absolute paths. {bad_paths}")
+
+            scfgs = [name for name in names if  name.endswith(".scfg")] # todo be explicit and have a manifest listing all files
+            if len(scfgs) > 1:
+                raise ValueError(f"Have {len(scfgs)}: {scfgs}")
+            # extract data
+            archive.extractall(path=direct)
+            cfg = cls.load_SubmitStudy(direct/scfgs[0],Study=True) # read the extracted data as a Study.
+
+        return cfg
+
 
     def delete_model(self, model):
         """

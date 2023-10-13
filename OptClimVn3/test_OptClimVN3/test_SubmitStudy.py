@@ -5,6 +5,7 @@ import datetime
 import importlib.resources
 import logging
 import pathlib
+import tarfile
 import tempfile
 import unittest.mock  # need to mock the run case.
 import unittest
@@ -398,6 +399,35 @@ class MyTestCase(unittest.TestCase):
             model.status = "RUNNING"
         rmodels = submit.running_models()
         self.assertEqual(rmodels,list(submit.model_index.values()))
+
+    def test_archive(self):
+        # test archive method.
+        # the archive file should contain the config file + N model configs.
+        # and the archive file should be called
+        sub = self.submit
+        expected_archive_file = sub.rootDir/(sub.config_path.stem+".tar") # what the archive_file is called.
+        archive_file = self.submit.archive()
+        self.assertEqual(expected_archive_file,archive_file)
+        expected_files=[sub.config_path]+[m.config_path for m in sub.model_index.values()]
+        expected_files = [pathlib.Path(file).relative_to(sub.rootDir) for file in expected_files]
+        with tarfile.open(archive_file,'r') as archive:
+            got_files = [pathlib.Path(file) for file in archive.getnames()]
+            self.assertEqual(expected_files,got_files)
+
+
+
+    def test_unarchive(self):
+        # test unarchive method.
+
+        # archive it and then unarchive it to somewhere.
+        apth = self.submit.archive() # archive everything.
+        outdir = self.testDir/'test_archive'
+        # and now unarchive it.
+        study = self.submit.unarchive(apth)
+        # and study should be equal to the orig case.
+        ostdy = self.submit.to_study()
+        self.assertEqual(ostdy,study)
+
 
 if __name__ == '__main__':
     unittest.main()

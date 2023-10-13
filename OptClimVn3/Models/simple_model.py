@@ -34,7 +34,7 @@ class simple_model(Model):
             self.StudyConfig_path = study.config.fileName()  # store the path to the config.
             if not self.StudyConfig_path.is_absolute(): # not absolute so make it so
                 self.StudyConfig_path = pathlib.Path.cwd()/self.StudyConfig_path
-        self.submit_script ='run_simple_model.py'
+        self.submit_script = pathlib.Path('run_simple_model.py')
         self.continue_script = self.submit_script # continue is just submit
 
     def create_cmd(self, status:str, modifystr:str,indent:int=0) -> typing.List[str]:
@@ -50,6 +50,9 @@ class simple_model(Model):
         cmd = [f'{self.set_status_script}', '-v',f'{self.config_path}', status] # verbose
         if platform.system() == 'Windows':
             cmd = ['python']+cmd
+
+
+
         # run command and get some diagnostics
         lst=[f'cmd = {cmd} {modifystr}',
              f'result = subprocess.run(cmd) {modifystr}',

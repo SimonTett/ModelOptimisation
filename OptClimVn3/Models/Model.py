@@ -19,11 +19,13 @@ from model_base import journal
 from ModelBaseClass import ModelBaseClass, register_param
 from namelist_var import namelist_var
 from engine import abstractEngine
+
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 
 type_status = typing.Literal['CREATED', 'INSTANTIATED', 'SUBMITTED',
-                             'RUNNING', 'FAILED', 'PERTURBED', 'CONTINUE',
-                             'SUCCEEDED', 'PROCESSED']  # allowed strings for status
+'RUNNING', 'FAILED', 'PERTURBED', 'CONTINUE',
+'SUCCEEDED', 'PROCESSED']  # allowed strings for status
+
 
 class Model(ModelBaseClass, journal):
     # type definitions for attributes.
@@ -84,7 +86,7 @@ class Model(ModelBaseClass, journal):
                        SUBMITTED=['INSTANTIATED', 'PERTURBED', 'CONTINUE'],
                        # Submitting needs it to have been instantiated, perturbed or to be continued.
                        RUNNING=["SUBMITTED"],  # running needed it should have been submitted
-                       FAILED=["RUNNING","SUBMITTED"],  # Failed means it should have been running or SUBMITTED
+                       FAILED=["RUNNING", "SUBMITTED"],  # Failed means it should have been running or SUBMITTED
                        PERTURBED=["FAILED"],  # Allowed to perturb a model after it failed.
                        CONTINUE=["FAILED", "PERTURBED"],
                        # failed can just be continued or can be perturbed. For example ran out of time or disk space
@@ -109,7 +111,7 @@ class Model(ModelBaseClass, journal):
             if hasattr(obj, name):
                 setattr(obj, name, value)
             else:
-                my_logger.warning(f"Did not setattr for {name} as not in obj") 
+                my_logger.warning(f"Did not setattr for {name} as not in obj")
         return obj
 
     # methods now.
@@ -553,7 +555,7 @@ class Model(ModelBaseClass, journal):
         outdir = self.model_dir / 'model_output'
         outdir.mkdir(parents=True, exist_ok=True)
 
-        cmd = self.engine.submit_cmd([str(self.model_dir/script)], f"{self.name}{len(self.model_jids):05d}", outdir,
+        cmd = self.engine.submit_cmd([str(self.model_dir / script)], f"{self.name}{len(self.model_jids):05d}", outdir,
                                      run_code=runCode, time=runTime, rundir=self.model_dir)
         return cmd
 
@@ -580,18 +582,18 @@ class Model(ModelBaseClass, journal):
         :return: True if guessed FAILED, False if not
         """
 
-        if self.status in ["RUNNING","SUBMITTED"]:
+        if self.status in ["RUNNING", "SUBMITTED"]:
             if self.status == "RUNNING":
                 model_jid = self.model_jids[-1]
             else:
                 model_jid = self.submitted_jid
-                
+
             stat = self.engine.job_status(model_jid)
             if stat == "notFound":  # no job found.
                 my_logger.debug(f"Could not find status for jid:{model_jid} for model {self}. Setting status to FAILED")
                 self.set_failed()  # we have failed.
                 return True
-                
+
         return False  # this model is not having its status changed.
 
     def set_failed(self):
@@ -766,6 +768,7 @@ class Model(ModelBaseClass, journal):
         :return:
         """
         return self.status in ["CREATED"]
+
     def is_submittable(self) -> bool:
         """
         Return True if model is submittable -- which means its status is CONTINUE or INSTANTIATED or PERTURBED
@@ -810,8 +813,7 @@ class Model(ModelBaseClass, journal):
         :return: None
         """
 
-        
-        if len(self.model_jids) > 0: # got some models to kill
+        if len(self.model_jids) > 0:  # got some models to kill
             curr_model_id = self.model_jids[-1]
             status = self.engine.job_status(curr_model_id)
             if status not in ['notFound']:
@@ -821,27 +823,18 @@ class Model(ModelBaseClass, journal):
             else:
                 my_logger.debug(f"Job {curr_model_id} not found.")
 
-        if self.pp_jid is not None: # got a post-processing job.
+        if self.pp_jid is not None:  # got a post-processing job.
             status = self.engine.job_status(self.pp_jid)
             if status not in ['notFound']:
-                cmd=self.engine.kill_job(self.pp_jid)
+                cmd = self.engine.kill_job(self.pp_jid)
                 self.run_cmd(cmd)
                 my_logger.debug(f"Killed post-processing job id:{self.pp_jid}")
-            self.pp_jid = None # killed it so should be no post processing job
-            
+            self.pp_jid = None  # killed it so should be no post processing job
+
         shutil.rmtree(self.model_dir, ignore_errors=True)
         my_logger.info(f"Deleted everything in {self.model_dir}")
         self.config_path.unlink(missing_ok=True)
         return True
-
-    def archive(self, archive_path):
-        """
-        Archive parts of model_dir & config_path to archive_path. This version will raise NotImplementedError as
-          needs to be specialised for individual models
-        :param archive_path:
-        :return:None
-        """
-        raise NotImplementedError("Implement archive for your model")
 
     def key(self, fpFmt: str = '%.4g') -> str:
         """
@@ -880,6 +873,41 @@ class Model(ModelBaseClass, journal):
         my_logger.warning(f"Nothing set for {ensMember}. Override in your own model")
 
         return None
+
+    def archive(self, archive: "tarfile.TarFile",
+                root: typing.Optional[pathlib.Path] = None,
+                extra_files: typing.Optional[typing.List[pathlib.Path | str]] = None):
+        """
+
+        :param archive: archive to be added to
+        :param root: root directory to express all paths relative to.
+           If not None, then the name in the archive will be relative to this path.
+        :param extra_files -- extra model things to archive. Should be relative to self.model_dir
+        :return: None
+
+        Will dump model to disk.
+        Adds self.config_path and self.model_dir / self._post_process_output to archive.
+          If your model wants to include more things in the archive, then overload this method.
+          If you call it first using the super method then you just need to add you own stuff to archive!
+
+        Example:
+        with tarfile.open(archive_file, "w") as archive:
+            model.archive(root=pathlib.Path("my_root_dir")
+        """
+        if extra_files is None:
+            extra_files = []
+        self.dump_model()  # dump model state to disk.
+        # make paths for archive
+        paths_to_archive = ([self.config_path, self.model_dir / self._post_process_output] +
+                            [self.model_dir / p for p in extra_files])
+        for path in paths_to_archive:
+            if root is None:
+                arc_path = path
+            else:
+                arc_path = path.relative_to(root)
+            if path.exists():
+                archive.add(path, arc_path)  # archive the file with name relative to root
+                my_logger.debug(f"Added {path} to archive as {arc_path}")
 
 
 Model.register_class(Model)  # register ourselves!

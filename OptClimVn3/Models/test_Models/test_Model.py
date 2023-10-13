@@ -10,6 +10,7 @@ import tempfile
 import time
 import unittest
 import unittest.mock
+import tarfile
 
 
 import StudyConfig # so can read in a config for fake_fn.
@@ -107,7 +108,7 @@ class ModelTestCase(unittest.TestCase):
         eng = engine.abstractEngine.create_engine('SGE')
         self.engine = eng
         self.model = myModel(name='test_model', reference=refDir,
-                             model_dir=testDir, post_process=post_process,
+                             model_dir=testDir/'study', post_process=post_process,
                              parameters=dict(RHCRIT=2, VF1=2.5, CT=2),
                              engine=eng)
         self.tmpDir = tmpDir
@@ -282,7 +283,7 @@ class ModelTestCase(unittest.TestCase):
 
     def test_gen_params(self):
         # test gen params works
-        shutil.copytree(self.refDir, self.tmpDir.name, symlinks=True, dirs_exist_ok=True)
+        shutil.copytree(self.refDir, self.model.model_dir, symlinks=True, dirs_exist_ok=True)
         nl_iter = self.model.gen_params()
         # work out what we expect...
         expect = []
@@ -809,6 +810,53 @@ class ModelTestCase(unittest.TestCase):
         self.model.parameters=pDict
         key = self.model.key()
         self.assertEqual(key, expect)
+
+    def test_archive(self):
+        # test archiving works
+        #  test config file works
+
+        # create archive file.
+        archive_file = self.testDir/'test_archive.tar'
+        pp_file = self.model.model_dir / self.model._post_process_output
+        with tarfile.open(archive_file, "w",dereference=True) as archive:
+            self.model.archive(archive,self.testDir) # archive the model
+
+        # now can try and read it.
+        expected_names = [p.relative_to(self.testDir) for p in [self.model.config_path]]#,]]
+        with tarfile.open(archive_file, "r") as archive:
+            names = [pathlib.Path(n) for n in  archive.getnames()] # list of names
+            self.assertEqual(expected_names,names)
+
+        # now create some obs... and test that works.
+        import json
+        test_obs=dict(obs1=2.2,obs2=1.0,obs4=True)
+        with open(pp_file,'wt') as fp:
+            json.dump(test_obs,fp)
+        with tarfile.open(archive_file, "w") as archive:
+            self.model.archive(archive,self.testDir) # archive the model
+        expected_names = [p.relative_to(self.testDir) for p in [self.model.config_path,pp_file]]
+        with tarfile.open(archive_file, "r") as archive:
+            names = [pathlib.Path(n) for n in  archive.getnames()] # list of names
+            self.assertEqual(expected_names,names)
+
+        # check extra works.
+        #  write a text file
+        test_file = self.model.model_dir/'test.txt'
+        with open(test_file,'wt') as fp:
+            print("Line 1",file=fp)
+            print("Line 2",file=fp)
+
+        expected_names = [p.relative_to(self.testDir) for p in [self.model.config_path, pp_file,test_file]]
+        with tarfile.open(archive_file, "w") as archive:
+            self.model.archive(archive,self.testDir,extra_files=['test.txt']) # archive the model
+        with tarfile.open(archive_file, "r") as archive:
+            names = [pathlib.Path(n) for n in  archive.getnames()] # list of names
+            self.assertEqual(expected_names,names)
+
+
+
+
+
 
 
 if __name__ == '__main__':

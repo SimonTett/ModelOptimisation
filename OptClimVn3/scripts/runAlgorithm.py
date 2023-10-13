@@ -37,7 +37,7 @@ import logging
 import argparse  # parse command line arguments
 import functools
 import os
-import sys
+
 import pathlib
 import numpy as np
 import shutil
@@ -80,7 +80,10 @@ parser.add_argument("--fail", help=fail_help_str,
                     default='fail',
                     choices=['fail', 'continue', 'perturb', 'perturbc', 'delete'])
 
-parser.add_argument("--guess_fail", action='store_true',help="If set then use guess_fail to see if Running models have failed and set them failed.")
+parser.add_argument("--archive",action='store_true',help="Archive configuration as tar file.")
+
+parser.add_argument("--guess_fail", action='store_true',
+                    help="If set then use guess_fail to see if Running models have failed and set them failed.")
 args = parser.parse_args()
 verbose = args.verbose
 dry_run = args.dryrun
@@ -94,7 +97,7 @@ fail = args.fail
 purge = args.purge
 guess_fail = args.guess_fail
 update_config = args.update_config
-
+archive = args.archive
 configData = StudyConfig.readConfig(filename=jsonFile)  # parse the jsonFile.
 
 # logging stuff.
@@ -288,3 +291,6 @@ if finalConfig is not None:  # have a finalConfig. If so save it. We could not h
     finalConfig.save(final_JSON_file)
     if monitor:
         finalConfig.plot(monitorFile=monitor_file)  # plot "std plot"
+
+if archive:
+    rSUBMIT.archive(extra_paths=[final_JSON_file,monitor_file])
