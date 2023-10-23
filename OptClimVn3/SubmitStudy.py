@@ -9,10 +9,13 @@ Porting hints:
 from __future__ import annotations
 
 import copy
+import json
 import logging
 import pathlib
+import platform
 import string
 import sys
+import tempfile
 import typing
 import shutil
 import importlib
@@ -22,10 +25,9 @@ from typing import Optional, List, Callable, Mapping
 import numpy as np
 import pandas as pd
 
-
-
 import engine
-from  Model import Model
+import generic_json
+from Model import Model
 from model_base import model_base, journal
 from Study import Study
 from StudyConfig import OptClimConfigVn3, dictFile
@@ -37,16 +39,16 @@ if (sys.version_info.major < 3) or (sys.version_info.major == 3 and sys.version_
 
 __version__ = '0.9'
 
+my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 
-my_logger=logging.getLogger(f"OPTCLIM.{__name__}")
 
-class SubmitStudy( Study, model_base,journal):
+class SubmitStudy(Study, model_base, journal):
     # typing information for class attributes
-    refDir: pathlib.Path
+    refDir: pathlib.PurePath
     model_name: str
-    module_name:typing.Optional[str]
-    run_info:dict
-    engine:engine.abstractEngine
+    module_name: typing.Optional[str]
+    run_info: dict
+    engine: engine.abstractEngine
     config_path: pathlib.Path
     name_values: typing.Optional[list[int]]
     iter_keys: dict
@@ -57,18 +59,17 @@ class SubmitStudy( Study, model_base,journal):
      provides methods to support working out which models need to be submitted. Creates new models and submits them.
     If you want to view a study just use the Study class. 
     Attributes, beyond model_base, Study & journal ones, are:
-        refDir -- path for reference directory
+        refDir -- path for reference directory. A pure path is allowed but most uses will crash.
         model_name -- name of the model being used
         module_name -- name of the module being used. 
         run_info -- information for submitting runs.
         engine -- functions to handle different job submission engines.
-        config_path -- path to where config is stored.
+        config_path -- path to where config is stored.A pure path is allowed but most uses will crash.
         name_values -- used to generate name. Set to None to reset counter.
         iter_keys -- dict indexed by key with iteration count.
         next_iter_cmd -- the command to run the next iteration.
         next_iter_jids -- the jobs ids of all submitted next_iter_cmd jobs
     """
-
 
     fn_type = Callable[[Mapping], pd.Series]  # type hint for fakeFn
 
@@ -94,14 +95,13 @@ class SubmitStudy( Study, model_base,journal):
         :param next_iter_cmd -- command to run next iteration.
         :return: instance SubmitStudy with the following public attributes :
         """
-        super().__init__(config, name=name, models=models, rootDir=rootDir) 
+        super().__init__(config, name=name, models=models, rootDir=rootDir)
         self.rootDir.mkdir(parents=True, exist_ok=True)  # create it if need be.
-        if refDir is None: 
+        if refDir is None:
             refDir = self.expand(str(config.referenceConfig()))
         self.refDir = refDir
 
-
-        if model_name is not None: # This is fixed. Even if configuation changed the model_name is fixed.
+        if model_name is not None:  # This is fixed. Even if configuation changed the model_name is fixed.
             self.model_name = model_name
         else:
             self.model_name = config.model_name()
@@ -109,16 +109,15 @@ class SubmitStudy( Study, model_base,journal):
         self.module_name = None
         # see if we have model_name in the list of known models. If we don't then try and load from module
         if self.model_name not in Model.known_models():
-            self.module_name =  config.module_name(model_name=self.model_name)
+            self.module_name = config.module_name(model_name=self.model_name)
             my_logger.info(f"Loading {self.module_name}")
-            importlib.import_module(self.module_name) # and load the module.
+            importlib.import_module(self.module_name)  # and load the module.
         else:
             my_logger.info(f"Already have {self.model_name} so not loading module")
 
-
         self.run_info = copy.deepcopy(config.run_info())  # copy run_info as modifying it.
         eng = engine.abstractEngine.create_engine(self.run_info.pop('submit_engine'),
-                                                     ssh_node=self.run_info.pop('ssh_node', None))
+                                                  ssh_node=self.run_info.pop('ssh_node', None))
 
         self.engine = eng
 
@@ -145,9 +144,9 @@ class SubmitStudy( Study, model_base,journal):
         :return: nada
         """
         my_logger.debug("Setting configuration")
-        super().update_config(config) # call the superclass
+        super().update_config(config)  # call the superclass
 
-        self.run_info = copy.deepcopy(config.run_info()) # copy run_info as modifying it.
+        self.run_info = copy.deepcopy(config.run_info())  # copy run_info as modifying it.
         my_logger.debug(f"Set run_info to {self.run_info}")
 
     def __repr__(self):
@@ -181,11 +180,11 @@ class SubmitStudy( Study, model_base,journal):
         :return: Model created (or that already exists)
         """
         max_model_sims = self.run_info.get("max_model_simulations")
-        if (max_model_sims is not None) and ( len(self.model_index) >= max_model_sims):
+        if (max_model_sims is not None) and (len(self.model_index) >= max_model_sims):
             my_logger.warning(f"Exceeded {max_model_sims} model simulations. Returning None.")
-            models_to_run = self.models_to_instantiate()+self.models_to_continue()
-            lmodels= len(models_to_run)
-            if lmodels > 0: #got some model so instantiate
+            models_to_run = self.models_to_instantiate() + self.models_to_continue()
+            lmodels = len(models_to_run)
+            if lmodels > 0:  # got some model so instantiate
                 my_logger.warning(f"{lmodels} models still to be submitted.")
                 self.update_history(f"No more models to be created but {lmodels} existing ones to run")
             else:
@@ -273,28 +272,49 @@ class SubmitStudy( Study, model_base,journal):
                 model.dump_model()
 
     @classmethod
-    def load_SubmitStudy(cls, config_path: [pathlib.Path,str],
-                         Study: bool = False) -> [Study,SubmitStudy]:
+    def load_SubmitStudy(cls, config_path: [pathlib.Path, str],
+                         Study: bool = False,
+                         is_archive:bool = False) -> [Study, SubmitStudy]:
         """
         Load a SubmitStudy (or anything that inherits from it) from a file.
         The object will have its config_path replaced by config_path passed in.
         :param config_path: path to configuration to load
         :param Study: If True return a Study object. These are read-only (unless you modify by hand the attributes)
+        :param is_archive: Treat SubmitStudy as archive. This implies some rewritting of file paths on loading.
         :return: object
         """
-        config_path = cls.expand(config_path) 
+        config_path = cls.expand(config_path)
         # convert str to path and or expand user or env vars.
+        if is_archive:
+            logging.info(f"{config_path} is an archive. Loading dct first")
+            # we are reading an archive which means paths need rewriting.
+            # need to load the json file and then pull out rootDir as that is what needed.
+            with open(config_path,'rt') as fp:
+                dct = json.load(fp)
+            # now to find rootDir.
+            root_dir =dct['object']['rootDir']
+            decode_obj = generic_json.obj_to_from_dict()
+            root_dir = decode_obj.decode(root_dir)
+            model_base._translate_path_var = [root_dir,config_path.parent] # setup for translation.
+
         obj = cls.load(config_path)
+        model_base._translate_path_var = None # reset translation to None
         if not isinstance(obj, SubmitStudy):
             my_logger.warning(f"Expected instance of SubmitStudy got {type(obj)}")
-        if Study:  # convert to a study
-            obj = obj.to_study()
-            return obj
+
         if not config_path.samefile(obj.config_path):
             my_logger.info(f"Modifying config path from  {obj.config_path} to {config_path}")
             obj.config_path = config_path
             obj.update_history(f"Modified config path from  {obj.config_path} to {config_path}")
 
+        if not config_path.parent.samefile(obj.rootDir):
+            my_logger.info(f"Modifying config rootDir from  {obj.rootDir} to {config_path.parent}")
+            obj.config_path = config_path
+            obj.update_history(f"Modified config path from  {obj.rootDir} to {config_path.parent}")
+
+        if Study:  # convert to a study
+            obj = obj.to_study()
+            return obj
         return obj
 
     def instantiate(self):
@@ -352,6 +372,7 @@ class SubmitStudy( Study, model_base,journal):
         :return: List of models that are running
         """
         return [model for model in self.model_index.values() if model.is_running()]
+
     def submitted_models(self) -> List[Model]:
         """
 
@@ -367,11 +388,15 @@ class SubmitStudy( Study, model_base,journal):
         """
 
         dct = super().to_dict()
+        #REPLACE all paths with PurePaths
+        for var in dct.keys():
+            if isinstance(dct[var],pathlib.PurePath):
+                dct[var]=pathlib.PurePath(dct[var])
 
         my_logger.debug(f"Replacing models in model_index with config_path")
         m2 = dict()
         for key, model in dct['model_index'].items():
-            m2[key] = model.config_path
+            m2[key] = pathlib.PurePath(model.config_path)
         dct['model_index'] = m2
         dct['config'] = self.config.to_dict()  # convert Config to a dict.
         return dct
@@ -396,21 +421,31 @@ class SubmitStudy( Study, model_base,journal):
         config._filename = config_dct['_filename']
         # TODO Very messy code. Good to sort out StudyConfig but that needs a big re-engineering job..
 
+        # deal with translation and conversion to paths (if possible)
+        dct = cls.convert_pure_paths(dct)
+
+
         # create the SubmitStudy object
         obj = cls(config)
-        obj.fill_attrs(dct)  # fill in the rest of the objects attributes.
+        obj.fill_attrs(dct)  # fill in the rest of the objects attributes
 
         # load up models.
         model_index = dict()
-        for key, path in obj.model_index.items():  # iterate over the paths (which is how we represent the models)
+        right_pure_path_type = type(pathlib.PurePath())  # (will give Windows/Posix as appropriate)
+        for key, ppath in obj.model_index.items():  # iterate over the paths (which is how we represent the models)
+            path = cls.translate_path(ppath) # this will be a path
+            if not (isinstance(path,pathlib.Path) or type(path) == right_pure_path_type): # not the right kind of pure path ?
+                my_logger.warning(f"Path {ppath} not of correct type. Skipping")
+                continue
+
+            path = pathlib.Path(path) # make path version which we can then load.
             if path.exists():
                 my_logger.debug(f"Loading model from {path}")
                 # verify key is as expected.
                 model = Model.load_model(path)  # load the model.
                 got_key = obj.key_for_model(model)
                 if key != got_key:  # key changed. TODO. deal with ensembleMember which seems to be truncated.
-                    my_logger.warning(f"Key has changed from {key} to {got_key} for model {model}")
-                    raise ValueError
+                    raise ValueError(f"Key has changed from {key} to {got_key} for model {model}")
                 model_index[got_key] = model
             else:
                 my_logger.warning(f"Failed to find {path} so ignoring.")
@@ -433,7 +468,7 @@ class SubmitStudy( Study, model_base,journal):
         # remove the config_path.
         self.config_path.unlink(missing_ok=True)  # remove the config path.
         # remove the directory.
-        shutil.rmtree(self.rootDir,ignore_errors=True)
+        shutil.rmtree(self.rootDir, ignore_errors=True)
 
         # reset values count (used to generate name) to 0.
         self.name_values = None  # start again!
@@ -447,9 +482,9 @@ class SubmitStudy( Study, model_base,journal):
                 my_logger.info(f"Killed resubmission job id:{curr_resub_id}")
 
         self.update_history("Deleted")
-        
-    def archive(self, archive_file:Optional[pathlib.Path] = None,
-                extra_paths:List[pathlib.Path] = []) -> pathlib.Path:
+
+    def archive(self, archive_file: Optional[pathlib.Path] = None,
+                extra_paths: List[pathlib.Path] = []) -> pathlib.Path:
         """
         Archive SubmitStudy and all its model configurations.
         Archive will be a tar file with all paths relative to self.rootDir
@@ -460,55 +495,44 @@ class SubmitStudy( Study, model_base,journal):
         :return path to archive file.
 
         """
-        if archive_file is None: # no archive file defined
-            archive_file = self.rootDir/(self.config_path.stem+".tar")
-
-        self.dump_config(dump_models=False)
-        # Dump the configuration but not the models. Will leave that to model.archive()
+        if archive_file is None:  # no archive file defined
+            archive_file = self.rootDir / (self.config_path.stem + ".tar")
         # TODO generate a manifest file and add that. Manifest tells us what the config file is called.
         # For now use the assumption that is is the .csfg file?
-        pths=[self.config_path.relative_to(self.rootDir)]+extra_paths
-        with tarfile.open(archive_file, "w",dereference=True) as archive:
+        pths = [self.config_path.relative_to(self.rootDir)] + extra_paths
+        with tarfile.open(archive_file, "w", dereference=True) as archive:
             for path in pths:
-                full_path = self.rootDir/path
+                full_path = self.rootDir / path
                 if full_path.exists():
                     archive.add(full_path, path)
                     my_logger.info(f"Added {full_path} as {path} to archive")
-            for model in self.model_index.values(): # deal with individual models
-                model.archive(archive,root=self.rootDir)
+            for model in self.model_index.values():  # deal with individual models
+                model.archive(archive,self.rootDir)
 
         return archive_file
 
     @classmethod
-    def unarchive(cls, archive_path:pathlib.Path,
-                  direct:typing.Optional[pathlib.Path] = None):
+    def unarchive(cls, archive_path: pathlib.Path,
+                  direct: typing.Optional[pathlib.Path] = None):
         """
         Unarchive -- extract data from tar file
         :param archive_path: path to archive
-        :param direct: where data is to be extracted
+        :param direct: where data is to be extracted. If not specified will be cwd
         :return: Study object.
         """
         if direct is None:
-            direct = pathlib.Path(".")
-        with tarfile.open(archive_path,'r') as archive:
+            direct = pathlib.Path.cwd()
+        with tarfile.open(archive_path, 'r') as archive:
             names = archive.getnames()
-            # check all names are relative -- i.e. are not absolute.
-            bad_paths=[]
-            for name in names:
-                if pathlib.Path(name).is_absolute():
-                    bad_paths += name
-            if len(bad_paths) > 0:
-                raise ValueError(f"Have absolute paths. {bad_paths}")
-
-            scfgs = [name for name in names if  name.endswith(".scfg")] # todo be explicit and have a manifest listing all files
+            scfgs = [name for name in names if
+                     name.endswith(".scfg")]  # todo be explicit and have a manifest listing all files
             if len(scfgs) > 1:
                 raise ValueError(f"Have {len(scfgs)}: {scfgs}")
             # extract data
             archive.extractall(path=direct)
-            cfg = cls.load_SubmitStudy(direct/scfgs[0],Study=True) # read the extracted data as a Study.
-
+            cfg = cls.load_SubmitStudy(direct / pathlib.Path(scfgs[0]).name, is_archive=True)  # read the extracted data as a Study.
+            cfg.dump_config(dump_models=True) # Save the configuration in the new space. This will then be normally readable.
         return cfg
-
 
     def delete_model(self, model):
         """
@@ -686,9 +710,69 @@ class SubmitStudy( Study, model_base,journal):
         :return: Study
         """
 
-        study = Study(self.config,name=self.name,rootDir=self.rootDir)
+        study = Study(self.config, name=self.name, rootDir=self.rootDir)
         for key, var in vars(self).items():
             if hasattr(study, key):
                 setattr(study, key, copy.deepcopy(var))  # make a copy of var and add it as an attribute to study
 
         return study
+
+    def to_archive(self) -> archive_SubmitStudy:
+        raise NotImplementedError
+
+
+class archive_SubmitStudy(SubmitStudy):
+    # typing information for class attributes
+    refDir: pathlib.PurePath
+    config_path: pathlib.PurePath
+    archive_info: dict
+
+    """
+    Archive version of SubmitStudy
+    Attributes, beyond SubmitStudy are:
+        archive_info -- dict containing information about the SubmitStudy.     
+        And all paths are purePaths. Which will cause any I/O or system stuff to fail!
+    """
+
+    def __init__(self, config: Optional[OptClimConfigVn3],
+                 name: Optional[str] = None,
+                 rootDir: Optional[pathlib.PurePath] = None,
+                 refDir: Optional[pathlib.PurePath] = None,
+                 models: Optional[List[Model]] = None,
+                 model_name: Optional[str] = None,
+                 config_path: Optional[pathlib.PurePath] = None,
+                 next_iter_cmd: typing.Optional[typing.List[str]] = None):
+        """
+        See SubmitStudy for documentation.
+
+        """
+
+        super().__init__(config,
+                         name=name,
+                         rootDir=rootDir,
+                         refDir=refDir,
+                         models=models,
+                         model_name=model_name,
+                         config_path=config_path,
+                         next_iter_cmd=next_iter_cmd)
+        # make config_path relative to rootDir
+        self.config_path = pathlib.PurePath(config_path.relative_to(rootDir))
+
+        # add on archive_info
+        # information wanted. Computer name. Time created. OS
+        self.archive_info = dict(platform_uname=platform.uname()._asdict(),
+                                 processor=platform.processor(),
+                                 python_version=platform.python_version())
+        self.update_history("Archive created")
+
+    def dump_config(self, dump_models: bool = False):
+        """
+        Dump the configuration to config_path.
+        Unless dump_models is True  models are not dumped. This done to make code run faster as model.set_status(XX) saves the model.
+        :param dump_models: If True dump all models
+        :return: Nothing
+        """
+        self.dump(self.config_path) #
+        if dump_models:
+            for model in self.model_index.values():
+                model.dump_model()

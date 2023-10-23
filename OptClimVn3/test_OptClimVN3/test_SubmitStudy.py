@@ -423,10 +423,15 @@ class MyTestCase(unittest.TestCase):
         apth = self.submit.archive() # archive everything.
         outdir = self.testDir/'test_archive'
         # and now unarchive it.
-        study = self.submit.unarchive(apth)
-        # and study should be equal to the orig case.
-        ostdy = self.submit.to_study()
-        self.assertEqual(ostdy,study)
+        asubmit = self.submit.unarchive(apth,outdir)
+        sub=copy.deepcopy(self.submit)
+        sub.rootDir = outdir
+        sub.config_path = outdir/sub.config_path.name
+        # need to fix the models too!
+        for k,m in sub.model_index.items():
+            m.config_path = outdir/m.config_path.relative_to(self.submit.rootDir)
+            m.model_dir = outdir/m.model_dir.relative_to(self.submit.rootDir)
+        self.assertEqual(asubmit,sub)
 
 
 if __name__ == '__main__':

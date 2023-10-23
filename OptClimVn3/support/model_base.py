@@ -143,6 +143,11 @@ class journal:
         self.store_output(cmd, output)
         return output
 
+def to_path(self) -> pathlib.Path:
+    """
+    Convert flexi_path to path
+    :return: if possible a path representation of path.
+    """
 
 class model_base:
     """
@@ -182,7 +187,26 @@ class model_base:
         generic_json.obj_to_from_dict.register_TO_VALUE(cls, cls.to_dict)
 
     # class methods
+    _translate_path_var: typing.Optional[
+        typing.Tuple[pathlib.PurePath, pathlib.PurePath]] = None
+    # class variable to hold information on how to translate paths from one file system to another.
 
+    @classmethod
+    def translate_path(cls, path: pathlib.PurePath) -> pathlib.PurePath:
+        """
+        Translate PurePath (coz we have moved files or system). Expect to be used in inherited class from_dict
+        Probably will work if Paths too though care needed with absolute paths
+        :param path - path to be translated.
+        """
+        result = path
+        if cls._translate_path_var:  # want to translate
+            try:  # if we get value error then can't translate path so just return input
+                result = cls._translate_path_var[1] / path.relative_to(cls._translate_path_var[0])
+            except ValueError:
+                pass
+        return result
+
+    # TODO -- find a more elegant way of providing this functionality.
     @classmethod
     def from_dict(cls, dct: dict):
         """
@@ -190,17 +214,36 @@ class model_base:
         but only those that  exist after initialisation.
         Make sure your dct is sensible...This is very generic.
         This is really a factory method
-        :param dct: dict containing information needed by class_name.from_dict()
+        :param dct: dict containing information needed by class_name.from_dict().
+         PurePaths will be converted to Paths if purePath correct for system.
         :return: initialised object
         """
         obj = cls()  # create an default instance
         obj.fill_attrs(dct) # fill in the values.
         return obj
 
+    @classmethod
+    def convert_pure_paths(cls,dct:dict) -> dict:
+        """Convert pure paths (if possible to paths)
+        First apply translate_path to anything thing that is a path
+          then trys to convert a purePath of the right type (Windows on Windows; Posix on anything else) to a path,
+        """
+
+        result = dict()
+        right_pure_path_type = type(pathlib.PurePath())  # (will give Windows/Posix as appropriate)
+        for key,var in dct.items():
+            if isinstance(var, pathlib.PurePath):  # something path like
+                var = cls.translate_path(var)
+                if type(var) == right_pure_path_type:
+                    var = pathlib.Path(var)
+            result[key] = var  # just put it in.
+        return result
+
     def fill_attrs(self,dct:dict):
         """
         Fill in the attributes in self from dct. Used by from_dict.
         :param dct: dict of key value. self.key=value if self.key exists
+
         :return: Nothing. Changes self in place
         """
         for name, value in dct.items():
@@ -212,28 +255,36 @@ class model_base:
     def to_dict(self):
         """
         Convert an object to a dict.
+        To support portability across multiple OS. paths are converted to purePath
         :return: dct
         """
         dct = dict()
         for key, value in vars(self).items():
-            dct[key] = value
+            if isinstance(value,pathlib.Path):
+                dct[key]=pathlib.PurePath(value)
+            else:
+                dct[key] = value
 
         return dct
 
     # class methods.
     @classmethod
-    def load(cls, file: [pathlib.Path,str]):
+    def load(cls, file: [pathlib.Path,str],
+             file_translate:typing.Optional[tuple]= None):
         """
         Load an object configuration from specified file.
         The correct type of object will be returned. 
         :param file path to file to be read in. 
            If str passed then it cls.expand will be ran on it.
+        :param file_translate -- passed tp generic_json.load where it translates files paths.
         :return: Object of appropriate type.
         """
         # read it in.
 
         file = cls.expand(file) # expand user and vars and convert str to path
-        
+
+
+
         with open(file, 'rt') as fp:
             cfg = generic_json.load(fp)
             # this runs all the magic needed to create objects that we know about

@@ -69,13 +69,13 @@ def dumps(obj, *args, **kwargs):
 def load(fp, *args, **kwargs):
     """
     Load object from file-like object fp. Uses json.load() with object_hook set to JSON_Encoder.decode
-    :param fp:
-    :param args:
-    :param kwargs:
+    :param fp: file pointer to read.
+    :param args:args to be passed to json.load
+    :param kwargs:kwards to be passed to json.load
     :return:
     """
-
-    return json.load(fp, *args, object_hook=obj_to_from_dict.decode,**kwargs)
+    decode_obj = obj_to_from_dict() # create decode object
+    return json.load(fp, *args, object_hook=decode_obj.decode,**kwargs) # and use it
 
 
 def loads(s, *args, **kwargs):
@@ -87,8 +87,8 @@ def loads(s, *args, **kwargs):
     :param kwargs: kwargs to be passed to json.loads
     :return: result of json.loads
     """
-
-    return json.loads(s, *args, object_hook=obj_to_from_dict.decode, **kwargs)
+    decode_obj = obj_to_from_dict()
+    return json.loads(s, *args, object_hook=decode_obj.decode, **kwargs)
 
 class obj_to_from_dict:
     """
@@ -100,6 +100,8 @@ class obj_to_from_dict:
                       DataFrame=pd.read_json,
                       Series=lambda x: pd.read_json(x,typ='series'),
                       Path=pathlib.Path,
+                      PurePosixPath=pathlib.PurePosixPath,
+                      PureWindowsPath=pathlib.PureWindowsPath,
                       WindowsPath=pathlib.Path,
                       PosixPath=pathlib.Path,
                       set=set)
@@ -108,10 +110,18 @@ class obj_to_from_dict:
     TO_VALUE = dict(ndarray=np.ndarray.tolist,
                     DataFrame=pd.DataFrame.to_json,
                     Series=pd.Series.to_json,
-                    Path = str,WindowsPath=str,
+                    Path = str,
+                    PurePosixPath=str,
+                    PureWindowsPath=str,
+                    WindowsPath=str,
                     PosixPath=str,
                     set=list) # functions to convert object to serializable object.
     #TODO when needed add support for datetime
+
+    def __init__(self):
+        pass
+
+
 
     @classmethod
     def register_TO_VALUE(cls, mycls,method):
@@ -134,18 +144,18 @@ class obj_to_from_dict:
         name = mycls.__name__
         cls.FROM_VALUE[name] = classmethod
         my_logger.info(f"Registered {classmethod.__qualname__} for {name} in FROM_VALUE")
-    @classmethod
-    def value_to_obj(cls, class_name: str, values: dict | list):
+
+    def value_to_obj(self, class_name: str, values: dict | list):
         """
         Factory method to create object of type class_name using a dict
         :param class_name: Name of the class to create
         :param values: values to use to initialise object with
         :return: object
         """
-        conv_fn = cls.FROM_VALUE.get(class_name)
+        conv_fn = self.FROM_VALUE.get(class_name)
 
-        if conv_fn is None: # failed ot find conversion function.
-            errMsg = f"Did not find {class_name}. Allowed classes are " + " ".join(cls.FROM_VALUE.keys())
+        if conv_fn is None: # failed to find conversion function.
+            errMsg = f"Did not find {class_name}. Allowed classes are " + " ".join(self.FROM_VALUE.keys())
             raise KeyError(errMsg)
 
         obj = conv_fn(values)
@@ -172,8 +182,8 @@ class obj_to_from_dict:
         my_logger.debug(f"Converted {name} to {result} using {method.__name__}")
         return result
 
-    @classmethod
-    def decode(cls, dct):
+
+    def decode(self, dct):
         """
         Decode dct
         :param dct: dict to be decoded.
@@ -201,7 +211,8 @@ class obj_to_from_dict:
             data = dct.pop("object")
             if len(dct) > 0:
                 raise TypeError("Invalid dct")
-            obj = cls.value_to_obj(name, data)
+
+            obj = self.value_to_obj(name, data)
             my_logger.debug(f"Created a {name} object {obj}")
 
             return obj

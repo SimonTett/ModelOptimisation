@@ -30,9 +30,9 @@ type_status = typing.Literal['CREATED', 'INSTANTIATED', 'SUBMITTED',
 class Model(ModelBaseClass, journal):
     # type definitions for attributes.
     name: str
-    config_path: pathlib.Path
-    reference: pathlib.Path
-    model_dir: pathlib.Path
+    config_path: [pathlib.Path|pathlib.PurePath]
+    reference: [pathlib.Path|pathlib.PurePath]
+    model_dir: [pathlib.Path|pathlib.PurePath]
     post_process: dict
     post_process_cmd_script: typing.Optional[list[str]]
     fake: bool
@@ -45,9 +45,9 @@ class Model(ModelBaseClass, journal):
     pp_jid: typing.Optional[str]
     model_jids: list[str]
     submitted_jid: typing.Optional[str]
-    submit_script: pathlib.Path
-    continue_script: pathlib.Path
-    set_status_script: pathlib.Path
+    submit_script: [pathlib.Path|pathlib.PurePath]
+    continue_script: [pathlib.Path|pathlib.PurePath]
+    set_status_script: [pathlib.Path|pathlib.PurePath]
     status: type_status
     simulated_obs: typing.Optional[pd.Series]
     _post_process_input: typing.Optional[str]
@@ -104,14 +104,11 @@ class Model(ModelBaseClass, journal):
         but only those that  exist after initialization.
         This is really a factory method
         :param dct: dict containing information needed by class_name.from_dict()
-        :return: initialised object
+        :return: initialized object
         """
-        obj = cls(name=dct.pop('name'), reference=dct.pop('reference'))  # create an default instance
-        for name, value in dct.items():
-            if hasattr(obj, name):
-                setattr(obj, name, value)
-            else:
-                my_logger.warning(f"Did not setattr for {name} as not in obj")
+        dct2= cls.convert_pure_paths(dct)
+        obj = cls(name=dct2.pop('name'), reference=dct2.pop('reference'))  # create an default instance
+        obj.fill_attrs(dct2)
         return obj
 
     # methods now.
@@ -873,41 +870,49 @@ class Model(ModelBaseClass, journal):
         my_logger.warning(f"Nothing set for {ensMember}. Override in your own model")
 
         return None
+    def to_dict(self):
+        """
+        Convert model to dict. Ready for saving to json
+        :return: dict
+        """
+        dct = super().to_dict()
+        for key in ['config_path','model_dir','reference']: # vars to make into purePaths
+            dct[key] = pathlib.PurePath(dct[key])
+        return dct
 
-    def archive(self, archive: "tarfile.TarFile",
-                root: typing.Optional[pathlib.Path] = None,
+    def archive(self,
+                archive: "tarfile.TarFile",
+                rootDir:pathlib.Path,
                 extra_files: typing.Optional[typing.List[pathlib.Path | str]] = None):
         """
 
         :param archive: archive to be added to
+        :param rootDir: root to which all files (in archive file) are stored relative to.
         :param root: root directory to express all paths relative to.
            If not None, then the name in the archive will be relative to this path.
         :param extra_files -- extra model things to archive. Should be relative to self.model_dir
         :return: None
 
-        Will dump model to disk.
+        Will not dump model to disk and only arhives files that exist.
         Adds self.config_path and self.model_dir / self._post_process_output to archive.
           If your model wants to include more things in the archive, then overload this method.
           If you call it first using the super method then you just need to add you own stuff to archive!
 
         Example:
         with tarfile.open(archive_file, "w") as archive:
-            model.archive(root=pathlib.Path("my_root_dir")
+            model.archive(rootDir=pathlib.Path("my_root_dir")
         """
         if extra_files is None:
             extra_files = []
-        self.dump_model()  # dump model state to disk.
-        # make paths for archive
-        paths_to_archive = ([self.config_path, self.model_dir / self._post_process_output] +
-                            [self.model_dir / p for p in extra_files])
+
+        paths_to_archive = [self.config_path, self.model_dir / self._post_process_output] + [self.model_dir / p for p in extra_files]
+
         for path in paths_to_archive:
-            if root is None:
-                arc_path = path
-            else:
-                arc_path = path.relative_to(root)
+            arc_path = path.relative_to(rootDir)
             if path.exists():
                 archive.add(path, arc_path)  # archive the file with name relative to root
                 my_logger.debug(f"Added {path} to archive as {arc_path}")
 
-
 Model.register_class(Model)  # register ourselves!
+
+

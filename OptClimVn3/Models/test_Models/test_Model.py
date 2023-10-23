@@ -818,8 +818,9 @@ class ModelTestCase(unittest.TestCase):
         # create archive file.
         archive_file = self.testDir/'test_archive.tar'
         pp_file = self.model.model_dir / self.model._post_process_output
+        self.model.dump_model()
         with tarfile.open(archive_file, "w",dereference=True) as archive:
-            self.model.archive(archive,self.testDir) # archive the model
+            self.model.archive(archive,self.testDir,extra_files=[self.model._post_process_output]) # archive the model
 
         # now can try and read it.
         expected_names = [p.relative_to(self.testDir) for p in [self.model.config_path]]#,]]

@@ -240,7 +240,7 @@ if algorithmName in ['RUNOPTIMISED', 'JACOBIAN']:
 else:
     wantCost = True
 finalConfig = None  # so we have something!
-while True:  # loop indefinetly so can have fake_fn. This really to test code/algorithm.
+while True:  # loop indefinitely so can have fake_fn. This really to test code/algorithm.
     try:  # run an algorithm iteration.
         np.random.seed(123456)  # init RNG though probably should go to the runXXX methods.
         if algorithmName == 'DFOLS':
@@ -289,8 +289,8 @@ while True:  # loop indefinetly so can have fake_fn. This really to test code/al
 rSUBMIT.dump_config()  # dump the configuration.
 if finalConfig is not None:  # have a finalConfig. If so save it. We could not have it if dry_run or read_only set.
     finalConfig.save(final_JSON_file)
-    if monitor:
-        finalConfig.plot(monitorFile=monitor_file)  # plot "std plot"
 
+if monitor:
+    rSUBMIT.plot(monitorFile=monitor_file)  # plot "std plot"
 if archive:
     rSUBMIT.archive(extra_paths=[final_JSON_file,monitor_file])
