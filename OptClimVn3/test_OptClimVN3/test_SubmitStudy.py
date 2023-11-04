@@ -433,6 +433,15 @@ class MyTestCase(unittest.TestCase):
             m.model_dir = outdir/m.model_dir.relative_to(self.submit.rootDir)
         self.assertEqual(asubmit,sub)
 
+        # read in an archive generated on Eddie -- tests that remapping happens..
+        pth = Model.expand("$OPTCLIMTOP/OptClimVn3/test_data/dfols_r.tar")
+        outdir = self.testDir/'test_other_machine'
+        submit = self.submit.unarchive(pth,outdir)
+        self.assertIsInstance(submit,SubmitStudy.SubmitStudy) # should be SubmitStudy
+        cost = submit.cost() # and cost should have 51 elements.
+        self.assertEqual(len(cost),51)
+
+
 
 if __name__ == '__main__':
     unittest.main()

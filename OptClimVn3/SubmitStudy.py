@@ -296,9 +296,11 @@ class SubmitStudy(Study, model_base, journal):
             decode_obj = generic_json.obj_to_from_dict()
             root_dir = decode_obj.decode(root_dir)
             model_base._translate_path_var = [root_dir,config_path.parent] # setup for translation.
-
+            model_base._convert_path2pure = True # convert paths to pure paths.
+            # QUITE ugly to use class variables to translate. Needed because can't pass args into from_dict
         obj = cls.load(config_path)
         model_base._translate_path_var = None # reset translation to None
+        model_base._convert_path2pure = False # reset conversion to False.
         if not isinstance(obj, SubmitStudy):
             my_logger.warning(f"Expected instance of SubmitStudy got {type(obj)}")
 
@@ -427,7 +429,7 @@ class SubmitStudy(Study, model_base, journal):
 
         # create the SubmitStudy object
         obj = cls(config)
-        obj.fill_attrs(dct)  # fill in the rest of the objects attributes
+        obj.fill_attrs(dct,convert_pure_paths=True)  # fill in the rest of the objects attributes. Converting pure path
 
         # load up models.
         model_index = dict()

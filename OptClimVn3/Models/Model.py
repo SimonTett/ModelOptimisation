@@ -168,7 +168,13 @@ class Model(ModelBaseClass, journal):
             config_path = model_dir / (self.name + '.mcfg')
 
         self.config_path = config_path
-        if (model_dir == reference) or (model_dir.exists() and reference.samefile(model_dir)):
+        #TODO -- when bringing in from another system. reference may not exist
+        # It probably should be a PurePath so there is a problem with convert_
+        # Check model_dir is not a reference.
+        if (
+                isinstance(reference,pathlib.Path) and
+                ((model_dir == reference) or
+                (model_dir.exists()  and reference.samefile(model_dir)))):
             raise ValueError(f"Model_dir {model_dir} is the same as reference {reference}")
 
         self.reference = reference
@@ -212,8 +218,8 @@ class Model(ModelBaseClass, journal):
         self.pp_jid = None  # post-processing job id
         self.submitted_jid = None  # job id of last submitted model submitted.
         # setup submit and continue script
-        self.submit_script = pathlib.Path("submit.sh")
-        self.continue_script = pathlib.Path("continue.sh")
+        self.submit_script = pathlib.PurePath("submit.sh")
+        self.continue_script = pathlib.PurePath("continue.sh")
         # setup path to where script that sets status is.
         root = self.expand("$OPTCLIMTOP/OptClimVn3")
         script_pth = root / "scripts/set_model_status.py"

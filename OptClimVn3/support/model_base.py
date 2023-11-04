@@ -12,10 +12,12 @@ import generic_json
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 
+
 class journal:
     """
     Provide history information, ability to run commands and record output.
     """
+
     @staticmethod
     def now():
         """
@@ -53,7 +55,7 @@ class journal:
         :return: last history  or None if no history.
         """
 
-        if hasattr(self,'_history') and (len(self._history) > 0):
+        if hasattr(self, '_history') and (len(self._history) > 0):
             last_hist_key = list(self._history.keys())[-1]
         else:
             last_hist_key = None
@@ -65,7 +67,7 @@ class journal:
          Print out history
          :return:
          """
-        if not hasattr(self,'_history'):
+        if not hasattr(self, '_history'):
             print("No History")
         for time, messages in self._history.items():
             str_msg = '\n'.join(messages)
@@ -128,9 +130,9 @@ class journal:
         except subprocess.CalledProcessError as e:
             print(cmd_report)
             print("Failed")
-            print("stdout\n",e.output)
-            print("="*60)
-            print("stderr\n",e.stderr)
+            print("stdout\n", e.output)
+            print("=" * 60)
+            print("stderr\n", e.stderr)
             raise
         except FileNotFoundError as e:  # cmd not found
             raise subprocess.CalledProcessError(
@@ -143,11 +145,13 @@ class journal:
         self.store_output(cmd, output)
         return output
 
+
 def to_path(self) -> pathlib.Path:
     """
     Convert flexi_path to path
     :return: if possible a path representation of path.
     """
+
 
 class model_base:
     """
@@ -170,7 +174,6 @@ class model_base:
         Write object (as json) to config_path.
     """
 
-
     def __init_subclass__(cls, *args, **kwargs):
         # obscure python. See https://peps.python.org/pep-0487/#new-ways-of-using-classes
         """
@@ -189,7 +192,9 @@ class model_base:
     # class methods
     _translate_path_var: typing.Optional[
         typing.Tuple[pathlib.PurePath, pathlib.PurePath]] = None
+
     # class variable to hold information on how to translate paths from one file system to another.
+    _convert_path2pure:bool = False # class variable to convert paths to purePaths on readin. Supports "old" structures.
 
     @classmethod
     def translate_path(cls, path: pathlib.PurePath) -> pathlib.PurePath:
@@ -202,6 +207,9 @@ class model_base:
         if cls._translate_path_var:  # want to translate
             try:  # if we get value error then can't translate path so just return input
                 result = cls._translate_path_var[1] / path.relative_to(cls._translate_path_var[0])
+                # verify file exists. If not leave it alone
+                if not pathlib.Path(result).exists():
+                    result = path
             except ValueError:
                 pass
         return result
@@ -215,15 +223,14 @@ class model_base:
         Make sure your dct is sensible...This is very generic.
         This is really a factory method
         :param dct: dict containing information needed by class_name.from_dict().
-         PurePaths will be converted to Paths if purePath correct for system.
-        :return: initialised object
+         pure_paths will be converted -- see fill_attrs.
         """
         obj = cls()  # create an default instance
-        obj.fill_attrs(dct) # fill in the values.
+        obj.fill_attrs(dct, convert_pure_paths=True)  # fill in the values.
         return obj
 
     @classmethod
-    def convert_pure_paths(cls,dct:dict) -> dict:
+    def convert_pure_paths(cls, dct: dict) -> dict:
         """Convert pure paths (if possible to paths)
         First apply translate_path to anything thing that is a path
           then trys to convert a purePath of the right type (Windows on Windows; Posix on anything else) to a path,
@@ -231,21 +238,26 @@ class model_base:
 
         result = dict()
         right_pure_path_type = type(pathlib.PurePath())  # (will give Windows/Posix as appropriate)
-        for key,var in dct.items():
+        for key, var in dct.items():
             if isinstance(var, pathlib.PurePath):  # something path like
+                if cls._convert_path2pure and isinstance(var,pathlib.Path): # convert path to (local) purePath
+                    var = pathlib.PurePath(var) # purify path.
                 var = cls.translate_path(var)
-                if type(var) == right_pure_path_type:
+                # path is of correct type (after conversion) and exists -- make it a path!
+                if (type(var) == right_pure_path_type) and (pathlib.Path(var).exists()):
                     var = pathlib.Path(var)
-            result[key] = var  # just put it in.
+            result[key] = var  # just store in in the result.
         return result
 
-    def fill_attrs(self,dct:dict):
+    def fill_attrs(self, dct: dict, convert_pure_paths: bool = False):
         """
         Fill in the attributes in self from dct. Used by from_dict.
         :param dct: dict of key value. self.key=value if self.key exists
-
+        :param convert_pure_paths: If True call convert_pure_paths on the dict.
         :return: Nothing. Changes self in place
         """
+        if convert_pure_paths:
+            dct = self.convert_pure_paths(dct)
         for name, value in dct.items():
             if hasattr(self, name):
                 setattr(self, name, value)
@@ -260,8 +272,8 @@ class model_base:
         """
         dct = dict()
         for key, value in vars(self).items():
-            if isinstance(value,pathlib.Path):
-                dct[key]=pathlib.PurePath(value)
+            if isinstance(value, pathlib.Path):
+                dct[key] = pathlib.PurePath(value)
             else:
                 dct[key] = value
 
@@ -269,21 +281,17 @@ class model_base:
 
     # class methods.
     @classmethod
-    def load(cls, file: [pathlib.Path,str],
-             file_translate:typing.Optional[tuple]= None):
+    def load(cls, file: [pathlib.Path, str]):
         """
         Load an object configuration from specified file.
         The correct type of object will be returned. 
         :param file path to file to be read in. 
            If str passed then it cls.expand will be ran on it.
-        :param file_translate -- passed tp generic_json.load where it translates files paths.
         :return: Object of appropriate type.
         """
         # read it in.
 
-        file = cls.expand(file) # expand user and vars and convert str to path
-
-
+        file = cls.expand(file)  # expand user and vars and convert str to path
 
         with open(file, 'rt') as fp:
             cfg = generic_json.load(fp)
@@ -292,8 +300,6 @@ class model_base:
             my_logger.debug(f"{k}: {v} ")
         my_logger.info(f"Read configuration from {file}")
         return cfg
-
-
 
     def __eq__(self, other):
         """

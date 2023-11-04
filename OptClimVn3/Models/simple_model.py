@@ -34,7 +34,7 @@ class simple_model(Model):
             self.StudyConfig_path = study.config.fileName()  # store the path to the config.
             if not self.StudyConfig_path.is_absolute(): # not absolute so make it so
                 self.StudyConfig_path = pathlib.Path.cwd()/self.StudyConfig_path
-        self.submit_script = pathlib.Path('run_simple_model.py')
+        self.submit_script = pathlib.PurePath('run_simple_model.py')
         self.continue_script = self.submit_script # continue is just submit
 
     def create_cmd(self, status:str, modifystr:str,indent:int=0) -> typing.List[str]:
