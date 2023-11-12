@@ -313,7 +313,7 @@ class Study:
         # get a bunch of annoying messages from matplotlib so turn them off...
         logging.getLogger('matplotlib.font_manager').disabled = True
         cost = self.cost()
-        if len(cost) == 0:
+        if (cost is None) or (len(cost) == 0):
             return  # nothing to plot
         fig, ax = plt.subplots(3, 1, num=figName, figsize=[8.3, 11.7], sharex='col', clear=True)
         (costAx, paramAx, obsAx) = ax  # name the axis .
