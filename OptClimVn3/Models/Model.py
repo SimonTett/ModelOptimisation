@@ -902,7 +902,7 @@ class Model(ModelBaseClass, journal):
         :param extra_files -- extra model things to archive. Should be relative to self.model_dir
         :return: None
 
-        Will not dump model to disk and only arhives files that exist.
+        Dump models to tempdir  and only archives files that exist.
         Adds self.config_path and self.model_dir / self._post_process_output to archive.
           If your model wants to include more things in the archive, then overload this method.
           If you call it first using the super method then you just need to add you own stuff to archive!

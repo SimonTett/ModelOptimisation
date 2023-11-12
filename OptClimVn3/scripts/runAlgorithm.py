@@ -119,7 +119,7 @@ my_logger = genericLib.setup_logging(
 from Model import  Model # root type for all Models.
 import optclim_exceptions
 import runSubmit
-
+import archive_study
 if args.dir is not None:
     rootDir = Model.expand(args.dir)  # directory defined so set rootDir
 else:  # set rootDir to cwd/name
@@ -293,4 +293,7 @@ if finalConfig is not None:  # have a finalConfig. If so save it. We could not h
 if monitor:
     rSUBMIT.plot(monitorFile=monitor_file)  # plot "std plot"
 if archive:
-    rSUBMIT.archive(extra_paths=[final_JSON_file,monitor_file])
+    archive = archive_study.archive_study()
+    archive.archive(rSUBMIT,
+                    extra_paths=[final_JSON_file.relative_to(rootDir),
+                                 monitor_file.relative_to(rootDir)])

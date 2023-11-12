@@ -149,3 +149,21 @@ class simple_model(Model):
         """
         return super().perturb(parameters=dict(fail_probability=0.0))
 
+
+    def archive(self,
+                archive: "tarfile.TarFile",
+                rootDir: pathlib.Path,
+                extra_files: typing.Optional[typing.List[typing.Union[pathlib.Path,str]]] = None):
+        
+        if extra_files is None:
+            extra_files = []
+            
+
+        # generate list of extra files that are to be archived.
+        files_to_archive = extra_files + ["params.json",
+                                          "run_simple_model.py",
+                                          "model_output.json",
+                                          "input.json"]
+
+        return super().archive(archive,rootDir, 
+                               extra_files=files_to_archive)
