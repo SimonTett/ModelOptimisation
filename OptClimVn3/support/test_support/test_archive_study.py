@@ -67,12 +67,12 @@ class TestArchive(unittest.TestCase):
         self.assertEqual(asubmit,sub)
 
         # read in an archive generated on Eddie -- tests that remapping happens..
-        pth = Model.expand("$OPTCLIMTOP/OptClimVn3/test_data/dfols_r.tar")
+        pth = Model.expand("$OPTCLIMTOP/OptClimVn3/test_data/archive_dfols_r.tar")
         outdir = self.testDir/'test_other_machine'
         arc,submit = self.arc.extract_archive(pth,outdir)
         self.assertIsInstance(submit,SubmitStudy) # should be SubmitStudy
-        cost = submit.cost() # and cost should have 51 elements.
-        self.assertEqual(len(cost),51)
+        cost = submit.cost() # and cost should have 65 elements.
+        self.assertEqual(len(cost),65)
 
 
 
