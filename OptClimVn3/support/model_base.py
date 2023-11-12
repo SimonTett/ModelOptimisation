@@ -281,13 +281,15 @@ class model_base:
 
     # class methods.
     @classmethod
-    def load(cls, file: [pathlib.Path, str]):
+    def load(cls, file: typing.Union[pathlib.Path, str],
+             check_types:typing.Optional[typing.List]=None):
         """
         Load an object configuration from specified file.
         The correct type of object will be returned. 
-        :param file path to file to be read in. 
+        :param check_types: types to be checked using isintance. If type not as expected error will be triggered
+        :param file path to file to be read in.
            If str passed then it cls.expand will be ran on it.
-        :return: Object of appropriate type.
+        :return: Object of an appropriate type.
         """
         # read it in.
 
@@ -295,10 +297,16 @@ class model_base:
 
         with open(file, 'rt') as fp:
             cfg = generic_json.load(fp)
-            # this runs all the magic needed to create objects that we know about
+            # this runs all the magic needed to create objects that we know about.
+        if check_types is not None:
+            logging.debug("Checking types against %s", check_types)
+            if not isinstance(cfg,tuple(check_types)):
+                raise ValueError(f"{type(cfg)} is not one of {check_types}")
+
         for k, v in vars(cfg).items():  # debug info.
             my_logger.debug(f"{k}: {v} ")
         my_logger.info(f"Read configuration from {file}")
+
         return cfg
 
     def __eq__(self, other):
@@ -352,6 +360,8 @@ class model_base:
             result = generic_json.dump(self, fp, indent=2)  # JSON encoder does the magic needed
         my_logger.info(f"Wrote to {config_path}")
         return result
+
+
 
     @classmethod
     def expand(cls, filestr: typing.Optional[str]) -> typing.Optional[pathlib.Path]:

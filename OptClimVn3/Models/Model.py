@@ -8,7 +8,9 @@ import logging
 import os
 import pathlib
 import shutil
+import tarfile
 import typing
+import tempfile
 
 import numpy as np
 import pandas as pd
@@ -30,9 +32,9 @@ type_status = typing.Literal['CREATED', 'INSTANTIATED', 'SUBMITTED',
 class Model(ModelBaseClass, journal):
     # type definitions for attributes.
     name: str
-    config_path: [pathlib.Path|pathlib.PurePath]
-    reference: [pathlib.Path|pathlib.PurePath]
-    model_dir: [pathlib.Path|pathlib.PurePath]
+    config_path: [pathlib.Path | pathlib.PurePath]
+    reference: [pathlib.Path | pathlib.PurePath]
+    model_dir: [pathlib.Path | pathlib.PurePath]
     post_process: dict
     post_process_cmd_script: typing.Optional[list[str]]
     fake: bool
@@ -45,9 +47,9 @@ class Model(ModelBaseClass, journal):
     pp_jid: typing.Optional[str]
     model_jids: list[str]
     submitted_jid: typing.Optional[str]
-    submit_script: [pathlib.Path|pathlib.PurePath]
-    continue_script: [pathlib.Path|pathlib.PurePath]
-    set_status_script: [pathlib.Path|pathlib.PurePath]
+    submit_script: [pathlib.Path | pathlib.PurePath]
+    continue_script: [pathlib.Path | pathlib.PurePath]
+    set_status_script: [pathlib.Path | pathlib.PurePath]
     status: type_status
     simulated_obs: typing.Optional[pd.Series]
     _post_process_input: typing.Optional[str]
@@ -106,7 +108,7 @@ class Model(ModelBaseClass, journal):
         :param dct: dict containing information needed by class_name.from_dict()
         :return: initialized object
         """
-        dct2= cls.convert_pure_paths(dct)
+        dct2 = cls.convert_pure_paths(dct)
         obj = cls(name=dct2.pop('name'), reference=dct2.pop('reference'))  # create an default instance
         obj.fill_attrs(dct2)
         return obj
@@ -168,13 +170,13 @@ class Model(ModelBaseClass, journal):
             config_path = model_dir / (self.name + '.mcfg')
 
         self.config_path = config_path
-        #TODO -- when bringing in from another system. reference may not exist
+        # TODO -- when bringing in from another system. reference may not exist
         # It probably should be a PurePath so there is a problem with convert_
         # Check model_dir is not a reference.
         if (
-                isinstance(reference,pathlib.Path) and
+                isinstance(reference, pathlib.Path) and
                 ((model_dir == reference) or
-                (model_dir.exists()  and reference.samefile(model_dir)))):
+                 (model_dir.exists() and reference.samefile(model_dir)))):
             raise ValueError(f"Model_dir {model_dir} is the same as reference {reference}")
 
         self.reference = reference
@@ -876,19 +878,20 @@ class Model(ModelBaseClass, journal):
         my_logger.warning(f"Nothing set for {ensMember}. Override in your own model")
 
         return None
+
     def to_dict(self):
         """
         Convert model to dict. Ready for saving to json
         :return: dict
         """
         dct = super().to_dict()
-        for key in ['config_path','model_dir','reference']: # vars to make into purePaths
+        for key in ['config_path', 'model_dir', 'reference']:  # vars to make into purePaths
             dct[key] = pathlib.PurePath(dct[key])
         return dct
 
     def archive(self,
-                archive: "tarfile.TarFile",
-                rootDir:pathlib.Path,
+                archive: tarfile.TarFile,
+                rootDir: pathlib.Path,
                 extra_files: typing.Optional[typing.List[pathlib.Path | str]] = None):
         """
 
@@ -910,8 +913,16 @@ class Model(ModelBaseClass, journal):
         """
         if extra_files is None:
             extra_files = []
+        # dump the model. TODO: Make dump take a fp or a path. If it has a fileptr then just write to it.
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # dump the model (but no change to internal values)
+            tmpfile = pathlib.Path(tmpdir) / self.config_path.name
+            self.dump(tmpfile)
+            arc_path = self.config_path.relative_to(rootDir)
+            archive.add(tmpfile, arc_path)
+            my_logger.debug(f"Added {self} to archive as {arc_path}")
 
-        paths_to_archive = [self.config_path, self.model_dir / self._post_process_output] + [self.model_dir / p for p in extra_files]
+        paths_to_archive = [self.model_dir / self._post_process_output] + [self.model_dir / p for p in extra_files]
 
         for path in paths_to_archive:
             arc_path = path.relative_to(rootDir)
@@ -919,6 +930,5 @@ class Model(ModelBaseClass, journal):
                 archive.add(path, arc_path)  # archive the file with name relative to root
                 my_logger.debug(f"Added {path} to archive as {arc_path}")
 
+
 Model.register_class(Model)  # register ourselves!
-
-

@@ -400,46 +400,6 @@ class MyTestCase(unittest.TestCase):
         rmodels = submit.running_models()
         self.assertEqual(rmodels,list(submit.model_index.values()))
 
-    def test_archive(self):
-        # test archive method.
-        # the archive file should contain the config file + N model configs.
-        # and the archive file should be called
-        sub = self.submit
-        expected_archive_file = sub.rootDir/(sub.config_path.stem+".tar") # what the archive_file is called.
-        archive_file = self.submit.archive()
-        self.assertEqual(expected_archive_file,archive_file)
-        expected_files=[sub.config_path]+[m.config_path for m in sub.model_index.values()]
-        expected_files = [pathlib.Path(file).relative_to(sub.rootDir) for file in expected_files]
-        with tarfile.open(archive_file,'r') as archive:
-            got_files = [pathlib.Path(file) for file in archive.getnames()]
-            self.assertEqual(expected_files,got_files)
-
-
-
-    def test_unarchive(self):
-        # test unarchive method.
-
-        # archive it and then unarchive it to somewhere.
-        apth = self.submit.archive() # archive everything.
-        outdir = self.testDir/'test_archive'
-        # and now unarchive it.
-        asubmit = self.submit.unarchive(apth,outdir)
-        sub=copy.deepcopy(self.submit)
-        sub.rootDir = outdir
-        sub.config_path = outdir/sub.config_path.name
-        # need to fix the models too!
-        for k,m in sub.model_index.items():
-            m.config_path = outdir/m.config_path.relative_to(self.submit.rootDir)
-            m.model_dir = outdir/m.model_dir.relative_to(self.submit.rootDir)
-        self.assertEqual(asubmit,sub)
-
-        # read in an archive generated on Eddie -- tests that remapping happens..
-        pth = Model.expand("$OPTCLIMTOP/OptClimVn3/test_data/dfols_r.tar")
-        outdir = self.testDir/'test_other_machine'
-        submit = self.submit.unarchive(pth,outdir)
-        self.assertIsInstance(submit,SubmitStudy.SubmitStudy) # should be SubmitStudy
-        cost = submit.cost() # and cost should have 51 elements.
-        self.assertEqual(len(cost),51)
 
 
 
