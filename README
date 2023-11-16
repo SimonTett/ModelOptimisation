@@ -1,4 +1,4 @@
-
+ 
 tools/runAlgorithm.py is a python script that runs an optimisation or other algorithm-- it is controlled by a json file
 see Configurations/example.json or Configurations/example_dfols.json
 

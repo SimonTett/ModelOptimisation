@@ -24,7 +24,11 @@
       "init.random_initial_directions_comment": "If true perturb in random directions. If false perturb along co-ordinate axis.",
       "init.run_in_parallel": true,
       "init.run_in_parallel_comment": "Run initial cases in parallel",
+<<<<<<< Updated upstream
       "noise.additive_noise_level": 21.0,
+=======
+      "noise.additive_noise_level": 2.0,
+>>>>>>> Stashed changes
       "noise.additive_noise_level_comment": "Estimate of noise in cost function. Used in termination -- nb cost fn is sum of squares **not** sum of squares/nObs. ",
       "logging.save_diagnostic_info": true,
       "logging.save_diagnostic_info_comment": "Save logging info",

@@ -17,6 +17,10 @@ import numpy as np
 import xarray
 
 import json
+<<<<<<< Updated upstream
+=======
+import xarray as xr
+>>>>>>> Stashed changes
 # import Ngl
 
 # for moleculr wts.
@@ -242,9 +246,15 @@ def genProcess(dataset, land_mask, latitude_coord=None):
     # set up the data to be meaned. Because of xarray's use of dask no loading happens till
     # data actually processed (below)
     #print(dataset.hyam)
+<<<<<<< Updated upstream
     delta_p = model_delta_p(dataset.PS,
                             dataset.hyam,
                             dataset.hybm) #liangwj
+=======
+    # delta_p = model_delta_p(dataset.PS,
+    #                         # dataset.hyam,
+    #                         # dataset.hybm) #liangwj
+>>>>>>> Stashed changes
     SO2_scale = mole_wt['SO2'] / mole_wt['S'] # convert from S to SO2
 
     #============liagnwj==============
@@ -252,6 +262,11 @@ def genProcess(dataset, land_mask, latitude_coord=None):
     #                     dataset.PS, 2, 1000, 1, False)
     # print(arrayinterp.shape)
     # ============liagnwj==============
+<<<<<<< Updated upstream
+=======
+    print(land_mask.shape)
+    print(dataset[lookup_long['Temperature at 2m height']].shape)
+>>>>>>> Stashed changes
 
     #condition = (land_mask > 0) & (land_mask <= 1)
     #result = dataset[lookup_long['Temperature at 2m height']] * np.where(condition, land_mask, np.nan)
@@ -305,7 +320,11 @@ def genProcess(dataset, land_mask, latitude_coord=None):
 #
     }
 
+<<<<<<< Updated upstream
     process['netflux'] = process['INSW'] - process['RSR'] - process['OLR']
+=======
+    process['netflux'] =process['INSW']#process['INSW'] - process['RSR'] - process['OLR']
+>>>>>>> Stashed changes
     #dataset[lookup_long['Short wave net flux at top of atmosphere']]-process['OLR']
     #process['INSW'] - process['RSR'] - process['OLR']
     #process['RSRC'] = process['INSW'] - process['RSRC']
@@ -329,7 +348,15 @@ def means(dataArray, name, latitude_coord=None):
     if latitude_coord is None:
         latitude_coord, lon, vert = guess_lat_lon_vert_names(dataArray)
 
+<<<<<<< Updated upstream
     wt = np.cos(np.deg2rad(dataArray[latitude_coord]))  # simple cos lat weighting.
+=======
+    #wt = np.cos(np.deg2rad(dataArray[latitude_coord]))  # simple cos lat weighting.
+    ds1 = xr.open_dataset('/BIGDATA2/sysu_atmos_wjliang_1/FG3/run_imp/6+80_nonnudging20/nonnudging1/atm/hist/gw.nc')
+    wt = ds1.gw[:]
+    wt = wt.reindex_like(dataArray)
+    #print(wt.shape,111)
+>>>>>>> Stashed changes
     # constraints and names for regions.
     constraints = {
         'GLOBAL': None,
@@ -405,6 +432,7 @@ def do_work():
         rootdir = pathlib.Path.cwd()/path#pathlib.Path("/BIGDATA2/sysu_atmos_wjliang_1/FG3/run/amip1d_nudging/atm/hist")#self.model_dir  #pathlib.Path.cwd()/path   #liangwj
     else:
         rootdir = pathlib.Path(args.dir)
+<<<<<<< Updated upstream
     files = list(rootdir.glob('*gamil*.nc'))#[3:] #从201101开始
     files_1=[str(i) for i in files]
     # print(str(files[0])[-10:-6])
@@ -414,11 +442,39 @@ def do_work():
     sorted_file_paths = sorted(files_1, key=lambda x: extract_year_month(x))
     files=[pathlib.Path(i) for i in sorted_file_paths][3:]
     # ================liangwj================
+=======
+
+    # year_month=['2011-01','2011-02','2011-03','2011-04','2011-05','2011-06','2011-07','2011-08','2011-09','2011-10','2011-11','2011-12']
+    # files = list(rootdir.glob('*gamil*.nc'))#[3:] #从201101开始
+    # files_0=[str(i) for i in files]
+    # files_1=[]
+    # for ii in year_month:
+    #     for jj in files_0:
+    #         if ii in jj:
+    #             files_1.append(jj)
+
+    files_1 = []
+    for iii in range(72,72+12):
+        #files_1 = []
+        files_1.append("%s/outfile%i.nc"%(rootdir,iii))
+
+
+    #================liangwj================
+    # sorted_file_paths = sorted(files_1, key=lambda x: extract_year_month(x))
+    # files=[pathlib.Path(i) for i in sorted_file_paths][3:]
+    # ================liangwj================
+    # print(files,len(files))
+    files=[pathlib.Path(i) for i in files_1]
+>>>>>>> Stashed changes
     print(files,len(files))
 
 
     #print(files,"datafiles in progress")
+<<<<<<< Updated upstream
       
+=======
+
+>>>>>>> Stashed changes
     mask_file = options['mask_file']
     mask_file = pathlib.Path(os.path.expandvars(mask_file)).expanduser()
     mask_name = options['mask_name']
@@ -450,11 +506,23 @@ def do_work():
     land_mask = xarray.load_dataset(mask_file)[mask_name].squeeze()  # land/sea mask
     #print(land_mask)
     latitude_coord = options.get('latitude_coord', None)  #liangwj
+<<<<<<< Updated upstream
     #print(latitude_coord)
     # code below does not work when data is on my M drive on my laptop...
     dataset = xarray.open_mfdataset(files,engine="netcdf4",parallel=True).sortby('time')  #liangwj  sortby is really important as want co-ords to be monotonic
     dataset = dataset.sel(time=slice(start_time, end_time))
 
+=======
+    # print(latitude_coord)
+    # code below does not work when data is on my M drive on my laptop...
+    #dataset11 = [xarray.open_dataset(file, engine="netcdf4") for file in files]
+    #dataset = xarray.concat(dataset11, 'time')
+    #dataset = xarray.concat(dataset, 'time')
+    dataset = xarray.open_mfdataset(files,engine="netcdf4",parallel=True).sortby('time')  #liangwj  sortby is really important as want co-ords to be monotonic
+    # print(dataset)
+    dataset = dataset.sel(time=slice(start_time, end_time))
+    # print(dataset)
+>>>>>>> Stashed changes
     process = genProcess(dataset, land_mask, latitude_coord=latitude_coord)
 
     # now to process all the data making output.
@@ -484,6 +552,10 @@ def do_work():
 
     # now to write the data
     with open(output_file, 'w') as fp:
+<<<<<<< Updated upstream
+=======
+    #with open(output_file+"_%i"%(iii+1), 'w') as fp:
+>>>>>>> Stashed changes
         json.dump(results, fp, indent=2)
 
 

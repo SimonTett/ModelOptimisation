@@ -89,6 +89,7 @@ class myModel(Model):
 
 
 # myModel.update_from_file(myModel.expand("$OPTCLIMTOP/OptClimVn3/Models/tests/example_Parameters.csv"), duplicate=False)
+<<<<<<< Updated upstream
 
 #++++++++++++liangwj+++++++++++
 path_to_file = "/BIGDATA2/sysu_atmos_wjliang_1/FG3/newModelOptimisation/OptClimVn3/Models/parameter_config/example_Parameters.csv"
@@ -98,6 +99,17 @@ root_pth  = "/BIGDATA2/sysu_atmos_wjliang_1/FG3/newModelOptimisation/OptClimVn3"
 config = StudyConfig.readConfig("/BIGDATA2/sysu_atmos_wjliang_1/FG3/newModelOptimisation/OptClimVn3/configurations/dfols14param_opt3.json")
 #++++++++++++liangwj+++++++++++
 
+=======
+
+#++++++++++++liangwj+++++++++++
+path_to_file = "/BIGDATA2/sysu_atmos_wjliang_1/FG3/newModelOptimisation/OptClimVn3/Models/parameter_config/example_Parameters.csv"
+with open_as_file(path_to_file) as pth:
+    myModel.update_from_file(pth)
+root_pth  = "/BIGDATA2/sysu_atmos_wjliang_1/FG3/newModelOptimisation/OptClimVn3"
+config = StudyConfig.readConfig("/BIGDATA2/sysu_atmos_wjliang_1/FG3/newModelOptimisation/OptClimVn3/configurations/dfols14param_opt3.json")
+#++++++++++++liangwj+++++++++++
+
+>>>>>>> Stashed changes
 # traverse = importlib.resources.files("Models")
 # with importlib.resources.as_file(traverse.joinpath("parameter_config/example_Parameters.csv")) as pth:
 #     myModel.update_from_file(pth)

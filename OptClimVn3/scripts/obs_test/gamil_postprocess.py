@@ -15,6 +15,10 @@ import re
 import typing
 import numpy as np
 import xarray
+<<<<<<< Updated upstream
+=======
+import xarray as xr
+>>>>>>> Stashed changes
 
 import json
 # import Ngl
@@ -329,7 +333,14 @@ def means(dataArray, name, latitude_coord=None):
     if latitude_coord is None:
         latitude_coord, lon, vert = guess_lat_lon_vert_names(dataArray)
 
+<<<<<<< Updated upstream
     wt = np.cos(np.deg2rad(dataArray[latitude_coord]))  # simple cos lat weighting.
+=======
+    #wt = np.cos(np.deg2rad(dataArray[latitude_coord]))  # simple cos lat weighting.
+    ds1 = xr.open_dataset('/BIGDATA2/sysu_atmos_wjliang_1/FG3/run_imp/6+80_nonnudging20/nonnudging1/atm/hist/gw.nc')
+    wt = ds1.gw[:]
+    wt = wt.reindex_like(dataArray)
+>>>>>>> Stashed changes
     # constraints and names for regions.
     constraints = {
         'GLOBAL': None,
@@ -406,8 +417,21 @@ def do_work():
         rootdir = pathlib.Path("/BIGDATA2/sysu_atmos_wjliang_1/FG3/run")/cwd.name/path #pathlib.Path("/BIGDATA2/sysu_atmos_wjliang_1/FG3/run/amip1d_nudging/atm/hist")#self.model_dir  #pathlib.Path.cwd()/path   #liangwj
     else:
         rootdir = pathlib.Path(args.dir)
+<<<<<<< Updated upstream
     files = list(rootdir.glob('*gamil.h0.*.nc'))#[3:] #从201101开始
     files_1=[str(i) for i in files]
+=======
+
+    year_month=['2011-01','2011-02','2011-03','2011-04','2011-05','2011-06','2011-07','2011-08','2011-09','2011-10','2011-11','2011-12']
+    files = list(rootdir.glob('*gamil.h0.*.nc'))#[3:] #从201101开始
+    files_0=[str(i) for i in files]
+    files_1=[]
+    for ii in year_month:
+        for jj in files_0:
+            if ii in jj:
+                files_1.append(jj)
+
+>>>>>>> Stashed changes
     # print(str(files[0])[-10:-6])
     #print(files_1)
 
@@ -430,7 +454,11 @@ def do_work():
     start_time = options['start_time'] #日期晚一个月   '2010-02-01 00:00:00'  #liangwj
     end_time = options['end_time']    #日期晚一个月   '2010-02-01 00:00:00'  #liangwj
     if args.OUTPUT is None:
+<<<<<<< Updated upstream
         output_file = options['outputPath']  # better be defined so throw error if not
+=======
+        output_file = options['output_path']  # better be defined so throw error if not
+>>>>>>> Stashed changes
     else:
         output_file = args.OUTPUT
 
@@ -459,6 +487,10 @@ def do_work():
     # code below does not work when data is on my M drive on my laptop...
     dataset = xarray.open_mfdataset(files,engine="netcdf4",parallel=True).sortby('time')  #liangwj  sortby is really important as want co-ords to be monotonic
     dataset = dataset.sel(time=slice(start_time, end_time))
+<<<<<<< Updated upstream
+=======
+    #print(dataset)
+>>>>>>> Stashed changes
 
     process = genProcess(dataset, land_mask, latitude_coord=latitude_coord)
 

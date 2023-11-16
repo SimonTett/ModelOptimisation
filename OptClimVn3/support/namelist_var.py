@@ -122,10 +122,14 @@ class namelist_var(model_base):
                     my_logger.debug(f"Updating namelists in {path}")
                 else:
                     file_dict[path] = f90nml.namelist.Namelist()  # initialise to empty namelist.
+                    f90nml.namelist.Namelist.column_width=5000  #liangwj
+                    f90nml.namelist.Namelist.indent=''
                     my_logger.debug(f"Setting {path} empty")
 
             if nl.namelist.lower() not in file_dict[path].keys():
                 my_logger.debug(f"Setting {nl.namelist.lower()} to empty")
+                f90nml.namelist.Namelist.column_width=5000  #liangwj
+                f90nml.namelist.Namelist.indent=''
                 file_dict[path][nl.namelist.lower()] = f90nml.namelist.Namelist()
 
             file_dict[path][nl.namelist.lower()][nl.nl_var.lower()] = value
