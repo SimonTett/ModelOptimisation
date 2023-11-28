@@ -118,7 +118,11 @@ class runSubmit(SubmitStudy):
                 pDict.update(ensembleMember=ensembleMember)
                 model = self.get_model(pDict)
                 if model is None:  # no model so time to create one.
+                    if self.model_count < len(self.model_index):
+                        my_logger.warning(f"Creating model #{self.model_count+1}using {self.key(pDict)} when should use existing ")
                     model = self.create_model(pDict) # returns None if no model was created.
+                    self.model_count +=1 
+
                     if model is None:
                         raise optclim_exceptions.runModelError
                         # Immediately raise exception as None means no model created and nothing else can be done
@@ -130,6 +134,16 @@ class runSubmit(SubmitStudy):
                     obs = empty
                 else:  # got a model.
                     my_logger.debug(f"Using existing model {model}")
+                    # check that key is as expected. If not warn
+                    indx_keys = list(self.model_index.keys())
+                    expected_key=indx_keys[self.model_count]
+                    got_key =  self.key(pDict)
+                    if got_key != expected_key:
+                        # out of posn. Find where we are
+                        indx = indx_keys.index(got_key)
+                        my_logger.warning(f"Key not at {self.model_count} but at {indx}")
+
+                    self.model_count +=1 
                     obsNames = self.config.obsNames()
                     obs = model.simulated_obs  # get obs from the model
                     # if obs is None raise an error -- something gone badly wrong.
@@ -344,6 +358,7 @@ class runSubmit(SubmitStudy):
         import warnings
         import random
         random.seed(123456)  # make sure rng as used by DFOLS takes same values every time it is run.
+        self.model_count =0
         configData = self.config
         varParamNames = configData.paramNames()
         dfols_config = configData.DFOLS_config()
