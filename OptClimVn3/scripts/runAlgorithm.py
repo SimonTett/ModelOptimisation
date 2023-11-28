@@ -59,7 +59,7 @@ parser.add_argument("--purge", action='store_true',
                     help="purge the configuration by deleting the directory. Will ask if OK. If not OK will exit with status 1")
 parser.add_argument("-v", "--verbose", action='count', default=0,
                     help="level of logging info level= 1 = info, level = 2 = debug ")
-parser.add_argument("--clean",help="Do not do anything but --delete and and --purge (if set)",action='store_true')
+#parser.add_argument("--clean",help="Do not do anything but --delete and and --purge (if set)",action='store_true')
 parser.add_argument("--dryrun", action='store_true',
                     help="if set do not submit any jobs but do instantiate models. Good for testing")
 parser.add_argument("--readonly", action='store_true', help="read data but do not instantiate or submit jobs.")
@@ -91,7 +91,6 @@ read_only = args.readonly
 testRun = args.test
 jsonFile = pathlib.Path(os.path.expanduser(os.path.expandvars(args.jsonFile)))
 delete = args.delete
-clean = args.clean
 monitor = args.monitor
 fail = args.fail
 purge = args.purge
@@ -126,7 +125,7 @@ else:  # set rootDir to cwd/name
     rootDir = pathlib.Path.cwd() / configData.name()  # default path
  
 
-if purge: # purging data? Do early to minimize amount of output user sees before this.
+if purge: # purging data? Do early to minimize the amount of output user sees before this.
     result = input(f">>>Going to delete all in {rootDir}<<<. OK ? (yes if so): ") 
     if result.lower() in ['yes']:
         print(f"Deleting all files in {rootDir} and continuing")
@@ -169,6 +168,7 @@ if config_path.exists():  # config file exists. Read it in.
         rSUBMIT.update_config(configData)
         # this will overwrite the existing configuration and change anything derived in it.
         # use with care
+        my_logger.warning("Updated configuration. Your configuration might not be consistent.")
 
     if delete:  # delete the config
         result = input(f">>>Going to delete existing configs in {rootDir}<<<. OK ? (yes if so): ") 
@@ -182,15 +182,12 @@ if config_path.exists():  # config file exists. Read it in.
             sys.exit(1) # exit.
 
 
-if clean:
-    if not (purge or delete):
-        my_logger.warning("Set --purge or --delete when cleaning if you want cleaning!")
-    my_logger.info("Cleaned. So exiting")
-    sys.exit(0)
+
 
 if rSUBMIT is None:  # no configuration exists. So create it.
     # We can get here either because config_path does not exist or we deleted the config.
-    args_not_for_restart = ['--delete','--purge','--update']  # arguments to be removed from the restart cmd
+    args_not_for_restart = ['--delete','--purge','--update','--update_config']
+    # Arguments to be removed from the restart cmd
     restartCMD = [arg for arg in sys.argv if arg not in args_not_for_restart]  # generate restart cmd.
     my_logger.info(f"restartCMD is {restartCMD}")
     rSUBMIT = runSubmit.runSubmit(configData, rootDir=rootDir, config_path=config_path,next_iter_cmd=restartCMD)
