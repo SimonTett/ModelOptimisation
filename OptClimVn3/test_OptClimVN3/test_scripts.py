@@ -36,7 +36,7 @@ class testScripts(unittest.TestCase):
         self.direct = direct
         self.tempDir = pathlib.Path(direct.name)
         self.script_dir = Model.expand("$OPTCLIMTOP/OptClimVn3/scripts")
-        self.assertTrue(self.script_dir.exists()) # this failing when ran along with all tests.
+        self.assertTrue(self.script_dir.exists())
 
     def tearDown(self) -> None:
         """

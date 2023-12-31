@@ -5,6 +5,13 @@ Porting hints:
 2) See eddie_ssh for an example of a submit_cmd (which you might need if your workers cannot submit directly)
 3) System assumes your model is setup to run on your cluster using a script which is setup for whatever Q system
    your computer uses.
+
+# TODO: Have some way of copying configuration somewhere else which handles messy business of changing paths.
+# Mainly so can run a model with different obs making use of the existing simulations.
+# Can use archive functionality...
+# have an UPDATE method which updates all model simulated observations by rerunning the processing with, potentially, updated
+# configuation file/code.
+# Will update the obs too.
 """
 from __future__ import annotations
 
@@ -179,7 +186,7 @@ class SubmitStudy(Study, model_base, journal):
         If you need functionality beyond this you may want to inherit from SubmitStudy and
           override create_model to meet your needs
         :param dump: If True dump  self (using self.dump_config method)
-        :return: Model created (or that already exists)
+        :return: Model created (or model that already exists). Returns None if would make more than max_model_sims
         """
         max_model_sims = self.run_info.get("max_model_simulations")
         if (max_model_sims is not None) and (len(self.model_index) >= max_model_sims):
@@ -252,7 +259,11 @@ class SubmitStudy(Study, model_base, journal):
         """
         # TODO: Work out how a version of this can go into Study.
         # Only way I can currently see of doing this is by converting a SubmitStudy object
-        iter_count = np.max(list(self.iter_keys.values())) + 1
+
+        if len(self.iter_keys) == 0:
+            return [[]] # return empty list
+        iter_keys= list(self.iter_keys.values())
+        iter_count = np.max(iter_keys) + 1
         result = [None] * iter_count  # initialize list to iter_count Nones
         # The obvious result = [[]]*iter_count does not work....
         for key, iterc in self.iter_keys.items():
@@ -434,7 +445,7 @@ class SubmitStudy(Study, model_base, journal):
                 got_key = obj.key_for_model(model)
                 if key != got_key:  # key changed. TODO. deal with ensembleMember which seems to be truncated.
                     raise ValueError(f"Key has changed from {key} to {got_key} for model {model}")
-                model_index[got_key] = model
+                model_index[key] = model
             else:
                 my_logger.warning(f"Failed to find {path} so ignoring.")
 
@@ -471,6 +482,45 @@ class SubmitStudy(Study, model_base, journal):
 
         self.update_history("Deleted")
 
+    def copy(self,direct:pathlib.Path,
+             extra_paths: typing.Optional[List[pathlib.Path]] = None,
+             extra_model_paths: typing.Optional[List[pathlib.Path]] = None,
+             ):
+        """
+        Copy
+        :param direct: directory where study is to be copied. Will be created if it does not exist
+        :param extra_paths: extra paths to be copied. Should be provided relative to rootDir
+        :param extra_model_paths: extra_paths for each model to be copied. Passed into model.copy()
+        :return: Nada
+        """
+
+        if extra_paths is None:
+            extra_paths = []
+        direct.mkdir(parents=True,exist_ok=True)
+        pth = direct/(self.config_path.relative_to(self.rootDir))
+        cp = copy.deepcopy(self)
+        cp.rootDir = direct
+        cp.config_path = pth
+
+        # copy the extra_paths acoss
+        for path in extra_paths:
+            full_path = self.rootDir / path
+            if full_path.exists():
+                tgt_path = direct/path# tgt path
+                tgt_path.parent.mkdir(parents=True,exist_ok=True) # make directory if needed
+                shutil.copy2(full_path,tgt_path)
+                my_logger.info(f"Copied  {full_path} to {tgt_path} ")
+                cp.update_history(f'Copied {full_path} to {tgt_path}')
+
+        # now copy the model(s) to the new directory
+        for key,model in self.model_index.items():
+            new_dir = direct/model.model_dir.relative_to(self.rootDir) # new directory for model.
+            cp.model_index[key] = model.copy(new_dir,extra_paths=extra_model_paths) # model path(s) changed so need to change model.
+
+        # dump the config.
+        cp.update_history(f"Copied from {self.rootDir} to {direct}")
+        cp.dump_config(dump_models=True)
+        # and we are done!
     def archive(self,
                 archive: tarfile.TarFile,
                 extra_paths: typing.Optional[List[pathlib.Path]] = None):
@@ -482,6 +532,7 @@ class SubmitStudy(Study, model_base, journal):
         :return Nada!
 
         """
+
         # archive ourselves!
         with tempfile.TemporaryDirectory() as tmpdir:
             # need to dump ourselves
