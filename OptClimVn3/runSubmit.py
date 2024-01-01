@@ -329,19 +329,18 @@ class runSubmit(SubmitStudy):
         But (as yet) no need for this so not implemented. Probably best done with a centred option.
         The Jacobian computed is the transformed Jacobian. (Apply Transpose matrix).
 
-
         :arg self -- a Submit object.
         :param scale -- If True apply scalings.
         :returns a configuration. The following methods should work on it:
                 return: finalConfig -- a studyConfig. The following methods should give you useful data:
-
                 finalConfig.transJacobian() -- the  transformed Jacobian matrix at the optimum pt
                 finalConfig.hessian() -- the  hessian computed from J^T J at the optimum pt.
 
             runs runConfig to provide generic info. (See documentation for that)
 
         """
-
+        #TODO add maxfun which probably means outer loop is over ensemble members
+        # rather than over parameters.
         configData = self.config
         Tmat = configData.transMatrix(scale=scale)
         modelFn = self.genOptFunction(raiseError=True, df=True, residual=True, transform=Tmat,scale=scale)
@@ -430,16 +429,21 @@ class runSubmit(SubmitStudy):
         prange = (prange.loc['minParam',:].values,prange.loc['maxParam',:].values)
         # update the user parameters from the configuration.
         userParams = configData.DFOLS_userParams(userParams=userParams)
+        # potentially overwrite maxfun with max_model_simulations
+        max_model_sims = self.config.max_model_simulations()
+        if max_model_sims is not None:
+            maxfun = dfols_config.get("maxfun")
+            if maxfun is not None:
+                my_logger.warning(f"Overwriting value of maxfun={maxfun} with max_model_simulations={max_model_sims}")
+            dfols_config['maxfun']=max_model_sims # and set it!
         tMat = configData.transMatrix(scale=scale)  # scaling on transform matrix and in optfn  needs to be the same.
-        ## FIXME. When running with raiseError=False (and catching the np.linalg.linalg.LinAlgError)
-        ## then DFOLS has occasional error with non-determinism. I suspect when it does a soft restart with 3 evals.
-        ## which don't occur in parallel???
+
         raise_error = dfols_config.get("raise_error",False)
         if raise_error is None:
             raise_error= False
         optFn = self.genOptFunction(transform=tMat, residual=True, raiseError=raise_error, scale=scale)
         try:
-            with warnings.catch_warnings():  # catch the complaints from DFOLS about NaNs encountered..
+            with warnings.catch_warnings():  # catch the complaints from DFOLS about NaNs encountered...
                 warnings.filterwarnings('ignore')  # Ignore all warnings...
                 self.restart(verify='warning') # mark state for restart and verify
                 solution = dfols.solve(optFn, start.values, do_logging=False,
@@ -519,6 +523,7 @@ class runSubmit(SubmitStudy):
         nObs = tMat.shape[ 0]  # might be a smaller because some evals in the covariance matrix are close to zero (or -ve)
         start = configData.beginParam(paramNames=paramNames)
         optFn = self.genOptFunction(transform=tMat, scale=scale, residual=True,raiseError=True)
+        #TODO have maxfun which limits the number of fn evaluations.
         best, status, info = Optimise.gaussNewton(optFn, start.values,
                                                   configData.paramRanges(paramNames=paramNames).values.T,
                                                   configData.steps(paramNames=paramNames).values,

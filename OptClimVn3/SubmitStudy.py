@@ -175,8 +175,7 @@ class SubmitStudy(Study, model_base, journal):
     def create_model(self, params: dict, dump: bool = True) -> typing.Optional[Model]:
         """
         Create a model, update list of created models and index of models.
-        If, by creating a model than more than self.run_info['max_model_simsulations'] models have been produced,
-              then no model will be created and None returned. Warnings will be generated.
+
         :param   params: dictionary of parameters to create the model.
          The following parameters are special and handled differently:
            * reference -- the reference directory. If not there (or None) then self.refDir is used.
@@ -188,17 +187,6 @@ class SubmitStudy(Study, model_base, journal):
         :param dump: If True dump  self (using self.dump_config method)
         :return: Model created (or model that already exists). Returns None if would make more than max_model_sims
         """
-        max_model_sims = self.run_info.get("max_model_simulations")
-        if (max_model_sims is not None) and (len(self.model_index) >= max_model_sims):
-            my_logger.warning(f"Exceeded {max_model_sims} model simulations. Returning None.")
-            models_to_run = self.models_to_instantiate() + self.models_to_continue()
-            lmodels = len(models_to_run)
-            if lmodels > 0:  # got some model so instantiate
-                my_logger.warning(f"{lmodels} models still to be submitted.")
-                self.update_history(f"No more models to be created but {lmodels} existing ones to run")
-            else:
-                self.update_history("No more models to create or submit")
-            return None
 
         name = self.gen_name()
         model_dir = self.rootDir / name
