@@ -108,6 +108,8 @@ class Model(ModelBaseClass, journal):
         :param dct: dict containing information needed by class_name.from_dict()
         :return: initialized object
         """
+        # TODO -- optionally (?) read from post_process_file -- which is an update.
+        # OR do as a seperate method,
         dct2 = cls.convert_pure_paths(dct)
         obj = cls(name=dct2.pop('name'), reference=dct2.pop('reference'))  # create an default instance
         obj.fill_attrs(dct2)
@@ -239,11 +241,11 @@ class Model(ModelBaseClass, journal):
         """
         Set up post_process info.
         :param post_process -- None or  dict containing information for post-processing.
-            If None will immediately return without doing anything.
+            If None immediately returns without doing anything.
         If dict must include:
-            script -- full path to script to run. Will be passed through self.expand to expand vars and user id.
+            script -- full path to the script to run. Will be passed through self.expand to expand vars and user id.
              Will be checked for existence, and if script_interp is not None,  for execute permission.
-            If None/not present will raise an error
+            If None/not present raises an error.
         post_process can include
             interp -- if not None the name of the interpreter.
             input_file -- name of input file for post-processing. If None will be input.json
@@ -310,7 +312,7 @@ class Model(ModelBaseClass, journal):
                 pass
             elif (vself[k] is None) or (vother[k] is None):
                 diff_attrs.add(k)
-            elif type(vself[k]) != type(vother[k]):
+            elif isinstance(vself[k], type(vother[k])):
                 diff_attrs.add(k)
             elif isinstance(vself[k], pd.Series):
                 if not np.allclose(vself[k], vother[k]):  # check for fp diffs in the series.
@@ -672,20 +674,28 @@ class Model(ModelBaseClass, journal):
         self.set_status(status)
         return output
 
-    def process(self):
+    def process(self, update: bool = False,
+                ):
         """
-        Run the post-processing, store output and set status to COMPLETED.
+        Run the post-processing, store output and set status to PROCESSED.
         "Contract" for a post-processing script
         1) takes a json file as input (arg#1) and puts output in file (arg#2).
         2) It is being ran in the model_directory.
          arg#1 needs json.load to read the json file. Code should expect a dict and use the postProcess entry.
              This allows it ot read in and act on a StudyConfig file.
          arg#2 can be .json or .csv or .nc
+
+        :param update If True update the post-processed. State must be Processed.
         :return: output from post-processing.
         """
         status: type_status = 'PROCESSED'
+        if update:  # handle updating.
+            if self.status != 'PROCESSED':
+                raise ValueError(f"Updating and status is {self.status} != PROCESSED")
+        else:
+            self.set_status(status)  # just update the status.
+
         if self.fake:  # faking?
-            self.set_status(status)  # just update the status
             return
 
         input_file = self.model_dir / self._post_process_input  # generate json file to hold post process info
@@ -700,7 +710,8 @@ class Model(ModelBaseClass, journal):
 
         # get in the simulated obs which also sets them 
         self.read_simulated_obs(post_process_output)
-        self.set_status(status)
+        if update:  # if we are updating there is no status change -- we have already checked we are processed.
+            self.update_history("Reprocessed model")
         return result
 
     def read_simulated_obs(self, post_process_file: pathlib.Path):
@@ -810,6 +821,13 @@ class Model(ModelBaseClass, journal):
         """
         return self.status in ['SUBMITTED']
 
+    def is_processed(self) -> bool:
+        """
+        Return True if model is processed.
+        :return: True if model status is PROCESSED
+        """
+        return self.status in ['PROCESSED']
+
     def delete(self):
         """
         Delete all on disk stuff. Do by deleting all files in self.model_dir and self.config_path. 
@@ -889,6 +907,60 @@ class Model(ModelBaseClass, journal):
             dct[key] = pathlib.PurePath(dct[key])
         return dct
 
+    def copy(self, direct: pathlib.Path,
+             extra_files: typing.Optional[typing.List[pathlib.Path | str]] = None,
+             link_paths: typing.Optional[typing.List[pathlib.Path | str]] = None):
+        """
+        Copy model to new place
+
+        :param direct: Where new model_dir is
+        :param extra_files: Extra files to be copied
+        :param link_paths: Paths to be linked (rather than copied). Useful, for large files that will be read.
+           On some OS's links are only allowed if you are on the same filesystem.
+        :return: Modified model.
+        """
+        if extra_files is None:
+            extra_files = []
+        if link_paths is None:
+            link_paths = []
+
+        if direct.samefile(self.model_dir):  # Check we are not wiping out ourselves.
+            raise ValueError(f"Copying {direct} to {self.model_dir} which is the same path")
+
+        # make needed directories. Do in one go so to speed things up (a bit).
+        dirs_to_make = {direct} | \
+                       {(direct / p).parent for p in extra_files} | \
+                       {(direct / p).parent for p in link_paths}  # unique set of directories needed
+        for dir in dirs_to_make:
+            dir.mkdir(exist_ok=True, parents=True)  # make any needed directories.
+
+        cp_model = copy.deepcopy(self)
+        cp_model.model_dir = direct
+        cp_model.config_path = direct / self.config_path.relative_to(self.model_dir)
+
+        # copy extra paths + post_process_output
+        paths_to_copy = [self.model_dir / self._post_process_output] + [self.model_dir / p for p in extra_files]
+        for path in paths_to_copy:
+            if path.exists():
+                cp_path = direct / path.relative_to(self.model_dir)  # where it goes
+                shutil.copy2(path, cp_path)  # copy it
+                msg = f"Copied {path} to {cp_path}"
+                my_logger.debug(msg)
+                cp_model.update_history(msg)
+
+        # Do links. Note potential problems with filesystems. Will fix if they are a problem.
+        for p in link_paths:
+            path = self.model_dir / p
+            new_path = direct / p
+            path.link_to(new_path)
+            msg = f"Linked {new_path} to {path}"
+            my_logger.debug(msg)
+            cp_model.update_history(msg)
+
+        cp_model.update_history(f"Copied from {self.config_path} to {cp_model.config_path}")
+        cp_model.dump_model()
+        return cp_model
+
     def archive(self,
                 archive: tarfile.TarFile,
                 rootDir: pathlib.Path,
@@ -897,7 +969,6 @@ class Model(ModelBaseClass, journal):
 
         :param archive: archive to be added to
         :param rootDir: root to which all files (in archive file) are stored relative to.
-        :param root: root directory to express all paths relative to.
            If not None, then the name in the archive will be relative to this path.
         :param extra_files -- extra model things to archive. Should be relative to self.model_dir
         :return: None
@@ -929,6 +1000,21 @@ class Model(ModelBaseClass, journal):
             if path.exists():
                 archive.add(path, arc_path)  # archive the file with name relative to root
                 my_logger.debug(f"Added {path} to archive as {arc_path}")
+
+    def reprocess(self, post_process: typing.Optional[dict] = None) -> pd.Series:
+        """
+        Update already processed observations. State must be processed.
+        :param post_process: post-processing info. See set_post_process() method for requirements.
+          If not provided then existing post_process info will be used.
+        :return: new simulated obs.
+
+        """
+        if not self.is_processed():
+            raise ValueError(f"Expecting state as processed not {self.status}")
+
+        self.set_post_process(post_process=post_process)
+        sim_obs = self.process(update=True)
+        return sim_obs
 
 
 Model.register_class(Model)  # register ourselves!

@@ -1,8 +1,9 @@
 from __future__ import annotations
+#TODO -- Have a significant bug when running simple model in that does not reproduce after circa 18 cases...  
 
 import logging
 import typing
-
+import pathlib
 from SubmitStudy import SubmitStudy
 
 import numpy as np
@@ -13,6 +14,9 @@ import functools
 
 my_logger=logging.getLogger(f"OPTCLIM.{__name__}")
 class runSubmit(SubmitStudy):
+    # Has the following additional attributes over SubmitStudy (and Study)
+    trace:typing.List[str] # the trace of all model evaluations. Elements are keys into model_info
+    prev_trace:typing.List[str] # the trace off all model evaluation the previous time the algorithm was run
     """
           Class   to deal with running various algorithms. (not all of which are optimization).
           It is a specialisation of SubmitStudy and is separated out to make maintenance easier.
@@ -27,7 +31,63 @@ class runSubmit(SubmitStudy):
 
         """
 
-    # has no __init__ method as uses the superclass method.
+    def __init__(self,
+                 config: typing.Optional["OptClimConfigVn3"],
+                 name: typing.Optional[str] = None,
+                 rootDir: typing.Optional[pathlib.Path] = None,
+                 refDir: typing.Optional[pathlib.Path] = None,
+                 models: typing.Optional[typing.List["Model"]] = None,
+                 model_name: typing.Optional[str] = None,
+                 config_path: typing.Optional[pathlib.Path] = None,
+                 next_iter_cmd: typing.Optional[typing.List[str]] = None):
+        super().__init__(config, name, rootDir, refDir, models, model_name, config_path, next_iter_cmd)
+        self.trace = []
+        self.prev_trace = []
+    def closest_model(self,model:"Model")  -> ("Model",float):
+        """
+        Find and return the closet model in the (current) model trace to specified model.
+        Close is defined as the smallest min difference for the normalised params that are fp or int.
+         A more sophisticated implementation would normalise difference by the param ranges.
+        :param model: model we are looking for closest match.
+        :return:  Closest model match.
+        """
+        params = self.params(normalize=True,numeric=True,keys=self.trace)
+        mparam = self.params(normalize=True,numeric=True,model=model)
+        delta = (np.abs(mparam-params)).sum(axis=1)
+        # compute the sum of the abs parameter diffs
+        indx = delta.argmin()
+        close_model = list(self.model_index.values())[indx]
+        return close_model,float(delta[indx])
+
+    verify_status = typing.Literal['error', 'warning'] # allowed values if verify
+    def restart(self,verify:typing.Optional[verify_status]=None):
+        """
+        Setup state for restart. Copies trace to prev_trace and sets trace to empty list.
+        :param verify -- verify that trace and prev_trace are consistent --
+            all elements in prev_trace should be in trace.
+            verify should be one of 'error or 'warning'. If 'warning' warnings will be given.
+            if 'error' then ValueError will be raised
+        :return: None
+        """
+
+        if verify is not None:
+            allowed = runSubmit.verify_status.__args__
+            if verify not in allowed:
+                raise ValueError(f"{verify} should be one of {allowed}")
+
+            # check that we have not lost any keys. If so, suggests problem with algorithm.
+            missing_keys = set(self.prev_trace) - set(self.trace)
+            if missing_keys:
+                my_logger.warning(f"Have {len(missing_keys)} keys in prev_trace not in trace. Fix alg. They are:")
+                for k in missing_keys:
+                    # find nearest match
+                    model = self.model_index[k]
+                    close_model, delta = self.closest_model(model)
+                    my_logger.warning(f"Missing {model}. Closest match is {close_model} with abs norm. param diff {delta}")
+            if verify == 'error':
+                raise ValueError("Failed as have keys in prev_trace not in trace.")
+        self.prev_trace = self.trace[:]
+        self.trace = []
 
     def stdFunction(self, params: np.ndarray,
                     df: bool = False,
@@ -126,11 +186,17 @@ class runSubmit(SubmitStudy):
                     if model is None:
                         raise optclim_exceptions.runModelError
                         # Immediately raise exception as None means no model created and nothing else can be done
-                    obs = empty
-
+                        # FIXME One issue here is that we are terminating the algorithm without the algorithm itself knowing this
+                        # so then the algorithm can't do any clean up or capture diagnostics.
+                        # This is tricky as really per-algorithm -- we want it to complete but there is no general way of doing this
+                        # one approach would be to pass in a fn which gets run here. For DFOLS (and other opt cases) it could do this by returning obs values = target
+                        # That would terminate but then jacobian etc would be stuffed as would use this last state. A better approach might be to set
+                        # self.exceeded_max_models to True. Then rerun the algorithm with maxFn set to max_model_simulations.
+                        # OR set maxFn to min(max_model_simulations,maxFn).
+                    obs = empty # no model so return nothing.
                 elif model.status != "PROCESSED": # not processed so raise ValueError and complain.
                     # TODO add in random generation to allow look ahead
-                    raise ValueError(f"model status != PROCESSED = {model.status}")
+                    raise ValueError(f"{model} status != PROCESSED but is {model.status}")
                     obs = empty
                 else:  # got a model.
                     my_logger.debug(f"Using existing model {model}")
@@ -166,6 +232,9 @@ class runSubmit(SubmitStudy):
                     if np.any(null):
                         raise ValueError("Obs contains null values at: " + ", ".join(obs.index[null]))
                 ensObs.append(obs)
+            key = self.key(pDict)
+            self.trace.append(key) # append key to the trace.
+            # This happens both when a new model is created or an existing model used.
             # end of loop over ensemble members.
 
             # compute ensemble-mean if needed
@@ -274,19 +343,18 @@ class runSubmit(SubmitStudy):
         But (as yet) no need for this so not implemented. Probably best done with a centred option.
         The Jacobian computed is the transformed Jacobian. (Apply Transpose matrix).
 
-
         :arg self -- a Submit object.
         :param scale -- If True apply scalings.
         :returns a configuration. The following methods should work on it:
                 return: finalConfig -- a studyConfig. The following methods should give you useful data:
-
                 finalConfig.transJacobian() -- the  transformed Jacobian matrix at the optimum pt
                 finalConfig.hessian() -- the  hessian computed from J^T J at the optimum pt.
 
             runs runConfig to provide generic info. (See documentation for that)
 
         """
-
+        #TODO add maxfun which probably means outer loop is over ensemble members
+        # rather than over parameters.
         configData = self.config
         Tmat = configData.transMatrix(scale=scale)
         modelFn = self.genOptFunction(raiseError=True, df=True, residual=True, transform=Tmat,scale=scale)
@@ -376,12 +444,23 @@ class runSubmit(SubmitStudy):
         prange = (prange.loc['minParam',:].values,prange.loc['maxParam',:].values)
         # update the user parameters from the configuration.
         userParams = configData.DFOLS_userParams(userParams=userParams)
+        # potentially overwrite maxfun with max_model_simulations
+        max_model_sims = self.config.max_model_simulations()
+        if max_model_sims is not None:
+            maxfun = dfols_config.get("maxfun")
+            if maxfun is not None:
+                my_logger.warning(f"Overwriting value of maxfun={maxfun} with max_model_simulations={max_model_sims}")
+            dfols_config['maxfun']=max_model_sims # and set it!
         tMat = configData.transMatrix(scale=scale)  # scaling on transform matrix and in optfn  needs to be the same.
-        optFn = self.genOptFunction(transform=tMat, residual=True, raiseError=False, scale=scale)
 
+        raise_error = dfols_config.get("raise_error",False)
+        if raise_error is None:
+            raise_error= False
+        optFn = self.genOptFunction(transform=tMat, residual=True, raiseError=raise_error, scale=scale)
         try:
-            with warnings.catch_warnings():  # catch the complaints from DFOLS about NaNs encountered..
-                warnings.filterwarnings('ignore')  # Ignore all warnings..
+            with warnings.catch_warnings():  # catch the complaints from DFOLS about NaNs encountered...
+                warnings.filterwarnings('ignore')  # Ignore all warnings...
+                self.restart(verify='warning') # mark state for restart and verify
                 solution = dfols.solve(optFn, start.values, do_logging=False,
                                        objfun_has_noise=True,
                                        bounds=prange, scaling_within_bounds=True,
@@ -389,7 +468,9 @@ class runSubmit(SubmitStudy):
                                        rhobeg=dfols_config.get('rhobeg', 1e-1),
                                        rhoend=dfols_config.get('rhoend', 1e-3),
                                        user_params=userParams)
+
         except np.linalg.linalg.LinAlgError:
+            my_logger.info(f"Have just generated {len(self.models_to_instantiate())} to instantiate")
             raise optclim_exceptions.runModelError("dfols failed with lin alg error")
             # this is how DFOLS tells us it got NaN which then triggers running the next set of simulations.
 
@@ -457,6 +538,7 @@ class runSubmit(SubmitStudy):
         nObs = tMat.shape[ 0]  # might be a smaller because some evals in the covariance matrix are close to zero (or -ve)
         start = configData.beginParam(paramNames=paramNames)
         optFn = self.genOptFunction(transform=tMat, scale=scale, residual=True,raiseError=True)
+        #TODO have maxfun which limits the number of fn evaluations.
         best, status, info = Optimise.gaussNewton(optFn, start.values,
                                                   configData.paramRanges(paramNames=paramNames).values.T,
                                                   configData.steps(paramNames=paramNames).values,

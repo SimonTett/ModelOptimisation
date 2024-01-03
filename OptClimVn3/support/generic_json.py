@@ -33,6 +33,10 @@ method converts an object to something that can be serialized by JSON. It takes 
 serialized version of the object.
 
 """
+#TODO -- for numpy arrays. Write out the dtype, size and then conver the array to bytes.
+#  for reading undo this.  Generalise to pandas objects? That way precision will be retained.
+# but probably requires some hacking -- call the to_json function and thne replace the data cpt
+# with the byte representation,
 from __future__ import annotations
 
 import json

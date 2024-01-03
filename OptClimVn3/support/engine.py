@@ -347,7 +347,7 @@ class slurm_engine(abstractEngine):
             my_logger.debug(f"Set outdir to {outdir}")
         submit_cmd = ['sbatch', f'--mem={mem}', f'--mincpus={n_cores}', f'--time={time}',
                       '--output', f'{outdir}/%x_%A_%a.out', '--error', f'{outdir}/%x_%A_%a.err',
-                      '-J', name]
+                      '-J', name] # TODO add parsable option and modify how parsing done when ran,
         # --mem={mem}: Request mem mbytes  of memory per job
         # --mincpus={n_cores}: Request at least n_cores CPU per job
         # --time={time}: Request a maximum run time of time  minutes per job

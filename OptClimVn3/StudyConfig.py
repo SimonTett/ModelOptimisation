@@ -27,7 +27,7 @@ import os
 import pathlib
 import re
 
-from dfols.solver import OptimResults
+
 
 import generic_json
 
@@ -2129,15 +2129,15 @@ class OptClimConfigVn3(OptClimConfigVn2):
         return modelConfigDir
 
     def dfols_solution(self,
-                       solution: typing.Optional[OptimResults] = None) -> \
-            typing.Optional[OptimResults]:
+                       solution: typing.Optional["OptimResults"] = None) -> \
+            typing.Optional["dfols.solver.OptimResults"]:
         """
         Store/return solution to DFOLS run.
         :param solution: solution (from DFOLS) which if not None will be converted to
            something that can be converted to json
         :return: solution
         """
-
+        from dfols.solver import OptimResults
         if solution is not None:
             # convert solution to something jsonable.
             conversion = generic_json.dumps(vars(solution))  # use generic_json to convert.
@@ -2257,7 +2257,8 @@ class OptClimConfigVn3(OptClimConfigVn2):
 
     def max_model_simulations(self, value: typing.Optional[int] = None) -> typing.Optional[int]:
         """
-        The maximum total number of simulations that should be submitted. Taken from run_info/max_model_sims
+        The maximum total number of simulations that should be submitted. Used by runSubmit
+          Taken from run_info/max_model_sims
         :param value: If not None set max_model_sims to this value. Should be integer > 0
         :return: The value of max_model_sims or None if not found.
         """
