@@ -123,16 +123,17 @@ class journal:
         cmd_to_run = [os.path.expandvars(c) for c in cmd]
         cmd_report = " ".join(cmd_to_run)
         # using expandvars so any shell variables in command are expanded.
-        # this little code fragment from chatGPT (with a bit of nudging/editing) traps that.
         try:
             my_logger.debug(f"Running {' '.join(cmd_to_run)}")
             output = subprocess.check_output(cmd_to_run, **args)  # run cmd
         except subprocess.CalledProcessError as e:
-            print(cmd_report)
-            print("Failed")
-            print("stdout\n", e.output)
-            print("=" * 60)
-            print("stderr\n", e.stderr)
+            str=f"""cmd_report failed.
+            STDOUT 
+            {e.output}
+            {"=" * 60}
+            STDERR 
+            { e.stderr}"""
+            my_logger.warning(str)
             raise
         except FileNotFoundError as e:  # cmd not found
             raise subprocess.CalledProcessError(
@@ -356,6 +357,7 @@ class model_base:
         :return:whatever result of generic_json.dump is
         """
         config_path.parent.mkdir(parents=True, exist_ok=True)
+        my_logger.debug(f"Created {config_path.parent}")
         with open(config_path, "w") as fp:
             result = generic_json.dump(self, fp, indent=2)  # JSON encoder does the magic needed
         my_logger.info(f"Wrote to {config_path}")

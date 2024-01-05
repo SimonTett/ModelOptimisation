@@ -110,6 +110,7 @@ userParams = {'logging.save_diagnostic_info': True,
               "init.random_initial_directions": True,
               'interpolation.throw_error_on_nans': True,  # make an error happen!
               }
+
 while True: # go until loop done
     # Every time through the loop dfols.solve is run. If a linear algebra error, then any cases that
     # need evaluation are evaluated and the whole algorithm starts again.
@@ -120,7 +121,7 @@ while True: # go until loop done
         solution = dfols.solve(opt_obj.opt_fn, start_params,
                    objfun_has_noise=True,
                    bounds=prange, scaling_within_bounds=True
-                   , maxfun=100, rhobeg=1e-1, rhoend=1e-3
+                   , maxfun=1000, rhobeg=1e-1, rhoend=1e-3
                    , print_progress=False, user_params=userParams)
         # got here so we have sucesfully run dfols
         if solution.flag not in (solution.EXIT_SUCCESS, solution.EXIT_MAXFUN_WARNING):

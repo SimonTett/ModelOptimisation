@@ -15,14 +15,16 @@
         "submit_engine": "SGE",
         "submit_engine_comment": "Name of engine to submit runs to. One of SGE or SLURM. MUST be provided ",
 	"ssh_node2_comment": null,
-	"ssh_node": "login04.ecdf.ed.ac.uk",
+	"ssh_node": "login03.ecdf.ed.ac.uk",
 	"ssh_node_comment":"If not null then name of machine which has access to engine. Will ssh to this machine to submit commands",
         "modelName": "simple_model",
         "modelName_comment": "Name of model that is ran. MUST be provided",
         "maxRuns": null,
         "maxRuns_comment": "Maximum number of runs to do in parallel. Runs submitted is 2x this + 1.",
 	"max_model_simulations":65,
-	"max_model_simulations_comment":"The maximum number of model sims to be done"
+	"max_model_simulations_comment":"The maximum number of model sims to be don. Overwrites per algorithm max evaluations",
+	"test_nodetermin":"error",
+	"test_nodetermin_comment":"If value is error an error is triggered if algorithm appears to be behaving non-deterministically. If value is warning a warning is given. Default is error."
 
         },
     "run_info_comment": "Information  for run_info. Must include submit_engine and modelName. Can include other keys for use in submission. Useful ones are runTime, runCode & maxRuns ",

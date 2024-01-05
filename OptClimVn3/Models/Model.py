@@ -127,6 +127,7 @@ class Model(ModelBaseClass, journal):
                  engine: typing.Optional[abstractEngine] = None,
                  run_info: typing.Optional[dict] = None,
                  study: typing.Optional["Study"] = None):
+        # TODO add in verbose option so that set_model_status script has verbose options provided in.
         """
         Initialize the Model class.
 
@@ -233,7 +234,7 @@ class Model(ModelBaseClass, journal):
         self.status = status
         if self.status == 'CREATED':  # creating model for the first time
             self.update_history("CREATING model")
-        # and simulated obs.
+            # and simulated obs.
         self.simulated_obs = None
 
     def set_post_process(self, post_process: typing.Optional[dict] = None):
@@ -399,6 +400,7 @@ class Model(ModelBaseClass, journal):
         :return:nothing.
         """
         self.model_dir.mkdir(parents=True, exist_ok=True)  # create the directory if needed.
+        my_logger.info(f"Created {self.model_dir}")
         shutil.copytree(self.reference, self.model_dir, symlinks=True, dirs_exist_ok=True)  # copy from reference.
 
     def set_status(self, new_status: type_status, check_existing: bool = True) -> None:
@@ -515,6 +517,7 @@ class Model(ModelBaseClass, journal):
             # and the run_code -- default is value in run_info but use value from post_process if we have it.
             outputDir = self.model_dir / 'PP_output'  # post-processing output goes in Model Dir
             outputDir.mkdir(exist_ok=True, parents=True)
+            my_logger.debug(f"Created {outputDir}")
             pp_cmd = self.engine.submit_cmd(pp_cmd, f"PP_{self.name}",
                                             outdir=outputDir,
                                             hold=True,
@@ -561,6 +564,7 @@ class Model(ModelBaseClass, journal):
         # but in this case just use the submit.
         outdir = self.model_dir / 'model_output'
         outdir.mkdir(parents=True, exist_ok=True)
+        my_logger.debug(f"Created {outdir}")
 
         cmd = self.engine.submit_cmd([str(self.model_dir / script)], f"{self.name}{len(self.model_jids):05d}", outdir,
                                      run_code=runCode, time=runTime, rundir=self.model_dir)
@@ -692,10 +696,10 @@ class Model(ModelBaseClass, journal):
         if update:  # handle updating.
             if self.status != 'PROCESSED':
                 raise ValueError(f"Updating and status is {self.status} != PROCESSED")
-        else:
-            self.set_status(status)  # just update the status.
 
         if self.fake:  # faking?
+            my_logger.debug("Faking")
+            self.set_status(status)  # just update the status which saves the stea..
             return
 
         input_file = self.model_dir / self._post_process_input  # generate json file to hold post process info
@@ -710,8 +714,12 @@ class Model(ModelBaseClass, journal):
 
         # get in the simulated obs which also sets them 
         self.read_simulated_obs(post_process_output)
+        
         if update:  # if we are updating there is no status change -- we have already checked we are processed.
             self.update_history("Reprocessed model")
+
+        my_logger.debug(f"Sim obs are {self.simulated_obs}")
+        self.set_status(status)  #  update the status (and dump state to disk)
         return result
 
     def read_simulated_obs(self, post_process_file: pathlib.Path):
@@ -933,6 +941,7 @@ class Model(ModelBaseClass, journal):
                        {(direct / p).parent for p in link_paths}  # unique set of directories needed
         for dir in dirs_to_make:
             dir.mkdir(exist_ok=True, parents=True)  # make any needed directories.
+            my_logger.debug(f"Created {dir}")
 
         cp_model = copy.deepcopy(self)
         cp_model.model_dir = direct

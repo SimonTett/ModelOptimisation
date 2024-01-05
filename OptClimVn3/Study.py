@@ -64,6 +64,7 @@ class Study:
         else:
             self.rootDir = rootDir
 
+
         self.model_index = dict()
         if models is not None:
             for model in models:

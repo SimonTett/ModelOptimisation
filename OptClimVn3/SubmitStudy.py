@@ -105,7 +105,8 @@ class SubmitStudy(Study, model_base, journal):
         :return: instance SubmitStudy with the following public attributes :
         """
         super().__init__(config, name=name, models=models, rootDir=rootDir)
-        self.rootDir.mkdir(parents=True, exist_ok=True)  # create it if need be.
+        #self.rootDir.mkdir(parents=True, exist_ok=True)  # create it if need be.
+        # no need to create rootDir as could be updated and when files are created mkdir happens then    
         if refDir is None:
             refDir = self.expand(str(config.referenceConfig()))
         self.refDir = refDir
@@ -485,6 +486,8 @@ class SubmitStudy(Study, model_base, journal):
         if extra_paths is None:
             extra_paths = []
         direct.mkdir(parents=True,exist_ok=True)
+        my_logger.debug(f"Created {direct}") 
+
         pth = direct/(self.config_path.relative_to(self.rootDir))
         cp = copy.deepcopy(self)
         cp.rootDir = direct
@@ -496,6 +499,7 @@ class SubmitStudy(Study, model_base, journal):
             if full_path.exists():
                 tgt_path = direct/path# tgt path
                 tgt_path.parent.mkdir(parents=True,exist_ok=True) # make directory if needed
+                my_logger.debug(f"Created {tgt_path.parent}") 
                 shutil.copy2(full_path,tgt_path)
                 my_logger.info(f"Copied  {full_path} to {tgt_path} ")
                 cp.update_history(f'Copied {full_path} to {tgt_path}')
@@ -631,6 +635,7 @@ class SubmitStudy(Study, model_base, journal):
         output_dir = self.rootDir / 'jobOutput'  # directory where output goes for post-processing and next stage.
         # try and create the outputDir
         output_dir.mkdir(parents=True, exist_ok=True)
+        my_logger.debug(f"Created {output_dir}") 
 
         if len(models_to_continue) > 0:  # (re)submit  models that need continuing and exit
             if fake_fn is not None:

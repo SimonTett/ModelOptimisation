@@ -19,6 +19,8 @@
   "scaling_within_bounds_comment": "Scale internally so all in range 0 to 1",
   "raise_error":null,
   "raise_error_comment":"If True then allow optimise function to raise error rather than DFOLS. Default is false",
+  "trap_two_evals":true,
+  "trap_two_evals_comment":"If true then if dfols generates two evaluations (which is should not) then the last one will be ignored. Default value is False.",
   "namedSettings": {
       "logging.save_poisedness": true,
       "logging.save_poisedness_comment": "whether or not  to calculate geometry statistics as part of diagnostic information",

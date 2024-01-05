@@ -1,5 +1,4 @@
 from __future__ import annotations
-#TODO -- Have a significant bug when running simple model in that does not reproduce after circa 18 cases...  
 
 import logging
 import typing
@@ -59,33 +58,37 @@ class runSubmit(SubmitStudy):
         close_model = list(self.model_index.values())[indx]
         return close_model,float(delta[indx])
 
-    verify_status = typing.Literal['error', 'warning'] # allowed values if verify
-    def restart(self,verify:typing.Optional[verify_status]=None):
+    test_nondetermin_status = typing.Literal['error', 'warning'] # allowed values 
+    def restart(self,test_nondetermin:typing.Optional[typing.test_nondetermin_status]=None):
         """
         Setup state for restart. Copies trace to prev_trace and sets trace to empty list.
-        :param verify -- verify that trace and prev_trace are consistent --
+        :param test_nondetermin -- verify that trace and prev_trace are consistent --
             all elements in prev_trace should be in trace.
-            verify should be one of 'error or 'warning'. If 'warning' warnings will be given.
-            if 'error' then ValueError will be raised
+            test_nondetermin should be one of 'error or 'warning'. If 'warning' warnings will be given.
+            if 'error' then ValueError will be raised.
+        If None then will be set to 'error'
         :return: None
         """
+        if test_nondetermin is None:
+            test_nondetermin='error'
+        allowed = runSubmit.test_nondetermin_status.__args__
+        if test_nondetermin not in allowed:
+            raise ValueError(f"{test_nondetermin} should be one of {allowed}")
 
-        if verify is not None:
-            allowed = runSubmit.verify_status.__args__
-            if verify not in allowed:
-                raise ValueError(f"{verify} should be one of {allowed}")
+        # check that we have not lost any keys. If so, suggests problem with algorithm.
+        missing_keys = set(self.prev_trace) - set(self.trace)
+        if missing_keys:
+            my_logger.warning(f"Have {len(missing_keys)} keys in prev_trace not in trace.\n Fix alg. They are:\n")
+            for k in missing_keys:
+                # find nearest match
+                model = self.model_index[k] # all models ran.
+                close_model, delta = self.closest_model(model)
+                my_logger.warning(f"Missing {model}. Closest match is {close_model} with abs norm. param diff {delta}")
 
-            # check that we have not lost any keys. If so, suggests problem with algorithm.
-            missing_keys = set(self.prev_trace) - set(self.trace)
-            if missing_keys:
-                my_logger.warning(f"Have {len(missing_keys)} keys in prev_trace not in trace. Fix alg. They are:")
-                for k in missing_keys:
-                    # find nearest match
-                    model = self.model_index[k]
-                    close_model, delta = self.closest_model(model)
-                    my_logger.warning(f"Missing {model}. Closest match is {close_model} with abs norm. param diff {delta}")
-            if verify == 'error':
-                raise ValueError("Failed as have keys in prev_trace not in trace.")
+            if test_nondetermin == 'error':
+                raise ValueError("Failed as have keys in prev_trace not in trace. Set run_info/test_nondeterm to 'warning' to ignore")
+        
+        # dealt with potential non-determinism.
         self.prev_trace = self.trace[:]
         self.trace = []
 
@@ -178,11 +181,7 @@ class runSubmit(SubmitStudy):
                 pDict.update(ensembleMember=ensembleMember)
                 model = self.get_model(pDict)
                 if model is None:  # no model so time to create one.
-                    if self.model_count < len(self.model_index):
-                        my_logger.warning(f"Creating model #{self.model_count+1}using {self.key(pDict)} when should use existing ")
                     model = self.create_model(pDict) # returns None if no model was created.
-                    self.model_count +=1 
-
                     if model is None:
                         raise optclim_exceptions.runModelError
                         # Immediately raise exception as None means no model created and nothing else can be done
@@ -200,16 +199,6 @@ class runSubmit(SubmitStudy):
                     obs = empty
                 else:  # got a model.
                     my_logger.debug(f"Using existing model {model}")
-                    # check that key is as expected. If not warn
-                    indx_keys = list(self.model_index.keys())
-                    expected_key=indx_keys[self.model_count]
-                    got_key =  self.key(pDict)
-                    if got_key != expected_key:
-                        # out of posn. Find where we are
-                        indx = indx_keys.index(got_key)
-                        my_logger.warning(f"Key not at {self.model_count} but at {indx}")
-
-                    self.model_count +=1 
                     obsNames = self.config.obsNames()
                     obs = model.simulated_obs  # get obs from the model
                     # if obs is None raise an error -- something gone badly wrong.
@@ -426,10 +415,10 @@ class runSubmit(SubmitStudy):
         import warnings
         import random
         random.seed(123456)  # make sure rng as used by DFOLS takes same values every time it is run.
-        self.model_count =0
         configData = self.config
         varParamNames = configData.paramNames()
         dfols_config = configData.DFOLS_config()
+        test_nondetermin = configData.run_info().get("test_nondetermin")
         start = configData.beginParam()
         # Sensible defaults  for DFOLS -- which can be overwritten by config file
         userParams = {'logging.save_diagnostic_info': True,
@@ -448,10 +437,15 @@ class runSubmit(SubmitStudy):
         max_model_sims = self.config.max_model_simulations()
         if max_model_sims is not None:
             maxfun = dfols_config.get("maxfun")
-            if maxfun is not None:
+            if maxfun is not None and (maxfun != max_model_sims):
                 my_logger.warning(f"Overwriting value of maxfun={maxfun} with max_model_simulations={max_model_sims}")
-            dfols_config['maxfun']=max_model_sims # and set it!
+            dfols_config['maxfun']=max_model_sims # and set it! and write back to the config.
+            self.config.DFOLS_config(dfols_config) # Store modified config back
         tMat = configData.transMatrix(scale=scale)  # scaling on transform matrix and in optfn  needs to be the same.
+        # hacky stuff for dfols
+        trap_two_evals = dfols_config.get("trap_two_evals",False) # deal with bad number of evals
+        if trap_two_evals is None:
+            trap_two_evals = False
 
         raise_error = dfols_config.get("raise_error",False)
         if raise_error is None:
@@ -460,7 +454,7 @@ class runSubmit(SubmitStudy):
         try:
             with warnings.catch_warnings():  # catch the complaints from DFOLS about NaNs encountered...
                 warnings.filterwarnings('ignore')  # Ignore all warnings...
-                self.restart(verify='warning') # mark state for restart and verify
+                self.restart(test_nondetermin=test_nondetermin) # mark state for restart and test non deterministic behaviour.
                 solution = dfols.solve(optFn, start.values, do_logging=False,
                                        objfun_has_noise=True,
                                        bounds=prange, scaling_within_bounds=True,
@@ -470,7 +464,17 @@ class runSubmit(SubmitStudy):
                                        user_params=userParams)
 
         except np.linalg.linalg.LinAlgError:
-            my_logger.info(f"Have just generated {len(self.models_to_instantiate())} to instantiate")
+            # FIXME -- problem with dfols in that it occasionally generates two cases.
+            # will remove the last case in self.trace and self.model_index if that happens.
+            # this is  a hack and hopefully DFOLS gets updated to avoid this.
+            n_inst_models = len(self.models_to_instantiate())
+            if trap_two_evals and (n_inst_models == 2 ) and (len(self.model_index) > 2): 
+                my_logger.warning("*** DFOLS generated two evaluations. Hacking a fix while waiting for DFOLS to be fixed.***")
+                key=self.trace.pop() # remove the last key from trace
+                self.model_index.pop(key) # and the model.
+                
+            n_inst_models = len(self.models_to_instantiate())
+            my_logger.info(f"Have just generated {n_inst_models} to instantiate")
             raise optclim_exceptions.runModelError("dfols failed with lin alg error")
             # this is how DFOLS tells us it got NaN which then triggers running the next set of simulations.
 

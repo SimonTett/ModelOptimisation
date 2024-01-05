@@ -26,7 +26,7 @@ def setup_logging(level:typing.Optional[int] = None,
                   log_config:typing.Optional[dict]=None):
     """
     Setup logging. 
-    :param: level: level of logging . If None logging.WARNIG will be used
+    :param: level: level of logging . If None logging.WARNING will be used
     :param: rootname: rootname for logging. if None OPTCLIM will be used. 
     :param: log_config config dict for logging.config --
           see https://docs.python.org/3/library/logging.config.html
@@ -245,6 +245,7 @@ def copyTestDir(inDir, outDir, setDir='', trace=False):
         shutil.rmtree(outDir)  # remove the tgt directory
     # now create the directory and copy files and, if they exist, the  start and outDir dirs
     os.mkdir(outDir)
+    my_logger.warning(f"Calling copyTestDir -- probably should not be! Created {outDir}")
     for root, dirs, files in os.walk(inDir, topdown=True):  # iterate
         for name in dirs:  # iterate over  the directories first creating new ones
             newroot = root.replace(inDir, outDir, 1)  # root in new dir tree

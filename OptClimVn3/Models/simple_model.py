@@ -134,6 +134,7 @@ class simple_model(Model):
         # just use the submit.
         outdir = self.model_dir / 'model_output'
         outdir.mkdir(parents=True, exist_ok=True)
+        my_logger.debug(f"Created {outdir}")
         cmd = self.engine.submit_cmd([self.model_dir/script, str(self.StudyConfig_path)],
                                      f"{self.name}{len(self.model_jids):05d}",
                                      outdir,
