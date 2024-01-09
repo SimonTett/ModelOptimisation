@@ -17,7 +17,7 @@ Provides classes and methods suitable for manipulating study configurations.  In
 """
 from __future__ import annotations
 
-import functools
+
 import typing
 import copy
 import datetime
@@ -26,8 +26,6 @@ import logging
 import os
 import pathlib
 import re
-
-
 
 import generic_json
 
@@ -89,7 +87,7 @@ class NumpyEncoder(json.JSONEncoder):
         elif 'dtype' in dir(obj):
             return dict(__npdatum__=str(obj), dtype=str(obj.dtype))
         # Let the base class default method raise the TypeError
-        return json.JSONEncoder(self, obj)
+        return json.JSONEncoder(obj)
 
 
 def decode(dct):
@@ -114,8 +112,10 @@ class dictFile(dict):
     """
     extends dict to prove save and load methods.
     """
-
-    def __init__(self, filename: typing.Optional[str] = None,
+    _filename:pathlib.Path
+    Config:typing.Dict
+    def __init__(self,
+                 filename: typing.Optional[typing.Union[str,pathlib.Path]] = None,
                  Config_dct: typing.Optional[dict] = None):
         """
         Initialise dictFile object from file or from dict (which is fairly awful way)
@@ -140,24 +140,6 @@ class dictFile(dict):
         self.Config = Config_dct
         self._filename = path
 
-    # def __getattr__(self, name):
-    #     """
-    #     Default way of getting values back.
-    #     :param name: attribute name to be retrieved
-    #     :param name: attribute name to be retrieved
-    #     :return: value
-    #     """
-    #     # TODO -- consider making __getattr__ work if name not found -- when it returns None.
-    #     # TODO -- seems to fail sometimes with massive recursion.
-    #     # Disadvantage of returning None is that if key mistyped will get None so makes life more Error prone
-    #     # One approach might be to have a list of names and then if key in there return None otherwise fail?
-    #     if name in self:
-    #         return self[name]
-    #     elif name in self.Config:
-    #         return self.Config[name]
-    #     else:
-    #         raise AttributeError(
-    #             "Failed to find %s in self.Config" % (name))  # spec for __getattr__ says raise AttributeError
 
     def print_keys(self):
         """
@@ -185,13 +167,14 @@ class dictFile(dict):
         if filename is None: raise ValueError("Provide a filename")
         # simply write object to JSON file. Note no error trapping
         if os.path.isfile(filename): os.remove(filename)
-        with open(filename, 'w') as fp:
+
+        with open(filename, 'wt') as fp:
             json.dump(self.Config, fp, cls=NumpyEncoder, indent=4)
         if verbose:
             print("Wrote to %s" % filename)
         # return None
 
-    def getv(self, key, default=None):
+    def getv(self, key: typing.Hashable, default=None):
         """
         Return values from Config component
         :return: value or None if key not defined
@@ -247,7 +230,7 @@ class dictFile(dict):
             config = OptClimConfigVn3(self)
         else:
             raise Exception(f"Version must be < 4. Write new code for {vn}!")
-
+        # fix the covariances
         return config
 
 
@@ -2017,6 +2000,17 @@ class OptClimConfigVn3(OptClimConfigVn2):
 
         super().__init__(config)  # call super class init
         self.comment_end = '_comment'  # define what a comment looks like.
+        # potentially convert dumped strings back to dataframes. Bit hacky
+        # TODO when fix StudyConfig to use same generic json machinery as rest of code then
+        # update here..
+        cov = self.getv('_covariance_matrices',{}) # shallow copy
+        for k,v in cov.items():
+            if isinstance(v,dict) and 'dataframe' in v:
+                self.Config['_covariance_matrices'][k]=self.dict2cov(v)
+        # and potentially read in the covariances.
+        cov = self.Covariances() # force read in.
+
+
 
     def __eq__(self, other: OptClimConfigVn3) -> bool:
         """
@@ -2027,8 +2021,29 @@ class OptClimConfigVn3(OptClimConfigVn2):
         if type(self) != type(other):
             print(f"self type: {type(self)} not the same as {type(other)}")
             return False
+        ok= True
+        for k,v in self.Config.items():
+            if k not in other.Config:
+                my_logger.warning(f"Failed to find {k} in other")
+                ok=False
+                break # exit the loop
 
-        return self.Config == other.Config
+            if k == '_covariance_matrices': # special for covariances.
+                for k2,v2 in v.items():
+                    if isinstance(v2,pd.DataFrame):
+                        ok2= v2.equals(other.Config[k][k2])
+                        if not ok2:
+                            my_logger.info(f"Dataframes {k}/{k2} differ")
+                    else:
+                        ok2 = (v2 == other.Config[k][k2])
+                        if not ok2:
+                            my_logger.info(f" {k}/{k2} differ")
+            else:
+                ok2=(v == other.Config[k])
+
+            ok = ok and ok2
+
+        return ok
 
     @classmethod
     def expand(cls, filestr: typing.Optional[str]) -> typing.Optional[pathlib.Path]:
@@ -2043,6 +2058,66 @@ class OptClimConfigVn3(OptClimConfigVn2):
         path = pathlib.Path(path).expanduser()
         return path
 
+    @classmethod
+    def cov2dict(cls,cov:pd.DataFrame) -> dict:
+        """
+        Convert covariance (as a pandas dataframe) to a dict containing scale factor
+          and converted scaled dataframe
+        :param cov:covariance
+        :return:jsonised version of df & scale factor.
+           Values will be scaled by 1/abs(min) excluding zero values.
+        """
+        acov = np.abs(cov.values)
+        scale = 1.0/np.min(acov[acov >0]) # min abs value where cov > 0. If everything 0 will fail.
+        dct=dict()
+        dct['dataframe'] = (cov*scale).to_dict(orient='tight') # scale and convert to json
+        dct['scale']=scale # store the scale
+        return dct
+
+    @classmethod
+    def dict2cov(cls,dct:dict) -> pd.DataFrame:
+        """
+        Convert a dict representation back to a dataframe.
+        :param dct: dict to be be convered. SHould contain scale and dataframe keys
+        :return: Decoded dataframe
+        """
+        scale = dct.pop('scale')
+        df = pd.DataFrame.from_dict(dct.pop('dataframe'),orient='tight')
+        df /= scale # rescale it.
+        return df
+
+    def save(self,
+             filename:typing.Optional[typing.Union[str,pathlib.Path]]=None,
+             verbose:bool=False) -> None:
+        """
+        saves dict to specified filename.
+        :param filename to save file to. Optional and if not provided will use
+           private variable filename in object. If provided filename that self uses
+           subsequently will be this filename
+        :param verbose (optional, default False).
+            Does not do anything -- just for compatibility with older versions of code.
+
+        :return: Nade
+        """
+        if filename is not None:
+            self._filename = filename  # overwrite filename
+        if filename is None and hasattr(self, "_filename"):
+            filename = self._filename
+        if filename is None: raise ValueError("Provide a filename")
+
+        # convert covariance matrices to json so we can write them out.
+        # Will need to convert back on read.
+        dct=self.Config.copy()
+        cov = dct['_covariance_matrices'] # saving on typing!
+        json_cov= cov.copy()
+        for k,v in cov.items():
+            if isinstance(v,pd.DataFrame):
+                my_logger.debug(f"Covar key: {k} converting  to jsonable dict")
+                json_cov[k]=self.cov2dict(v)
+        dct['_covariance_matrices']=json_cov # overwrite
+        with open(filename, 'wt') as fp: # write it out.
+            json.dump(dct, fp, cls=NumpyEncoder, indent=4)
+        my_logger.info(f"Wrote config to {filename}")
     def normalise(self, pandas_obj: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:
         """
         Normalize a parameters by range such that min is 0 and max is 1
@@ -2053,6 +2128,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
         range = self.paramRanges(paramNames=pnames)  # get param range
         nvalues = (pandas_obj - range.loc['minParam', :]) / range.loc['rangeParam', :]
         return nvalues
+
 
     def best_obs(self, best_obs: typing.Optional[pd.Series] = None) -> pd.Series:
         """
@@ -2156,8 +2232,11 @@ class OptClimConfigVn3(OptClimConfigVn2):
         return soln
 
     def to_dict(self) -> dict:
-        """ Convert StudyConfig to a dict """
-        return vars(self)
+        """ Convert StudyConfig to a dict suitable for writing out"""
+        #raise ValueError("Not expected any calls to this.")
+        dct=vars(self)
+        # TODO Might need to modify dct so that covariances are jsonable.
+        return dct
 
     # stuff to do with running a model.
 
@@ -2222,8 +2301,8 @@ class OptClimConfigVn3(OptClimConfigVn2):
         return self.run_info()["modelName"]
 
     def module_name(self,
-                    value:typing.Optional[str]=None,
-                    model_name:typing.Optional[str]=None) -> str:
+                    value: typing.Optional[str] = None,
+                    model_name: typing.Optional[str] = None) -> str:
         """
         Returns name of module to be loaded.
          Uses run_info['module_name']. If not present (or None) then model_name will be used
@@ -2231,7 +2310,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
         :param model_name: If not None then rather than using self.model_name() then model_name will be used
         :return: Module to be loaded.
         """
-        self.set_run_info(module_name=value) # set module_name
+        self.set_run_info(module_name=value)  # set module_name
         module_name = self.run_info().get('module_name')
         if module_name is None:
             my_logger.debug("No module_name found. Using model_name()")
@@ -2403,3 +2482,142 @@ class OptClimConfigVn3(OptClimConfigVn2):
         initial = self.strip_comment(initial)
         keys = list(initial['initParams'].keys())  # return a copy of the list.
         return keys
+
+    def Covariances(self,
+                    obsNames:typing.Optional[typing.List[str]]=None,
+                    trace:bool=False,  # TODO remove trace -- replaced with logging
+                    dirRewrite:typing.Optional[typing.Dict]=None, #TODO consider removing this as saved config should have covariances in.
+                    scale:bool=False,
+                    constraint:typing.Optional[bool]=None,
+                    read:bool=False,
+                    CovTotal: typing.Optional[pd.DataFrame] = None,
+                    CovIntVar: typing.Optional[pd.DataFrame] = None,
+                    CovObsErr: typing.Optional[pd.DataFrame] = None):
+        """
+        If CovObsErr and CovIntVar are both specified then CovTotal will be computed from
+        CovObsErr+2*CovIntVar overwriting the value of CovTotal that may have been specified.
+        Unspecified values will be set equal to None.
+        If CovIntVar is not present it will be set to diag(1e-12)
+        If CovTotal is not present it will be set to the identity matrix
+
+        :param obsNames: Optional List of observations wanted and in order expected.
+        :param trace: optional with default False. If True then additional output will be generated.
+        :param dirRewrite: optional with default None. If set then rewrite directory names used in readCovariances.
+        :param scale: if set true  then covariances are scaled by scaling factors derived from self.scales()
+        :param constraint: is set to True  (default is None) then add constraint weighting into Covariances. If set to None then
+           if configuration asks for constraint (study.sigma set True) then will be set True. If set False then no constraint will be set.
+            Total and ObsErr covariances for constraint will be set to 1/(2*mu) while IntVar covariance will be set to 1/(100*2*mu)
+            This is applied when data is returned. If you don't want constraint set then see StudyConfig.constraint method.
+
+        :param CovTotal -- if not None set CovTotal to  value overwriting any existing values.
+           Should be a pandas datarrray
+        :param CovIntVar -- if not None set CovIntVar to value overwriting any existing values.
+        :param CovObsErr -- if not None set CovObsErr to value overwriting any existing values.
+         In setting values you can make CovTotal inconsistent with CovIntVar and CovObsErr.
+         This method does not check this. You should also pass in unscaled values as scaling is applied on data
+        No diagonalisation  is done to these value. Constraint, if requested, added on.
+         Scaling is then applied to these values (or original values)
+        :param read -- if True use readCovariances to read in the data in essence resetting covariances
+        :return: a dictionary containing CovTotal,CovIntVar, CovObsErr-  the covariance matrices and ancillary data.
+         None if not present. Also may modify the configuration.
+
+        TODO: Modify internal var covariance matrix as depends on ensemble size.
+        """
+
+        matrix_key = "_covariance_matrices"  # where we store the covariance matrices.
+        keys = ['CovTotal', 'CovIntVar', 'CovObsErr']  # names of covariance matrices
+        useConstraint = constraint
+        if constraint is None:
+            useConstraint = self.constraint()  # work out if we have a constraint or not.
+
+        if obsNames is None: obsNames = self.obsNames(
+            add_constraint=False)  # don't want constraint here. Included later
+        cov = {}  # empty dict to return things in
+        covInfo = self.getv('study', {}).get('covariance',{})
+        # extract the covariance matrix and optionally diagonalise it.
+        readData = (self.getv(matrix_key, None) is None) or read
+        bad_reads = []
+        if readData:
+            logging.info("Reading covariance matrices")
+            for k in keys:
+                fname = covInfo.get(k, None)
+                if fname is not None:  # specified in the configuration file so read it
+                    try:
+                        cov[k] = self.readCovariances(fname, obsNames=obsNames, trace=trace, dirRewrite=dirRewrite)
+                        cov[k + "File"] = fname  # store the filename
+                        if cov[k] is not None:  # got some thing to further process
+                            if covInfo.get(k + "Diagonalise", False):  # want to diagonalise the covariance
+                                # minor pain is that np.diag returns a numpy array so we have to remake the DataFrame
+                                cov[k] = pd.DataFrame(np.diag(np.diag(cov[k])), index=obsNames, columns=obsNames,
+                                                      dtype=float)
+                                my_logger.info("Diagonalising " + k)
+                    except ValueError as exception:  # error in readCovariance
+                        bad_reads += [str(exception)]
+            if len(bad_reads) > 0:  # Failed somehow so raise ValueError.
+                raise ValueError("\n".join(bad_reads))
+            # make total covariance from CovIntVar and CovObsErr if both are defined.
+            if (cov.get('CovIntVar') is not None and
+                    cov.get('CovObsErr') is not None):  # if key not defined will "get" None
+                k = 'CovTotal'
+                cov[k] = cov['CovObsErr'] + 2.0 * cov['CovIntVar']
+                cov[k + '_info'] = 'CovTotal generated from CovObsErr and CovIntVar'
+                my_logger.info("Computing CovTotal from CovObsErr and CovIntVar")
+                if covInfo.get(k + "Diagonalise", False):  # diagonalise total covariance if requested.
+                    my_logger.debug("Diagonalising " + k)
+                    cov[k] = pd.DataFrame(np.diag(np.diag(cov['CovTotal'])), index=obsNames, columns=obsNames)
+            for k,value in zip(['CovIntVar','CovObsErr','CovTotal'],[1e-12,1,1]):
+                if cov.get(k) is None:  # Set it to something
+                    my_logger.warning(f"{k} not set so setting to diag {value}")
+                    cov[k] = pd.DataFrame(value * np.identity(len(obsNames)),
+                                                index=obsNames, columns=obsNames,
+                                                dtype=float)
+
+
+            self.setv(matrix_key, cov)  # store the covariances as we have read them in.
+        # end of reading in data.
+        # overwrite if values passed in.
+
+        # set up values from values passed in  overwriting values if necessary
+        cov = self.getv(matrix_key)
+        if CovTotal is not None:
+            my_logger.debug("Setting covTotal")
+            cov['CovTotal'] = CovTotal
+            cov['CovTotal' + 'File'] = 'Overwritten '
+        if CovIntVar is not None:
+            my_logger.debug("Setting covIntVar")
+            cov['CovIntVar'] = CovIntVar
+            cov['CovIntVar' + 'File'] = 'Overwritten '
+        if CovObsErr is not None:
+            my_logger.debug("Setting covObsErr")
+            cov['CovObsErr'] = CovObsErr
+            cov['CovObsErr' + 'File'] = 'Overwritten '
+
+        cov = copy.deepcopy(self.getv(matrix_key))  # copy from stored covariances.
+        # Need a deep copy as cov is a dict pointing to datarrays. As the dataarrays get modified then
+        # that would modify the underlying cached values.
+
+        # apply constraint.
+        if useConstraint:
+            # want to have constraint wrapped in to covariance matrices. Rather arbitrary for all but
+            # Total!
+            consValue = 2.0 * self.optimise()['mu']
+            consName = self.constraintName()
+            for k, v in zip(keys, (consValue, consValue / 100., consValue)):
+                # Include the constraint value. Rather arbitrary choice for internal variability
+                if k in cov:
+                    cov[k].loc[consName, :] = 0.0
+                    cov[k].loc[:, consName] = 0.0
+                    cov[k].loc[consName, consName] = v
+        # scale data
+        if scale:
+            obsNames = self.obsNames(
+                add_constraint=useConstraint)  # make sure we have included the constraint (if wanted) in obs
+            scales = self.scales(obsNames=obsNames)
+
+            cov_scale = pd.DataFrame(np.outer(scales, scales), index=scales.index, columns=scales.index)
+            for k in keys:
+                if k in cov and cov[k] is not None:
+                    cov[k] = cov[k] * cov_scale
+                    my_logger.debug(f"Scaling {k}")
+
+        return cov

@@ -23,7 +23,10 @@
         "maxRuns": null,
         "maxRuns_comment": "Maximum number of runs to do in parallel",
         "max_model_simulations": null,
-        "max_model_simulations_comment": "Maximum number of simulations to do in total"
+        "max_model_simulations_comment": "Maximum number of simulations to do in total",
+        "test_nondetermin":"warning",
+	    "test_nondetermin_comment":"If value is error an error is triggered if algorithm appears to be behaving non-deterministically. If value is warning a warning is given. Default is error."
+
         },
     "run_info_comment": "Information  for run_info. Must include submit_engine and modelName. Can include other keys for use in submission. Useful ones are runTime, runCode & maxRuns ",
     "logging":"INCLUDE $OPTCLIMTOP/OptClimVn3/configurations/log_config.ijson",

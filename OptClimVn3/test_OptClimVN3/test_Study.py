@@ -120,7 +120,7 @@ class TestStudy(unittest.TestCase):
         cov = self.config.Covariances(scale=True)['CovTotal']
         sd = pd.Series(np.sqrt(np.diag(cov)), index=cov.columns)
         tgt = self.config.targets(scale=True)
-        pdtest.assert_frame_equal(obs_norm * sd + tgt, obs_scale)
+        pdtest.assert_frame_equal(obs_norm * sd + tgt, obs_scale,check_exact=False)
 
     def test_cost(self):
         # test that the cost method does as expected
@@ -142,8 +142,6 @@ class TestStudy(unittest.TestCase):
 
         # ensure that the Series has the correct number of elements
         self.assertEqual(len(cost), 2)
-
-
 
 
 
@@ -185,6 +183,11 @@ class TestStudy(unittest.TestCase):
         params=dict(fred=2,harry=3)
         m3 = self.study.get_model(params)
         self.assertIsNone(m3)
+
+    def test_runConfig(self):
+        # test that runConfig works.
+        newConfig=self.study.runConfig(filename=self.direct/'fred.json')
+        self.assertIsInstance(newConfig.Config['_covariance_matrices']['CovTotal'],pd.DataFrame)
 
 
 if __name__ == '__main__':

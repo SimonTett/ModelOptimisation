@@ -86,7 +86,8 @@ class runSubmit(SubmitStudy):
                 my_logger.warning(f"Missing {model}. Closest match is {close_model} with abs norm. param diff {delta}")
 
             if test_nondetermin == 'error':
-                raise ValueError("Failed as have keys in prev_trace not in trace. Set run_info/test_nondeterm to 'warning' to ignore")
+                raise ValueError("Failed as have keys in prev_trace not in trace. Set run_info/test_nondetermin to "
+                                 "'warning' to ignore")
         
         # dealt with potential non-determinism.
         self.prev_trace = self.trace[:]
