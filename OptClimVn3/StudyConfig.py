@@ -646,7 +646,7 @@ class OptClimConfig(dictFile):
                                 my_logger.info("Diagonalising " + k)
                     except ValueError as exception:  # error in readCovariance
                         bad_reads += [str(exception)]
-            if len(bad_reads) > 0:  # failed somehow. Raie ValueError.
+            if len(bad_reads) > 0:  # failed somehow. Raise ValueError.
                 raise ValueError("\n".join(bad_reads))
             # make total covariance from CovIntVar and CovObsErr if both are defined.
             if cov.get('CovIntVar') is not None and cov.get(
@@ -2621,3 +2621,4 @@ class OptClimConfigVn3(OptClimConfigVn2):
                     my_logger.debug(f"Scaling {k}")
 
         return cov
+

@@ -66,7 +66,7 @@ class TestJsonEncoder(unittest.TestCase):
         :return:
         """
 
-        test = {"__cls__name__": "ndarray", "object": [1, 2, 3]}
+        test = {"__cls__name__": "ndarray", "object": dict(data=[1, 2, 3],typ='int32')}
         expect=np.array([1, 2, 3])
         decode = obj_to_from_dict()
         got = decode.decode(test)

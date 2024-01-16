@@ -236,9 +236,9 @@
         "rhobeg": 0.18,
         "rhobeg_comment": "Radius of parameter trust region at start",
         "rhoend": 0.1,
-        "rhoend_comment": "Radius of paramater trust region for termination (for our purpose this is in normalised parameters)",
-        "maxfun": 200,
-        "maxfun_comment": "Maximum number of model evaluations to be done. Default is O(1000). reduced to 90 so have data to do a mid-point look at  ",
+        "rhoend_comment": "Radius of parameter trust region for termination (for our purpose this is in normalised parameters)",
+        "maxfun":50,
+        "maxfun_comment": "Maximum number of model evaluations to be done. Default is O(1000). reduced to 50 so have data to do a mid-point look at  ",
         "scaling_within_bounds": true,
         "scaling_within_bounds_comment": "Scale internally so all in range 0 to 1",
         "namedSettings": {
