@@ -34,8 +34,8 @@ class testStudyConfig(unittest.TestCase):
         Standard setup for all test cases
         :return:
         """
-        root = importlib.resources.files("OptClimVn3")
-        configFile = root / 'configurations/example_Model/configurations/dfols14param_opt3.json'
+        root = '/BIGDATA2/sysu_atmos_wjliang_1/FG3/ModelOptimisation/OptClimVn3'#importlib.resources.files("OptClimVn3") #liangwj
+        configFile = root + '/configurations/example_Model/configurations/dfols14param_opt3.json'#liangwj
         self.config = StudyConfig.readConfig(configFile)
         # generate fake -lookup tables
 
@@ -789,7 +789,7 @@ class testStudyConfig(unittest.TestCase):
         from dfols.solver import OptimResults
         import numpy as np
         test_soln = OptimResults(*[indx*12+0.1 for indx in range(0,9)])
-        df=pd.DataFrame(np.ones((3,3))*1.111,index=['a','b','c'],columns=['x','y','z'])
+        df=pd.DataFrame(np.ones((3,3))*1.111,index=['x','y','z'],columns=['x','y','z'])#liangwj
         test_soln.diagnostic_info=df
         self.config.dfols_solution(solution=test_soln)
         new_soln=self.config.dfols_solution() # get the new soln

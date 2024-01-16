@@ -159,6 +159,7 @@ class testRunSubmit(unittest.TestCase):
 
         Tests:
 
+
         0) Can retrieve existing values and they are as expected.
 
         1)
@@ -430,11 +431,10 @@ class testRunSubmit(unittest.TestCase):
         # run DFOLS "naked"
         # set up DFOLS
         dfols_config = configData.DFOLS_config()
-        dfols_config[
-            "maxfun"
-        ] = 50  # making this 100 seems to cause an extra evaluation and problems with the Jacobian.
-        dfols_config["rhobeg"] = 1e-1
-        dfols_config["rhoend"] = 1e-3
+
+        dfols_config['maxfun'] = 75 # making this 100 seems to cause an extra evaluation and problems with the Jacobian.
+        dfols_config['rhobeg'] = 1e-1
+        dfols_config['rhoend'] = 1e-3
         # general configuration of DFOLS -- which can be overwritten by config file
         userParams = {
             "logging.save_diagnostic_info": True,
@@ -554,10 +554,18 @@ class testRunSubmit(unittest.TestCase):
 
         pdtest.assert_series_equal(best, expectparam, rtol=1e-4)
 
-    @unittest.mock.patch.object(
-        engine.sge_engine, "job_status", autospec=True, return_value="notFound"
-    )
-    def test_runJacobian(self, mck):
+        ## test that max_model_simulations overwited maxfun and generates a warning message.
+        rSubmit.config.max_model_simulations(10) # set to 10
+        rSubmit.config.DFOLS_config()['maxfun'] = 100 # set to something.
+        with self.assertLogs('OPTCLIM.runSubmit', level="WARNING") as cm:
+            finalConfig = rSubmit.runDFOLS(scale=scale)
+        self.assertIsNotNone(finalConfig)
+        self.assertEqual(len(cm),2,msg="Expected len 1 logs") # get two records. Not sure why! Dam logging
+        self.assertIn("Overwriting value of maxfun=",cm[1][0])
+        # expected no of evaluations should be max_model_simulations
+        self.assertEqual(len(rSubmit.trace),rSubmit.config.max_model_simulations())
+    @unittest.mock.patch.object(engine.sge_engine,'job_status', autospec=True, return_value='notFound')
+    def test_runJacobian(self,mck):
         """
         test runJacobian!
 

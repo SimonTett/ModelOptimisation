@@ -2,317 +2,96 @@ from __future__ import annotations
 
 import logging
 import typing
-
+import pathlib
 from SubmitStudy import SubmitStudy
 import numpy as np
 import pandas as pd
 import optclim_exceptions
 import warnings
 import functools
-
-my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
-
-from model_base import model_base
-
-
-class provisional(model_base):
-    rng: np.random.default_rng
-    provisional_models: dict[str : pd.Series]
-    create_models: bool
-    max_provisional_cases: int
-    provisional_count: int  # number of provisional cases made
-    successful_provisional_count: int  # number of provisional cases used.
-    mean: typing.Optional[pd.Series]
-    cov: typing.Optional[pd.DataFrame]
-    """ 
-    Class to support provisional generation of models.  To be used within runSubmit
-    Idea is that a model only gets created if key is present. Algorithm gets run twice.
-    If key is not present then a random sample is generated. 
-    Class objects have the following attributes:
-    rng: a np.random.default_rng object
-    provisional_keys: dict of keys and (random) observations. 
-    max_provisional_cases: int -- the maximum number of provisional cases to generate.  
-    provisional_count:int # number of provisional cases made
-    successful_provisional_count:int # number of provisional cases used. 
- 
-    """
-
-    def __init__(
-        self,
-        seed: typing.Optional[int] = None,
-        max_provisional_cases: typing.Optional[int] = None,
-        mean: typing.Optional[pd.Series] = None,
-        cov: typing.Optional[pd.DataFrame] = None,
-    ):
-        self.rng = np.random.default_rng(seed=seed)
-        self.provisional_models = dict()
-        self.create_models = False
-        self.max_provisional_cases = max_provisional_cases
-        self.provisional_count = 0
-        self.successful_provisional_count = 0
-        if (cov is not None) and (
-            mean is not None
-        ):  # check cov and mean are compatable
-            if cov.shape[0] != cov.shape[1]:
-                raise ValueError("Cov not square")
-            if cov.shape[0] != mean.shape[0]:
-                raise ValueError("Cov not compatible with mean")
-            if not np.all(cov.index == cov.columns):
-                raise ValueError("cov index != cov.columns")
-            if not np.all(mean.index == cov.index):
-                raise ValueError("Mean and covariance not compatible")
-        self.mean = mean
-        self.cov = cov
-
-    def set_for_provisional(self) -> None:
-        """
-        Set up provisional to generate provisional cases
-        :return: None
-        """
-        self.provisional_models = dict()  # now an empty dict.
-        self.create_models = False  # cannot create models
-
-    def set_for_create(self) -> None:
-        """
-        Set up provisional to create models
-        :return: Nothing
-
-        """
-        self.create_models = True  # can create models.
-
-    def __eq__(self, other):
-        """
-        Test for equality. provisional objects are equal if they are the same type,
-        and have the same value for all attributes except for rng where
-         we require the state to be the same.
-        :param other:
-        :return:
-        """
-        equal = isinstance(other, type(self))
-        if not equal:
-            my_logger.debug("Types differ")
-            return equal
-
-        for attr in vars(self).keys():  # loop over attributes
-
-            sattr = getattr(self, attr)
-            oattr = getattr(other, attr)
-            equal = isinstance(oattr, type(sattr))
-            if not equal:
-                my_logger.debug(
-                    f"{attr}  have different types: self:{type(sattr)} other:{type(oattr)}"
-                )
-                return equal
-            if attr in [
-                "rng",
-                "cov",
-                "mean",
-            ]:  # attributes we need to do something special for
-                continue
-            equal = sattr == oattr
-            if not equal:
-                my_logger.debug(f"{attr}  differ: self:{sattr} other:{oattr}")
-                return equal
-
-        equal = self.rng.__getstate__() == other.rng.__getstate__()
-        if not equal:
-            my_logger.debug("rng states  differ")
-            return equal
-
-        equal = self.cov.equals(other.cov)
-        if not equal:
-            my_logger.debug(f"cov differ self:{self.cov} other:{other.cov}")
-            return equal
-
-        equal = self.mean.equals(other.mean)
-        if not equal:
-            my_logger.debug(f"mean differ self:{self.mean} other:{other.mean}")
-            return equal
-
-        return equal
-
-    def to_dict(self) -> dict:
-        """
-        Convert a provisional object to a dict. For the RNG generator, the state is used.
-        Used for generic_json.dump/dumps
-        :return:dct
-        """
-        result = super().to_dict()
-        result["rng"] = self.rng.__getstate__()  # get the state of the RNG.
-        return result
-
-    @classmethod
-    def from_dict(cls, dct: dict) -> "provisional":
-        """
-        Convert a dict into a provisional object. Used for generic_json.load/loads
-        :param dct: Information about the provisional object.
-         rng is setup with the state stored here.  All other keys get set by the superclass from_dict class method
-        :return: A provisional object.
-        """
-        rng_state = dct.pop("rng")
-        rng = np.random.default_rng()
-        rng.__setstate__(rng_state)
-        self = super().from_dict(dct)  # use the super class
-        self.rng = rng
-        return self
-
-    def prov_obs(self, key: str) -> typing.Optional[pd.Series]:
-        """
-        Provisionally register a key & simulated obs
-          If key exists then the count for that key is incremented.
-
-         :return: series of simulated (random) obs. OR  None iff have too many keys before registration
-        """
-
-        if key not in self.provisional_models:
-            if len(self.provisional_models) >= self.max_provisional_cases:
-                return None  # can't create a model
-
-            self.provisional_models[key] = 0
-            self.provisional_count += 1  # increase the count of provisional cases.
-            my_logger.debug(
-                f"Adding {key} to preliminary case list. Len now {len(self.provisional_models)}"
-            )
-        self.provisional_models[key] += 1
-        return self.random_obs()
-
-    def random_obs(self) -> pd.Series:
-        """
-        Generate a random observation.
-        :return:A random sample from multi-variate gaussian distribution using self.mean and self.cov.
-        """
-
-        # verify mean and cov are compatible
-        cov = self.cov
-        mean = self.mean
-
-        # generate a sample and wrap it into a pandas Series.
-        result = pd.Series(
-            self.rng.multivariate_normal(mean, cov, check_valid="raise"),
-            index=mean.index,
-        )
-
-        return result
-
-
+my_logger=logging.getLogger(f"OPTCLIM.{__name__}")
 class runSubmit(SubmitStudy):
-    provisional: typing.Optional[provisional]  # for provisional running
+    # Has the following additional attributes over SubmitStudy (and Study)
+    trace:typing.List[str] # the trace of all model evaluations. Elements are keys into model_info
+    prev_trace:typing.List[str] # the trace off all model evaluation the previous time the algorithm was run
+
 
     """
-    Class   to deal with running various algorithms. (not all of which are optimization).
-      It is a specialisation of SubmitStudy and is separated out to make maintenance easier.
-      Idea is that each method should use cases that exist and deal with parallelism.
-      If it finds out that cases are missing it should raise optclim_exceptions.runModelError.
-      Functions should  return a finalConfig which contains
-      whatever additional information they consider useful.
-    
+          Class   to deal with running various algorithms. (not all of which are optimization).
+          It is a specialisation of SubmitStudy and is separated out to make maintenance easier.
+          Idea is that each method should use cases that exist and deal with parallelism.
+          If it finds out that cases are missing it should raise optclim_exceptions.runModelError.
+          Functions should  return a finalConfig which contains
+          whatever additional information they consider useful.
+
        To add a new algorithm then either add it as a method in here or subclass this and add your own runMethods.
        runJacobian is fairly simple and might form a good model for this. See runAlgorithm.py which is the script that
        runs the whole system.
-       
-       has the following attributes over those in SubmitStudy
-       provisional: provisional object which supports provisional generation. 
 
-    """
+   """
 
-    def __init__(self, *args, **kwargs):
+  def __init__(self,
+               config: typing.Optional["OptClimConfigVn3"],
+               name: typing.Optional[str] = None,
+               rootDir: typing.Optional[pathlib.Path] = None,
+               refDir: typing.Optional[pathlib.Path] = None,
+               models: typing.Optional[typing.List["Model"]] = None,
+               model_name: typing.Optional[str] = None,
+               config_path: typing.Optional[pathlib.Path] = None,
+               next_iter_cmd: typing.Optional[typing.List[str]] = None):
+      super().__init__(config, name, rootDir, refDir, models, model_name, config_path, next_iter_cmd)
+      self.trace = []
+      self.prev_trace = []
+    def closest_model(self,model:"Model")  -> ("Model",float):
         """
-         Has same arguments and keyword arguments as superclass __init__ (SubmitStudy.__init__) with some additional:
-          Retrieves max_provisional_cases and rng_seed from provisional info in the config and
-          uses those to initialize a provisional class stored in provisional. If max_provisional_cases is None then
-           no provisional calculations are done.
-        :param scale -- If True apply scaling to obs.
-        :param args: Positional arguments.
-        :param kwargs: Keyword arguments.
+        Find and return the closet model in the (current) model trace to specified model.
+        Close is defined as the smallest min difference for the normalised params that are fp or int.
+         A more sophisticated implementation would normalise difference by the param ranges.
+        :param model: model we are looking for closest match.
+        :return:  Closest model match.
         """
-        super().__init__(*args, **kwargs)
-        self.provisional = None
-        prov_info = self.config.provisional_info()
-        max_provisional_cases = prov_info.get("max_provisional_cases", None)
-        rng_seed = prov_info.get("rng_seed", 1234567)
+        params = self.params(normalize=True,numeric=True,keys=self.trace)
+        mparam = self.params(normalize=True,numeric=True,model=model)
+        delta = (np.abs(mparam-params)).sum(axis=1)
+        # compute the sum of the abs parameter diffs
+        indx = delta.argmin()
+        close_model = list(self.model_index.values())[indx]
+        return close_model,float(delta[indx])
 
-        if max_provisional_cases is not None:
-            # set up mean and cov for random obs generation.
-
-            mean = self.config.targets()
-            cov = self.config.Covariances()["CovTotal"] * 10
-            self.provisional = provisional(
-                seed=rng_seed,
-                max_provisional_cases=max_provisional_cases,
-                mean=mean,
-                cov=cov,
-            )
-            # temp hack for figuring out problems.
-            self.provisional_params = []
-            self.provisional_obs = []
-
-    def sim_obs(self, params: dict, scale: bool = False) -> pd.Series:
+    test_nondetermin_status = typing.Literal['error', 'warning'] # allowed values 
+    def restart(self,test_nondetermin:typing.Optional[typing.test_nondetermin_status]=None):
         """
-        Get simulated observations for observations we want. Will create a new model if needed.
-        Handles preliminary cases.
-        :param params: dictionary of parameters.
-        :param scale: Scale observtions by the scalings in the config data.
-        :return:
+        Setup state for restart. Copies trace to prev_trace and sets trace to empty list.
+        :param test_nondetermin -- verify that trace and prev_trace are consistent --
+            all elements in prev_trace should be in trace.
+            test_nondetermin should be one of 'error or 'warning'. If 'warning' warnings will be given.
+            if 'error' then ValueError will be raised.
+        If None then will be set to 'error'
+        :return: None
         """
+        if test_nondetermin is None:
+            test_nondetermin='error'
+        allowed = runSubmit.test_nondetermin_status.__args__
+        if test_nondetermin not in allowed:
+            raise ValueError(f"{test_nondetermin} should be one of {allowed}")
 
-        obs_names = self.config.obsNames()  # observations we want for this study
-        model = self.get_model(parameters=params)
-        create_model = False  # True if we want to create a new model.
-        key = self.key(params)
+        # check that we have not lost any keys. If so, suggests problem with algorithm.
+        missing_keys = set(self.prev_trace) - set(self.trace)
+        if missing_keys:
+            my_logger.warning(f"Have {len(missing_keys)} keys in prev_trace not in trace.\n Fix alg. They are:\n")
+            for k in missing_keys:
+                # find nearest match
+                model = self.model_index[k] # all models ran.
+                close_model, delta = self.closest_model(model)
+                my_logger.warning(f"Missing {model}. Closest match is {close_model} with abs norm. param diff {delta}")
 
-        if ( model is not None  ) and model.is_processed():  # Model exists and is processed
-            my_logger.debug(f"Model {model} exists")
-            simulated_obs = model.simulated_obs.reindex(index=obs_names)
-            missing_obs = set(obs_names) - set(simulated_obs.index)
-            if len(missing_obs) > 0:  # trigger error as missing obs
-                raise ValueError(
-                    f"Missing {' '.join(missing_obs)} from model {model.name}"
-                )
-            if np.any(simulated_obs.isnull()):  # check for missing.
-                raise ValueError(
-                    f"simulated_obs missing some obs {simulated_obs[simulated_obs.isnull]}"
-                )
-
-        elif (model is not None) and model.is_created():  # model exists and is created
-            my_logger.warning(f"Asking for created model: {model}")
-            create_model = False
-            if self.provisional is None:
-                simulated_obs = pd.Series( np.nan, index=obs_names )  # empty simulated obs
-            else:
-                simulated_obs = self.provisional.random_obs()  # random sim obs.
-
-        elif model is not None:  # model exists but is neither processed or created
-            raise ValueError(f"Model {model} in unexpected state")
-
-        elif self.provisional is not None:  # provisional case
-            create_model = self.provisional.create_models and (key in self.provisional.provisional_models)
-            simulated_obs = self.provisional.prov_obs( key )  # try and register the key getting back random obs.
-            if simulated_obs is None:  # made enough provisional cases
-                my_logger.debug("Made enough provisional cases.")
-                raise optclim_exceptions.enoughProvisionalCases(
-                    "sim_obs had enough provisional obs"
-                )  # tell control level to do proper generation!
-
-        else:  # "normal" case (no provisional running)  -- return series of nan
-            simulated_obs = pd.Series(np.nan, index=obs_names)  # empty simulated obs
-            create_model = True
-            my_logger.debug(f"Creating nan obs for key: {key}")
-
-        if create_model:  # want to create a model?
-            model = self.create_model(params, dump=False)
-            # do not dump. Let the instantiate step handle that.
-            if model is None:  # failed to create a new model
-                # Time to go and create what we have.
-                logging.debug(f"Did not create model for {params}")
-                raise optclim_exceptions.submitModel("sim_obs made enough models")
-            if self.provisional is not None:
-                self.provisional.successful_provisional_count += (
-                    1  # Successful use of provisional.
-                )
-
-        if scale:  # scale sim obs.
-            simulated_obs *= self.config.scales()
-        return simulated_obs
+            if test_nondetermin == 'error':
+                raise ValueError("Failed as have keys in prev_trace not in trace. Set run_info/test_nondetermin to "
+                                 "'warning' to ignore")
+        
+        # dealt with potential non-determinism.
+        self.prev_trace = self.trace[:]
+        self.trace = []
 
     def stdFunction(
         self,
@@ -412,7 +191,7 @@ class runSubmit(SubmitStudy):
         nEns = (
             self.config.ensembleSize()
         )  # how many ensemble members do we want to run.
-        # empty = pd.Series(np.repeat(np.nan, nObs), index=obsNames)
+        empty = pd.Series(np.repeat(np.nan, nObs), index=obsNames)
         for indx in range(0, nsim):  # iterate over the simulations.
             pDict = dict(
                 zip(paramNames, use_params[indx, :])
@@ -421,15 +200,51 @@ class runSubmit(SubmitStudy):
             ensObs = []
             for ensembleMember in range(0, nEns):
                 pDict.update(ensembleMember=ensembleMember)
-                obs = self.sim_obs(pDict, scale=scale)
-                if residual:  # difference from target obs
-                    tgt = self.config.targets(scale=scale)
-                    obs -= tgt
-                if transform is not None:  # apply transform if required.
-                    obs = (
-                        obs @ transform.T
-                    )  # obs in nsim x nobs; transform  is nev x nobs.
+                model = self.get_model(pDict)
+                if model is None:  # no model so time to create one.
+                    model = self.create_model(pDict) # returns None if no model was created.
+                    if model is None:
+                        raise optclim_exceptions.runModelError
+                        # Immediately raise exception as None means no model created and nothing else can be done
+                        # FIXME One issue here is that we are terminating the algorithm without the algorithm itself knowing this
+                        # so then the algorithm can't do any clean up or capture diagnostics.
+                        # This is tricky as really per-algorithm -- we want it to complete but there is no general way of doing this
+                        # one approach would be to pass in a fn which gets run here. For DFOLS (and other opt cases) it could do this by returning obs values = target
+                        # That would terminate but then jacobian etc would be stuffed as would use this last state. A better approach might be to set
+                        # self.exceeded_max_models to True. Then rerun the algorithm with maxFn set to max_model_simulations.
+                        # OR set maxFn to min(max_model_simulations,maxFn).
+                    obs = empty # no model so return nothing.
+                elif model.status != "PROCESSED": # not processed so raise ValueError and complain.
+                    # TODO add in random generation to allow look ahead
+                    raise ValueError(f"{model} status != PROCESSED but is {model.status}")
+                    obs = empty
+                else:  # got a model.
+                    my_logger.debug(f"Using existing model {model}")
+                    obsNames = self.config.obsNames()
+                    obs = model.simulated_obs  # get obs from the model
+                    # if obs is None raise an error -- something gone badly wrong.
+                    if obs is None:
+                        raise ValueError(f"{model} has None for simulated_obs")
+                    missing_obs = set(obsNames) - set(obs.index)
+                    if len(missing_obs) > 0:  # trigger error as missing obs
+                        raise ValueError(f"Missing {' '.join(missing_obs)} from model {model.name}")
+                    # force fixed order.
+                    obs = obs.reindex(
+                        obsNames)  # note using obsNames as specified. transform (if supplied) can change names.
+                    if scale:  # scale sim obs.
+                        obs *= self.config.scales()
+                    if residual:  # difference from target obs
+                        tgt = self.config.targets(scale=scale)
+                        obs -= tgt
+                    if transform is not None:  # apply transform if required.
+                        obs = obs @ transform.T  # obs in nsim x nobs; transform  is nev x nobs.
+                    null = obs.isnull()
+                    if np.any(null):
+                        raise ValueError("Obs contains null values at: " + ", ".join(obs.index[null]))
                 ensObs.append(obs)
+            key = self.key(pDict)
+            self.trace.append(key) # append key to the trace.
+            # This happens both when a new model is created or an existing model used.
             # end of loop over ensemble members.
 
             # compute ensemble-mean if needed
@@ -455,69 +270,7 @@ class runSubmit(SubmitStudy):
 
         return result
 
-    def run_function(
-        self, function: typing.Callable, extra_errors: typing.Optional[list] = None
-    ) -> typing.Any:
-        """
-        Run  function within try/except cases.
-        Two levels -- outer level which catches  enoughProvisionalCases & submitModel errors,
-                   -- inner which only catches enoughProvisionalCases
-        :param function -- function to be run. This function should take no arguments and run the optimisation.
-          This function  *must* be deterministic. If the function uses random numbers then it should initialise
-          the RNG as part of the  function definition.
-        :param extra_errors -- If provided then should be a list of extra errors to catch when the function is run for "real"
-
-        Code will run function twice if self.provisional is not None.
-                If so the first time function is run it will catch optclim_exceptions.enoughProvisionalCases.
-                The second time it runs then it will, in addition, catch optclim_exceptions.submitModel plus extra_errors.
-                If those errors are caught then submitModel will be raised which should trigger instantiation and submission of models
-        :return results of function call
-        """
-        errors = [
-            optclim_exceptions.submitModel,
-            optclim_exceptions.enoughProvisionalCases,
-        ]
-        if extra_errors is not None:
-            errors.extend(extra_errors)
-        errors = tuple(errors)
-        if self.provisional is not None:  # Generating provisional cases?
-            self.provisional.set_for_provisional()
-            try:  # capture enoughProvisionalCases
-                solution0 = function()  # run the function.
-                my_logger.debug(f"Terminated on preliminary running")
-            except optclim_exceptions.enoughProvisionalCases:
-                my_logger.debug(f"Generated enough preliminary cases")
-            # end of dealing with provisional running.
-            my_logger.debug(
-                f"Generated {len(self.provisional.provisional_models)} provisional cases"
-            )
-        # Now run the full case which generates models.
-        try:
-            if isinstance(self.provisional, provisional):
-                self.provisional.set_for_create()
-            solution = function()
-            if isinstance(self.provisional, provisional):
-                self.provisional.set_for_provisional()
-            # generate the actual solutions and cases to run.
-            # This could raise optclim_exceptions.submitModel or enoughProvisionalCases
-            if self.status().isin(["CREATED"]).any():
-                # created some models which need submission.
-                my_logger.debug(f"Have models to submit {self}")
-                raise optclim_exceptions.submitModel(
-                    "Have CREATED Models -- in run_function"
-                )
-                # force model submission.
-        except errors:  # catch errors -- which will then raise submitModel to do submission of models.
-            my_logger.debug(f"Submitting models {self}")
-            if isinstance(self.provisional, provisional):
-                self.provisional.set_for_provisional()
-            raise optclim_exceptions.submitModel(
-                "Models needs submission  -- in runFunc"
-            )
-
-        my_logger.debug(f"Completed algorithm and returning solution")
-        return solution
-
+    
     def genOptFunction(self, **kwargs):
         """
 
@@ -606,19 +359,18 @@ class runSubmit(SubmitStudy):
         But (as yet) no need for this so not implemented. Probably best done with a centred option.
         The Jacobian computed is the transformed Jacobian. (Apply Transpose matrix).
 
-
         :arg self -- a Submit object.
         :param scale -- If True apply scalings.
         :returns a configuration. The following methods should work on it:
                 return: finalConfig -- a studyConfig. The following methods should give you useful data:
-
                 finalConfig.transJacobian() -- the  transformed Jacobian matrix at the optimum pt
                 finalConfig.hessian() -- the  hessian computed from J^T J at the optimum pt.
 
             runs runConfig to provide generic info. (See documentation for that)
 
         """
-
+        #TODO add maxfun which probably means outer loop is over ensemble members
+        # rather than over parameters.
         configData = self.config
         Tmat = configData.transMatrix(scale=scale)
         modelFn = self.genOptFunction(
@@ -712,6 +464,7 @@ class runSubmit(SubmitStudy):
         configData = self.config
         varParamNames = configData.paramNames()
         dfols_config = configData.DFOLS_config()
+        test_nondetermin = configData.run_info().get("test_nondetermin")
         start = configData.beginParam()
         # Sensible defaults  for DFOLS -- which can be overwritten by config file
         userParams = {
@@ -727,34 +480,51 @@ class runSubmit(SubmitStudy):
         prange = (prange.loc["minParam", :].values, prange.loc["maxParam", :].values)
         # update the user parameters from the configuration.
         userParams = configData.DFOLS_userParams(userParams=userParams)
-        tMat = configData.transMatrix(
-            scale=scale
-        )  # scaling on transform matrix and in optfn  needs to be the same.
-        optFn = self.genOptFunction(
-            transform=tMat, residual=True, raiseError=True, scale=scale
-        )
+        # potentially overwrite maxfun with max_model_simulations
+        max_model_sims = self.config.max_model_simulations()
+        if max_model_sims is not None:
+            maxfun = dfols_config.get("maxfun")
+            if maxfun is not None and (maxfun != max_model_sims):
+                my_logger.warning(f"Overwriting value of maxfun={maxfun} with max_model_simulations={max_model_sims}")
+            dfols_config['maxfun']=max_model_sims # and set it! and write back to the config.
+            self.config.DFOLS_config(dfols_config) # Store modified config back
+        tMat = configData.transMatrix(scale=scale)  # scaling on transform matrix and in optfn  needs to be the same.
+        # hacky stuff for dfols
+        trap_two_evals = dfols_config.get("trap_two_evals",False) # deal with bad number of evals
+        if trap_two_evals is None:
+            trap_two_evals = False
 
-        warnings.filterwarnings("ignore")  # Ignore all warnings..
+        raise_error = dfols_config.get("raise_error",False)
+        if raise_error is None:
+            raise_error= False
+        optFn = self.genOptFunction(transform=tMat, residual=True, raiseError=raise_error, scale=scale)
+        try:
+            with warnings.catch_warnings():  # catch the complaints from DFOLS about NaNs encountered...
+                warnings.filterwarnings('ignore')  # Ignore all warnings...
+                self.restart(test_nondetermin=test_nondetermin) # mark state for restart and test non deterministic behaviour.
+                solution = dfols.solve(optFn, start.values, do_logging=False,
+                                       objfun_has_noise=True,
+                                       bounds=prange, scaling_within_bounds=True,
+                                       maxfun=dfols_config.get('maxfun', 100),
+                                       rhobeg=dfols_config.get('rhobeg', 1e-1),
+                                       rhoend=dfols_config.get('rhoend', 1e-3),
+                                       user_params=userParams)
 
-        def run_dfols():  # function for running dfols.
-            np.random.seed(123456)  # set seed
-            result = dfols.solve(
-                optFn,
-                start.values,
-                do_logging=False,
-                objfun_has_noise=True,
-                bounds=prange,
-                scaling_within_bounds=True,
-                maxfun=dfols_config.get("maxfun", 100),
-                rhobeg=dfols_config.get("rhobeg", 1e-1),
-                rhoend=dfols_config.get("rhoend", 1e-3),
-                user_params=userParams,
-            )
-            return result
+        except np.linalg.linalg.LinAlgError:
+            # FIXME -- problem with dfols in that it occasionally generates two cases.
+            # will remove the last case in self.trace and self.model_index if that happens.
+            # this is  a hack and hopefully DFOLS gets updated to avoid this.
+            n_inst_models = len(self.models_to_instantiate())
+            if trap_two_evals and (n_inst_models == 2 ) and (len(self.model_index) > 2): 
+                my_logger.warning("*** DFOLS generated two evaluations. Hacking a fix while waiting for DFOLS to be fixed.***")
+                key=self.trace.pop() # remove the last key from trace
+                self.model_index.pop(key) # and the model.
+                
+            n_inst_models = len(self.models_to_instantiate())
+            my_logger.info(f"Have just generated {n_inst_models} to instantiate")
+            raise optclim_exceptions.runModelError("dfols failed with lin alg error")
+            # this is how DFOLS tells us it got NaN which then triggers running the next set of simulations.
 
-        solution = self.run_function(
-            run_dfols, extra_errors=[np.linalg.linalg.LinAlgError]
-        )
 
         # code here will be run when DFOLS has completed. It mostly is to put stuff in the final JSON file
         # so can easily be looked at for subsequent analysis.
@@ -835,39 +605,16 @@ class runSubmit(SubmitStudy):
             0
         ]  # might be a smaller because some evals in the covariance matrix are close to zero (or -ve)
         start = configData.beginParam(paramNames=paramNames)
-        optFn = self.genOptFunction(
-            transform=tMat, scale=scale, residual=True, raiseError=True
-        )
 
-        def gauss_newton_fn():
-            """
-            Function to deterministically run Gauss Newton
-            """
-            np.random.seed(123456)  # set rng seed to same value
-
-            result = Optimise.gaussNewton(
-                optFn,
-                start.values,
-                configData.paramRanges(paramNames=paramNames).values.T,
-                configData.steps(paramNames=paramNames).values,
-                np.zeros(nObs),
-                optimise,
-                cov=np.identity(nObs),
-                cov_iv=intCov,
-                trace=verbose,
-            )
-            return result
-
-        # FIXME. This is behaving strangely. With provisional running the code runs the jacobian calculation then the
-        # first of the line-search evaluations. Which needs understanding.
-
-        best, status, info = self.run_function(gauss_newton_fn)
-        filename = self.rootDir / (
-            self.config.fileName().stem + "_final.json"
-        )  # final confio
-        finalConfig = self.runConfig(
-            scale=scale, add_cost=True, filename=filename
-        )  # get final runInfo
+        optFn = self.genOptFunction(transform=tMat, scale=scale, residual=True,raiseError=True)
+        #TODO have maxfun which limits the number of fn evaluations.
+        best, status, info = Optimise.gaussNewton(optFn, start.values,
+                                                  configData.paramRanges(paramNames=paramNames).values.T,
+                                                  configData.steps(paramNames=paramNames).values,
+                                                  np.zeros(nObs), optimise,
+                                                  cov=np.identity(nObs), cov_iv=intCov, trace=verbose)
+        filename = self.rootDir / (self.config.fileName().stem + "_final.json")  # final confio
+        finalConfig = self.runConfig(scale=scale, add_cost=True, filename=filename)  # get final runInfo
         finalConfig.GNstatus(status)
         # Store the GN specific stuff. TODO consider removing these and just store the info.
         finalConfig.GNparams(info["bestParams"])

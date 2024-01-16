@@ -19,7 +19,6 @@ from model_base import model_base
 from Model  import Model # root class for all models.
 from StudyConfig import OptClimConfigVn3
 
-
 class Study:
     # class attribute type information.
     config: OptClimConfigVn3
@@ -64,6 +63,7 @@ class Study:
             self.rootDir = pathlib.Path.cwd() / self.name  # default path
         else:
             self.rootDir = rootDir
+
 
         self.model_index = dict()
         if models is not None:
@@ -159,6 +159,7 @@ class Study:
         key = self.key(parameters, fpFmt=fpFmt)
         logging.debug(f"Key is: {key}")
         model = self.model_index.get(key, None)
+
         return model
 
     def read_dir(self, direct: typing.Optional[pathlib.Path] = None, pattern: str = '*.mcfg'):
@@ -203,16 +204,29 @@ class Study:
         dct = {model.name: model.status for model in self.model_index.values()}
         return pd.Series(dct, dtype=str).rename(self.name)
 
-    def params(self, normalize: bool = False) -> pd.DataFrame:
+    def params(self, normalize: bool = False,
+               numeric:bool = False,
+               model:typing.Optional[Model]=None,
+               keys:typing.Optional[typing.List[typing.Hashable]]=None) -> pd.DataFrame|pd.Series:
         """
         Extract the parameters used in the simulations. Will include ensembleMember -- as a "fake" parameter
+        :param numeric -- if True convert all parameters to numeric values using errors='coerce'.
+        :param normalize -- If True normalize parameters by min and max values
         :return: pandas dataframe of parameters
         """
         param_names = self.config.paramNames()  # parameter names we want
-        p = [pd.Series(model.parameters).rename(model.name).reindex(param_names)
-             for model in self.model_index.values()]
-        paramsDF = pd.DataFrame(p)
+        if keys is None:
+            keys = self.model_index.keys()
 
+        models = [self.model_index[key] for key in keys]
+        if model is None: # extract from existing list of models
+            p = [pd.Series(model.parameters).rename(model.name).reindex(param_names)
+                 for model in models]
+            paramsDF = pd.DataFrame(p)
+        else:
+            paramsDF=pd.Series(model.parameters).rename(model.name).reindex(param_names)
+        if numeric: # make the result numeric.
+            paramsDF = paramsDF.apply(pd.to_numeric,errors='coerce')
         if normalize:  # want normalised values
             rng = self.config.paramRanges(paramNames=param_names)
             paramsDF = (paramsDF - rng.loc['minParam', :]) / rng.loc['rangeParam', :]
@@ -277,6 +291,7 @@ class Study:
             finalConfig.simObs() -- returns the simulated observations for each model simulation.
         """
         newConfig = self.config.copy(filename=filename)  # copy the config.
+        # TODO -- read in and store the covariances.
 
         params = self.params()  # get params & obs
         obs = self.obs()
@@ -312,7 +327,7 @@ class Study:
         # get a bunch of annoying messages from matplotlib so turn them off...
         logging.getLogger('matplotlib.font_manager').disabled = True
         cost = self.cost()
-        if len(cost) == 0:
+        if (cost is None) or (len(cost) == 0):
             return  # nothing to plot
         fig, ax = plt.subplots(3, 1, num=figName, figsize=[8.3, 11.7], sharex='col', clear=True)
         (costAx, paramAx, obsAx) = ax  # name the axis .

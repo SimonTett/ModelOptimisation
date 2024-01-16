@@ -12,10 +12,12 @@ import generic_json
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 
+
 class journal:
     """
     Provide history information, ability to run commands and record output.
     """
+
     @staticmethod
     def now():
         """
@@ -53,7 +55,7 @@ class journal:
         :return: last history  or None if no history.
         """
 
-        if hasattr(self,'_history') and (len(self._history) > 0):
+        if hasattr(self, '_history') and (len(self._history) > 0):
             last_hist_key = list(self._history.keys())[-1]
         else:
             last_hist_key = None
@@ -65,7 +67,7 @@ class journal:
          Print out history
          :return:
          """
-        if not hasattr(self,'_history'):
+        if not hasattr(self, '_history'):
             print("No History")
         for time, messages in self._history.items():
             str_msg = '\n'.join(messages)
@@ -119,16 +121,19 @@ class journal:
         # convert to subprocess.CalledProcessError
         args.update(**kwargs)
         cmd_to_run = [os.path.expandvars(c) for c in cmd]
+        cmd_report = " ".join(cmd_to_run)
         # using expandvars so any shell variables in command are expanded.
-        # this little code fragment from chatGPT (with a bit of nudging/editing) traps that.
         try:
             my_logger.debug(f"Running {' '.join(cmd_to_run)}")
             output = subprocess.check_output(cmd_to_run, **args)  # run cmd
         except subprocess.CalledProcessError as e:
-            print("Failed")
-            print("stdout\n",e.output)
-            print("="*60)
-            print("stderr\n",e.stderr)
+            str=f"""cmd_report failed.
+            STDOUT 
+            {e.output}
+            {"=" * 60}
+            STDERR 
+            { e.stderr}"""
+            my_logger.warning(str)
             raise
         except FileNotFoundError as e:  # cmd not found
             raise subprocess.CalledProcessError(
@@ -140,6 +145,13 @@ class journal:
 
         self.store_output(cmd, output)
         return output
+
+
+def to_path(self) -> pathlib.Path:
+    """
+    Convert flexi_path to path
+    :return: if possible a path representation of path.
+    """
 
 
 class model_base:
@@ -163,7 +175,6 @@ class model_base:
         Write object (as json) to config_path.
     """
 
-
     def __init_subclass__(cls, *args, **kwargs):
         # obscure python. See https://peps.python.org/pep-0487/#new-ways-of-using-classes
         """
@@ -180,7 +191,31 @@ class model_base:
         generic_json.obj_to_from_dict.register_TO_VALUE(cls, cls.to_dict)
 
     # class methods
+    _translate_path_var: typing.Optional[
+        typing.Tuple[pathlib.PurePath, pathlib.PurePath]] = None
 
+    # class variable to hold information on how to translate paths from one file system to another.
+    _convert_path2pure:bool = False # class variable to convert paths to purePaths on readin. Supports "old" structures.
+
+    @classmethod
+    def translate_path(cls, path: pathlib.PurePath) -> pathlib.PurePath:
+        """
+        Translate PurePath (coz we have moved files or system). Expect to be used in inherited class from_dict
+        Probably will work if Paths too though care needed with absolute paths
+        :param path - path to be translated.
+        """
+        result = path
+        if cls._translate_path_var:  # want to translate
+            try:  # if we get value error then can't translate path so just return input
+                result = cls._translate_path_var[1] / path.relative_to(cls._translate_path_var[0])
+                # verify file exists. If not leave it alone
+                if not pathlib.Path(result).exists():
+                    result = path
+            except ValueError:
+                pass
+        return result
+
+    # TODO -- find a more elegant way of providing this functionality.
     @classmethod
     def from_dict(cls, dct: dict):
         """
@@ -188,19 +223,42 @@ class model_base:
         but only those that  exist after initialisation.
         Make sure your dct is sensible...This is very generic.
         This is really a factory method
-        :param dct: dict containing information needed by class_name.from_dict()
-        :return: initialised object
+        :param dct: dict containing information needed by class_name.from_dict().
+         pure_paths will be converted -- see fill_attrs.
         """
         obj = cls()  # create an default instance
-        obj.fill_attrs(dct) # fill in the values.
+        obj.fill_attrs(dct, convert_pure_paths=True)  # fill in the values.
         return obj
 
-    def fill_attrs(self,dct:dict):
+    @classmethod
+    def convert_pure_paths(cls, dct: dict) -> dict:
+        """Convert pure paths (if possible to paths)
+        First apply translate_path to anything thing that is a path
+          then trys to convert a purePath of the right type (Windows on Windows; Posix on anything else) to a path,
+        """
+
+        result = dict()
+        right_pure_path_type = type(pathlib.PurePath())  # (will give Windows/Posix as appropriate)
+        for key, var in dct.items():
+            if isinstance(var, pathlib.PurePath):  # something path like
+                if cls._convert_path2pure and isinstance(var,pathlib.Path): # convert path to (local) purePath
+                    var = pathlib.PurePath(var) # purify path.
+                var = cls.translate_path(var)
+                # path is of correct type (after conversion) and exists -- make it a path!
+                if (type(var) == right_pure_path_type) and (pathlib.Path(var).exists()):
+                    var = pathlib.Path(var)
+            result[key] = var  # just store in in the result.
+        return result
+
+    def fill_attrs(self, dct: dict, convert_pure_paths: bool = False):
         """
         Fill in the attributes in self from dct. Used by from_dict.
         :param dct: dict of key value. self.key=value if self.key exists
+        :param convert_pure_paths: If True call convert_pure_paths on the dict.
         :return: Nothing. Changes self in place
         """
+        if convert_pure_paths:
+            dct = self.convert_pure_paths(dct)
         for name, value in dct.items():
             if hasattr(self, name):
                 setattr(self, name, value)
@@ -210,37 +268,47 @@ class model_base:
     def to_dict(self):
         """
         Convert an object to a dict.
+        To support portability across multiple OS. paths are converted to purePath
         :return: dct
         """
         dct = dict()
         for key, value in vars(self).items():
-            dct[key] = value
+            if isinstance(value, pathlib.Path):
+                dct[key] = pathlib.PurePath(value)
+            else:
+                dct[key] = value
 
         return dct
 
     # class methods.
     @classmethod
-    def load(cls, file: [pathlib.Path,str]):
+    def load(cls, file: typing.Union[pathlib.Path, str],
+             check_types:typing.Optional[typing.List]=None):
         """
         Load an object configuration from specified file.
         The correct type of object will be returned. 
-        :param file path to file to be read in. 
+        :param check_types: types to be checked using isintance. If type not as expected error will be triggered
+        :param file path to file to be read in.
            If str passed then it cls.expand will be ran on it.
-        :return: Object of appropriate type.
+        :return: Object of an appropriate type.
         """
         # read it in.
 
-        file = cls.expand(file) # expand user and vars and convert str to path
-        
+        file = cls.expand(file)  # expand user and vars and convert str to path
+
         with open(file, 'rt') as fp:
             cfg = generic_json.load(fp)
-            # this runs all the magic needed to create objects that we know about
+            # this runs all the magic needed to create objects that we know about.
+        if check_types is not None:
+            logging.debug("Checking types against %s", check_types)
+            if not isinstance(cfg,tuple(check_types)):
+                raise ValueError(f"{type(cfg)} is not one of {check_types}")
+
         for k, v in vars(cfg).items():  # debug info.
             my_logger.debug(f"{k}: {v} ")
         my_logger.info(f"Read configuration from {file}")
+
         return cfg
-
-
 
     def __eq__(self, other):
         """
@@ -289,10 +357,13 @@ class model_base:
         :return:whatever result of generic_json.dump is
         """
         config_path.parent.mkdir(parents=True, exist_ok=True)
+        my_logger.debug(f"Created {config_path.parent}")
         with open(config_path, "w") as fp:
             result = generic_json.dump(self, fp, indent=2)  # JSON encoder does the magic needed
         my_logger.info(f"Wrote to {config_path}")
         return result
+
+
 
     @classmethod
     def expand(cls, filestr: typing.Optional[str]) -> typing.Optional[pathlib.Path]:

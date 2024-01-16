@@ -37,12 +37,13 @@ import logging
 import argparse  # parse command line arguments
 import functools
 import os
-import sys
+
 import pathlib
 import numpy as np
 import shutil
 import StudyConfig
 import genericLib
+import sys
 # do minimum startup stuff. Really so can have logging
 
 ## main script
@@ -53,12 +54,12 @@ parser = argparse.ArgumentParser(description="Run study")
 parser.add_argument("-d", "--dir", help="path to root directory where model runs will be created")
 parser.add_argument("jsonFile", help="json file that defines the study")
 parser.add_argument("--delete", action='store_true',
-                    help="Delete the configuration")
+                    help="Delete the configuration. Will ask of OK. If not will exit with status 1")
 parser.add_argument("--purge", action='store_true',
-                    help="purge the configuration by deleting the directory. Will ask if OK.")
+                    help="purge the configuration by deleting the directory. Will ask if OK. If not OK will exit with status 1")
 parser.add_argument("-v", "--verbose", action='count', default=0,
                     help="level of logging info level= 1 = info, level = 2 = debug ")
-parser.add_argument("--clean",help="Do not do anything but --delete and and --purge (if set)",action='store_true')
+#parser.add_argument("--clean",help="Do not do anything but --delete and and --purge (if set)",action='store_true')
 parser.add_argument("--dryrun", action='store_true',
                     help="if set do not submit any jobs but do instantiate models. Good for testing")
 parser.add_argument("--readonly", action='store_true', help="read data but do not instantiate or submit jobs.")
@@ -79,7 +80,10 @@ parser.add_argument("--fail", help=fail_help_str,
                     default='fail',
                     choices=['fail', 'continue', 'perturb', 'perturbc', 'delete'])
 
-parser.add_argument("--guess_fail", action='store_true',help="If set then use guess_fail to see if Running models have failed and set them failed.")
+parser.add_argument("--archive",action='store_true',help="Archive configuration as tar file.")
+
+parser.add_argument("--guess_fail", action='store_true',
+                    help="If set then use guess_fail to see if Running models have failed and set them failed.")
 args = parser.parse_args()
 verbose = args.verbose
 dry_run = args.dryrun
@@ -87,13 +91,12 @@ read_only = args.readonly
 testRun = args.test
 jsonFile = pathlib.Path(os.path.expanduser(os.path.expandvars(args.jsonFile)))
 delete = args.delete
-clean = args.clean
 monitor = args.monitor
 fail = args.fail
 purge = args.purge
 guess_fail = args.guess_fail
 update_config = args.update_config
-
+archive = args.archive
 configData = StudyConfig.readConfig(filename=jsonFile)  # parse the jsonFile.
 
 # logging stuff.
@@ -115,20 +118,21 @@ my_logger = genericLib.setup_logging(
 from Model import  Model # root type for all Models.
 import optclim_exceptions
 import runSubmit
-
+import archive_study
 if args.dir is not None:
     rootDir = Model.expand(args.dir)  # directory defined so set rootDir
 else:  # set rootDir to cwd/name
     rootDir = pathlib.Path.cwd() / configData.name()  # default path
  
 
-if purge: # purging data? Do early to minimize amount of output user sees before this.
+if purge: # purging data? Do early to minimize the amount of output user sees before this.
     result = input(f">>>Going to delete all in {rootDir}<<<. OK ? (yes if so): ") 
     if result.lower() in ['yes']:
         print(f"Deleting all files in {rootDir} and continuing")
         shutil.rmtree(rootDir, onerror=genericLib.errorRemoveReadonly)
     else:
         print(f"Nothing deleted.")
+        sys.exit(1)
 
 my_logger.info(f"Known models are {', '.join(Model.known_models())}")
 my_logger.info("Running from config %s named %s" % (jsonFile, configData.name()))
@@ -164,20 +168,26 @@ if config_path.exists():  # config file exists. Read it in.
         rSUBMIT.update_config(configData)
         # this will overwrite the existing configuration and change anything derived in it.
         # use with care
+        my_logger.warning("Updated configuration. Your configuration might not be consistent.")
 
     if delete:  # delete the config
-        my_logger.info(f"Deleting existing config {rSUBMIT}")
-        rSUBMIT.delete()  # should clean dir and kill runs
-        rSUBMIT = None  # remove it.
-if clean:
-    if not (purge or delete):
-        my_logger.warning("Set --purge or --delete when cleaning if you want cleaning!")
-    my_logger.info("Cleaned. So exiting")
-    exit(0)
+        result = input(f">>>Going to delete existing configs in {rootDir}<<<. OK ? (yes if so): ") 
+        if result.lower() in ['yes']:
+            print(f"Deleting all configs in {rootDir} and continuing")
+            my_logger.info(f"Deleting existing config {rSUBMIT}")
+            rSUBMIT.delete()  # should clean dir and kill runs
+            rSUBMIT = None  # remove it.
+        else:
+            print(f"Nothing deleted.")
+            sys.exit(1) # exit.
+
+
+
 
 if rSUBMIT is None:  # no configuration exists. So create it.
     # We can get here either because config_path does not exist or we deleted the config.
-    args_not_for_restart = ['--delete','--purge','--update']  # arguments to be removed from the restart cmd
+    args_not_for_restart = ['--delete','--purge','--update','--update_config']
+    # Arguments to be removed from the restart cmd
     restartCMD = [arg for arg in sys.argv if arg not in args_not_for_restart]  # generate restart cmd.
     my_logger.info(f"restartCMD is {restartCMD}")
     rSUBMIT = runSubmit.runSubmit(configData, rootDir=rootDir, config_path=config_path,next_iter_cmd=restartCMD)
@@ -227,7 +237,7 @@ if algorithmName in ['RUNOPTIMISED', 'JACOBIAN']:
 else:
     wantCost = True
 finalConfig = None  # so we have something!
-while True:  # loop indefinetly so can have fake_fn. This really to test code/algorithm.
+while True:  # loop indefinitely so can have fake_fn. This really to test code/algorithm.
     try:  # run an algorithm iteration.
         np.random.seed(123456)  # init RNG though probably should go to the runXXX methods.
         if algorithmName == 'DFOLS':
@@ -276,5 +286,11 @@ while True:  # loop indefinetly so can have fake_fn. This really to test code/al
 rSUBMIT.dump_config()  # dump the configuration.
 if finalConfig is not None:  # have a finalConfig. If so save it. We could not have it if dry_run or read_only set.
     finalConfig.save(final_JSON_file)
-    if monitor:
-        finalConfig.plot(monitorFile=monitor_file)  # plot "std plot"
+
+if monitor:
+    rSUBMIT.plot(monitorFile=monitor_file)  # plot "std plot"
+if archive:
+    archive = archive_study.archive_study()
+    archive.archive(rSUBMIT,
+                    extra_paths=[final_JSON_file.relative_to(rootDir),
+                                 monitor_file.relative_to(rootDir)])

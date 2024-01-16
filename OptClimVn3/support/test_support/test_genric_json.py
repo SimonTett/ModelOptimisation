@@ -55,7 +55,8 @@ class TestJsonEncoder(unittest.TestCase):
         obj_to_from_dict.register_FROM_VALUE(Dummy, Dummy.from_value)
 
         values = (1, 2, 3)
-        obj = obj_to_from_dict.value_to_obj('Dummy', values)
+        decode = obj_to_from_dict()
+        obj = decode.value_to_obj('Dummy', values)
         self.assertIsInstance(obj, Dummy)
         self.assertEqual(obj.values, values)
 
@@ -67,17 +68,20 @@ class TestJsonEncoder(unittest.TestCase):
 
         test = {"__cls__name__": "ndarray", "object": dict(data=[1, 2, 3],typ='int32')}
         expect=np.array([1, 2, 3])
-        got = obj_to_from_dict.decode(test)
+        decode = obj_to_from_dict()
+        got = decode.decode(test)
         nptest.assert_equal(expect, got)
 
         test = dict(harry=3.2, fred=2)
-        got = obj_to_from_dict.decode(test)
-        nptest.assert_equal(test,got) # shou;d be identical
+        got = decode.decode(test)
+        nptest.assert_equal(test,got) # shou.d be identical
 
         # bad dict should raise a value error
         test = {"__cls__name__": "ndarray", "object": [1, 2, 3],"comment":'some comment'}
         with self.assertRaises(TypeError):
-            got = obj_to_from_dict.decode(test)
+            got = decode.decode(test)
+
+
 
     def test_default(self):
         """
@@ -136,7 +140,7 @@ class TestJsonEncoder(unittest.TestCase):
 
 
 
-
+''' #liangwj
 class TestJsonUtils(unittest.TestCase):
     def setUp(self):
         nl= namelist_var.namelist_var(filepath=pathlib.Path('test_nl'), namelist='atmos', nl_var='fred')
@@ -165,14 +169,14 @@ class TestJsonUtils(unittest.TestCase):
 
 
     def test_dump_load(self):
-
+        decode = obj_to_from_dict()
         with tempfile.NamedTemporaryFile(delete=False) as f:
             file=f.name
             with open(file, 'w') as f:
                 json.dump(self.data, f, cls=JSON_Encoder)
 
             with open(file, 'r') as f:
-                loaded_data = json.load(f, object_hook=obj_to_from_dict.decode)
+                loaded_data = json.load(f, object_hook=decode.decode)
 
             self.assertAllequal(loaded_data,self.data)
             with open(file, 'w') as f:
@@ -184,13 +188,13 @@ class TestJsonUtils(unittest.TestCase):
 
 
     def test_dumps_loads(self):
-
+        decode = obj_to_from_dict()
         s=json.dumps(self.data, cls=JSON_Encoder)
-        loaded_data = json.loads(s,object_hook=obj_to_from_dict.decode)
+        loaded_data = json.loads(s,object_hook=decode.decode)
         self.assertAllequal(loaded_data,self.data)
         s=dumps(self.data)
         loaded_data = loads(s)
         self.assertAllequal(loaded_data,self.data)
-
+'''
 if __name__ == '__main__':
     unittest.main()

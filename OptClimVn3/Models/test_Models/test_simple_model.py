@@ -81,8 +81,8 @@ class Test_simple_model(unittest.TestCase):
             for line in f:
                 if re.search(modifyStr, line): count += 1
 
-        # expect sevent modifications -- import, 2xstart, 5xfail and 2succeeded.
-        self.assertEqual(count,10)
+        # expect 19 modifications -- import, 5*(start, fail, continue)+3 (fail has some extra cmds)
+        self.assertEqual(count,19)
 
 
     def test_set_params(self):
@@ -113,7 +113,7 @@ class Test_simple_model(unittest.TestCase):
         self.assertIsInstance(cmd,list)
         model = self.model
         outdir = model.model_dir / 'model_output'
-        expected_cmd = eng.submit_cmd([model.submit_script,str(model.StudyConfig_path)],
+        expected_cmd = eng.submit_cmd([model.model_dir/model.submit_script,str(model.StudyConfig_path)],
                                       f"{model.name}{len(model.model_jids):05d}", outdir, rundir=model.model_dir,time=30)
         self.assertEqual(cmd,expected_cmd)
 

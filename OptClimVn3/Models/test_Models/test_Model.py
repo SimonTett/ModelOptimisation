@@ -76,8 +76,8 @@ traverse = importlib.resources.files("Models")
 with importlib.resources.as_file(traverse.joinpath("parameter_config/example_Parameters.csv")) as pth:
     myModel.update_from_file(pth)
 
-root_pth  = importlib.resources.files("OptClimVn3")
-config = StudyConfig.readConfig(root_pth/"configurations/dfols14param_opt3.json")
+root_pth  = '/BIGDATA2/sysu_atmos_wjliang_1/FG3/ModelOptimisation/OptClimVn3'#importlib.resources.files("OptClimVn3")#liangwj
+config = StudyConfig.readConfig(Model.expand("$OPTCLIMTOP/OptClimVn3/configurations/dfols14param_opt3.json")) #liangwj
 
 def fake_function(param):
     return genericLib.fake_fn(config,param)

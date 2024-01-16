@@ -20,7 +20,7 @@ import xarray
 from scipy.stats import chi2
 import typing
 
-
+my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 def get_default(dct, key, default):
     """
     :param dct: dictionary to read value from
@@ -412,7 +412,9 @@ def doGaussNewton(param_value, param_range, UM_value, obs, cov=None,
     hessian, con = regularize_hessian(hessian, reg_crit_cond, reg_pow_range, trace=trace)  # regularize hessian
     if hessian is None:
         # regularization failed
+        my_logger.warning("Failed to regularise hessian matrix. You probably need to fix your covariance matrix.")
         info['condnum'] = con  # update info on the condition number
+        raise ValueError("Failed because hessian could not be regularised")
         return "Fatal", None, None, None, info
 
     # solving linear problem $\nabla^2f(x) s = \nabla f(x) $
@@ -738,7 +740,7 @@ def run_fn(function, params, npt, constraint_target=None):
     :return: array of obs values and constraint.
     """
     if params is None:
-        raise Exception
+        raise ValueError("Params are none.")
 
     # obsValues = np.zeros([params.shape[0], npt])
     obsValues = function(params)

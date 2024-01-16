@@ -25,6 +25,10 @@
   "maxfun_comment": "Maximum number of model evaluations to be done. Default is O(1000). reduced to 50 so have data to do a mid-point look at  ",
   "scaling_within_bounds": true,
   "scaling_within_bounds_comment": "Scale internally so all in range 0 to 1",
+  "raise_error":null,
+  "raise_error_comment":"If True then allow optimise function to raise error rather than DFOLS. Default is false",
+  "trap_two_evals":true,
+  "trap_two_evals_comment":"If true then if dfols generates two evaluations (which is should not) then the last one will be ignored. Default value is False.",
   "namedSettings": {
       "logging.save_poisedness": true,
       "logging.save_poisedness_comment": "whether or not  to calculate geometry statistics as part of diagnostic information",
@@ -45,11 +49,11 @@
       "slow.history_for_slow": 2,
       "slow.history_for_slow_comment": "No of past successful iterations to look at to decide if slow or not",
       "slow.thresh_for_slow": 0.1,
-      "slow.thresh_for_slow_comment": "Log cost function  change for slow converegence",
+      "slow.thresh_for_slow_comment": "Log cost function  change for slow convergence",
       "slow.max_slow_iters": 5,
-      "slow.max_slow_iters_comment": "The number of itertions (once slow determined) to decide making slow progress",
+      "slow.max_slow_iters_comment": "The number of iterations (once slow determined) to decide making slow progress",
       "restarts.use_restarts": true,
-      "restarts.use_restarts_comment": "Restart when slow convergence or too noisy",
+      "restarts.use_restarts_comment": "Restart when slow convergence or too noisy. ",
       "restarts.use_soft_restarts": true,
       "restarts.use_soft_restarts_comment": "Use soft restart -- reuse some existing points when  restarting",
       "restarts.soft.num_geom_steps": 3,
@@ -67,7 +71,7 @@
       "tr_radius.alpha1": 0.9,
       "tr_radius.alpha2": 0.95
       },
-      "NamedSettings_comment": "Settings for named parameters that get passed into dfols via user_params"
+      "namedSettings_comment": "Settings for named parameters that get passed into dfols via user_params"
   },
   "dfols_comment": "Settings for DFOLS"
 }

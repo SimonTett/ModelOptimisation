@@ -345,9 +345,9 @@ class slurm_engine(abstractEngine):
         if outdir is None:
             outdir = pathlib.Path.cwd() / 'output'
             my_logger.debug(f"Set outdir to {outdir}")
-        submit_cmd = ['sbatch', f'--mem={mem}', f'--mincpus={n_cores}', f'--time={time}',
+        submit_cmd = ['yhbatch', '-n',f'1',#f'--mem={mem}', f'--mincpus={n_cores}', f'--time={time}',
                       '--output', f'{outdir}/%x_%A_%a.out', '--error', f'{outdir}/%x_%A_%a.err',
-                      '-J', name]
+                      '-J', name]  #liangwj
         # --mem={mem}: Request mem mbytes  of memory per job
         # --mincpus={n_cores}: Request at least n_cores CPU per job
         # --time={time}: Request a maximum run time of time  minutes per job
@@ -362,7 +362,7 @@ class slurm_engine(abstractEngine):
             submit_cmd += f'--dependency=afterok:{hold}'
         if isinstance(hold, list) and (len(hold) > 0):
             # hold on multiple jobs (empty list means nothing to be held)
-            submit_cmd += "--dependency=afterok:" + ":".join(hold)
+            submit_cmd += [f"--dependency=afterok:" + ":".join(hold)]  #liangwj
         if n_tasks is not None:
             submit_cmd += ['-a', f'1-{n_tasks}']  # -a =  task array
         submit_cmd += cmd
@@ -376,7 +376,7 @@ class slurm_engine(abstractEngine):
         :param jobid: The jobid of the job to be released
         :return: a list of things that can be ran!
         """
-        cmd = ['scontrol', 'release_job', jobid]  # Command to release_job a job
+        cmd = ['yhcontrol', 'release', jobid]  # Command to release_job a job  #liangwj
 
         cmd = self.connect_fn(cmd)
         return cmd
@@ -387,7 +387,7 @@ class slurm_engine(abstractEngine):
         :param jobid: The jobid to kill
         :return: command to be ran (a list)
         """
-        cmd = ['scancel', jobid]
+        cmd = ['yhcancel', jobid]  #liangwj
 
         cmd = self.connect_fn(cmd)
         return cmd
@@ -399,7 +399,7 @@ class slurm_engine(abstractEngine):
         :return: jobid as a string.
         """
 
-        return output.split()[2].split('.')[0]
+        return output.split()[3].split('.')[0]  #liangwj
 
     def job_status(self, job_id: str, full_output: bool = False) -> str:
         """
@@ -427,9 +427,9 @@ class slurm_engine(abstractEngine):
         # work out how to parse result.
         if len(result) == 0:  # nothing found
             return "NotFound"
-        status = result.split(" ")[4]
+        status = result.split()[4]  #liangwj
         if status.startswith("PENDING"):
-            reason = status.split("(")[1].replace(")", "")
+            reason = result.split()[8].split("(")[1].replace(")","")    #status.split("(")[1].replace(")", "")  #liangwj
             if reason in ['JobHeldUser', 'JobHeldAdmin', "Dependency"]:
                 return "Held"
             else:

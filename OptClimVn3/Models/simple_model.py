@@ -34,21 +34,32 @@ class simple_model(Model):
             self.StudyConfig_path = study.config.fileName()  # store the path to the config.
             if not self.StudyConfig_path.is_absolute(): # not absolute so make it so
                 self.StudyConfig_path = pathlib.Path.cwd()/self.StudyConfig_path
-        self.submit_script ='run_simple_model.py'
+        self.submit_script = pathlib.PurePath('run_simple_model.py')
         self.continue_script = self.submit_script # continue is just submit
 
     def create_cmd(self, status:str, modifystr:str,indent:int=0) -> typing.List[str]:
         """
         Create the string to run a cmd to set status.
         :param status: status to set.
+        :param indent: How much to indent lines
         :return: list of strings to print to model script file
         """
+        #TODO -- add way of setting debug status for self.set_status_script
 
         cmd =[f'"{self.set_status_script}"', f'"{self.config_path}"', status]
-        cmd = [f'{self.set_status_script}', f'{self.config_path}', status]
+        cmd = [f'{self.set_status_script}', '-v',f'{self.config_path}', status] # verbose
         if platform.system() == 'Windows':
             cmd = ['python']+cmd
-        lst=[f'cmd = {cmd} {modifystr}',f'subprocess.run(cmd,check=True) {modifystr}']
+
+
+
+        # run command and get some diagnostics
+        lst=[f'cmd = {cmd} {modifystr}',
+             f'result = subprocess.run(cmd) {modifystr}',
+             f'if result.returncode != 0: {modifystr}',
+             f'    print(f"Command {cmd} failed") {modifystr}',
+             f'    result.check_returncode() {modifystr}'
+         ]
         space = " "*indent
         lst =[space+l for  l in lst ]
         return lst
@@ -123,9 +134,12 @@ class simple_model(Model):
         # just use the submit.
         outdir = self.model_dir / 'model_output'
         outdir.mkdir(parents=True, exist_ok=True)
-        cmd = self.engine.submit_cmd([script, str(self.StudyConfig_path)],
-                                f"{self.name}{len(self.model_jids):05d}", outdir,
-                                run_code=runCode, time=runTime,rundir=self.model_dir)
+        my_logger.debug(f"Created {outdir}")
+        cmd = self.engine.submit_cmd([self.model_dir/script, str(self.StudyConfig_path)],
+                                     f"{self.name}{len(self.model_jids):05d}",
+                                     outdir,
+                                     run_code=runCode, time=runTime,
+                                     rundir=self.model_dir)
 
         return cmd
 
@@ -136,3 +150,21 @@ class simple_model(Model):
         """
         return super().perturb(parameters=dict(fail_probability=0.0))
 
+
+    def archive(self,
+                archive: "tarfile.TarFile",
+                rootDir: pathlib.Path,
+                extra_files: typing.Optional[typing.List[typing.Union[pathlib.Path,str]]] = None):
+        
+        if extra_files is None:
+            extra_files = []
+            
+
+        # generate list of extra files that are to be archived.
+        files_to_archive = extra_files + ["params.json",
+                                          "run_simple_model.py",
+                                          "model_output.json",
+                                          "input.json"]
+
+        return super().archive(archive,rootDir, 
+                               extra_files=files_to_archive)
