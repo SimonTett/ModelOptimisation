@@ -1,0 +1,13 @@
+parameter,type,filepath,namelist,nl_var,default,name,function_name
+c0_chg,namelist_var,user_nl_gamil,change_para,c0_chg,1e-3,,
+ke_chg,namelist_var,user_nl_gamil,change_para,ke_chg,9e-6,,
+capelmt_chg,namelist_var,user_nl_gamil,change_para,capelmt_chg,70.0,,
+alfa_chg,namelist_var,user_nl_gamil,change_para,alfa_chg,0.2,,
+cmftau_chg,namelist_var,user_nl_gamil,change_para,cmftau_chg,4800,,
+rhcrit_chg,namelist_var,user_nl_gamil,change_para,rhcrit_chg,0.85,,
+c0_chgs,namelist_var,user_nl_gamil,change_para,c0_chgs,5e-5,,
+rhminl_chg,namelist_var,user_nl_gamil,change_para,rhminl_chg,0.85,,
+rhminh_chg,namelist_var,user_nl_gamil,change_para,rhminh_chg,0.95,,
+dthdpmn_chg,namelist_var,user_nl_gamil,change_para,dthdpmn_chg,-0.08,,
+
+

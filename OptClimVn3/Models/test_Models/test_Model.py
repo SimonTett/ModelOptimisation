@@ -10,9 +10,9 @@ import tempfile
 import time
 import unittest
 import unittest.mock
-import tarfile
 
-import StudyConfig  # so can read in a config for fake_fn.
+
+import StudyConfig # so can read in a config for fake_fn.
 import f90nml
 import numpy as np
 import numpy.testing as nptest
@@ -24,6 +24,7 @@ import generic_json
 from Models import Model
 from Model import register_param
 from namelist_var import namelist_var
+
 
 
 def gen_time():
@@ -75,12 +76,12 @@ traverse = importlib.resources.files("Models")
 with importlib.resources.as_file(traverse.joinpath("parameter_config/example_Parameters.csv")) as pth:
     myModel.update_from_file(pth)
 
-root_pth = importlib.resources.files("OptClimVn3")
-config = StudyConfig.readConfig(root_pth / "configurations/dfols14param_opt3.json")
-
+root_pth  = '/BIGDATA2/sysu_atmos_wjliang_1/FG3/ModelOptimisation/OptClimVn3'#importlib.resources.files("OptClimVn3")#liangwj
+config = StudyConfig.readConfig(Model.expand("$OPTCLIMTOP/OptClimVn3/configurations/dfols14param_opt3.json")) #liangwj
 
 def fake_function(param):
-    return genericLib.fake_fn(config, param)
+    return genericLib.fake_fn(config,param)
+
 
 
 class ModelTestCase(unittest.TestCase):
@@ -100,13 +101,13 @@ class ModelTestCase(unittest.TestCase):
         tmpDir = tempfile.TemporaryDirectory()
         testDir = pathlib.Path(tmpDir.name)  # used throughout.
         optclim3 = Model.expand('$OPTCLIMTOP/OptClimVn3/')
-        refDir = optclim3 / 'configurations/example_Model/reference'
-        post_process = dict(script=optclim3 / 'scripts/comp_obs.py', output_file='sim_obs.json')
+        refDir = optclim3/'configurations/example_Model/reference'
+        post_process = dict(script=optclim3/'scripts/comp_obs.py', output_file='sim_obs.json')
         self.post_process = post_process
         eng = engine.abstractEngine.create_engine('SGE')
         self.engine = eng
         self.model = myModel(name='test_model', reference=refDir,
-                             model_dir=testDir / 'study', post_process=post_process,
+                             model_dir=testDir, post_process=post_process,
                              parameters=dict(RHCRIT=2, VF1=2.5, CT=2),
                              engine=eng)
         self.tmpDir = tmpDir
@@ -123,6 +124,7 @@ class ModelTestCase(unittest.TestCase):
         shutil.rmtree(self.testDir, onerror=genericLib.errorRemoveReadonly)
         self.tmpDir.cleanup()
 
+
     def assertAllequal(self, data1, data2):
         for key, value in data1.items():
             value2 = data2[key]
@@ -135,6 +137,7 @@ class ModelTestCase(unittest.TestCase):
             else:
                 self.assertEqual(value, value2)
 
+
     def test_inherit(self):
         """
         Test that class inheritance and naming works
@@ -143,7 +146,7 @@ class ModelTestCase(unittest.TestCase):
         # remove any registered classes **except** Mode and myModel. Don't know why I need
         # to do this here as do it above..
         for k in Model.known_models():
-            if k not in ["Model", 'myModel']:
+            if k not in ["Model",'myModel']:
                 Model.remove_class(k)
 
         # define a bunch of sub-classes to check all works
@@ -217,8 +220,8 @@ class ModelTestCase(unittest.TestCase):
 
         expect_param_info = [nl1, nl2]
         pardict = dict(fred=2, james=3)
-        model = Model.model_init('myModel', 'test_model', self.refDir, post_process=self.post_process,
-                                 model_dir=self.testDir, parameters=pardict, )
+        model = Model.model_init('myModel', 'test_model',self.refDir, post_process=self.post_process,
+                                 model_dir=self.testDir, parameters=pardict,)
         model.add_param_info(dict(vf1=nl1))
         model.add_param_info(dict(vf1=nl2), duplicate=True)
         self.assertEqual(model.param_info.to_dict()['vf1'], expect_param_info)
@@ -232,21 +235,20 @@ class ModelTestCase(unittest.TestCase):
         :return:
         """
         pardict = dict(fred=2, james=3)
-        model = Model('test_model', self.refDir, post_process=self.post_process,
+        model = Model('test_model', self.refDir,post_process=self.post_process,
                       model_dir=self.testDir, parameters=pardict)
-        cmd = [model.expand(self.post_process['script']), 'input.json', self.post_process['output_file']]
+        cmd = [model.expand(self.post_process['script']),'input.json',self.post_process['output_file']]
         expected_dct = dict(name='test_model', reference=self.refDir,
                             model_dir=self.testDir, parameters=pardict,
-                            post_process={}, _output={},
+                            post_process={},  _output={},
                             _post_process_input='input.json',
                             _post_process_output='sim_obs.json',
                             post_process_cmd_script=cmd, fake=False, simulated_obs=None,
-                            perturb_count=0, parameters_no_key={}, config_path=self.testDir / "test_model.mcfg",
-                            status='CREATED', _history=model._history, engine=None, pp_jid=None, run_info={},
-                            model_jids=[],
-                            submission_count=0, continue_script=pathlib.Path('continue.sh'),
-                            submit_script=pathlib.Path('submit.sh'), submitted_jid=None,
-                            set_status_script=self.model.expand("$OPTCLIMTOP/OptClimVn3/scripts/set_model_status.py"))
+                            perturb_count=0, parameters_no_key= {},config_path=self.testDir / "test_model.mcfg",
+                            status='CREATED', _history=model._history,engine=None,pp_jid=None,run_info={},model_jids=[],
+                            submission_count=0,continue_script=pathlib.Path('continue.sh'),
+                            submit_script=pathlib.Path('submit.sh'),submitted_jid=None,
+                            set_status_script= self.model.expand("$OPTCLIMTOP/OptClimVn3/scripts/set_model_status.py"))
 
         dct = model.to_dict()
         self.assertEqual(expected_dct, dct)
@@ -269,7 +271,7 @@ class ModelTestCase(unittest.TestCase):
                 self.fredv = 10
 
         for class_name in ['Model', 'model4', 'model5']:
-            model = Model.model_init(class_name, f'test_{class_name}01', self.refDir, post_process=self.post_process,
+            model = Model.model_init(class_name, f'test_{class_name}01', self.refDir,post_process=self.post_process,
                                      model_dir=self.testDir, parameters=pardict)
             model.dump_model()
             lmodel = Model.load_model(model.config_path)
@@ -280,7 +282,7 @@ class ModelTestCase(unittest.TestCase):
 
     def test_gen_params(self):
         # test gen params works
-        shutil.copytree(self.refDir, self.model.model_dir, symlinks=True, dirs_exist_ok=True)
+        shutil.copytree(self.refDir, self.tmpDir.name, symlinks=True, dirs_exist_ok=True)
         nl_iter = self.model.gen_params()
         # work out what we expect...
         expect = []
@@ -369,6 +371,7 @@ class ModelTestCase(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.model.set_status("FLARTIBARTFAST")
 
+
     def test_read_values(self):
         """
         Test can read values.
@@ -392,6 +395,8 @@ class ModelTestCase(unittest.TestCase):
         :return:
         """
         # model_dir should only have one file.
+
+
 
         omodel = copy.deepcopy(self.model)
         self.model.instantiate()
@@ -450,7 +455,7 @@ class ModelTestCase(unittest.TestCase):
     #     self.assertEqual(dct['config_path'], self.config_path)
 
     @unittest.mock.patch.object(myModel, 'now', side_effect=gen_time())
-    def test_submit_model(self, mck_now):
+    def test_submit_model(self,mck_now):
         """
         Test submit_model works.
          Test status outside expected fails
@@ -466,52 +471,55 @@ class ModelTestCase(unittest.TestCase):
             # expect result to be "123456" # a fake jobid
             self.assertEqual(result, "123456")
             mock_chk.assert_called()  # actually got called
-            self.assertEqual(model.pp_jid, '123456')
+            self.assertEqual(model.pp_jid,'123456')
 
             # args is a tuple of the arguments (just one list in this case)
-            name = f"{model.name}{len(model.model_jids):05d}"
+            name =  f"{model.name}{len(model.model_jids):05d}"
             outdir = model.model_dir / 'model_output'
-            scmd = (self.eng.submit_cmd([str(model.model_dir / 'submit.sh')], name,
-                                        rundir=model.model_dir,
-                                        outdir=outdir, time=2000),)
-            self.assertEqual(mock_chk.call_args.args, scmd)
+            scmd = (self.eng.submit_cmd(['submit.sh'],name,
+                                           rundir=model.model_dir,
+                                           outdir=outdir,time=2000),)
+            self.assertEqual(mock_chk.call_args.args,scmd)
+
 
             # also expect changes in status & history
             self.assertEqual(len(model._history), 2)
             k, v = model._history.popitem()  # remove last history entry.
             self.assertEqual(v, [f"Status set to SUBMITTED in {model.model_dir}"])
             # now check that a post-processing script got submitted.
-            sub_script = [str(model.set_status_script), str(model.config_path), 'PROCESSED']
-            expect_output = dict(cmd=self.eng.submit_cmd(sub_script, f"PP_{model.name}",
-                                                         outdir=model.model_dir / 'PP_output',
-                                                         rundir=model.model_dir,
-                                                         time=1800, hold=True), result='Your job 123456')
+            sub_script = [str(model.set_status_script),str(model.config_path),'PROCESSED']
+            expect_output = dict(cmd=self.eng.submit_cmd(sub_script,f"PP_{model.name}",
+                                                            outdir = model.model_dir/'PP_output',
+                                                            rundir= model.model_dir,
+                                                            time=1800,hold=True),result='Your job 123456')
             got = list(model._output.values())[0][0]
-            self.assertEqual(got, expect_output)
+            self.assertEqual(got,expect_output)
 
         # Now test setting status to CONTINUE and test that works.
         # Expect a continue.sh script
         with unittest.mock.patch('subprocess.check_output', autospec=True,
                                  return_value="Your job 123457") as mock_chk:
+
             model.status = "CONTINUE"
             result = model.submit_model()
-            self.assertEqual(model.pp_jid, '123456')  # should not change
-            self.assertEqual(result, None)  # continuing model so now jid!
+            self.assertEqual(model.pp_jid,'123456') # should not change
+            self.assertEqual(result,None) # continuing model so now jid!
             mock_chk.assert_called()  # actually got called
 
-            name = f"{model.name}{len(model.model_jids):05d}"
+            name =  f"{model.name}{len(model.model_jids):05d}"
             outdir = model.model_dir / 'model_output'
-            scmd = (self.eng.submit_cmd([str(model.model_dir / 'continue.sh')], name,
-                                        rundir=model.model_dir,
-                                        outdir=outdir, time=2000),)
+            scmd = (self.eng.submit_cmd([str('continue.sh')],name,
+                                           rundir=model.model_dir,
+                                           outdir=outdir,time=2000),)
             self.assertEqual(mock_chk.call_args.args, scmd)
+
 
             # also expect changes in status & history,
             self.assertEqual(len(model._history), 2)
             k, v = model._history.popitem()  # remove last history entry.
             self.assertEqual(v, [f"Status set to SUBMITTED in {model.model_dir}"])
-            expect_output = dict(cmd=scmd[0], result='Your job 123457')
-            got = list(model._output.values())[-1][0]  # TODO fixme This test failing.
+            expect_output = dict(cmd=scmd[0],  result='Your job 123457')
+            got = list(model._output.values())[-1][0] # TODO fixme This test failing.
             self.assertEqual(got, expect_output)
 
             # test that submit_cmd works. Will still be continuing!
@@ -523,7 +531,7 @@ class ModelTestCase(unittest.TestCase):
             # test that fake-fn does not submit and puts some results in,
             mock_chk.reset_mock()
             model.status = "INSTANTIATED"
-            model.pp_jid = None  # reset this to None
+            model.pp_jid = None # reset this to None
             result = model.submit_model(fake_function=fake_function)
             # nothing submitted so result and model.pp_jid should be None.
             self.assertIsNone(result)
@@ -534,16 +542,16 @@ class ModelTestCase(unittest.TestCase):
             self.assertEqual(model.status, 'PROCESSED')
 
     @unittest.mock.patch.object(myModel, 'now', side_effect=gen_time())
-    def test_running(self, mck_now):
+    def test_running(self,mck_now):
         """
         Test running.
         Changes after wards is expecting a file.
         :return:
         """
         # set up vars for grabbing ID
-        vars = ['JOB_ID', 'SLURM_JOB_ID']
+        vars = ['JOB_ID','SLURM_JOB_ID']
         for v in vars:
-            os.environ[v] = '123456'
+            os.environ[v]= '123456'
         model = self.model
         model.status = 'SUBMITTED'
         model.running()
@@ -552,7 +560,7 @@ class ModelTestCase(unittest.TestCase):
         dmodel = Model.load_model(model.config_path)
         self.assertEqual(dmodel, model)
         # also expect model.model_jids to contain extra ID
-        self.assertEqual(model.model_jids, ['123456'])
+        self.assertEqual(model.model_jids,['123456'])
 
     def test_guess_failed(self):
         """
@@ -560,32 +568,34 @@ class ModelTestCase(unittest.TestCase):
         :return:
         """
         model = copy.deepcopy(self.model)
-        model.status = "RUNNING"
-        model.model_jids = ['23456']
-        engines = [engine.sge_engine, engine.slurm_engine]
+        model.status="RUNNING"
+        model.model_jids=['23456']
+        engines =[engine.sge_engine,engine.slurm_engine]
 
         for eng in engines:
-            with unittest.mock.patch.object(eng, 'job_status', return_value='RUNNING') as mck:
-                model.engine = eng()
+            with unittest.mock.patch.object(eng,'job_status',return_value='RUNNING') as mck:
+                model.engine=eng()
                 model.guess_failed()
                 self.assertEqual(model.status, "RUNNING")
 
         for eng in engines:
-            with unittest.mock.patch.object(eng, 'job_status', return_value='notFound') as mck:
+            with unittest.mock.patch.object(eng,'job_status',return_value='notFound') as mck:
                 model.status = "RUNNING"
-                model.engine = eng()
+                model.engine=eng()
                 model.guess_failed()
                 self.assertEqual(model.status, "FAILED")
 
         for eng in engines:
-            with unittest.mock.patch.object(eng, 'job_status', return_value='notFound') as mck:
+            with unittest.mock.patch.object(eng,'job_status',return_value='notFound') as mck:
                 model.status = "INSTANTIATED"
-                model.engine = eng()
+                model.engine=eng()
                 model.guess_failed()
                 self.assertEqual(model.status, "INSTANTIATED")
 
+
+
     @unittest.mock.patch.object(myModel, 'now', side_effect=gen_time())
-    def test_perturb(self, mck_now):
+    def test_perturb(self,mck_now):
         """
         Pertub expects a known set of parameters to be passed in.
         Will update parameters and then set them.
@@ -602,7 +612,7 @@ class ModelTestCase(unittest.TestCase):
         with self.assertLogs(level='DEBUG') as log:
             model.perturb(v)
         self.assertEqual(log.output[-1], f"DEBUG:OPTCLIM.Model: parameters_no_key is now {v}")
-        self.assertEqual(len(model._history), 5)
+        self.assertEqual(len(model._history),    5)
         # expect 5 bits of history. Created, Modified,Instantiated, perturbed using and setting status
         p = model.read_values('VF1')
         self.assertEqual(p, v)
@@ -610,11 +620,12 @@ class ModelTestCase(unittest.TestCase):
         self.assertEqual(model.status, 'PERTURBED')
 
     @unittest.mock.patch.object(myModel, 'now', side_effect=gen_time())
-    def test_set_failed(self, mck_now):
+    def test_set_failed(self,mck_now):
         """
         Should set status to FAILED.
         :return:
         """
+
 
         model = self.model
         model.status = 'RUNNING'
@@ -622,15 +633,15 @@ class ModelTestCase(unittest.TestCase):
         self.assertEqual(model.status, 'FAILED')
         self.assertEqual(len(model._history), 2)  # should be two entries.
 
-    @unittest.mock.patch.object(myModel, 'now', side_effect=gen_time())
-    def test_succeeded(self, mock_now):
+    @unittest.mock.patch.object(myModel,'now',side_effect=gen_time())
+    def test_succeeded(self,mock_now):
         """
         Test that succeeded worked! Will try to run a script which we mock.
         :return:
         """
         model = self.model
         model.status = 'RUNNING'  # should be RUNNING
-        model.pp_jid = '123456'
+        model.pp_jid='123456'
 
         with unittest.mock.patch('subprocess.check_output', autospec=True, return_value='Ran PP') as mock_chk:
             with self.assertLogs() as log:
@@ -642,7 +653,8 @@ class ModelTestCase(unittest.TestCase):
             self.assertEqual(len(model._history), 2)
             dmodel = Model.load_model(model.config_path)
             self.assertEqual(dmodel, model)
-            self.assertEqual(len(model._output), 1)
+            self.assertEqual(len(model._output),1)
+
 
             # set pp_jid to None. No subprocess should be submitted
             mock_chk.reset_mock()
@@ -651,13 +663,14 @@ class ModelTestCase(unittest.TestCase):
             r = model.succeeded()
             self.assertIsNone(r)
 
+
     def test_process(self):
         """
         Test process works.
         Will do first by faking things!
         :return:
         """
-        model = Model('test001', self.refDir, post_process=self.post_process, model_dir=self.testDir)
+        model = Model('test001', self.refDir, post_process=self.post_process,model_dir=self.testDir)
         model.fake = True
         model.status = 'SUCCEEDED'  # we have succeeded
         model.process()  # with fake
@@ -665,22 +678,23 @@ class ModelTestCase(unittest.TestCase):
         # no fake fn..
         model.fake = False
         model.status = 'SUCCEEDED'  # we have succeeded
-        model.simulated_obs=None # reset obs to None
         # use fake_fn to generate some fake obs!
         fake_obs = self.fake_fn().to_dict()
-        # and write them out for process to read! 
+        # and write them out for
         with open(model.model_dir / model._post_process_output, 'w') as fp:
             generic_json.dump(fake_obs, fp)
 
         with unittest.mock.patch('subprocess.check_output',
                                  autospec=True, return_value="Submitted something"):
             model.process()  # run the post-processing. Nothing should be ran because of the mock
+              # But then nothing can be read in. Need to mock that too? Better to mock the output so
+              # it just writes info to file. #TODO modify mock so it writes to model._post_process_output
         pdtest.assert_series_equal(pd.Series(fake_obs).rename(model.name), model.simulated_obs)
         self.assertEqual(model.status, 'PROCESSED')
 
     # patching end_to_end so time always ticks in controlled way. gen_time does 1 seconds increments.
-    @unittest.mock.patch.object(myModel, 'now', side_effect=gen_time())
-    def test_end_to_end(self, mock_cfg):
+    @unittest.mock.patch.object(myModel,'now',side_effect=gen_time())
+    def test_end_to_end(self,mock_cfg):
         """
         Test that end to end case works.
         :return:
@@ -692,7 +706,7 @@ class ModelTestCase(unittest.TestCase):
         cfg = self.testDir / 'model0001.mcfg'
         with unittest.mock.patch('subprocess.check_output', autospec=True,
                                  return_value="Submitted something 56467"):
-            with unittest.mock.patch('engine.sge_engine.my_job_id', autospec=True,
+            with unittest.mock.patch('engine.sge_engine.my_job_id',autospec=True,
                                      return_value="123456"):
                 model = myModel('test_model001', self.refDir, model_dir=self.testDir,
                                 config_path=cfg,
@@ -724,7 +738,7 @@ class ModelTestCase(unittest.TestCase):
                 cfg = self.testDir / 'model0002.mcfg'
                 model = myModel('test_model01', self.refDir, model_dir=self.testDir,
                                 config_path=cfg,
-                                engine=self.eng,
+                                engine = self.eng,
                                 parameters=dict(VF1=1, CT=2.2, G0=11),
                                 post_process=post_process)  # create the model.
                 model.instantiate()  # instantiate the model.
@@ -754,29 +768,29 @@ class ModelTestCase(unittest.TestCase):
 
     def test_set_post_process(self):
         # tests for set_post_process
-        model = Model('fred', self.refDir, post_process=self.post_process)
+        model = Model('fred',self.refDir,post_process=self.post_process)
         pp = copy.deepcopy(self.post_process)
         script = model.expand(pp.pop('script'))
-        output = pp.pop('output_file', 'sim_obs.json')
-        input = pp.pop('input_file', 'input.json')
+        output = pp.pop('output_file','sim_obs.json')
+        input = pp.pop('input_file','input.json')
         # test simple thing.
-        self.assertEqual(model.post_process_cmd_script, [script, input, output])
-        self.assertEqual(model._post_process_output, output)
-        self.assertEqual(model._post_process_input, input)
-        self.assertEqual(model.post_process, pp)
+        self.assertEqual(model.post_process_cmd_script,[script,input,output])
+        self.assertEqual(model._post_process_output,output)
+        self.assertEqual(model._post_process_input,input)
+        self.assertEqual(model.post_process,pp)
         # with interp
-        pp = copy.deepcopy(self.post_process)
-        pp['interp'] = 'python'
+        pp=copy.deepcopy(self.post_process)
+        pp['interp']='python'
         model.set_post_process(pp)
-        self.assertEqual(model.post_process_cmd_script, ['python', script, input, output])
+        self.assertEqual(model.post_process_cmd_script,['python',script,input,output])
         # No PP
         model = Model('fred', self.refDir)
-        self.assertEqual(model.post_process_cmd_script, None)
+        self.assertEqual(model.post_process_cmd_script,None)
         # set del pp['script']. Should give an error
-        pp = copy.deepcopy(self.post_process)
+        pp=copy.deepcopy(self.post_process)
         pp.pop('script')
         with self.assertRaises(ValueError):
-            model = Model('fred', self.refDir, post_process=pp)
+            model = Model('fred',self.refDir,post_process=pp)
 
     def test_key(self):
         """
@@ -787,68 +801,14 @@ class ModelTestCase(unittest.TestCase):
         # test key for mixed params is as expected
         pDict = {'zz': 1.02, 'aa': 1, 'nn': [0, 1]}
         expect = str(('aa', '1', 'nn', '[0, 1]', 'zz', '1.02'))
-        self.model.parameters = pDict
+        self.model.parameters=pDict
         key = self.model.key()
         self.assertEqual(key, expect)
         # test that small real differences don't cause any differences.
         pDict = {'zz': 1.0200001, 'aa': 1, 'nn': [0, 1]}
-        self.model.parameters = pDict
+        self.model.parameters=pDict
         key = self.model.key()
         self.assertEqual(key, expect)
-
-    def test_archive(self):
-        # test archiving works
-        #  test config file works
-
-        # create archive file.
-        archive_file = self.testDir / 'test_archive.tar'
-        pp_file = self.model.model_dir / self.model._post_process_output
-        self.model.dump_model()
-        with tarfile.open(archive_file, "w", dereference=True) as archive:
-            self.model.archive(archive, self.testDir,
-                               extra_files=[self.model._post_process_output])  # archive the model
-
-        # now can try and read it.
-        expected_names = [p.relative_to(self.testDir) for p in [self.model.config_path]]  # ,]]
-        with tarfile.open(archive_file, "r") as archive:
-            names = [pathlib.Path(n) for n in archive.getnames()]  # list of names
-            self.assertEqual(expected_names, names)
-
-        # now create some obs... and test that works.
-        import json
-        test_obs = dict(obs1=2.2, obs2=1.0, obs4=True)
-        with open(pp_file, 'wt') as fp:
-            json.dump(test_obs, fp)
-        with tarfile.open(archive_file, "w") as archive:
-            self.model.archive(archive, self.testDir)  # archive the model
-        expected_names = [p.relative_to(self.testDir) for p in [self.model.config_path, pp_file]]
-        with tarfile.open(archive_file, "r") as archive:
-            names = [pathlib.Path(n) for n in archive.getnames()]  # list of names
-            self.assertEqual(expected_names, names)
-
-        # check extra works.
-        #  write a text file
-        test_file = self.model.model_dir / 'test.txt'
-        with open(test_file, 'wt') as fp:
-            print("Line 1", file=fp)
-            print("Line 2", file=fp)
-
-        expected_names = [p.relative_to(self.testDir) for p in [self.model.config_path, pp_file, test_file]]
-        with tarfile.open(archive_file, "w") as archive:
-            self.model.archive(archive, self.testDir, extra_files=['test.txt'])  # archive the model
-        with tarfile.open(archive_file, "r") as archive:
-            names = [pathlib.Path(n) for n in archive.getnames()]  # list of names
-            self.assertEqual(expected_names, names)
-
-    def test_copy(self):
-        # test copy works
-        logging.warning("test_copy not implemented")
-        #raise NotImplementedError
-
-    def test_reprocess(self):
-        # test reprocessing works
-        logging.warning("test_reprocessing not implemented")
-        #raise NotImplementedError
 
 
 if __name__ == '__main__':

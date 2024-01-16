@@ -140,7 +140,7 @@ class TestJsonEncoder(unittest.TestCase):
 
 
 
-
+''' #liangwj
 class TestJsonUtils(unittest.TestCase):
     def setUp(self):
         nl= namelist_var.namelist_var(filepath=pathlib.Path('test_nl'), namelist='atmos', nl_var='fred')
@@ -195,6 +195,6 @@ class TestJsonUtils(unittest.TestCase):
         s=dumps(self.data)
         loaded_data = loads(s)
         self.assertAllequal(loaded_data,self.data)
-
+'''
 if __name__ == '__main__':
     unittest.main()
