@@ -258,7 +258,7 @@ class Model(ModelBaseClass, journal):
 
         interp = pp.pop('interp', None)
         input_file = pp.pop('input_file', 'input.json')
-        output_file = pp.pop('output_file', 'output.json')#liangwj
+        output_file = pp.pop('output_file', 'output.json')  #liangwj
 
         self._post_process_input = input_file
         self._post_process_output = output_file

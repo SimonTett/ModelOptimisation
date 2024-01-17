@@ -97,40 +97,21 @@ class obj_to_from_dict:
     """
     #TODO: Make this support tuples and also keys that are not strings.
     # functions to convert value to object. These should be "factory"  class methods
-    FROM_VALUE = dict(ndarray=np.array,
-                  DataFrame=pd.read_json,
-                  Series=lambda x: pd.read_json(x,typ='series'),
-                  Path=pathlib.Path,
-                  PurePosixPath=pathlib.PurePosixPath,
-                  PureWindowsPath=pathlib.PureWindowsPath,
-                  WindowsPath=pathlib.Path,
-                  PosixPath=pathlib.Path,
-                  set=set)
-    # Code commented out but might be useful to get higher precision when saving.
-    #FROM_VALUE = dict(ndarray=lambda x: np.array(x['data'],dtype=x['typ']),
-    #                  DataFrame= lambda x: pd.DataFrame.from_dict(x,orient='index'),  #liangwj
-    #                  Series=lambda x: pd.Series(x['series'],index=x['index']).rename(x['name']),
-    #                  Path=pathlib.Path,
-    #                  WindowsPath=pathlib.Path,
-    #                  PosixPath=pathlib.Path,
-    #                 set=set)
+    FROM_VALUE = dict(ndarray=lambda x: np.array(x['data'],dtype=x['typ']),
+                      DataFrame= lambda x: pd.DataFrame.from_dict(x,orient='index'),  #liangwj
+                      Series=lambda x: pd.Series(x['series'],index=x['index']).rename(x['name']),
+                      Path=pathlib.Path,
+                      WindowsPath=pathlib.Path,
+                      PosixPath=pathlib.Path,
+                      set=set)
 
     # functions to convert values to dict
-    TO_VALUE = dict(ndarray=np.ndarray.tolist,
-                  DataFrame=pd.DataFrame.to_json,
-                  Series=pd.Series.to_json,
-                  Path = str,
-                  PurePosixPath=str,
-                  PureWindowsPath=str,
-                  WindowsPath=str,
-                  PosixPath=str,
-                  set=list) # functions to convert object to serializable object.
-    #TO_VALUE = dict(ndarray=lambda x: dict(data=x.tolist(),typ=str(x.dtype)),
-    #                DataFrame= lambda x: x.to_dict(orient='dict'),#liangwj
-    #                Series= lambda x: dict(name=x.name,series=x.values,index=x.index.to_list()),
-    #                Path = str,WindowsPath=str,
-    #                PosixPath=str,
-    #                set=list) # functions to convert object to serializable object.
+    TO_VALUE = dict(ndarray=lambda x: dict(data=x.tolist(),typ=str(x.dtype)),
+                    DataFrame= lambda x: x.to_dict(orient='dict'), #liangwj
+                    Series= lambda x: dict(name=x.name,series=x.values,index=x.index.to_list()),
+                    Path = str,WindowsPath=str,
+                    PosixPath=str,
+                    set=list) # functions to convert object to serializable object.
     #TODO when needed add support for datetime
 
     @classmethod

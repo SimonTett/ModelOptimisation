@@ -345,9 +345,9 @@ class slurm_engine(abstractEngine):
         if outdir is None:
             outdir = pathlib.Path.cwd() / 'output'
             my_logger.debug(f"Set outdir to {outdir}")
-        submit_cmd = ['yhbatch', '-n',f'1',#f'--mem={mem}', f'--mincpus={n_cores}', f'--time={time}',
+        submit_cmd = ['yhbatch','-n',f'1', #f'--mem={mem}', f'--mincpus={n_cores}', f'--time={time}',
                       '--output', f'{outdir}/%x_%A_%a.out', '--error', f'{outdir}/%x_%A_%a.err',
-                      '-J', name]  #liangwj
+                      '-J', name] #liangwj
         # --mem={mem}: Request mem mbytes  of memory per job
         # --mincpus={n_cores}: Request at least n_cores CPU per job
         # --time={time}: Request a maximum run time of time  minutes per job
@@ -376,7 +376,7 @@ class slurm_engine(abstractEngine):
         :param jobid: The jobid of the job to be released
         :return: a list of things that can be ran!
         """
-        cmd = ['yhcontrol', 'release', jobid]  # Command to release_job a job  #liangwj
+        cmd = ['yhcontrol', 'release', jobid]  # Command to release_job a job #liangwj
 
         cmd = self.connect_fn(cmd)
         return cmd
@@ -387,7 +387,7 @@ class slurm_engine(abstractEngine):
         :param jobid: The jobid to kill
         :return: command to be ran (a list)
         """
-        cmd = ['yhcancel', jobid]  #liangwj
+        cmd = ['yhcancel', jobid] #liangwj
 
         cmd = self.connect_fn(cmd)
         return cmd
@@ -399,7 +399,7 @@ class slurm_engine(abstractEngine):
         :return: jobid as a string.
         """
 
-        return output.split()[3].split('.')[0]  #liangwj
+        return output.split()[3].split('.')[0] #liangwj
 
     def job_status(self, job_id: str, full_output: bool = False) -> str:
         """
@@ -427,9 +427,9 @@ class slurm_engine(abstractEngine):
         # work out how to parse result.
         if len(result) == 0:  # nothing found
             return "NotFound"
-        status = result.split()[4]  #liangwj
+        status = result.split()[4]   #liangwj
         if status.startswith("PENDING"):
-            reason = result.split()[8].split("(")[1].replace(")","")    #status.split("(")[1].replace(")", "")  #liangwj
+            reason = result.split()[8].split("(")[1].replace(")","") #status.split("(")[1].replace(")", "") #liangwj
             if reason in ['JobHeldUser', 'JobHeldAdmin', "Dependency"]:
                 return "Held"
             else:
