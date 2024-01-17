@@ -8,9 +8,7 @@ import logging
 import os
 import pathlib
 import shutil
-import tarfile
 import typing
-import tempfile
 
 import numpy as np
 import pandas as pd
@@ -21,20 +19,18 @@ from model_base import journal
 from ModelBaseClass import ModelBaseClass, register_param
 from namelist_var import namelist_var
 from engine import abstractEngine
-
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 
 type_status = typing.Literal['CREATED', 'INSTANTIATED', 'SUBMITTED',
-'RUNNING', 'FAILED', 'PERTURBED', 'CONTINUE',
-'SUCCEEDED', 'PROCESSED']  # allowed strings for status
-
+                             'RUNNING', 'FAILED', 'PERTURBED', 'CONTINUE',
+                             'SUCCEEDED', 'PROCESSED']  # allowed strings for status
 
 class Model(ModelBaseClass, journal):
     # type definitions for attributes.
     name: str
-    config_path: [pathlib.Path | pathlib.PurePath]
-    reference: [pathlib.Path | pathlib.PurePath]
-    model_dir: [pathlib.Path | pathlib.PurePath]
+    config_path: pathlib.Path
+    reference: pathlib.Path
+    model_dir: pathlib.Path
     post_process: dict
     post_process_cmd_script: typing.Optional[list[str]]
     fake: bool
@@ -47,9 +43,9 @@ class Model(ModelBaseClass, journal):
     pp_jid: typing.Optional[str]
     model_jids: list[str]
     submitted_jid: typing.Optional[str]
-    submit_script: [pathlib.Path | pathlib.PurePath]
-    continue_script: [pathlib.Path | pathlib.PurePath]
-    set_status_script: [pathlib.Path | pathlib.PurePath]
+    submit_script: pathlib.Path
+    continue_script: pathlib.Path
+    set_status_script: pathlib.Path
     status: type_status
     simulated_obs: typing.Optional[pd.Series]
     _post_process_input: typing.Optional[str]
@@ -88,7 +84,7 @@ class Model(ModelBaseClass, journal):
                        SUBMITTED=['INSTANTIATED', 'PERTURBED', 'CONTINUE'],
                        # Submitting needs it to have been instantiated, perturbed or to be continued.
                        RUNNING=["SUBMITTED"],  # running needed it should have been submitted
-                       FAILED=["RUNNING", "SUBMITTED"],  # Failed means it should have been running or SUBMITTED
+                       FAILED=["RUNNING"],  # Failed means it should have been running
                        PERTURBED=["FAILED"],  # Allowed to perturb a model after it failed.
                        CONTINUE=["FAILED", "PERTURBED"],
                        # failed can just be continued or can be perturbed. For example ran out of time or disk space
@@ -106,13 +102,14 @@ class Model(ModelBaseClass, journal):
         but only those that  exist after initialization.
         This is really a factory method
         :param dct: dict containing information needed by class_name.from_dict()
-        :return: initialized object
+        :return: initialised object
         """
-        # TODO -- optionally (?) read from post_process_file -- which is an update.
-        # OR do as a seperate method,
-        dct2 = cls.convert_pure_paths(dct)
-        obj = cls(name=dct2.pop('name'), reference=dct2.pop('reference'))  # create an default instance
-        obj.fill_attrs(dct2)
+        obj = cls(name=dct.pop('name'), reference=dct.pop('reference'))  # create an default instance
+        for name, value in dct.items():
+            if hasattr(obj, name):
+                setattr(obj, name, value)
+            else:
+                my_logger.warning(f"Did not setattr for {name} as not in obj") 
         return obj
 
     # methods now.
@@ -127,7 +124,6 @@ class Model(ModelBaseClass, journal):
                  engine: typing.Optional[abstractEngine] = None,
                  run_info: typing.Optional[dict] = None,
                  study: typing.Optional["Study"] = None):
-        # TODO add in verbose option so that set_model_status script has verbose options provided in.
         """
         Initialize the Model class.
 
@@ -173,13 +169,7 @@ class Model(ModelBaseClass, journal):
             config_path = model_dir / (self.name + '.mcfg')
 
         self.config_path = config_path
-        # TODO -- when bringing in from another system. reference may not exist
-        # It probably should be a PurePath so there is a problem with convert_
-        # Check model_dir is not a reference.
-        if (
-                isinstance(reference, pathlib.Path) and
-                ((model_dir == reference) or
-                 (model_dir.exists() and reference.samefile(model_dir)))):
+        if (model_dir == reference) or (model_dir.exists() and reference.samefile(model_dir)):
             raise ValueError(f"Model_dir {model_dir} is the same as reference {reference}")
 
         self.reference = reference
@@ -223,8 +213,8 @@ class Model(ModelBaseClass, journal):
         self.pp_jid = None  # post-processing job id
         self.submitted_jid = None  # job id of last submitted model submitted.
         # setup submit and continue script
-        self.submit_script = pathlib.PurePath("submit.sh")
-        self.continue_script = pathlib.PurePath("continue.sh")
+        self.submit_script = pathlib.Path("submit.sh")
+        self.continue_script = pathlib.Path("continue.sh")
         # setup path to where script that sets status is.
         root = self.expand("$OPTCLIMTOP/OptClimVn3")
         script_pth = root / "scripts/set_model_status.py"
@@ -234,7 +224,7 @@ class Model(ModelBaseClass, journal):
         self.status = status
         if self.status == 'CREATED':  # creating model for the first time
             self.update_history("CREATING model")
-            # and simulated obs.
+        # and simulated obs.
         self.simulated_obs = None
 
     def set_post_process(self, post_process: typing.Optional[dict] = None):
@@ -242,11 +232,11 @@ class Model(ModelBaseClass, journal):
         """
         Set up post_process info.
         :param post_process -- None or  dict containing information for post-processing.
-            If None immediately returns without doing anything.
+            If None will immediately return without doing anything.
         If dict must include:
-            script -- full path to the script to run. Will be passed through self.expand to expand vars and user id.
+            script -- full path to script to run. Will be passed through self.expand to expand vars and user id.
              Will be checked for existence, and if script_interp is not None,  for execute permission.
-            If None/not present raises an error.
+            If None/not present will raise an error
         post_process can include
             interp -- if not None the name of the interpreter.
             input_file -- name of input file for post-processing. If None will be input.json
@@ -268,7 +258,7 @@ class Model(ModelBaseClass, journal):
 
         interp = pp.pop('interp', None)
         input_file = pp.pop('input_file', 'input.json')
-        output_file = pp.pop('output_file', 'sim_obs.json')
+        output_file = pp.pop('output_file', 'output.json')  #liangwj
 
         self._post_process_input = input_file
         self._post_process_output = output_file
@@ -313,7 +303,7 @@ class Model(ModelBaseClass, journal):
                 pass
             elif (vself[k] is None) or (vother[k] is None):
                 diff_attrs.add(k)
-            elif isinstance(vself[k], type(vother[k])):
+            elif type(vself[k]) != type(vother[k]):
                 diff_attrs.add(k)
             elif isinstance(vself[k], pd.Series):
                 if not np.allclose(vself[k], vother[k]):  # check for fp diffs in the series.
@@ -400,7 +390,6 @@ class Model(ModelBaseClass, journal):
         :return:nothing.
         """
         self.model_dir.mkdir(parents=True, exist_ok=True)  # create the directory if needed.
-        my_logger.info(f"Created {self.model_dir}")
         shutil.copytree(self.reference, self.model_dir, symlinks=True, dirs_exist_ok=True)  # copy from reference.
 
     def set_status(self, new_status: type_status, check_existing: bool = True) -> None:
@@ -517,7 +506,6 @@ class Model(ModelBaseClass, journal):
             # and the run_code -- default is value in run_info but use value from post_process if we have it.
             outputDir = self.model_dir / 'PP_output'  # post-processing output goes in Model Dir
             outputDir.mkdir(exist_ok=True, parents=True)
-            my_logger.debug(f"Created {outputDir}")
             pp_cmd = self.engine.submit_cmd(pp_cmd, f"PP_{self.name}",
                                             outdir=outputDir,
                                             hold=True,
@@ -564,10 +552,10 @@ class Model(ModelBaseClass, journal):
         # but in this case just use the submit.
         outdir = self.model_dir / 'model_output'
         outdir.mkdir(parents=True, exist_ok=True)
-        my_logger.debug(f"Created {outdir}")
 
-        cmd = self.engine.submit_cmd([str(self.model_dir / script)], f"{self.name}{len(self.model_jids):05d}", outdir,
+        cmd = self.engine.submit_cmd([str(script)], f"{self.name}{len(self.model_jids):05d}", outdir,
                                      run_code=runCode, time=runTime, rundir=self.model_dir)
+
         return cmd
 
     def running(self) -> typing.Optional[str]:
@@ -589,22 +577,17 @@ class Model(ModelBaseClass, journal):
     def guess_failed(self) -> bool:
         """
         Guess of a model has failed.
-          STATUS = RUNNING or SUBMITTED and status of last model jobid is unKnown likely means model has failed.
+          STATUS = RUNNING and status of last model jobid is unKnown likely means model has failed.
         :return: True if guessed FAILED, False if not
         """
 
-        if self.status in ["RUNNING", "SUBMITTED"]:
-            if self.status == "RUNNING":
-                model_jid = self.model_jids[-1]
-            else:
-                model_jid = self.submitted_jid
-
+        if self.status == "RUNNING":
+            model_jid = self.model_jids[-1]
             stat = self.engine.job_status(model_jid)
             if stat == "notFound":  # no job found.
                 my_logger.debug(f"Could not find status for jid:{model_jid} for model {self}. Setting status to FAILED")
                 self.set_failed()  # we have failed.
                 return True
-
         return False  # this model is not having its status changed.
 
     def set_failed(self):
@@ -678,28 +661,20 @@ class Model(ModelBaseClass, journal):
         self.set_status(status)
         return output
 
-    def process(self, update: bool = False,
-                ):
+    def process(self):
         """
-        Run the post-processing, store output and set status to PROCESSED.
+        Run the post-processing, store output and set status to COMPLETED.
         "Contract" for a post-processing script
         1) takes a json file as input (arg#1) and puts output in file (arg#2).
         2) It is being ran in the model_directory.
          arg#1 needs json.load to read the json file. Code should expect a dict and use the postProcess entry.
              This allows it ot read in and act on a StudyConfig file.
          arg#2 can be .json or .csv or .nc
-
-        :param update If True update the post-processed. State must be Processed.
         :return: output from post-processing.
         """
         status: type_status = 'PROCESSED'
-        if update:  # handle updating.
-            if self.status != 'PROCESSED':
-                raise ValueError(f"Updating and status is {self.status} != PROCESSED")
-
         if self.fake:  # faking?
-            my_logger.debug("Faking")
-            self.set_status(status)  # just update the status which saves the stea..
+            self.set_status(status)  # just update the status
             return
 
         input_file = self.model_dir / self._post_process_input  # generate json file to hold post process info
@@ -714,12 +689,7 @@ class Model(ModelBaseClass, journal):
 
         # get in the simulated obs which also sets them 
         self.read_simulated_obs(post_process_output)
-        
-        if update:  # if we are updating there is no status change -- we have already checked we are processed.
-            self.update_history("Reprocessed model")
-
-        my_logger.debug(f"Sim obs are {self.simulated_obs}")
-        self.set_status(status)  #  update the status (and dump state to disk)
+        self.set_status(status)
         return result
 
     def read_simulated_obs(self, post_process_file: pathlib.Path):
@@ -792,7 +762,6 @@ class Model(ModelBaseClass, journal):
         :return:
         """
         return self.status in ["CREATED"]
-
     def is_submittable(self) -> bool:
         """
         Return True if model is submittable -- which means its status is CONTINUE or INSTANTIATED or PERTURBED
@@ -822,29 +791,28 @@ class Model(ModelBaseClass, journal):
         """
         return self.status in ['RUNNING']
 
-    def is_submitted(self) -> bool:
+    def is_created(self) -> bool:
         """
-        Return True if model is submitted.
-        :return: True if model status is SUBMITTED
+        Return True if model.status is CREATED
+        :return:
         """
-        return self.status in ['SUBMITTED']
-
+        return self.status in ['CREATED']
     def is_processed(self) -> bool:
         """
-        Return True if model is processed.
-        :return: True if model status is PROCESSED
+        Return True if model is processed
+        :return:
         """
         return self.status in ['PROCESSED']
 
     def delete(self):
         """
         Delete all on disk stuff. Do by deleting all files in self.model_dir and self.config_path. 
-        Also remove all associated jobs.
         
         :return: None
         """
 
-        if len(self.model_jids) > 0:  # got some models to kill
+        
+        if len(self.model_jids) > 0: # got some models to kill
             curr_model_id = self.model_jids[-1]
             status = self.engine.job_status(curr_model_id)
             if status not in ['notFound']:
@@ -854,18 +822,26 @@ class Model(ModelBaseClass, journal):
             else:
                 my_logger.debug(f"Job {curr_model_id} not found.")
 
-        if self.pp_jid is not None:  # got a post-processing job.
+        if self.pp_jid is not None: # got a post-processing job.
             status = self.engine.job_status(self.pp_jid)
             if status not in ['notFound']:
-                cmd = self.engine.kill_job(self.pp_jid)
+                cmd=self.engine.kill_job(self.pp_jid)
                 self.run_cmd(cmd)
                 my_logger.debug(f"Killed post-processing job id:{self.pp_jid}")
-            self.pp_jid = None  # killed it so should be no post processing job
-
+            
         shutil.rmtree(self.model_dir, ignore_errors=True)
         my_logger.info(f"Deleted everything in {self.model_dir}")
         self.config_path.unlink(missing_ok=True)
         return True
+
+    def archive(self, archive_path):
+        """
+        Archive parts of model_dir & config_path to archive_path. This version will raise NotImplementedError as
+          needs to be specialised for individual models
+        :param archive_path:
+        :return:None
+        """
+        raise NotImplementedError("Implement archive for your model")
 
     def key(self, fpFmt: str = '%.4g') -> str:
         """
@@ -904,126 +880,6 @@ class Model(ModelBaseClass, journal):
         my_logger.warning(f"Nothing set for {ensMember}. Override in your own model")
 
         return None
-
-    def to_dict(self):
-        """
-        Convert model to dict. Ready for saving to json
-        :return: dict
-        """
-        dct = super().to_dict()
-        for key in ['config_path', 'model_dir', 'reference']:  # vars to make into purePaths
-            dct[key] = pathlib.PurePath(dct[key])
-        return dct
-
-    def copy(self, direct: pathlib.Path,
-             extra_files: typing.Optional[typing.List[pathlib.Path | str]] = None,
-             link_paths: typing.Optional[typing.List[pathlib.Path | str]] = None):
-        """
-        Copy model to new place
-
-        :param direct: Where new model_dir is
-        :param extra_files: Extra files to be copied
-        :param link_paths: Paths to be linked (rather than copied). Useful, for large files that will be read.
-           On some OS's links are only allowed if you are on the same filesystem.
-        :return: Modified model.
-        """
-        if extra_files is None:
-            extra_files = []
-        if link_paths is None:
-            link_paths = []
-
-        if direct.samefile(self.model_dir):  # Check we are not wiping out ourselves.
-            raise ValueError(f"Copying {direct} to {self.model_dir} which is the same path")
-
-        # make needed directories. Do in one go so to speed things up (a bit).
-        dirs_to_make = {direct} | \
-                       {(direct / p).parent for p in extra_files} | \
-                       {(direct / p).parent for p in link_paths}  # unique set of directories needed
-        for dir in dirs_to_make:
-            dir.mkdir(exist_ok=True, parents=True)  # make any needed directories.
-            my_logger.debug(f"Created {dir}")
-
-        cp_model = copy.deepcopy(self)
-        cp_model.model_dir = direct
-        cp_model.config_path = direct / self.config_path.relative_to(self.model_dir)
-
-        # copy extra paths + post_process_output
-        paths_to_copy = [self.model_dir / self._post_process_output] + [self.model_dir / p for p in extra_files]
-        for path in paths_to_copy:
-            if path.exists():
-                cp_path = direct / path.relative_to(self.model_dir)  # where it goes
-                shutil.copy2(path, cp_path)  # copy it
-                msg = f"Copied {path} to {cp_path}"
-                my_logger.debug(msg)
-                cp_model.update_history(msg)
-
-        # Do links. Note potential problems with filesystems. Will fix if they are a problem.
-        for p in link_paths:
-            path = self.model_dir / p
-            new_path = direct / p
-            path.link_to(new_path)
-            msg = f"Linked {new_path} to {path}"
-            my_logger.debug(msg)
-            cp_model.update_history(msg)
-
-        cp_model.update_history(f"Copied from {self.config_path} to {cp_model.config_path}")
-        cp_model.dump_model()
-        return cp_model
-
-    def archive(self,
-                archive: tarfile.TarFile,
-                rootDir: pathlib.Path,
-                extra_files: typing.Optional[typing.List[pathlib.Path | str]] = None):
-        """
-
-        :param archive: archive to be added to
-        :param rootDir: root to which all files (in archive file) are stored relative to.
-           If not None, then the name in the archive will be relative to this path.
-        :param extra_files -- extra model things to archive. Should be relative to self.model_dir
-        :return: None
-
-        Dump models to tempdir  and only archives files that exist.
-        Adds self.config_path and self.model_dir / self._post_process_output to archive.
-          If your model wants to include more things in the archive, then overload this method.
-          If you call it first using the super method then you just need to add you own stuff to archive!
-
-        Example:
-        with tarfile.open(archive_file, "w") as archive:
-            model.archive(rootDir=pathlib.Path("my_root_dir")
-        """
-        if extra_files is None:
-            extra_files = []
-        # dump the model. TODO: Make dump take a fp or a path. If it has a fileptr then just write to it.
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # dump the model (but no change to internal values)
-            tmpfile = pathlib.Path(tmpdir) / self.config_path.name
-            self.dump(tmpfile)
-            arc_path = self.config_path.relative_to(rootDir)
-            archive.add(tmpfile, arc_path)
-            my_logger.debug(f"Added {self} to archive as {arc_path}")
-
-        paths_to_archive = [self.model_dir / self._post_process_output] + [self.model_dir / p for p in extra_files]
-
-        for path in paths_to_archive:
-            arc_path = path.relative_to(rootDir)
-            if path.exists():
-                archive.add(path, arc_path)  # archive the file with name relative to root
-                my_logger.debug(f"Added {path} to archive as {arc_path}")
-
-    def reprocess(self, post_process: typing.Optional[dict] = None) -> pd.Series:
-        """
-        Update already processed observations. State must be processed.
-        :param post_process: post-processing info. See set_post_process() method for requirements.
-          If not provided then existing post_process info will be used.
-        :return: new simulated obs.
-
-        """
-        if not self.is_processed():
-            raise ValueError(f"Expecting state as processed not {self.status}")
-
-        self.set_post_process(post_process=post_process)
-        sim_obs = self.process(update=True)
-        return sim_obs
 
 
 Model.register_class(Model)  # register ourselves!

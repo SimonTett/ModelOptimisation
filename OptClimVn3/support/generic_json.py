@@ -33,10 +33,6 @@ method converts an object to something that can be serialized by JSON. It takes 
 serialized version of the object.
 
 """
-#TODO -- for numpy arrays. Write out the dtype, size and then conver the array to bytes.
-#  for reading undo this.  Generalise to pandas objects? That way precision will be retained.
-# but probably requires some hacking -- call the to_json function and thne replace the data cpt
-# with the byte representation,
 from __future__ import annotations
 
 import json
@@ -73,13 +69,13 @@ def dumps(obj, *args, **kwargs):
 def load(fp, *args, **kwargs):
     """
     Load object from file-like object fp. Uses json.load() with object_hook set to JSON_Encoder.decode
-    :param fp: file pointer to read.
-    :param args:args to be passed to json.load
-    :param kwargs:kwards to be passed to json.load
+    :param fp:
+    :param args:
+    :param kwargs:
     :return:
     """
-    decode_obj = obj_to_from_dict() # create decode object
-    return json.load(fp, *args, object_hook=decode_obj.decode,**kwargs) # and use it
+
+    return json.load(fp, *args, object_hook=obj_to_from_dict.decode,**kwargs)
 
 
 def loads(s, *args, **kwargs):
@@ -91,8 +87,8 @@ def loads(s, *args, **kwargs):
     :param kwargs: kwargs to be passed to json.loads
     :return: result of json.loads
     """
-    decode_obj = obj_to_from_dict()
-    return json.loads(s, *args, object_hook=decode_obj.decode, **kwargs)
+
+    return json.loads(s, *args, object_hook=obj_to_from_dict.decode, **kwargs)
 
 class obj_to_from_dict:
     """
@@ -100,32 +96,23 @@ class obj_to_from_dict:
 
     """
     #TODO: Make this support tuples and also keys that are not strings.
-    FROM_VALUE = dict(ndarray=np.array,
-                      DataFrame=pd.read_json,
-                      Series=lambda x: pd.read_json(x,typ='series'),
+    # functions to convert value to object. These should be "factory"  class methods
+    FROM_VALUE = dict(ndarray=lambda x: np.array(x['data'],dtype=x['typ']),
+                      DataFrame= lambda x: pd.DataFrame.from_dict(x,orient='index'),  #liangwj
+                      Series=lambda x: pd.Series(x['series'],index=x['index']).rename(x['name']),
                       Path=pathlib.Path,
-                      PurePosixPath=pathlib.PurePosixPath,
-                      PureWindowsPath=pathlib.PureWindowsPath,
                       WindowsPath=pathlib.Path,
                       PosixPath=pathlib.Path,
                       set=set)
-    # functions to convert value to object. These should be "factory"  classmethods
 
-    TO_VALUE = dict(ndarray=np.ndarray.tolist,
-                    DataFrame=pd.DataFrame.to_json,
-                    Series=pd.Series.to_json,
-                    Path = str,
-                    PurePosixPath=str,
-                    PureWindowsPath=str,
-                    WindowsPath=str,
+    # functions to convert values to dict
+    TO_VALUE = dict(ndarray=lambda x: dict(data=x.tolist(),typ=str(x.dtype)),
+                    DataFrame= lambda x: x.to_dict(orient='dict'), #liangwj
+                    Series= lambda x: dict(name=x.name,series=x.values,index=x.index.to_list()),
+                    Path = str,WindowsPath=str,
                     PosixPath=str,
                     set=list) # functions to convert object to serializable object.
     #TODO when needed add support for datetime
-
-    def __init__(self):
-        pass
-
-
 
     @classmethod
     def register_TO_VALUE(cls, mycls,method):
@@ -148,18 +135,18 @@ class obj_to_from_dict:
         name = mycls.__name__
         cls.FROM_VALUE[name] = classmethod
         my_logger.info(f"Registered {classmethod.__qualname__} for {name} in FROM_VALUE")
-
-    def value_to_obj(self, class_name: str, values: dict | list):
+    @classmethod
+    def value_to_obj(cls, class_name: str, values: dict | list):
         """
         Factory method to create object of type class_name using a dict
         :param class_name: Name of the class to create
         :param values: values to use to initialise object with
         :return: object
         """
-        conv_fn = self.FROM_VALUE.get(class_name)
+        conv_fn = cls.FROM_VALUE.get(class_name)
 
-        if conv_fn is None: # failed to find conversion function.
-            errMsg = f"Did not find {class_name}. Allowed classes are " + " ".join(self.FROM_VALUE.keys())
+        if conv_fn is None: # failed ot find conversion function.
+            errMsg = f"Did not find {class_name}. Allowed classes are " + " ".join(cls.FROM_VALUE.keys())
             raise KeyError(errMsg)
 
         obj = conv_fn(values)
@@ -186,8 +173,8 @@ class obj_to_from_dict:
         my_logger.debug(f"Converted {name} to {result} using {method.__name__}")
         return result
 
-
-    def decode(self, dct):
+    @classmethod
+    def decode(cls, dct):
         """
         Decode dct
         :param dct: dict to be decoded.
@@ -215,8 +202,7 @@ class obj_to_from_dict:
             data = dct.pop("object")
             if len(dct) > 0:
                 raise TypeError("Invalid dct")
-
-            obj = self.value_to_obj(name, data)
+            obj = cls.value_to_obj(name, data)
             my_logger.debug(f"Created a {name} object {obj}")
 
             return obj

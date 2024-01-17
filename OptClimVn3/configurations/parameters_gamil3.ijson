@@ -1,0 +1,72 @@
+{
+    "_comment": "Information relevant to parameters.",
+    "defaultParams": {
+        "comment": "Default parameter values for GAMIL3. null values or not set mean don't modify. Checked against wiki 11/5/17 ",
+        "c0_chg": 1e-03,
+        "ke_chg": 9e-06,
+        "capelmt_chg": 70.0,
+        "alfa_chg": 0.2,
+        "cmftau_chg": 4800,
+        "rhcrit_chg": 0.85,
+        "c0_chgs": 5e-05,
+        "rhminl_chg": 0.95,
+        "rhminh_chg": 0.5,
+        "dthdpmn_chg": -0.08
+    },
+    "minmax": {
+        "comment": "Defines the minimum and maximum ranges for the parameters. Must be defined for ALL parameters used in GN optimisation,",
+        "c0_chg": [
+            1e-04,
+            5e-03
+        ],
+        "ke_chg": [
+            1e-06,
+            1e-05
+        ],
+        "capelmt_chg": [
+            20,
+            200
+        ],
+        "alfa_chg": [
+            0.05,
+            0.6
+        ],
+        "cmftau_chg": [
+            1800,
+            14400
+        ],
+        "rhcrit_chg": [
+            0.65,
+            0.95
+        ],
+        "c0_chgs": [
+            3e-5,
+            2e-4
+        ],
+        "rhminl_chg": [
+            0.8,
+            0.99
+        ],
+        "rhminh_chg": [
+            0.4,
+            0.99
+        ],
+        "dthdpmn_chg": [
+            -0.15,
+            -0.05
+        ]
+    },
+    "steps": {
+        "comment": "Steps for perturbations -- norm around 10% of the range. If not specified 10% will be used. Values below are from 7 parameter cases described in Tett et al, 2017 (GMDD. They are not particualry optimal",
+        "c0_chg": 1e-04,
+        "ke_chg": 9e-07,
+        "capelmt_chg": 5.0,
+        "alfa_chg": 0.02,
+        "cmftau_chg": 600.0,
+        "rhcrit_chg": 0.02,
+        "c0_chgs": 5e-06,
+        "rhminl_chg": 0.01,
+        "rhminh_chg": 0.01,
+        "dthdpmn_chg": 0.01
+    }
+}
