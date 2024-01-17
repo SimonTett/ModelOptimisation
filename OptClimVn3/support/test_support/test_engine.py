@@ -27,7 +27,10 @@ class TestEngine(unittest.TestCase):
             self.assertIsInstance(eng.submit_cmd(['ls'], 'fred'), list)
             self.assertIsInstance(eng.release_job('45645'), list)
             self.assertIsInstance(eng.kill_job('45645'), list)
-            self.assertIsInstance(eng.job_id('Submitted job 123456'), str)
+            if eng == self.slurm_engine:
+                self.assertIsInstance(eng.job_id('Submitted job xx 123456'), str)
+            elif eng == self.sge_engine:
+                self.assertIsInstance(eng.job_id('Submitted job  123456'), str)
             self.assertIsInstance(eng.my_job_id(),str)
 
     def test_my_job_id(self):

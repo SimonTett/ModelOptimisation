@@ -7,7 +7,6 @@ import numpy as np
 
 from ModelBaseClass import register_param
 from Model import Model # note this seems to be quite important. Import Model from Model means the registration does not happen..
-import importlib.resources
 from namelist_var import namelist_var
 import pathlib
 import datetime

@@ -13,7 +13,7 @@ import pathlib
 import copy
 from Models import HadCM3
 import genericLib
-import importlib.resources
+
 
 
 def cmp_lines(path_1, path_2, ignore=None, verbose=False):
@@ -215,8 +215,8 @@ class testHadCM3(unittest.TestCase):
         # better to count the number of lines with ## modified at the end.
         modifyStr = '## modified *$'
         shutil.copy2(self.refDir / 'SCRIPT', self.model.model_dir)
-        resource = importlib.resources.files("OptClimVn3")
-        set_status_script = pathlib.Path(resource.joinpath("scripts/set_model_status.py"))
+
+        set_status_script = self.model.expand("$OPTCLIMTOP/OptClimVn3/scripts/set_model_status.py")
         self.model.modifyScript(set_status_script)
         file = self.model.model_dir / 'SCRIPT'
         count = 0
