@@ -7,12 +7,12 @@ import pandas as pd
 import pandas.testing as pdtest
 import StudyConfig
 import tempfile
+
+import genericLib
 from Study import Study
 from Model import Model
 import pathlib
-import os
-import generic_json
-import importlib.resources
+
 
 
 
@@ -25,7 +25,7 @@ class TestStudy(unittest.TestCase):
         self.direct = direct
         # Define simulated observations and parameters
         params = {f'param{pcnt}': float(pcnt) for pcnt in range(1, 100)}
-        optclim_root = importlib.resources.files("OptClimVn3")
+        optclim_root = genericLib.expand("$OPTCLIMTOP/OptClimVn3")
         config = StudyConfig.readConfig(optclim_root / "configurations/dfols14param_opt3.json")
         reference_dir = pathlib.Path(optclim_root).parent / 'Configurations/xnmea'
         self.reference  = reference_dir

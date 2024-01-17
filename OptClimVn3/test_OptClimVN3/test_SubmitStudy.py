@@ -2,10 +2,9 @@
 Test cases for SubmitStudy classes
 """
 import datetime
-import importlib.resources
-import logging
+
 import pathlib
-import tarfile
+
 import tempfile
 import unittest.mock  # need to mock the run case.
 import unittest
@@ -33,9 +32,8 @@ class myModel(Model):
 
 # class that inherits from Model.
 times = gen_time()
-traverse = importlib.resources.files("Models")
-with importlib.resources.as_file(traverse.joinpath("parameter_config/example_Parameters.csv")) as pth:
-    myModel.update_from_file(pth)
+pth = myModel.expand("$OPTCLIMTOP/OptClimVn3/Models/parameter_config/example_Parameters.csv")
+myModel.update_from_file(pth)
 
 
 class MyTestCase(unittest.TestCase):
