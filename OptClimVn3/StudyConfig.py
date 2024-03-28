@@ -726,8 +726,16 @@ class OptClimConfig(dictFile):
         # compute the matrix that diagonalises total covariance.
         cov = self.Covariances(trace=verbose, scale=scale)  # get covariances.
         errCov = cov['CovTotal']
+        # check for NaNs. If any fail.
+        if errCov.isnull().any().any():
+            print("null values in errCov for", errCov.index[errCov.isnull().any()])
+            raise ValueError("Fix your error covariance")
         # compute eigenvector and eigenvalues of covariances so we can transform residual into diagonal space.
-        evalue, evect = np.linalg.eigh(errCov)
+        evalue, evect = np.linalg.eigh(errCov) # FIXME. When scaling goes wrong can get odd results. 
+        # Two posisble solns. 1)  Check for NaN in evalue's. 2) Check difference between bigest and smallest values.
+        # note that dealing with small values puts some scale into the matrix. 
+        if np.isnan(evalue).any(): # any nan. Trigger an error. This is probably unneded as nans come from poor covariance matrices.
+            raise ValueError("CovTotal has nan eigenvalues. Is your scaling correct?")
         # deal with small evalues.
         crit = evalue.max() * minEvalue
         indx = evalue > crit
