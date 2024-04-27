@@ -31,6 +31,8 @@
     "run_info_comment": "Information  for run_info. Must include submit_engine and modelName. Can include other keys for use in submission. Useful ones are runTime, runCode & maxRuns ",
     "logging":"INCLUDE $OPTCLIMTOP/OptClimVn3/configurations/log_config.ijson",
     "runUpgrade_vn4": "For vn4 add list of things to do here!",
+    "paramNames" :[],
+    "paramNames_comment":"List of parameter names to be used. If empty list or null then initParams in initial used.",
     "initial": {
         "initParams": {
             "_comment": "Initial values for parameters to be optimised. Set to null to use default values.  ",

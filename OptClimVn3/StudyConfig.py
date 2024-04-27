@@ -17,7 +17,6 @@ Provides classes and methods suitable for manipulating study configurations.  In
 """
 from __future__ import annotations
 
-
 import typing
 import copy
 import datetime
@@ -112,10 +111,11 @@ class dictFile(dict):
     """
     extends dict to prove save and load methods.
     """
-    _filename:pathlib.Path
-    Config:typing.Dict
+    _filename: pathlib.Path
+    Config: typing.Dict
+
     def __init__(self,
-                 filename: typing.Optional[typing.Union[str,pathlib.Path]] = None,
+                 filename: typing.Optional[typing.Union[str, pathlib.Path]] = None,
                  Config_dct: typing.Optional[dict] = None):
         """
         Initialise dictFile object from file or from dict (which is fairly awful way)
@@ -139,7 +139,6 @@ class dictFile(dict):
 
         self.Config = Config_dct
         self._filename = path
-
 
     def print_keys(self):
         """
@@ -324,7 +323,10 @@ class OptClimConfig(dictFile):
         param.loc['rangeParam', :] = param.loc['maxParam', :] - param.loc['minParam', :]  # compute range
         return param
 
-    def standardParam(self, paramNames=None, values=None, all=False, scale=False):
+    def standardParam(self, paramNames: typing.List[str] = None,
+                      values: typing.Optional[typing.Dict] = None,
+                      all: bool = False,
+                      scale: bool = False):
         """
         Extract standard parameter values for study
         :param paramNames: Optional names of parameters to use.
@@ -502,10 +504,58 @@ class OptClimConfig(dictFile):
             bad += ['scales have problems ' + str(exception)]
 
         if len(bad):  # something went wrong. So report all the trapped errors with a failure.
-            raise ValueError("\n".join(bad))
-            return False
+            for m in bad:
+                my_logger.warning(m)
 
-        return True
+        return len(bad) == 0
+
+    def check_params(self) -> bool:
+        """
+        Check parameter related configuration is consistent.
+        checks begin, default and ranges
+        Raises warnings if not consistent
+        :return: True if OK, False if Not
+        """
+        bad = []
+        expected_params = self.paramNames()
+        try:
+            begin = self.beginParam(paramNames=expected_params)
+            if begin.isnull().any():
+                bad += ['Missing values for begin: ' + ", ".join(begin[begin.isnull()].index)]
+        except (KeyError,ValueError):  # some error
+            bad += ['Problem running beginParam']
+        try:
+            default = self.standardParam(paramNames=expected_params)
+            if default.isnull().any():
+                bad += ['Missing values for standard: ' + ", ".join(default[default.isnull()].index)]
+        except (KeyError,ValueError):
+            bad += ['Problem running standardParam']
+        try:
+            range = self.paramRanges(paramNames=expected_params)
+            if range.isnull().any().any():
+                bad += ['Missing values for range: ' + ", ".join(range.loc[:, range.isnull().any()].columns)]
+        except (KeyError,ValueError):
+            bad += ['Problem running paramRanges']
+
+
+
+
+
+        if len(bad) > 0:
+            for m in bad:
+                my_logger.warning(m)
+
+        return len(bad) == 0
+
+    def check(self):
+        """
+        Check configuration is consistent. Raise ValueError if not
+        :return: True if OK, False if not
+        """
+        OK = self.check_params() and self.check_obs()
+        if not OK:
+            raise ValueError("Configuration has problems")
+        return OK
 
     def constraint(self, value=None):
         """
@@ -574,8 +624,8 @@ class OptClimConfig(dictFile):
 
         :return: the maximum number of fails allowed. If nothing set then return 0.
         """
-        if value is None:
-            optimize = self.optimise(maxFails=value)
+        if value is not None:
+            optimise = self.optimise(maxFails=value)
         else:
             optimise = self.optimise()
 
@@ -1611,10 +1661,11 @@ class OptClimConfig(dictFile):
 
 class OptClimConfigVn2(OptClimConfig):
     """
-    Version 2 of OptClimConfig -- modify OptClimConfig methods and see OptClimConfig.__init__() for  
+    Version 2 of OptClimConfig -- modify OptClimConfig methods and see OptClimConfig.__init__() for
+    most of setup.
     """
 
-    # NB __init__ method is just the superclasss OptClimConfig__init__ method.
+    #
 
     def paramNames(self, paramNames=None):
         """
@@ -1627,13 +1678,18 @@ class OptClimConfigVn2(OptClimConfig):
         keys = [k for k in keys if 'comment' not in k]
         return keys
 
-    def standardParam(self, values=None, paramNames=None, all=False, scale=False):
+    def standardParam(self,
+                       values: typing.Optional[typing.Dict] = None,
+                       paramNames: typing.List[str] = None,
+                       all: bool = False,
+                       scale: bool = False):
+
         """
         Extract standard parameter values for study
         :param paramNames: Optional names of parameters to use.
         :param values (default None). If values is not None set standardParams to values passed in and return them
         :param scale (default False). If True scale values by parameter range so that 0 is min, 1 is max
-        :param all (default False). Return the whole parameters dict. Used when want to copy
+        :param all (default False). Return the whole parameters' dict. Used when want to copy
         :return: pandas series (unless all is set)
         """
         if paramNames is None:   paramNames = self.paramNames()
@@ -1654,13 +1710,15 @@ class OptClimConfigVn2(OptClimConfig):
             svalues = (svalues - range.loc['minParam', :]) / range.loc['rangeParam', :]
         return svalues.rename(self.name())
 
-    def paramRanges(self, paramNames=None):
+    def paramRanges(self, paramNames=None,values:dict=None):
         """
         :param paramNames -- a list of the parameters to extract ranges for.
         If not supplied the paramNames method will be used.
         :return: a pandas array with rows names minParam, maxParam, rangeParam
         """
         if paramNames is None: paramNames = self.paramNames()
+        if values is not None:
+            self.Config['Parameters']['minmax'] = values
         param = pd.DataFrame(self.Config['Parameters']['minmax'],
                              index=['minParam', 'maxParam'])
         # work out which names we have to avoid complaints from pandas.
@@ -1676,7 +1734,7 @@ class OptClimConfigVn2(OptClimConfig):
                    scale: bool = False) -> pd.Series:
 
         """
-        get the begin parameter values for the study. These are specified in the JSON file in begin block
+        get the begin parameter values for the study. These are specified in the JSON file in initial block
         Any values not specified use the standard values
         :param begin -- if not None then set begin values to this.
            No scaling is done  and initScale will be set False.
@@ -1720,10 +1778,10 @@ class OptClimConfigVn2(OptClimConfig):
             L = range.loc['maxParam', :].lt(beginValues) | beginValues.lt(range.loc['minParam', :])
 
         if np.any(L):
-            print("L  \n", L)
-            print("begin: \n", beginValues)
-            print("range: \n", range)
-            print("Parameters out of range", beginValues[L].index)
+            my_logger.warning("L  \n", L)
+            my_logger.warning(f"begin: {beginValues}")
+            my_logger.warning(f"range: {range}")
+            my_logger.warning(f"Parameters out of range: {beginValues[L].index}")
             raise ValueError("Parameters out of range: ")
 
         return beginValues.astype(float).rename(self.name())
@@ -1972,11 +2030,14 @@ class OptClimConfigVn3(OptClimConfigVn2):
        return pandas series or dataframes as appropriate.
     """
 
-    def __init__(self, config: dictFile):
+    def __init__(self, config: dictFile, check: bool = True):
         """
         Process all INCLUDE stuff
-        Call super clas __init__ method and then add comment_end attribute 
+        Call super class __init__ method and then add comment_end attribute
         set to "_comment"
+
+        :param config -- configuration used to initialise
+        :param check -- if True check that parameters and observations are self-consistent
         """
         includes = dict()
         for key, value in config.Config.items():
@@ -2003,14 +2064,14 @@ class OptClimConfigVn3(OptClimConfigVn2):
         # potentially convert dumped strings back to dataframes. Bit hacky
         # TODO when fix StudyConfig to use same generic json machinery as rest of code then
         # update here..
-        cov = self.getv('_covariance_matrices',{}) # shallow copy
-        for k,v in cov.items():
-            if isinstance(v,dict) and 'dataframe' in v:
-                self.Config['_covariance_matrices'][k]=self.dict2cov(v)
+        cov = self.getv('_covariance_matrices', {})  # shallow copy
+        for k, v in cov.items():
+            if isinstance(v, dict) and 'dataframe' in v:
+                self.Config['_covariance_matrices'][k] = self.dict2cov(v)
         # and potentially read in the covariances.
-        cov = self.Covariances() # force read in.
-
-
+        cov = self.Covariances()  # force read in.
+        if check:
+            self.check()  # check we are OK
 
     def __eq__(self, other: OptClimConfigVn3) -> bool:
         """
@@ -2021,17 +2082,17 @@ class OptClimConfigVn3(OptClimConfigVn2):
         if type(self) != type(other):
             print(f"self type: {type(self)} not the same as {type(other)}")
             return False
-        ok= True
-        for k,v in self.Config.items():
+        ok = True
+        for k, v in self.Config.items():
             if k not in other.Config:
                 my_logger.warning(f"Failed to find {k} in other")
-                ok=False
-                break # exit the loop
+                ok = False
+                break  # exit the loop
 
-            if k == '_covariance_matrices': # special for covariances.
-                for k2,v2 in v.items():
-                    if isinstance(v2,pd.DataFrame):
-                        ok2= v2.equals(other.Config[k][k2])
+            if k == '_covariance_matrices':  # special for covariances.
+                for k2, v2 in v.items():
+                    if isinstance(v2, pd.DataFrame):
+                        ok2 = v2.equals(other.Config[k][k2])
                         if not ok2:
                             my_logger.info(f"Dataframes {k}/{k2} differ")
                     else:
@@ -2039,7 +2100,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
                         if not ok2:
                             my_logger.info(f" {k}/{k2} differ")
             else:
-                ok2=(v == other.Config[k])
+                ok2 = (v == other.Config[k])
 
             ok = ok and ok2
 
@@ -2059,7 +2120,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
         return path
 
     @classmethod
-    def cov2dict(cls,cov:pd.DataFrame) -> dict:
+    def cov2dict(cls, cov: pd.DataFrame) -> dict:
         """
         Convert covariance (as a pandas dataframe) to a dict containing scale factor
           and converted scaled dataframe
@@ -2068,27 +2129,27 @@ class OptClimConfigVn3(OptClimConfigVn2):
            Values will be scaled by 1/abs(min) excluding zero values.
         """
         acov = np.abs(cov.values)
-        scale = 1.0/np.min(acov[acov >0]) # min abs value where cov > 0. If everything 0 will fail.
-        dct=dict()
-        dct['dataframe'] = (cov*scale).to_dict(orient='tight') # scale and convert to json
-        dct['scale']=scale # store the scale
+        scale = 1.0 / np.min(acov[acov > 0])  # min abs value where cov > 0. If everything 0 will fail.
+        dct = dict()
+        dct['dataframe'] = (cov * scale).to_dict(orient='tight')  # scale and convert to json
+        dct['scale'] = scale  # store the scale
         return dct
 
     @classmethod
-    def dict2cov(cls,dct:dict) -> pd.DataFrame:
+    def dict2cov(cls, dct: dict) -> pd.DataFrame:
         """
         Convert a dict representation back to a dataframe.
         :param dct: dict to be be convered. SHould contain scale and dataframe keys
         :return: Decoded dataframe
         """
         scale = dct.pop('scale')
-        df = pd.DataFrame.from_dict(dct.pop('dataframe'),orient='tight')
-        df /= scale # rescale it.
+        df = pd.DataFrame.from_dict(dct.pop('dataframe'), orient='tight')
+        df /= scale  # rescale it.
         return df
 
     def save(self,
-             filename:typing.Optional[typing.Union[str,pathlib.Path]]=None,
-             verbose:bool=False) -> None:
+             filename: typing.Optional[typing.Union[str, pathlib.Path]] = None,
+             verbose: bool = False) -> None:
         """
         saves dict to specified filename.
         :param filename to save file to. Optional and if not provided will use
@@ -2107,17 +2168,18 @@ class OptClimConfigVn3(OptClimConfigVn2):
 
         # convert covariance matrices to json so we can write them out.
         # Will need to convert back on read.
-        dct=self.Config.copy()
-        cov = dct['_covariance_matrices'] # saving on typing!
-        json_cov= cov.copy()
-        for k,v in cov.items():
-            if isinstance(v,pd.DataFrame):
+        dct = self.Config.copy()
+        cov = dct['_covariance_matrices']  # saving on typing!
+        json_cov = cov.copy()
+        for k, v in cov.items():
+            if isinstance(v, pd.DataFrame):
                 my_logger.debug(f"Covar key: {k} converting  to jsonable dict")
-                json_cov[k]=self.cov2dict(v)
-        dct['_covariance_matrices']=json_cov # overwrite
-        with open(filename, 'wt') as fp: # write it out.
+                json_cov[k] = self.cov2dict(v)
+        dct['_covariance_matrices'] = json_cov  # overwrite
+        with open(filename, 'wt') as fp:  # write it out.
             json.dump(dct, fp, cls=NumpyEncoder, indent=4)
         my_logger.info(f"Wrote config to {filename}")
+
     def normalise(self, pandas_obj: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:
         """
         Normalize a parameters by range such that min is 0 and max is 1
@@ -2128,7 +2190,6 @@ class OptClimConfigVn3(OptClimConfigVn2):
         range = self.paramRanges(paramNames=pnames)  # get param range
         nvalues = (pandas_obj - range.loc['minParam', :]) / range.loc['rangeParam', :]
         return nvalues
-
 
     def best_obs(self, best_obs: typing.Optional[pd.Series] = None) -> pd.Series:
         """
@@ -2234,7 +2295,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
     def to_dict(self) -> dict:
         """ Convert StudyConfig to a dict suitable for writing out"""
         #raise ValueError("Not expected any calls to this.")
-        dct=vars(self)
+        dct = vars(self)
         # TODO Might need to modify dct so that covariances are jsonable.
         return dct
 
@@ -2474,22 +2535,28 @@ class OptClimConfigVn3(OptClimConfigVn2):
 
     def paramNames(self, paramNames: typing.Optional[list[str]] = None) -> list[str]:
         """
-        :param paramNames -- a set of paramNames to overwrite existing values. Should be a list
-        :return: a list of parameter names from the configuration files
+        :param paramNames -- a list of paramNames to overwrite existing values.
+        :return: a list of parameter names from the configuration files.
+           First looks for paramNames (at top level). If not found or empty list then tries initParams in initial.
         """
-
-        initial = self.getv('initial')
-        initial = self.strip_comment(initial)
-        keys = list(initial['initParams'].keys())  # return a copy of the list.
-        return keys
+        # try and get paramNames from top level.
+        if paramNames is not None:
+            self.setv('paramNames',paramNames) # set it
+        params = self.getv('paramNames',None)
+        if (params is None) or (len(params) is 0): # try and get from initial params
+            initial = self.getv('initial')
+            initial = self.strip_comment(initial)
+            params = list(initial['initParams'].keys())  # return a copy of the list.
+        return params
 
     def Covariances(self,
-                    obsNames:typing.Optional[typing.List[str]]=None,
-                    trace:bool=False,  # TODO remove trace -- replaced with logging
-                    dirRewrite:typing.Optional[typing.Dict]=None, #TODO consider removing this as saved config should have covariances in.
-                    scale:bool=False,
-                    constraint:typing.Optional[bool]=None,
-                    read:bool=False,
+                    obsNames: typing.Optional[typing.List[str]] = None,
+                    trace: bool = False,  # TODO remove trace -- replaced with logging
+                    dirRewrite: typing.Optional[typing.Dict] = None,
+                    #TODO consider removing this as saved config should have covariances in.
+                    scale: bool = False,
+                    constraint: typing.Optional[bool] = None,
+                    read: bool = False,
                     CovTotal: typing.Optional[pd.DataFrame] = None,
                     CovIntVar: typing.Optional[pd.DataFrame] = None,
                     CovObsErr: typing.Optional[pd.DataFrame] = None):
@@ -2533,7 +2600,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
         if obsNames is None: obsNames = self.obsNames(
             add_constraint=False)  # don't want constraint here. Included later
         cov = {}  # empty dict to return things in
-        covInfo = self.getv('study', {}).get('covariance',{})
+        covInfo = self.getv('study', {}).get('covariance', {})
         # extract the covariance matrix and optionally diagonalise it.
         readData = (self.getv(matrix_key, None) is None) or read
         bad_reads = []
@@ -2565,13 +2632,12 @@ class OptClimConfigVn3(OptClimConfigVn2):
                 if covInfo.get(k + "Diagonalise", False):  # diagonalise total covariance if requested.
                     my_logger.debug("Diagonalising " + k)
                     cov[k] = pd.DataFrame(np.diag(np.diag(cov['CovTotal'])), index=obsNames, columns=obsNames)
-            for k,value in zip(['CovIntVar','CovObsErr','CovTotal'],[1e-12,1,1]):
+            for k, value in zip(['CovIntVar', 'CovObsErr', 'CovTotal'], [1e-12, 1, 1]):
                 if cov.get(k) is None:  # Set it to something
                     my_logger.warning(f"{k} not set so setting to diag {value}")
                     cov[k] = pd.DataFrame(value * np.identity(len(obsNames)),
-                                                index=obsNames, columns=obsNames,
-                                                dtype=float)
-
+                                          index=obsNames, columns=obsNames,
+                                          dtype=float)
 
             self.setv(matrix_key, cov)  # store the covariances as we have read them in.
         # end of reading in data.

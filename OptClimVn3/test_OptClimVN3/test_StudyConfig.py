@@ -16,11 +16,8 @@ import pandas.testing as pdtest
 import xarray
 import copy
 
-
 import StudyConfig
 from genericLib import expand
-
-
 
 
 class testStudyConfig(unittest.TestCase):
@@ -42,11 +39,14 @@ class testStudyConfig(unittest.TestCase):
         # add in some DFOLS info
         dfols = {
             "logging.save_poisedness": False,
-            "logging.save_poisedness_comment": "whether or not  to calculate geometry statistics as part of diagnostic information",
+            "logging.save_poisedness_comment": "whether or not  to calculate geometry statistics as part of "
+                                               "diagnostic information",
             "init.random_initial_directions": True,
-            "init.random_initial_directions_comment": "If true perturb in random directions. If true perturb along co-ordinate axis.",
+            "init.random_initial_directions_comment": "If true perturb in random directions. If true perturb along "
+                                                      "co-ordinate axis.",
             "noise.additive_noise_level": 0.2,
-            "noise.additive_noise_level_comment": "Estimate of noise in cost function. Used in termintion -- nb cost fn is sum of squares **not** sum of squares/nObs",
+            "noise.additive_noise_level_comment": "Estimate of noise in cost function. Used in termintion -- nb cost "
+                                                  "fn is sum of squares **not** sum of squares/nObs",
 
         }
         self.config.Config['optimise']['dfols'] = {}
@@ -122,12 +122,11 @@ class testStudyConfig(unittest.TestCase):
         cov_cache = self.config.getv("_covariance_matrices")
         cov_nocons = config.Covariances(constraint=False)
         for k in covKeys:
-            self.assertTrue(cov_nocons[k].equals(cov_cache[k]) , msg=f'Cached cov {k}  differs')
+            self.assertTrue(cov_nocons[k].equals(cov_cache[k]), msg=f'Cached cov {k}  differs')
         for k, v in zip(covKeys, [consValue, consValue / 100., consValue]):  # keys and expected value
             expect_slice[-1] = v
             np.testing.assert_array_equal(cov[k].loc[:, consName].values, expect_slice, 'Values wrong -- t2a')
             np.testing.assert_array_equal(cov[k].loc[consName, :].values, expect_slice, 'Values wrong -- t2b')
-
 
         # and without constraint
         cov = config.Covariances(constraint=False)  # force constraint off.
@@ -140,7 +139,6 @@ class testStudyConfig(unittest.TestCase):
         cov = config.Covariances(constraint=False, CovTotal=c, CovIntVar=c * 0.1, CovObsErr=c * 0.9)
 
         for k, scale in zip(covKeys, [1.0, 0.1, 0.9]):
-
             self.assertTrue(cov[k].equals(c * scale), msg=f"{k} does not match")
 
     def test_readCovariances(self):
@@ -179,8 +177,6 @@ class testStudyConfig(unittest.TestCase):
         expect = pathlib.Path('test')
         self.config.referenceConfig('test')
         self.assertEqual(expect, self.config.referenceConfig())
-
-
 
     def test_ranges(self):
         """
@@ -290,12 +286,6 @@ class testStudyConfig(unittest.TestCase):
         with self.assertRaises(ValueError):
             got = self.config.targets()
 
-    def test_check_obs(self):
-        """ test that check_obs works/fails as expected"""
-        self.config.check_obs()  # should work.
-        with self.assertRaises(ValueError):
-            self.config.check_obs(obsNames=['fred1', 'fred2'])  # should fail
-
     def test_Fixed(self):
         """
         Test can read fixed parameters
@@ -377,6 +367,10 @@ class testStudyConfig(unittest.TestCase):
         begin = self.config.beginParam()  # paramnames come from init valye
         expect = begin.index.tolist()
         self.assertEqual(expect, got, msg="params not as expected")
+
+        self.config.paramNames(paramNames=['fred', 'harry'])
+        pnames = self.config.paramNames()
+        self.assertEqual(pnames, ['fred', 'harry'], msg='pnames not as expected')
 
     def test_GNsetget(self):
         """
@@ -767,23 +761,21 @@ class testStudyConfig(unittest.TestCase):
         scales = self.config.scales(dict(one=2, three=4), obsNames=obsNames)
         nptest.assert_array_equal(scales, expect)
 
-
     def test_save_load(self):
         """
         test saving and loading works.
         :return:
         """
 
-
-        tfile = tempfile.NamedTemporaryFile(suffix='.scfg',delete=False)
+        tfile = tempfile.NamedTemporaryFile(suffix='.scfg', delete=False)
         tfile.close()
         pth = pathlib.Path(tfile.name)
         dumpConfig = self.config.copy(filename=pth)
         dumpConfig.save()
         newConfig = StudyConfig.readConfig(pth)
-        print(newConfig == dumpConfig) # equality does a lot of magic!
-        self.assertEqual(newConfig,dumpConfig)
-        del(tfile)
+        print(newConfig == dumpConfig)  # equality does a lot of magic!
+        self.assertEqual(newConfig, dumpConfig)
+        del (tfile)
 
     def test_dfols_soln(self):
         # test that dfols_soln works.
@@ -792,67 +784,112 @@ class testStudyConfig(unittest.TestCase):
 
         from dfols.solver import OptimResults
         import numpy as np
-        test_soln = OptimResults(*[indx*12+0.1 for indx in range(0,9)])
-        df=pd.DataFrame(np.ones((3,3))*1.111,index=['a','b','c'],columns=['x','y','z'])
-        test_soln.diagnostic_info=df
+        test_soln = OptimResults(*[indx * 12 + 0.1 for indx in range(0, 9)])
+        df = pd.DataFrame(np.ones((3, 3)) * 1.111, index=['a', 'b', 'c'], columns=['x', 'y', 'z'])
+        test_soln.diagnostic_info = df
         self.config.dfols_solution(solution=test_soln)
-        new_soln=self.config.dfols_solution() # get the new soln
+        new_soln = self.config.dfols_solution()  # get the new soln
         # test for equality!
-        for (kn,vn),(k,v) in zip(vars(new_soln).items(),vars(test_soln).items()):
-            self.assertEqual(kn,k)
-            self.assertEqual(type(vn),type(v))
-            if isinstance(vn,pd.DataFrame):
-                pdtest.assert_frame_equal(vn,v)
-
+        for (kn, vn), (k, v) in zip(vars(new_soln).items(), vars(test_soln).items()):
+            self.assertEqual(kn, k)
+            self.assertEqual(type(vn), type(v))
+            if isinstance(vn, pd.DataFrame):
+                pdtest.assert_frame_equal(vn, v)
 
     def test_init(self):
         # test init works --  in particular that INCLUDE works as expected.
         log_cfg_file = "$OPTCLIMTOP/OptClimVn3/configurations/log_config.ijson"
-        config=dict(logging=f"INCLUDE {log_cfg_file}",version=3)
-        df=StudyConfig.dictFile(Config_dct=config)
-        c=StudyConfig.OptClimConfigVn3(df)
-        with open(os.path.expandvars(log_cfg_file),'rt') as fp:
+
+        config = dict(logging=f"INCLUDE {log_cfg_file}", version=3)
+        df = StudyConfig.dictFile(Config_dct=config)
+        c = StudyConfig.OptClimConfigVn3(df, check=False)
+        with open(os.path.expandvars(log_cfg_file), 'rt') as fp:
             expect_log_cfg = json.load(fp)
         # check logging info is as expected
-        self.assertEqual(expect_log_cfg,c.getv('logging'))
+        self.assertEqual(expect_log_cfg, c.getv('logging'))
         # and that logging_INCLUDE_comment is raw path
-        self.assertEqual(log_cfg_file,c.getv('logging_INCLUDE_comment'))
+        self.assertEqual(log_cfg_file, c.getv('logging_INCLUDE_comment'))
 
     def test_max_model_simulations(self):
         # test max_model_simulations
         config = self.config
         config.max_model_simulations(value=10)
         actual_sims = config.getv('run_info')['max_model_simulations']
-        self.assertEqual(actual_sims,10)
+        self.assertEqual(actual_sims, 10)
 
     def test_module_name(self):
         # test module_name works as expected.
         config = self.config
-        config.Config['run_info']['module_name']=None # set to None
+        config.Config['run_info']['module_name'] = None  # set to None
         model_name = config.model_name()
         module_name = config.module_name()
-        self.assertEqual(module_name,model_name)
+        self.assertEqual(module_name, model_name)
         module_name = config.module_name('simple_model')
-        self.assertEqual(module_name,'simple_model')
+        self.assertEqual(module_name, 'simple_model')
 
     def test_cov2dict(self):
         # test cov2dict. Test taht scale is as expected and that dataframe entry is a dict.
-        cols = ['one','two','three']
-        df=pd.DataFrame(data=np.diag([1,1e-9,3]),index=cols,columns=cols)
+        cols = ['one', 'two', 'three']
+        df = pd.DataFrame(data=np.diag([1, 1e-9, 3]), index=cols, columns=cols)
         dct = self.config.cov2dict(df)
-        self.assertAlmostEquals(dct['scale'],1e9,delta=0.1)
-        self.assertIsInstance(dct['dataframe'],dict)
-
+        self.assertAlmostEquals(dct['scale'], 1e9, delta=0.1)
+        self.assertIsInstance(dct['dataframe'], dict)
 
     def test_dict2cov(self):
         # test dict2cov
-        cols = ['one','two','three']
-        df=pd.DataFrame(data=np.diag([1,1e-9,3]),index=cols,columns=cols)
+        cols = ['one', 'two', 'three']
+        df = pd.DataFrame(data=np.diag([1, 1e-9, 3]), index=cols, columns=cols)
         df = pd.DataFrame(data=np.diag([1, 1e-9, 3]), index=cols, columns=cols)
         dct = self.config.cov2dict(df)
         df2 = self.config.dict2cov(dct)
         self.assertTrue(df.equals(df2))
 
+    def test_check_obs(self):
+        """ test that check_obs works/fails as expected"""
+        self.config.check_obs()  # should work.
+
+        ok = self.config.check_obs(obsNames=['fred1', 'fred2'])  # should fail
+        self.assertFalse(ok, msg='check_obs should have failed')
+
+    def test_check_params(self):
+        """ test that check_params works/fails as expected"""
+        ok = self.config.check_params()
+        self.assertTrue(ok, msg='check_params should have passed')
+        # now just the default param values.  Break default &  range.
+        default = self.config.standardParam(all=True)
+        orig = default.copy()
+        default.pop('ALPHAM')  # drop a value.
+        self.config.standardParam(values=default)  # set it.
+        ok = self.config.check_params()
+        self.assertFalse(ok, msg='check_params should have failed')
+        self.config.standardParam(values=orig)  # reset it.
+        ok = self.config.check_params()
+        self.assertTrue(ok, msg='check_params should have passed')
+        # now set the range to be wrong.
+        range = self.config.paramRanges()
+        orig_range = range.copy()
+        range.pop('ALPHAM')
+        self.config.paramRanges(values=range)
+        ok = self.config.check_params()
+        self.assertFalse(ok, msg='check_params should have failed')
+        self.config.paramRanges(values=orig_range)
+        ok = self.config.check_params()
+        self.assertTrue(ok, msg='check_params should have passed')
+
+    def test_check(self):
+        """ test that check works/fails as expected"""
+        ok = self.config.check()
+        self.assertTrue(ok, msg='check should have passed')
+        # set the param names to non-existent ones.
+        pnames = self.config.paramNames()
+        self.config.paramNames(paramNames=['one', 'two']) # should fail now
+        with self.assertRaises(ValueError,msg='check should have failed'):
+            ok= self.config.check()
+        # check_obs should be OK, check_params not!
+        self.assertTrue(self.config.check_obs(), msg='check_obs should have passed')
+        self.assertFalse(self.config.check_params(), msg='check_params should have failed')
+        self.config.paramNames(paramNames=pnames)  # reset it.
+        self.assertTrue(self.config.check(), msg='check should have passed')
 
 
 
