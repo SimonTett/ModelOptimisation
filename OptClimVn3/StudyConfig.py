@@ -2081,7 +2081,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
         saves dict to specified filename.
         :param filename to save file to. Optional and if not provided will use
            private variable filename in object. If provided filename that self uses
-           subsequently will be this filename
+           subsequently will be this filename. Will save covariances into  output file.
         :param verbose (optional, default False).
             Does not do anything -- just for compatibility with older versions of code.
 
