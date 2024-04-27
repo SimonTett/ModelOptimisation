@@ -39,10 +39,11 @@ my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 
 # functions available to everything.
 
-def readConfig(filename):
+def readConfig(filename,**kwargs):
     """
     Read a configuration and return object of the appropriate version.
     :param filename: name of file (or filepath) to read.
+     all kw args passes onto the creation
     :return: Configuration of appropriate type
     """
     path = pathlib.Path(os.path.expandvars(filename)).expanduser()
@@ -50,7 +51,7 @@ def readConfig(filename):
     if os.path.isfile(path) is False:
         raise IOError("File %s not found" % filename)
     config = dictFile(filename=path)  # read configuration using rather dumb object.
-    config = config.to_StudyConfig()  # convert dictFile to appropriate StudyConfig.
+    config = config.to_StudyConfig(**kwargs)  # convert dictFile to appropriate StudyConfig.
     return config
 
 
@@ -210,7 +211,7 @@ class dictFile(dict):
         """
         return self._filename
 
-    def to_StudyConfig(self) -> OptClimConfigVn3:
+    def to_StudyConfig(self,**kwargs) -> OptClimConfigVn3:
         """
         Convert a dictfile to an OptClimVn3
         :param config_dir: dictfile rep of config.
@@ -224,12 +225,11 @@ class dictFile(dict):
         # use appropriate generator fn
         if (vn is None) or (vn < 3):
             raise ValueError(
-                f"Version = {vn} in {self._filename}. Update to version 3 or greater to work with current software..")
+                f"Version = {vn} in {self._filename}. Update to version 3 or greater to work with current software...")
         elif vn < 4:  # version 3 config
-            config = OptClimConfigVn3(self)
+            config = OptClimConfigVn3(self,**kwargs)
         else:
             raise Exception(f"Version must be < 4. Write new code for {vn}!")
-        # fix the covariances
         return config
 
 
@@ -481,81 +481,6 @@ class OptClimConfig(dictFile):
             tvalues = tvalues * self.scales(obsNames=obsNames)
         return tvalues.rename(self.name())
 
-    def check_obs(self, obsNames=None):
-        """
-        Check that observation related stuff is OK.
-          Check targets, scalings and covariances. Trapping errors and then reporting at end
-        :return: True if OK/False if not.
-        """
-        bad = []  # where we store all the error messages
-        try:
-            targets = self.targets(obsNames=obsNames)
-        except ValueError as exception:  # missing some errors
-            bad += ['Targets have problems ' + str(exception)]
-
-        try:
-            covar = self.Covariances(obsNames=obsNames, read=True)
-        except ValueError as exception:  # missing some errors
-            bad += ['Covariances have problems ' + str(exception)]
-
-        try:
-            scales = self.scales(obsNames=obsNames)
-        except ValueError as exception:  # missing some errors
-            bad += ['scales have problems ' + str(exception)]
-
-        if len(bad):  # something went wrong. So report all the trapped errors with a failure.
-            for m in bad:
-                my_logger.warning(m)
-
-        return len(bad) == 0
-
-    def check_params(self) -> bool:
-        """
-        Check parameter related configuration is consistent.
-        checks begin, default and ranges
-        Raises warnings if not consistent
-        :return: True if OK, False if Not
-        """
-        bad = []
-        expected_params = self.paramNames()
-        try:
-            begin = self.beginParam(paramNames=expected_params)
-            if begin.isnull().any():
-                bad += ['Missing values for begin: ' + ", ".join(begin[begin.isnull()].index)]
-        except (KeyError,ValueError):  # some error
-            bad += ['Problem running beginParam']
-        try:
-            default = self.standardParam(paramNames=expected_params)
-            if default.isnull().any():
-                bad += ['Missing values for standard: ' + ", ".join(default[default.isnull()].index)]
-        except (KeyError,ValueError):
-            bad += ['Problem running standardParam']
-        try:
-            range = self.paramRanges(paramNames=expected_params)
-            if range.isnull().any().any():
-                bad += ['Missing values for range: ' + ", ".join(range.loc[:, range.isnull().any()].columns)]
-        except (KeyError,ValueError):
-            bad += ['Problem running paramRanges']
-
-
-
-
-
-        if len(bad) > 0:
-            for m in bad:
-                my_logger.warning(m)
-
-        return len(bad) == 0
-
-    def check(self):
-        """
-        Check configuration is consistent. Raise ValueError if not
-        :return: True if OK, False if not
-        """
-        OK = self.check_params() and self.check_obs()
-        if not OK:
-            raise ValueError("Configuration has problems")
-        return OK
 
     def constraint(self, value=None):
         """
@@ -696,7 +621,7 @@ class OptClimConfig(dictFile):
                                 my_logger.info("Diagonalising " + k)
                     except ValueError as exception:  # error in readCovariance
                         bad_reads += [str(exception)]
-            if len(bad_reads) > 0:  # failed somehow. Raise ValueError.
+            if len(bad_reads) > 0:  # failed somehow. Raie ValueError.
                 raise ValueError("\n".join(bad_reads))
             # make total covariance from CovIntVar and CovObsErr if both are defined.
             if cov.get('CovIntVar') is not None and cov.get(
@@ -2064,12 +1989,14 @@ class OptClimConfigVn3(OptClimConfigVn2):
         # potentially convert dumped strings back to dataframes. Bit hacky
         # TODO when fix StudyConfig to use same generic json machinery as rest of code then
         # update here..
+        # deal with covariances. If we have _covariance_matrices then we need to convert them to a dataframe
+        # from the encoded version.
         cov = self.getv('_covariance_matrices', {})  # shallow copy
         for k, v in cov.items():
-            if isinstance(v, dict) and 'dataframe' in v:
+            if isinstance(v, dict) and 'dataframe' in v: # we encoded a dataframe when we wrote it. So decode it
                 self.Config['_covariance_matrices'][k] = self.dict2cov(v)
-        # and potentially read in the covariances.
-        cov = self.Covariances()  # force read in.
+                my_logger.debug(f"covariance {k} converted to dataframe")
+        cov = self.Covariances()  #  read in covariances in case we don't have them.
         if check:
             self.check()  # check we are OK
 
@@ -2544,7 +2471,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
             assert isinstance(paramNames,list)
             self.setv('paramNames',paramNames) # set it
         params = self.getv('paramNames',None)
-        if (params is None) or (len(params) is 0): # try and get from initial params
+        if (params is None) or (len(params) == 0): # try and get from initial params
             initial = self.getv('initial')
             initial = self.strip_comment(initial)
             params = list(initial['initParams'].keys())  # return a copy of the list.
@@ -2689,3 +2616,81 @@ class OptClimConfigVn3(OptClimConfigVn2):
 
         return cov
 
+    def check_obs(self, obsNames=None):
+        """
+        Check that observation related stuff is OK.
+          Check targets, scalings and covariances. Trapping errors and then reporting at end
+        :return: True if OK/False if not.
+        """
+        bad = []  # where we store all the error messages
+        try:
+            targets = self.targets(obsNames=obsNames)
+        except ValueError as exception:  # missing some errors
+            bad += ['Targets have problems ' + str(exception)]
+
+        try:
+            covar = self.Covariances(obsNames=obsNames)
+        except ValueError as exception:  # missing some errors
+            bad += ['Covariances have problems ' + str(exception)]
+
+        try:
+            scales = self.scales(obsNames=obsNames)
+        except ValueError as exception:  # missing some errors
+            bad += ['scales have problems ' + str(exception)]
+
+        if len(bad):  # something went wrong. So report all the trapped errors with a failure.
+            for m in bad:
+                my_logger.warning(m)
+
+        return len(bad) == 0
+
+    def check_params(self) -> bool:
+        """
+        Check parameter related configuration is consistent.
+        checks begin, default and ranges
+        Raises warnings if not consistent
+        :return: True if OK, False if Not
+        """
+        bad = []
+        expected_params = self.paramNames()
+        my_logger.debug(f'Expected params are: {expected_params}')
+        try:
+            default = self.standardParam(paramNames=expected_params)
+            if default.isnull().any():
+                bad += ['Missing values for standard: ' + ", ".join(default[default.isnull()].index)]
+        except (KeyError,ValueError):
+            bad += ['Problem running standardParam']
+        try:
+            range = self.paramRanges(paramNames=expected_params)
+            if range.isnull().any().any():
+                bad += ['Missing values for range: ' + ", ".join(range.loc[:, range.isnull().any()].columns)]
+        except (KeyError, ValueError):
+            bad += ['Problem running paramRanges']
+        try:
+            begin = self.beginParam(paramNames=expected_params)
+            if begin.isnull().any():
+                bad += ['Missing values for begin: ' + ", ".join(begin[begin.isnull()].index)]
+        except (KeyError,ValueError):  # some error
+            bad += ['Problem running beginParam']
+
+
+
+
+
+
+
+        if len(bad) > 0:
+            for m in bad:
+                my_logger.warning(m)
+
+        return len(bad) == 0
+
+    def check(self):
+        """
+        Check configuration is consistent. Raise ValueError if not
+        :return: True if OK, False if not
+        """
+        OK = self.check_params() and self.check_obs()
+        if not OK:
+            raise ValueError("Configuration has problems")
+        return OK
