@@ -772,10 +772,18 @@ class testStudyConfig(unittest.TestCase):
         pth = pathlib.Path(tfile.name)
         dumpConfig = self.config.copy(filename=pth)
         dumpConfig.save()
+        optclimtop = os.environ.pop('OPTCLIMTOP', None) # undefine optclimtop. Readin should work!
         newConfig = StudyConfig.readConfig(pth)
         print(newConfig == dumpConfig)  # equality does a lot of magic!
         self.assertEqual(newConfig, dumpConfig)
+        # check that the saved covariances are sensible.
+        cov = self.config.Covariances()
+        cov2 = newConfig.Covariances()
+        for k in ['CovIntVar', 'CovObsErr', 'CovTotal']:
+            self.assertTrue(np.isclose(cov['CovIntVar'], cov2['CovIntVar']).all(),msg=f"{k} not as expected")
+
         del (tfile)
+        os.environ['OPTCLIMTOP'] = optclimtop # reset optclimtop
 
     def test_dfols_soln(self):
         # test that dfols_soln works.
