@@ -450,7 +450,7 @@ class testRunSubmit(unittest.TestCase):
         Test that optConfig works.
         """
 
-        # Make the begin  values be max values (so we know perturbations take us to the center)
+        # Make the begin values be max values (so we know perturbations take us to the center)
 
         # Modify the steps to be small but different.
         scale=True
@@ -464,7 +464,7 @@ class testRunSubmit(unittest.TestCase):
         configData.constraint(False)  # turn off constraint.
         prange = configData.paramRanges()  # param ranges
         optParams = prange.loc['maxParam']
-        paramNames = optParams.index
+        paramNames = optParams.index.to_list()# paramNames wants a list!
         configData.paramNames(paramNames=paramNames)  # set the param names to reduced set.
         obsNames = configData.obsNames(add_constraint=False)  # get the obs names making sure constraint not used.
 

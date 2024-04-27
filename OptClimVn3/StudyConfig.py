@@ -2541,6 +2541,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
         """
         # try and get paramNames from top level.
         if paramNames is not None:
+            assert isinstance(paramNames,list)
             self.setv('paramNames',paramNames) # set it
         params = self.getv('paramNames',None)
         if (params is None) or (len(params) is 0): # try and get from initial params
