@@ -82,6 +82,7 @@ class Model(ModelBaseClass, journal):
           _post_process_output -- name of output file for post-processing
         Note that update_history and store_output (see Journal for doc for those) set up private attributes.
     """
+    # TODO -- remove references to namelists and replace with more general thing. Specific models do namelists!
     post_proccess_json = "post_process.json"  # where post-process info gets written
     status_info = dict(CREATED=None,
                        INSTANTIATED=["CREATED"],  # Instantiate a model requires it to have been created
@@ -197,7 +198,7 @@ class Model(ModelBaseClass, journal):
             self.set_post_process(post_process)
 
         # attributes to do with model meta-information.
-        self.fake = False  # did we fake the model? Changed at submission.
+        self.fake = False  # did we fake the model? Changed later.
         self.perturb_count = 0  # how many times have we perturbed the model?
         self.submission_count = 0  # how mamy times have we submitted the model?
 
@@ -376,11 +377,15 @@ class Model(ModelBaseClass, journal):
     def set_params(self, parameters: typing.Optional[dict] = None):
 
         """
-        Set parameters by patching namelist. Override if you want more than namelists.
+        Set parameters by patching namelist. 
+        Override if you want more than namelists.
+         If self.fake is True then no parameters are set.
         :param self: Model instance
         :param parameters -- dict(or None) of parameters to use.
         :return: Nothing
         """
+        if self.fake:
+            return # nothing to be done if faking.
         nl = self.gen_params(parameters=parameters)
         namelist_var.nl_modify(nl, dirpath=self.model_dir)  # patch the namelists.
 
@@ -395,13 +400,15 @@ class Model(ModelBaseClass, journal):
 
     def create_model(self):
         """
-        Create a new model by copying reference. Overwrite (and call superclass) for your own model.
+        Create a new model by copying reference. If self.fake is True then no copy is done.
+         Overwrite (and call superclass) for your own model.
         For example if you want to modify your reference model.
         :return:nothing.
         """
         self.model_dir.mkdir(parents=True, exist_ok=True)  # create the directory if needed.
         my_logger.info(f"Created {self.model_dir}")
-        shutil.copytree(self.reference, self.model_dir, symlinks=True, dirs_exist_ok=True)  # copy from reference.
+        if not self.fake:
+            shutil.copytree(self.reference, self.model_dir, symlinks=True, dirs_exist_ok=True)  # copy from reference.
 
     def set_status(self, new_status: type_status, check_existing: bool = True) -> None:
         """
@@ -427,20 +434,28 @@ class Model(ModelBaseClass, journal):
         self.status = new_status
         self.dump_model()  # write to disk
 
-    def instantiate(self) -> None:
+    def instantiate(self,fake:bool = False) -> None:
         """
         Run create_model and set_params, update status.
+        If fake is True then do not actually create the model.
+         Just create the directory. Actual behaviour depends on class
+         implementations of create_model, modify_model and set_params.
         Will verify that (if defined) post-processing script exists failing if not
         Also, should make any changes needed to those files.
         :return:
         """
+        self.fake = self.fake or fake
+        # if fake is True then we are faking it unless we are already faking it!
         self.create_model()  # create model
         self.modify_model()  # do any modifications to model needed before setting params.
         self.set_params()  # set the params
         # set permissions to rxw,rx,rx for submit and continue script.
-        for file in [self.submit_script, self.continue_script]:
-            if file is not None:
-                (self.model_dir / file).chmod(0o766)  # set permission
+        if not fake:
+            for file in [self.submit_script, self.continue_script]:
+                if file is not None:
+                    (self.model_dir / file).chmod(0o766)  # set permission
+        else:
+            self.fake = True # we are faking now!
 
         self.set_status('INSTANTIATED')
 
@@ -448,10 +463,10 @@ class Model(ModelBaseClass, journal):
         """
         Modify model. This does nothing and is designed to be overwritten in classes that inherit from it.
         Those should call this first as it checks that set_status_script exists and updates history
-
+        If self.fake is True then only history is updated.
         :return: None
         """
-        if not self.set_status_script.exists():
+        if (not self.fake) and (not self.set_status_script.exists()):
             raise ValueError(f"Need {self.set_status_script} does not exists")
 
         self.update_history(f"modifying model")
@@ -481,6 +496,8 @@ class Model(ModelBaseClass, journal):
         status: type_status = 'SUBMITTED'
         pp_jid = None  # unless we do something will have no pp job.
         # deal with fake_function.
+        if self.fake and fake_function is  None:
+            raise ValueError(f"Fake model {self.name} and fake_function not provided. Not allowed")
         if fake_function:  # handle fake function
             self.pp_jid = None  # no cmd to run as we just run it!
             self.simulated_obs = fake_function(self.parameters).rename(self.name)  # compute the simulated_obs

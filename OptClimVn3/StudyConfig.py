@@ -2458,14 +2458,37 @@ class OptClimConfigVn3(OptClimConfigVn2):
 
         return beginValues.astype(float).rename(self.name())
 
-    def fixedParams(self) -> dict:
+    def fixedParams_keys(self) -> typing.List[typing.Hashable]:
+        """
+        Get the keys for fixedParams.
+        :return: Labels (if any) for fixed parameter configurations or [] if not a multiple configuration
+        """
+        initial = self.getv('initial')
+        fix = initial.get('fixedParams', {})
+        fix = self.strip_comment(fix) # remove all comments.
+        if fix.get('multiple_configs',False):
+            keys = [k for k in fix.keys() if isinstance(fix[k],dict)] # if value of k is  a direct then k is a label!
+        else:
+            keys = []
+
+        return keys
+
+    def fixedParams(self,key:typing.Optional[typing.Hashable]=None) -> dict:
         """
         :return: a dict of all the fixed parameters. All names ending _comment or called comment will be excluded
         """
         initial = self.getv('initial')
 
-        fix = copy.copy(initial.get('fixedParams', None))
-        if fix is None: return {}  # nothing found so return empty dir
+        fix = initial.get('fixedParams', None)
+        if fix is None:
+            return {}  # nothing found so return empty dir
+        elif key is not None and fix.get('multiple_configs',False): # got a key and have multiple_configs
+            fix = copy.copy(fix[key])
+        elif key is not None:
+            raise ValueError('Provided key but fixedParams/multiple_configs not set to True.')
+        else:
+            fix = copy.copy(fix)
+
         # remove comments
         fix = self.strip_comment(fix)
 
