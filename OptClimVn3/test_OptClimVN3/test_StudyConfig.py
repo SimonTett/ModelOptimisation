@@ -310,6 +310,30 @@ class testStudyConfig(unittest.TestCase):
         values['VF1'] = 2.0
         fix = self.config.fixedParams()
         self.assertEqual(fix['VF1'], 2.0, msg='VF1 not as expected 2nd time')
+        # test that dict of param values works.
+        c1 = fix
+        c1.update(delta_SST=4.)
+        c2 = fix
+        c2.update(delta_SST=0.0)
+        fixparams=dict(config1=c1,config2=c2,multiple_configs=True)
+        self.config.Config['initial']['fixedParams']=fixparams
+        self.assertEqual(self.config.fixedParams(key='config1'),fixparams["config1"])
+        self.assertEqual(self.config.fixedParams(key='config2'), fixparams["config2"])
+
+    def test_fixedParams_keys(self):
+        # test fixedParams_keys works as expected
+        fix = self.config.fixedParams()
+        c1 = fix
+        c1.update(delta_SST=4.)
+        c2 = fix
+        c2.update(delta_SST=0.0)
+        fixparams = dict(config1=c1, config2=c2, multiple_configs=True,multiple_configa_comment='Some  text')
+        self.config.Config['initial']['fixedParams'] = fixparams
+        fix_keys = self.config.fixedParams_keys()
+        self.assertEqual(fix_keys,['config1','config2'])
+
+
+
 
     def test_runTime(self):
         """
