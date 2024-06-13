@@ -35,6 +35,8 @@ import xarray  # TODO -- consider removing dependence on xarray
 
 __version__ = '3.0.0'
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
+type_fixed_param_function: typing.TypeAlias = typing.Callable[
+    [dict[typing.Hashable, 'Model.Model']], typing.Optional[pd.Series]]
 
 
 # functions available to everything.
@@ -2463,43 +2465,65 @@ class OptClimConfigVn3(OptClimConfigVn2):
         Get the keys for fixedParams.
         :return: Labels (if any) for fixed parameter configurations or [] if not a multiple configuration
         """
-        initial = self.getv('initial')
-        fix = initial.get('fixedParams', {})
-        fix = self.strip_comment(fix) # remove all comments.
-        if fix.get('multiple_configs',False):
-            keys = [k for k in fix.keys() if isinstance(fix[k],dict)] # if value of k is  a direct then k is a label!
+        fix = self.getv('initial').get('fixedParams', {})
+        fix = self.strip_comment(fix)  # remove all comments.
+        if self.fixed_param_function():
+            keys = [k for k in fix.keys() if isinstance(fix[k], dict)]  # if value of k is  a direct then k is a label!
         else:
             keys = []
 
         return keys
 
-    def fixedParams(self,key:typing.Optional[typing.Hashable]=None) -> dict:
+    def fixed_param_function(self) -> typing.Optional[type_fixed_param_function]:
         """
-        :return: a dict of all the fixed parameters. All names ending _comment or called comment will be excluded
+        Extract the function from string. Note will import the module that contains the function.
+        Be very careful...
+        :return: function or None if no multiple_function found.
         """
-        initial = self.getv('initial')
+        import importlib
+        fn_test = self.getv('initial').get('fixedParams', {}).get('multiple_function', None)
+        if fn_test is None:
+            return fn_test
+        module, fn_name = fn_test.rsplit('.', 1)
+        mod = importlib.import_module(module)  # import the module
+        fn: type_fixed_param_function = getattr(mod, fn_name)  # extract the function
+        return fn
 
-        fix = initial.get('fixedParams', None)
-        if fix is None:
-            return {}  # nothing found so return empty dir
-        elif key is not None and fix.get('multiple_configs',False): # got a key and have multiple_configs
-            fix = copy.copy(fix[key])
-        elif key is not None:
-            raise ValueError('Provided key but fixedParams/multiple_configs not set to True.')
-        else:
-            fix = copy.copy(fix)
-
-        # remove comments
-        fix = self.strip_comment(fix)
-
+    def set_none_std(self, params: dict) -> dict:
+        """
+        Set any values in params that are None to the standard values.
+        :param params: Parameter dict
+        :return: Parameters with any None values set to standard values.
+        """
         # deal with Nones and see if have default value. Code nicked from initParams
-        paramNames = fix.keys()  # parameters we have.
         standard = self.standardParam(all=True)  # get all the standard values
+        result = dict()
+        for k, v in params.items():
+            if v is None and standard.get(k) is not None:
+                result[k] = standard[k]  # will trigger an error if standard[k] does not exist
+            else:
+                result[k] = v
+        return result
 
-        for p in paramNames:  # list below is probably rather slow and could be sped up!
-            if fix[p] is None and standard.get(p) is not None:  # fixed param is None and standard is not None
-                fix[p] = standard[p]  # set fixed value to standard value
+    def fixedParams(self) -> dict:
+        """
+        :return: a dict of all the fixed parameters. All names ending _comment or called comment will be excluded.
+        Values set to None with standard values will be set to standard values.
+        If multiple_function is set then will return a dict of dicts with the keys being the labels.
 
+        """
+
+        fix_config = self.getv('initial').get('fixedParams', {})
+        if self.fixed_param_function():  # Have multiple_configs
+            keys = self.fixedParams_keys()
+            fix = dict()
+            # TODO consider having reference_dir included in fixedParams.
+            for key in keys:  # copy over the wanted keys stripping comments out
+                fix[key] = self.set_none_std(self.strip_comment(fix_config[key]))
+                my_logger.debug(f'Extracted fixed params for {key} ')
+        else:
+            fix = self.set_none_std(self.strip_comment(fix_config))
+            my_logger.debug('Extracted fixed params')
         return fix
 
     def paramNames(self, paramNames: typing.Optional[list[str]] = None) -> list[str]:

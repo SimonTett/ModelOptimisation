@@ -55,14 +55,14 @@
         "initScale_comment": "If true then startParams range from 0 to 1 where 0 means min value; 1 max value.",
         "fixedParams": {
             "_comment": " List of parameters and values that are fixed and not modified in optimisation. Set to null to use default values",
-            "multiple_configs": true,
-            "multiple_configs_comment":"If True then fixedParams contains information for multiple configurations ",
-            "config1": {
+            "multiple_function": "example_multiparam.ctl_plus4k",
+            "multiple_function_comment":"Module path with function at the end. Everything should be dot separated. If provided then fixedParams has multiple configurations and this function will combine them.",
+            "control": {
                 "START_TIME": "1998-12-01",
                 "START_TIME_comment": "Start time as an iso string",
                 "RUN_TARGET": "P6Y4M",
                 "RUN_TARGET_comment": "RUN_TARGET as an iso duration string."},
-            "config2": {
+            "plus4k": {
                 "START_TIME": "1998-12-01",
                 "START_TIME_comment": "Start time as an iso string",
                 "RUN_TARGET": "P6Y4M",

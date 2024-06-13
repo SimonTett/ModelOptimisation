@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 import typing
 import pathlib
+
+import Model
 from SubmitStudy import SubmitStudy
 
 import numpy as np
@@ -92,13 +94,79 @@ class runSubmit(SubmitStudy):
         # dealt with potential non-determinism.
         self.prev_trace = self.trace[:]
         self.trace = []
+    def make_model(self,params:dict )-> Model.Model:
+        """
+        Make a model from a dictionary of parameters. If model already exists then return that model.
+        :param params: dictionary of parameters
+        :return: Model object
+        """
+        model = self.get_model(params)
+        if model is None:  # no model so time to create one.
+            model = self.create_model(params)  # returns None if no model was created.
+            if model is None:
+                raise optclim_exceptions.runModelError
+                # Immediately raise exception as None means no model created and nothing else can be done
+                # FIXME One issue here is that we are terminating the algorithm without the algorithm itself knowing this
+                # so then the algorithm can't do any clean up or capture diagnostics.
+                # This is tricky as really per-algorithm -- we want it to complete but there is no general way of doing this
+                # one approach would be to pass in a fn which gets run here. For DFOLS (and other opt cases) it could do this by returning obs values = target
+                # That would terminate but then jacobian etc would be stuffed as would use this last state. A better approach might be to set
+                # self.exceeded_max_models to True. Then rerun the algorithm with maxFn set to max_model_simulations.
+                # OR set maxFn to min(max_model_simulations,maxFn).
+
+        elif model.status != "PROCESSED":  # not processed so raise ValueError and complain.
+            # TODO add in random generation to allow look ahead
+            raise ValueError(f"{model} status != PROCESSED but is {model.status}")
+        else:  # got a model.
+            my_logger.debug(f"Using existing model {model}")
+        key = self.key(params)
+        self.trace.append(key)  # append key to the trace.
+        return model
+
+    def transform_check(self,obs:pd.Series,model_name:str,
+                        transform: typing.Optional[pd.DataFrame] = None,
+                        scale: bool = False,
+                        residual: bool = False,
+                        ) -> pd.Series:
+
+        """
+        Check and transform obs
+        :param obs: obs to be checked and transformed
+        :param model_name: str which identifies model (or models)
+        :param transform: Transform matrix
+        :param scale: If True scale obs
+        :param residual: If True obs are relative to target values
+        :return: pandas series of transformed matrix.
+
+        Checks are that no deseried obs are missing and no nulls are in transformed series.
+        """
+
+        obsNames = self.config.obsNames()
+        missing_obs = set(obsNames) - set(obs.index)
+        if len(missing_obs) > 0:  # trigger error as missing obs
+            raise ValueError(f"Missing {' '.join(missing_obs)} from model {model_name}")
+        # force fixed order.
+        obs = obs.reindex(obsNames)
+        # note using obsNames as specified. transform (if supplied) can change names.
+        if scale:  # scale sim obs.
+            obs *= self.config.scales()
+        if residual:  # difference from target obs
+            tgt = self.config.targets(scale=scale)
+            obs -= tgt
+        if transform is not None:  # apply transform if required.
+            obs = obs @ transform.T  # obs in nsim x nobs; transform  is nev x nobs.
+        null = obs.isnull()
+        if np.any(null):
+            raise ValueError("Obs contains null values at: " + ", ".join(obs.index[null]))
+        return obs
 
     def stdFunction(self, params: np.ndarray,
                     df: bool = False,
                     raiseError: bool = True,
                     ensemble_average: bool = True,
                     transform: typing.Optional[pd.DataFrame] = None,
-                    scale: bool = False, residual: bool = False,
+                    scale: bool = False,
+                    residual: bool = False,
                     sumSquare: bool = False) -> np.ndarray | pd.DataFrame | pd.Series:
         """
         Standard Function used for running model . Returns values from cache if already got it.
@@ -172,58 +240,38 @@ class runSubmit(SubmitStudy):
             raise ValueError("No observations found. Check your configuration file ")
         # result = np.full((nsim, nObs), np.nan)  # array of np.nan for result
         result = []  # empty list. Will fill with series from analysis and then make into a dataframe.
+        fixed_params = self.config.fixedParams()  # get fixed parameters
         nEns = self.config.ensembleSize()  # how many ensemble members do we want to run.
         empty = pd.Series(np.repeat(np.nan, nObs), index=obsNames)
         for indx in range(0, nsim):  # iterate over the simulations.
             pDict = dict(zip(paramNames, use_params[indx, :]))  # create dict with names and values.
-            pDict.update(self.config.fixedParams())
             ensObs = []
             for ensembleMember in range(0, nEns):
+
                 pDict.update(ensembleMember=ensembleMember)
-                model = self.get_model(pDict)
-                if model is None:  # no model so time to create one.
-                    model = self.create_model(pDict) # returns None if no model was created.
-                    if model is None:
-                        raise optclim_exceptions.runModelError
-                        # Immediately raise exception as None means no model created and nothing else can be done
-                        # FIXME One issue here is that we are terminating the algorithm without the algorithm itself knowing this
-                        # so then the algorithm can't do any clean up or capture diagnostics.
-                        # This is tricky as really per-algorithm -- we want it to complete but there is no general way of doing this
-                        # one approach would be to pass in a fn which gets run here. For DFOLS (and other opt cases) it could do this by returning obs values = target
-                        # That would terminate but then jacobian etc would be stuffed as would use this last state. A better approach might be to set
-                        # self.exceeded_max_models to True. Then rerun the algorithm with maxFn set to max_model_simulations.
-                        # OR set maxFn to min(max_model_simulations,maxFn).
-                    obs = empty # no model so return nothing.
-                elif model.status != "PROCESSED": # not processed so raise ValueError and complain.
-                    # TODO add in random generation to allow look ahead
-                    raise ValueError(f"{model} status != PROCESSED but is {model.status}")
-                    obs = empty
-                else:  # got a model.
-                    my_logger.debug(f"Using existing model {model}")
-                    obsNames = self.config.obsNames()
-                    obs = model.simulated_obs  # get obs from the model
-                    # if obs is None raise an error -- something gone badly wrong.
-                    if obs is None:
-                        raise ValueError(f"{model} has None for simulated_obs")
-                    missing_obs = set(obsNames) - set(obs.index)
-                    if len(missing_obs) > 0:  # trigger error as missing obs
-                        raise ValueError(f"Missing {' '.join(missing_obs)} from model {model.name}")
-                    # force fixed order.
-                    obs = obs.reindex(
-                        obsNames)  # note using obsNames as specified. transform (if supplied) can change names.
-                    if scale:  # scale sim obs.
-                        obs *= self.config.scales()
-                    if residual:  # difference from target obs
-                        tgt = self.config.targets(scale=scale)
-                        obs -= tgt
-                    if transform is not None:  # apply transform if required.
-                        obs = obs @ transform.T  # obs in nsim x nobs; transform  is nev x nobs.
-                    null = obs.isnull()
-                    if np.any(null):
-                        raise ValueError("Obs contains null values at: " + ", ".join(obs.index[null]))
+                multi_config_fn = self.config.fixed_param_function()
+                if multi_config_fn is  None:
+                    pDict.update(fixed_params)
+                    model = self.make_model(pDict)
+                    obs = model.simulated_obs
+                    model_name=model.name
+                else:
+                    models = dict()
+                    for k,fp in fixed_params.items():
+                        params = pDict.copy()
+                        params.update(fp)
+                        models[k] = self.make_model(params)
+                    # now call multi_config_fn
+                    obs = multi_config_fn(models)
+                    model_name = ' '.join([m.name for m in models.values()])
+                    model_name += 'fn: '+multi_config_fn.__name__
+
+                if obs is None:
+                    obs = empty  # empty obs
+                else:
+                    obs= self.transform_check(obs,model_name,transform=transform,scale=scale,residual=residual)
                 ensObs.append(obs)
-            key = self.key(pDict)
-            self.trace.append(key) # append key to the trace.
+
             # This happens both when a new model is created or an existing model used.
             # end of loop over ensemble members.
 
