@@ -3,19 +3,21 @@ from __future__ import annotations
 import logging
 import typing
 import pathlib
+
+import Model
 from SubmitStudy import SubmitStudy
+
 import numpy as np
 import pandas as pd
 import optclim_exceptions
 import warnings
 import functools
+
 my_logger=logging.getLogger(f"OPTCLIM.{__name__}")
 class runSubmit(SubmitStudy):
     # Has the following additional attributes over SubmitStudy (and Study)
     trace:typing.List[str] # the trace of all model evaluations. Elements are keys into model_info
     prev_trace:typing.List[str] # the trace off all model evaluation the previous time the algorithm was run
-
-
     """
           Class   to deal with running various algorithms. (not all of which are optimization).
           It is a specialisation of SubmitStudy and is separated out to make maintenance easier.
@@ -28,20 +30,20 @@ class runSubmit(SubmitStudy):
        runJacobian is fairly simple and might form a good model for this. See runAlgorithm.py which is the script that
        runs the whole system.
 
-   """
+        """
 
-  def __init__(self,
-               config: typing.Optional["OptClimConfigVn3"],
-               name: typing.Optional[str] = None,
-               rootDir: typing.Optional[pathlib.Path] = None,
-               refDir: typing.Optional[pathlib.Path] = None,
-               models: typing.Optional[typing.List["Model"]] = None,
-               model_name: typing.Optional[str] = None,
-               config_path: typing.Optional[pathlib.Path] = None,
-               next_iter_cmd: typing.Optional[typing.List[str]] = None):
-      super().__init__(config, name, rootDir, refDir, models, model_name, config_path, next_iter_cmd)
-      self.trace = []
-      self.prev_trace = []
+    def __init__(self,
+                 config: typing.Optional["OptClimConfigVn3"],
+                 name: typing.Optional[str] = None,
+                 rootDir: typing.Optional[pathlib.Path] = None,
+                 refDir: typing.Optional[pathlib.Path] = None,
+                 models: typing.Optional[typing.List["Model"]] = None,
+                 model_name: typing.Optional[str] = None,
+                 config_path: typing.Optional[pathlib.Path] = None,
+                 next_iter_cmd: typing.Optional[typing.List[str]] = None):
+        super().__init__(config, name, rootDir, refDir, models, model_name, config_path, next_iter_cmd)
+        self.trace = []
+        self.prev_trace = []
     def closest_model(self,model:"Model")  -> ("Model",float):
         """
         Find and return the closet model in the (current) model trace to specified model.
@@ -92,18 +94,80 @@ class runSubmit(SubmitStudy):
         # dealt with potential non-determinism.
         self.prev_trace = self.trace[:]
         self.trace = []
+    def make_model(self,params:dict )-> Model.Model:
+        """
+        Make a model from a dictionary of parameters. If model already exists then return that model.
+        :param params: dictionary of parameters
+        :return: Model object
+        """
+        model = self.get_model(params)
+        if model is None:  # no model so time to create one.
+            model = self.create_model(params)  # returns None if no model was created.
+            if model is None:
+                raise optclim_exceptions.runModelError
+                # Immediately raise exception as None means no model created and nothing else can be done
+                # FIXME One issue here is that we are terminating the algorithm without the algorithm itself knowing this
+                # so then the algorithm can't do any clean up or capture diagnostics.
+                # This is tricky as really per-algorithm -- we want it to complete but there is no general way of doing this
+                # one approach would be to pass in a fn which gets run here. For DFOLS (and other opt cases) it could do this by returning obs values = target
+                # That would terminate but then jacobian etc would be stuffed as would use this last state. A better approach might be to set
+                # self.exceeded_max_models to True. Then rerun the algorithm with maxFn set to max_model_simulations.
+                # OR set maxFn to min(max_model_simulations,maxFn).
 
-    def stdFunction(
-        self,
-        params: np.ndarray,
-        df: bool = False,
-        raiseError: bool = True,
-        ensemble_average: bool = True,
-        transform: typing.Optional[pd.DataFrame] = None,
-        scale: bool = False,
-        residual: bool = False,
-        sumSquare: bool = False,
-    ) -> np.ndarray | pd.DataFrame | pd.Series:
+        elif model.status != "PROCESSED":  # not processed so raise ValueError and complain.
+            # TODO add in random generation to allow look ahead
+            raise ValueError(f"{model} status != PROCESSED but is {model.status}")
+        else:  # got a model.
+            my_logger.debug(f"Using existing model {model}")
+        key = self.key(params)
+        self.trace.append(key)  # append key to the trace.
+        return model
+
+    def transform_check(self,obs:pd.Series,model_name:str,
+                        transform: typing.Optional[pd.DataFrame] = None,
+                        scale: bool = False,
+                        residual: bool = False,
+                        ) -> pd.Series:
+
+        """
+        Check and transform obs
+        :param obs: obs to be checked and transformed
+        :param model_name: str which identifies model (or models)
+        :param transform: Transform matrix
+        :param scale: If True scale obs
+        :param residual: If True obs are relative to target values
+        :return: pandas series of transformed matrix.
+
+        Checks are that no deseried obs are missing and no nulls are in transformed series.
+        """
+
+        obsNames = self.config.obsNames()
+        missing_obs = set(obsNames) - set(obs.index)
+        if len(missing_obs) > 0:  # trigger error as missing obs
+            raise ValueError(f"Missing {' '.join(missing_obs)} from model {model_name}")
+        # force fixed order.
+        obs = obs.reindex(obsNames)
+        # note using obsNames as specified. transform (if supplied) can change names.
+        if scale:  # scale sim obs.
+            obs *= self.config.scales()
+        if residual:  # difference from target obs
+            tgt = self.config.targets(scale=scale)
+            obs -= tgt
+        if transform is not None:  # apply transform if required.
+            obs = obs @ transform.T  # obs in nsim x nobs; transform  is nev x nobs.
+        null = obs.isnull()
+        if np.any(null):
+            raise ValueError("Obs contains null values at: " + ", ".join(obs.index[null]))
+        return obs
+
+    def stdFunction(self, params: np.ndarray,
+                    df: bool = False,
+                    raiseError: bool = True,
+                    ensemble_average: bool = True,
+                    transform: typing.Optional[pd.DataFrame] = None,
+                    scale: bool = False,
+                    residual: bool = False,
+                    sumSquare: bool = False) -> np.ndarray | pd.DataFrame | pd.Series:
         """
         Standard Function used for running model . Returns values from cache if already got it.
           If not got cached model then raises runModelError exception or returns NaN
@@ -143,6 +207,7 @@ class runSubmit(SubmitStudy):
           likely need to add the runSubmit object to the list of arguments and then do runSubmit.stdFunction(.... )
           This might require you to create  a partial function. Your life will probably be easier if you set df=True
           and work with dataframes in your function.
+        TODO use "random" perturbation approach to find how many parallel cases we can run.
         """
 
         paramNames = self.config.paramNames()
@@ -155,29 +220,18 @@ class runSubmit(SubmitStudy):
 
         else:
             raise Exception("params should be 1 or 2d ")
-        nsim = use_params.shape[
-            0
-        ]  # no of simulations we want to do which is the no of parameter sets provided
-        nparams = use_params.shape[
-            1
-        ]  # no of params only used to check that parameter array is as expected.
+        nsim = use_params.shape[0]  # no of simulations we want to do which is the no of parameter sets provided
+        nparams = use_params.shape[1]  # no of params only used to check that parameter array is as expected.
         if nparams != len(paramNames):
             raise ValueError(
-                "No of parameters %i not consistent with no of varying parameters %i\n"
-                % (nparams, len(paramNames))
-                + "Params: "
-                + repr(use_params)
-                + "\n paramNames: "
-                + repr(paramNames)
-            )
+                "No of parameters %i not consistent with no of varying parameters %i\n" % (nparams, len(paramNames)) +
+                "Params: " + repr(use_params) + "\n paramNames: " + repr(paramNames))
 
         # column names affected by transform so use that if provided
         if transform is not None:
             if len(transform.index) == 0:
                 print("Transform is \n", transform)
-                raise ValueError(
-                    "Transform has 0 len index. Fix your covariance. Exiting"
-                )
+                raise ValueError("Transform has 0 len index. Fix your covariance. Exiting")
             obsNames = transform.index
         else:
             obsNames = self.config.obsNames()
@@ -185,65 +239,39 @@ class runSubmit(SubmitStudy):
         if nObs == 0:  # Got zero. Something gone wrong
             raise ValueError("No observations found. Check your configuration file ")
         # result = np.full((nsim, nObs), np.nan)  # array of np.nan for result
-        result = (
-            []
-        )  # empty list. Will fill with series from analysis and then make into a dataframe.
-        nEns = (
-            self.config.ensembleSize()
-        )  # how many ensemble members do we want to run.
+        result = []  # empty list. Will fill with series from analysis and then make into a dataframe.
+        fixed_params = self.config.fixedParams()  # get fixed parameters
+        nEns = self.config.ensembleSize()  # how many ensemble members do we want to run.
         empty = pd.Series(np.repeat(np.nan, nObs), index=obsNames)
         for indx in range(0, nsim):  # iterate over the simulations.
-            pDict = dict(
-                zip(paramNames, use_params[indx, :])
-            )  # create dict with names and values.
-            pDict.update(self.config.fixedParams())
+            pDict = dict(zip(paramNames, use_params[indx, :]))  # create dict with names and values.
             ensObs = []
             for ensembleMember in range(0, nEns):
+
                 pDict.update(ensembleMember=ensembleMember)
-                model = self.get_model(pDict)
-                if model is None:  # no model so time to create one.
-                    model = self.create_model(pDict) # returns None if no model was created.
-                    if model is None:
-                        raise optclim_exceptions.runModelError
-                        # Immediately raise exception as None means no model created and nothing else can be done
-                        # FIXME One issue here is that we are terminating the algorithm without the algorithm itself knowing this
-                        # so then the algorithm can't do any clean up or capture diagnostics.
-                        # This is tricky as really per-algorithm -- we want it to complete but there is no general way of doing this
-                        # one approach would be to pass in a fn which gets run here. For DFOLS (and other opt cases) it could do this by returning obs values = target
-                        # That would terminate but then jacobian etc would be stuffed as would use this last state. A better approach might be to set
-                        # self.exceeded_max_models to True. Then rerun the algorithm with maxFn set to max_model_simulations.
-                        # OR set maxFn to min(max_model_simulations,maxFn).
-                    obs = empty # no model so return nothing.
-                elif model.status != "PROCESSED": # not processed so raise ValueError and complain.
-                    # TODO add in random generation to allow look ahead
-                    raise ValueError(f"{model} status != PROCESSED but is {model.status}")
-                    obs = empty
-                else:  # got a model.
-                    my_logger.debug(f"Using existing model {model}")
-                    obsNames = self.config.obsNames()
-                    obs = model.simulated_obs  # get obs from the model
-                    # if obs is None raise an error -- something gone badly wrong.
-                    if obs is None:
-                        raise ValueError(f"{model} has None for simulated_obs")
-                    missing_obs = set(obsNames) - set(obs.index)
-                    if len(missing_obs) > 0:  # trigger error as missing obs
-                        raise ValueError(f"Missing {' '.join(missing_obs)} from model {model.name}")
-                    # force fixed order.
-                    obs = obs.reindex(
-                        obsNames)  # note using obsNames as specified. transform (if supplied) can change names.
-                    if scale:  # scale sim obs.
-                        obs *= self.config.scales()
-                    if residual:  # difference from target obs
-                        tgt = self.config.targets(scale=scale)
-                        obs -= tgt
-                    if transform is not None:  # apply transform if required.
-                        obs = obs @ transform.T  # obs in nsim x nobs; transform  is nev x nobs.
-                    null = obs.isnull()
-                    if np.any(null):
-                        raise ValueError("Obs contains null values at: " + ", ".join(obs.index[null]))
+                multi_config_fn = self.config.fixed_param_function()
+                if multi_config_fn is  None:
+                    pDict.update(fixed_params)
+                    model = self.make_model(pDict)
+                    obs = model.simulated_obs
+                    model_name=model.name
+                else:
+                    models = dict()
+                    for k,fp in fixed_params.items():
+                        params = pDict.copy()
+                        params.update(fp)
+                        models[k] = self.make_model(params)
+                    # now call multi_config_fn
+                    obs = multi_config_fn(models)
+                    model_name = ' '.join([m.name for m in models.values()])
+                    model_name += 'fn: '+multi_config_fn.__name__
+
+                if obs is None:
+                    obs = empty  # empty obs
+                else:
+                    obs= self.transform_check(obs,model_name,transform=transform,scale=scale,residual=residual)
                 ensObs.append(obs)
-            key = self.key(pDict)
-            self.trace.append(key) # append key to the trace.
+
             # This happens both when a new model is created or an existing model used.
             # end of loop over ensemble members.
 
@@ -253,28 +281,25 @@ class runSubmit(SubmitStudy):
                 ensObs = pd.DataFrame(ensObs)
                 ensObs = [ensObs.mean(axis=0)]
 
-            result.extend(
-                ensObs.copy()
-            )  # add to list of  results. Note copying as  ensObs is changed in the loop
+            result.extend(ensObs.copy())  # add to list of  results. Note copying as  ensObs is changed in the loop
         # end of loop over simulations to be done.
 
         result = pd.DataFrame(result)  # convert to a dataframe
 
         if raiseError and np.any(result.isnull()):
-            # want to raise error if any result is nan.
-            raise optclim_exceptions.submitModel("Have nan in results -- stdFunction")
+            # want to raise error if any of result is nan.
+            raise optclim_exceptions.runModelError
         if sumSquare:
-            result = (result**2).sum(axis=1)
+            result = (result ** 2).sum(axis=1)
         if not df:  # want it as values not  a dataframe
             result = np.squeeze(result.values)
 
         return result
 
-    
     def genOptFunction(self, **kwargs):
         """
 
-        :return:A function suitable for use in an optimisation  algorithm (or anything else that uses the framework).
+        :return: a function suitable for use in an optimisation  algorithm (or anything else that uses the framework).
         by generating a partial function which converts stdFunction from a method to a function in the argument list
         and any adds extra args (as named arguments) that are present. You can use this to give you something suitable
         for most optimisation methods or use your own function to wrap stdFunction.
@@ -310,9 +335,7 @@ class runSubmit(SubmitStudy):
         # Hard will come back when I actually have a need!
         start = self.config.optimumParams()
         modelFn = self.genOptFunction(df=True)
-        def opt():
-            return modelFn(start.values).squeeze()
-        obsSeries = self.run_function(opt)#
+        obsSeries = modelFn(start.values).squeeze()  # if the simu
         # should run ensemble avg etc as side effect...and if things don't exist raise modelError
         # now to set up information having done all cases because if we have got here modelError has not been raised.
         finalConfig = self.runConfig()  # get final runInfo
@@ -321,9 +344,7 @@ class runSubmit(SubmitStudy):
         finalConfig.best_obs(best_obs=obsSeries)
         return finalConfig
 
-    def rangeAwarePerturbations(
-        self, baseVals: pd.Series, parLimits: pd.DataFrame, steps: pd.Series
-    ) -> pd.Series:
+    def rangeAwarePerturbations(self, baseVals:pd.Series, parLimits:pd.DataFrame, steps:pd.Series) -> pd.Series:
         """
         Generate perturb param values  towards the centre of the valid range for each
         parameter. Used in runJacobian
@@ -339,19 +360,20 @@ class runSubmit(SubmitStudy):
         Returns pandas series array defining the perturbed parameter values
         """
 
+
         my_logger.debug(f"in rangeAwarePerturbations with {baseVals}")
         # derive the centre-of-valid-range
-        centres = (parLimits.loc["minParam", :] + parLimits.loc["maxParam", :]) * 0.5
+        centres = (parLimits.loc['minParam', :] + parLimits.loc['maxParam', :]) * 0.5
         deltaParam = np.abs(steps)
         sgn = np.sign((centres - baseVals))
-        L = sgn < 0
+        L = (sgn < 0)
         deltaParam[L] *= -1
 
         return deltaParam
 
-    def runJacobian(self, scale: bool = False):
+    def runJacobian(self,scale:bool=False):
         """
-        Run Jacobian cases.
+        run Jacobian cases.
         Rather crude (first order accurate) estimate. Evaluate functions at
           optimum values +/- delta where delta is specified in the StudyConfig used to generate Submit
           +/- is to keep perturbations towards the centre pf the domain.
@@ -373,57 +395,38 @@ class runSubmit(SubmitStudy):
         # rather than over parameters.
         configData = self.config
         Tmat = configData.transMatrix(scale=scale)
-        modelFn = self.genOptFunction(
-            raiseError=True, df=True, residual=True, transform=Tmat, scale=scale
-        )
-        def jacobian():
-            base = configData.optimumParams()  # try with optimum parameters
-            if base is None:  # if none go with the begin parameters.
-                base = configData.beginParam()
+        modelFn = self.genOptFunction(raiseError=True, df=True, residual=True, transform=Tmat,scale=scale)
+        base = configData.optimumParams() # try with optimum parameters
+        if base is None: # if none go with the begin parameters.
+            base = configData.beginParam()
 
-            paramRanges = configData.paramRanges()
-            steps = configData.steps()  # see what the steps are
-            delta = self.rangeAwarePerturbations(
-                base, paramRanges, steps
-            )  # compute the actual deltas
-            params = [
-                base
-            ]  # list of parameter values to run at -- including the base. Needed to compute jac
+        paramRanges = configData.paramRanges()
+        steps = configData.steps()  # see what the steps are
+        delta = self.rangeAwarePerturbations(base, paramRanges, steps)  # compute the actual deltas
+        params = [base]  # list of parameter values to run at -- including the base. Needed to compute jac
 
-            for p, v in delta.items():  # iterate over parameters
-                param = base[:].rename(p)
-                param.loc[p] += delta.loc[p]
-                params.append(param)
+        for p, v in delta.items():  # iterate over parameters
+            param = base[:].rename(p)
+            param.loc[p] += delta.loc[p]
+            params.append(param)
 
-            params = pd.DataFrame(params)  # all the params together to maximize parallelism
-            # check params all in range.
-            if np.any(params > paramRanges.loc["maxParam", :]):
-                print(
-                    "Some parameters too large\n ",
-                    paramRanges.loc["maxParam", :],
-                    "\n",
-                    params,
-                )
-                print(params > paramRanges.loc["maxParam", :])
-                raise ValueError
-            if np.any(params < paramRanges.loc["minParam", :]):
-                print(
-                    "Some parameters too small\n ",
-                    paramRanges.loc["minParam", :],
-                    "\n",
-                    params,
-                )
-                print(params < paramRanges.loc["minParam", :])
-                raise ValueError
-            obs = modelFn(
-                params.values
-            )  # compute the obs where we need to. This may generate model simulations
-            dobs = obs.iloc[1:, :] - obs.iloc[0, :]
-            dobs = dobs.set_index(delta.index)
-            jac = dobs.div(delta, axis=0)  # compute the Jacobian
-            return jac
+        params = pd.DataFrame(params)  # all the params together to maximize parallelism
+        # check params all in range.
+        if np.any(params > paramRanges.loc['maxParam', :]):
+            print("Some parameters too large\n ", paramRanges.loc['maxParam', :],
+                  "\n", params)
+            print(params > paramRanges.loc['maxParam', :])
+            raise ValueError
+        if np.any(params < paramRanges.loc['minParam', :]):
+            print("Some parameters too small\n ", paramRanges.loc['minParam', :],
+                  "\n", params)
+            print(params < paramRanges.loc['minParam', :])
+            raise ValueError
+        obs = modelFn(params.values)  # compute the obs where we need to. This may generate model simulations
+        dobs = obs.iloc[1:, :] - obs.iloc[0, :]
+        dobs = dobs.set_index(delta.index)
+        jac = dobs.div(delta, axis=0)  # compute the Jacobian
 
-        jac = self.run_function(jacobian)
         finalConfig = self.runConfig()  # get the configuration
         finalConfig.transJacobian(transJacobian=jac)  # store the jacobian.
         hes = jac.T @ jac
@@ -460,24 +463,23 @@ class runSubmit(SubmitStudy):
         import dfols
         import warnings
         import random
-
+        random.seed(123456)  # make sure rng as used by DFOLS takes same values every time it is run.
         configData = self.config
         varParamNames = configData.paramNames()
         dfols_config = configData.DFOLS_config()
         test_nondetermin = configData.run_info().get("test_nondetermin")
         start = configData.beginParam()
         # Sensible defaults  for DFOLS -- which can be overwritten by config file
-        userParams = {
-            "logging.save_diagnostic_info": True,
-            "logging.save_xk": True,
-            "noise.quit_on_noise_level": True,
-            "general.check_objfun_for_overflow": False,
-            "init.run_in_parallel": True,  # run in parallel
-            "interpolation.throw_error_on_nans": True,  # make an error happen!
-        }
+        userParams = {'logging.save_diagnostic_info': True,
+                      'logging.save_xk': True,
+                      'noise.quit_on_noise_level': True,
+                      'general.check_objfun_for_overflow': False,
+                      'init.run_in_parallel': True,  # run in parallel
+                      'interpolation.throw_error_on_nans': True,  # make an error happen!
+                      }
 
         prange = configData.paramRanges(paramNames=varParamNames)
-        prange = (prange.loc["minParam", :].values, prange.loc["maxParam", :].values)
+        prange = (prange.loc['minParam',:].values,prange.loc['maxParam',:].values)
         # update the user parameters from the configuration.
         userParams = configData.DFOLS_userParams(userParams=userParams)
         # potentially overwrite maxfun with max_model_simulations
@@ -525,22 +527,15 @@ class runSubmit(SubmitStudy):
             raise optclim_exceptions.runModelError("dfols failed with lin alg error")
             # this is how DFOLS tells us it got NaN which then triggers running the next set of simulations.
 
-
         # code here will be run when DFOLS has completed. It mostly is to put stuff in the final JSON file
         # so can easily be looked at for subsequent analysis.
         if solution.flag not in (solution.EXIT_SUCCESS, solution.EXIT_MAXFUN_WARNING):
-            print(
-                "dfols failed with flag %i error : %s" % (solution.flag, solution.msg)
-            )
+            print("dfols failed with flag %i error : %s" % (solution.flag, solution.msg))
             raise Exception("Problem with dfols")
 
         # need to wrap best sol and put in other information into the final results file.
-        filename = self.rootDir / (
-            self.config.fileName().stem + "_final.json"
-        )  # final confio
-        finalConfig = self.runConfig(
-            scale=scale, add_cost=True, filename=filename
-        )  # get final runInfo
+        filename= self.rootDir/(self.config.fileName().stem+"_final.json") # final confio
+        finalConfig = self.runConfig(scale=scale, add_cost=True,filename=filename)  # get final runInfo
         best = pd.Series(solution.x, index=varParamNames).rename(finalConfig.name())
         # Generic stuff (that is probably more useful). Probably need the Jacobian in "normal" space...
         # But can transform model jacobian into smaller evect space.
@@ -554,7 +549,7 @@ class runSubmit(SubmitStudy):
         # need to put in the best case -- which may not be the best evaluation as DFOLS ignores "burn in"
         solution.diagnostic_info.index = range(0, solution.diagnostic_info.shape[0])
         finalConfig.dfols_solution(solution=solution)
-        # finalConfig.setv('DFOLS_soln',vars(solution))
+        #finalConfig.setv('DFOLS_soln',vars(solution))
         print(f"DFOLS completed: Solution status: {solution.msg}")
         finalConfig.save()
         return finalConfig
@@ -578,34 +573,23 @@ class runSubmit(SubmitStudy):
             also can get generic info and cost info:
             as runs runCost & runConfig to provide  info. (See documentation of those methods for what they provide)
 
-            As the Gauss-Newton  component of this algorithm is a deterministic  perturbation to the minima over a small
-               number of line-search values then provisional running  is not reliable. To make it work provisional running
-               needs modification to run several times (more than twice) and only go if have "hits" = number of times ran.
-
         """
         import Optimise
-        # provisional running not supported for Gauss-Newton.  provisional running needs to be extended to
-        # allow multiple final runs and only generate models if all hit!
-        if self.provisional is not None:
-            raise ValueError("provisional running not supported for runGaussNewton.")
-        # extract internal covariance and transform it.
 
+        # extract internal covariance and transform it.
         configData = self.config
         optimise = configData.optimise().copy()  # get optimisation info
-        intCov = configData.Covariances(trace=verbose, scale=scale)["CovIntVar"]
+        intCov = configData.Covariances(trace=verbose, scale=scale)['CovIntVar']
         # Scaling done for compatibility with optFunction.
         # need to transform intCov. errCov should be I after transform.
         tMat = configData.transMatrix(scale=scale)
         intCov = tMat.dot(intCov).dot(tMat.T)
         # This is correct-- it is the internal covariance transformed
-        optimise["sigma"] = False  # wrapped optimisation into cost function.
-        optimise["deterministicPerturb"] = True  # deterministic perturbations.
+        optimise['sigma'] = False  # wrapped optimisation into cost function.
+        optimise['deterministicPerturb'] = True  # deterministic perturbations.
         paramNames = configData.paramNames()
-        nObs = tMat.shape[
-            0
-        ]  # might be a smaller because some evals in the covariance matrix are close to zero (or -ve)
+        nObs = tMat.shape[ 0]  # might be a smaller because some evals in the covariance matrix are close to zero (or -ve)
         start = configData.beginParam(paramNames=paramNames)
-
         optFn = self.genOptFunction(transform=tMat, scale=scale, residual=True,raiseError=True)
         #TODO have maxfun which limits the number of fn evaluations.
         best, status, info = Optimise.gaussNewton(optFn, start.values,
@@ -617,20 +601,19 @@ class runSubmit(SubmitStudy):
         finalConfig = self.runConfig(scale=scale, add_cost=True, filename=filename)  # get final runInfo
         finalConfig.GNstatus(status)
         # Store the GN specific stuff. TODO consider removing these and just store the info.
-        finalConfig.GNparams(info["bestParams"])
-        finalConfig.GNcost(info["err_constraint"])
-        finalConfig.GNalpha(info["alpha"])
+        finalConfig.GNparams(info['bestParams'])
+        finalConfig.GNcost(info['err_constraint'])
+        finalConfig.GNalpha(info['alpha'])
         # finalConfig.GNjacobian(info['jacobian']) #FIXME -- this needs fixing as we are in the evect space
-        finalConfig.GNhessian(info["hessian"])
+        finalConfig.GNhessian(info['hessian'])
         # Generic stuff (that is probably more useful)
-        jacobian = pd.DataFrame(info["jacobian"][-1, :, :], index=paramNames)
+        jacobian = pd.DataFrame(info['jacobian'][-1, :, :], index=paramNames)
         finalConfig.transJacobian(jacobian)
         hessian = jacobian @ jacobian.T
         finalConfig.hessian(hessian)
 
-        best = pd.Series(
-            best, index=finalConfig.paramNames(), name=finalConfig.name()
-        )  # wrap best result as pandas series
+        best = pd.Series(best, index=finalConfig.paramNames(),
+                         name=finalConfig.name())  # wrap best result as pandas series
         finalConfig.optimumParams(optimum=best)  # write the optimum params
         print("status", status)
 
@@ -651,7 +634,6 @@ class runSubmit(SubmitStudy):
 
         # pySOT -- probably won't work without some work. conda instal conda-forge pysot will install it.
         import pySOT
-
         warnings.warn("No testing done for pysot")
         configData = self.config
         optimise = configData.optimise().copy()  # get optimisation info
@@ -660,15 +642,10 @@ class runSubmit(SubmitStudy):
         paramNames = self.paramNames()
         from pySOT.experimental_design import SymmetricLatinHypercube
         from pySOT.strategy import SRBFStrategy, DYCORSStrategy  # , SOPStrategy
-        from pySOT.surrogate import (
-            RBFInterpolant,
-            CubicKernel,
-            LinearTail,
-            SurrogateUnitBox,
-        )  # will not work anymore as SurrogateUnitBox not defined.
+        from pySOT.surrogate import RBFInterpolant, CubicKernel, LinearTail, \
+            SurrogateUnitBox  # will not work anymore as SurrogateUnitBox not defined.
         from poap.controller import SerialController
         from pySOT.optimization_problems import OptimizationProblem
-
         # Wrapper written for pySOT 0.2.2 (installed from conda-forge)
         # written by Lindon Roberts
         # Based on
@@ -676,21 +653,13 @@ class runSubmit(SubmitStudy):
         # Expect optimise parameters:
         #  - maxfun: total number of evaluations allowed, default 100
         #  - initial_npts: number of initial evaluations, default 2*n+1 where n is the number of variables to optimise
-        pysot_config = optimise.get("pysot", {})
+        pysot_config = optimise.get('pysot', {})
 
         # Light wrapper of objfun for pySOT framework
         class WrappedObjFun(OptimizationProblem):
             def __init__(self):
-                self.lb = (
-                    configData.paramRanges(paramNames=paramNames)
-                    .loc["minParam", :]
-                    .values
-                )  # lower bounds
-                self.ub = (
-                    configData.paramRanges(paramNames=paramNames)
-                    .loc["maxParam", :]
-                    .values
-                )  # upper bounds
+                self.lb = configData.paramRanges(paramNames=paramNames).loc['minParam', :].values  # lower bounds
+                self.ub = configData.paramRanges(paramNames=paramNames).loc['maxParam', :].values  # upper bounds
                 self.dim = len(self.lb)  # dimensionality
                 self.info = "Wrapper to DFOLS cost function"  # info
                 self.int_var = np.array([])  # integer variables
@@ -700,45 +669,30 @@ class runSubmit(SubmitStudy):
             def eval(self, x):
                 # Return same cost function as DFO-LS gets
                 residuals = self.dfols_residual_function(
-                    x
-                )  # i.e. if DFO-LS asked for the model cost at x, it would get the vector "residuals"
-                dfols_cost = np.dot(
-                    residuals, residuals
-                )  # sum of squares (no constant in front) - matches DFO-LS internal cost function
+                    x)  # i.e. if DFO-LS asked for the model cost at x, it would get the vector "residuals"
+                dfols_cost = np.dot(residuals,
+                                    residuals)  # sum of squares (no constant in front) - matches DFO-LS internal cost function
                 return dfols_cost
 
         data = WrappedObjFun()  # instantiate wrapped objective function
 
         # Initial design of points
-        slhd = SymmetricLatinHypercube(
-            dim=data.dim, num_pts=pysot_config.get("initial_npts", 2 * data.dim + 1)
-        )
+        slhd = SymmetricLatinHypercube(dim=data.dim, num_pts=pysot_config.get('initial_npts', 2 * data.dim + 1))
 
         # Choice of surrogate model (cubic RBF interpolant with a linear tail)
-        rbf = SurrogateUnitBox(
-            RBFInterpolant(
-                dim=data.dim, kernel=CubicKernel(), tail=LinearTail(data.dim)
-            ),
-            lb=data.lb,
-            ub=data.ub,
-        )
+        rbf = SurrogateUnitBox(RBFInterpolant(dim=data.dim, kernel=CubicKernel(), tail=LinearTail(data.dim)),
+                               lb=data.lb, ub=data.ub)
 
         # Use the serial controller (uses only one thread), SRBF strategy to find new points
         controller = SerialController(data.eval)
-        strategy = pysot_config.get("strategy", "SRBF")
-        maxfun = pysot_config.get("maxfun", 100)
-        if strategy == "SRBF":
-            controller.strategy = SRBFStrategy(
-                max_evals=maxfun, opt_prob=data, exp_design=slhd, surrogate=rbf
-            )
-        elif strategy == "DYCORS":
-            controller.strategy = DYCORSStrategy(
-                max_evals=maxfun, opt_prob=data, exp_design=slhd, surrogate=rbf
-            )
+        strategy = pysot_config.get('strategy', 'SRBF')
+        maxfun = pysot_config.get('maxfun', 100)
+        if strategy == 'SRBF':
+            controller.strategy = SRBFStrategy(max_evals=maxfun, opt_prob=data, exp_design=slhd, surrogate=rbf)
+        elif strategy == 'DYCORS':
+            controller.strategy = DYCORSStrategy(max_evals=maxfun, opt_prob=data, exp_design=slhd, surrogate=rbf)
         else:
-            raise RuntimeError(
-                "Unknown pySOT strategy: %s (expect SRBF or DYCORS)" % strategy
-            )
+            raise RuntimeError("Unknown pySOT strategy: %s (expect SRBF or DYCORS)" % strategy)
 
         # Run the optimization
         result = controller.run()

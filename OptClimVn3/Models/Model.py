@@ -211,6 +211,7 @@ class Model(ModelBaseClass, journal):
             parameters = {}
         else:
             parameters = copy.deepcopy(parameters)
+        # TODO have reference come from parameters ? Or possibly overwrite parameters.
         # TODO check that parameters exist in lookup.
         self.parameters = parameters
         self.parameters_no_key = {}  # parameters that do not generate key and augment/modify parameters.
