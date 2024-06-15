@@ -105,7 +105,7 @@ class testRunSubmit(unittest.TestCase):
         # setup
         configData = copy.deepcopy(self.config)
         begin = configData.beginParam()
-        rSubmit = self.rSubmit  # setup runSubmit for ease of use.
+        rSubmit = copy.deepcopy(self.rSubmit)  # setup runSubmit for ease of use.
         nparam = len(configData.paramNames())
         nobs = len(configData.obsNames())
         params = np.ones(nparam)
@@ -199,8 +199,37 @@ class testRunSubmit(unittest.TestCase):
         rSubmit.run_info['max_model_simulations']=len(rSubmit.model_index)
         with self.assertRaises(optclim_exceptions.runModelError):
             result = rSubmit.stdFunction(params*3)
+        # test that can run with multiple_function
+        fixed_params = {
+            "_comment": " List of parameters and values that are fixed and not modified in optimisation. Set to null to use default values",
+            "multiple_function": "example_multiparam.ctl_plus4k",
+            "multiple_function_comment":"Module path with function at the end. Everything should be dot separated. If provided then fixedParams has multiple configurations and this function will combine them.",
+            "control": {
+                "START_TIME": "1998-12-01",
+                "START_TIME_comment": "Start time as an iso string",
+                "RUN_TARGET": "P6Y4M",
+                "RUN_TARGET_comment": "RUN_TARGET as an iso duration string."},
+            "plus4k": {
+                "START_TIME": "1998-12-01",
+                "START_TIME_comment": "Start time as an iso string",
+                "RUN_TARGET": "P6Y4M",
+                "RUN_TARGET_comment": "RUN_TARGET as an iso duration string.",
+                "SST_PERTURB": 4.0,
+                "SST_PERTURB_comment": "How much to prturb the SST where there is no ice."
+            }
+        }
+        rSubmit = copy.deepcopy(self.rSubmit)
+        rSubmit.config.fixedParams(fixed_params=fixed_params)
+        with self.assertRaises(optclim_exceptions.runModelError):
+            result = rSubmit.stdFunction(params)
+        # expect two model configs.
+        self.assertEqual(len(rSubmit.model_index),2)
+        # second model should have SST_PERTURB = 4
+        last_model = list(rSubmit.model_index.values())[-1]
+        self.assertEqual(last_model.parameters['SST_PERTURB'],4.0)
 
-    # test case for stdFunction
+
+    # end test case for stdFunction
 
     def test_genOptFunction(self):
         """

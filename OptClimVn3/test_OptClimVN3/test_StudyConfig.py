@@ -316,7 +316,7 @@ class testStudyConfig(unittest.TestCase):
         c2 = fix
         c2.update(delta_SST=0.0)
         fixparams=dict(config1=c1,config2=c2,multiple_function='example_multiparam.ctl_plus4k')
-        self.config.Config['initial']['fixedParams']=fixparams
+        self.config.fixedParams(fixed_params=fixparams)
         fp = self.config.fixedParams()
         self.assertEqual(fp['config1'],fixparams["config1"])
         self.assertEqual(fp['config2'], fixparams["config2"])

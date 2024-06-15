@@ -2478,6 +2478,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
         """
         Extract the function from string. Note will import the module that contains the function.
         Be very careful...
+
         :return: function or None if no multiple_function found.
         """
         import importlib
@@ -2505,15 +2506,21 @@ class OptClimConfigVn3(OptClimConfigVn2):
                 result[k] = v
         return result
 
-    def fixedParams(self) -> dict:
+    def fixedParams(self,
+                    fixed_params: typing.Optional[dict] = None
+                    ) -> dict:
         """
+        :param fixed_params If not None set fixedParams to this value.
         :return: a dict of all the fixed parameters. All names ending _comment or called comment will be excluded.
         Values set to None with standard values will be set to standard values.
         If multiple_function is set then will return a dict of dicts with the keys being the labels.
 
         """
+        initial = self.getv('initial')
+        if fixed_params is not None: # set the fixed params.
+            initial['fixedParams']=fixed_params
 
-        fix_config = self.getv('initial').get('fixedParams', {})
+        fix_config = initial.get('fixedParams', {})
         if self.fixed_param_function():  # Have multiple_configs
             keys = self.fixedParams_keys()
             fix = dict()
