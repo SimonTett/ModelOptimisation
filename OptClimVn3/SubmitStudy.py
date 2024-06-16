@@ -197,7 +197,7 @@ class SubmitStudy(Study, model_base, journal):
         if config_path.exists():
             raise ValueError(f"config_path {config_path} already exists")
         paramDir = copy.deepcopy(params)
-        reference = paramDir.pop('reference', self.refDir)
+        reference = self.expand(paramDir.pop('reference', self.refDir))
         model_name = paramDir.pop('model_name', self.model_name)
         post_process = self.config.getv('postProcess')
         run_info = self.config.run_info()
