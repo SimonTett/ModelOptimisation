@@ -18,7 +18,7 @@
 	"ssh_node": "login03.ecdf.ed.ac.uk",
 	"ssh_node_comment":"If not null then name of machine which has access to engine. Will ssh to this machine to submit commands",
         "modelName": "simple_model",
-        "modelName_comment": "Name of model that is ran. MUST be provided",
+        "modelName_comment": "Name of model that is ran. MUST be provided though can be provided through fixedParams",
         "maxRuns": null,
         "maxRuns_comment": "Maximum number of runs to do in parallel. Runs submitted is 2x this + 1.",
 	"max_model_simulations":65,
@@ -68,7 +68,11 @@
                 "RUN_TARGET": "P6Y4M",
                 "RUN_TARGET_comment": "RUN_TARGET as an iso duration string.",
                 "SST_PERTURB": 4.0,
-                "SST_PERTURB_comment": "How much to prturb the SST where there is no ice."
+                "SST_PERTURB_comment": "How much to prturb the SST where there is no ice.",
+                "reference": null,
+                "reference_comment": "Reference directory for this configuration. If null then use referenceModelDirectory",
+                "model_name": null,
+                "model_name_comment": "Name of model to use. If null then use modelName"
             }
         },
         "fixedScale": false,

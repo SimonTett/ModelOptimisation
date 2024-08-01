@@ -289,10 +289,15 @@ class Study:
         :return: modified config. The following methods will work:
             finalConfig.parameters() -- returns the parameters for each model simulation
             finalConfig.simObs() -- returns the simulated observations for each model simulation.
+
         """
         newConfig = self.config.copy(filename=filename)  # copy the config.
-        # TODO -- read in and store the covariances.
-
+        # TODO -- read in and store the covariances. -- maybe already done!
+        # TODO deal with function acting on multiple models,
+        #  Challenge: No easy way of knowing how to combine the simulated observations...
+        #  Perhaps can goup based on identical parameters ???
+        # But function wants models. So suggests including some meta-data in the model
+        # when we do this,
         params = self.params()  # get params & obs
         obs = self.obs()
         # update newConfig with obs & params. As normal all are unscaled.

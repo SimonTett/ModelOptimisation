@@ -176,6 +176,7 @@ class SubmitStudy(Study, model_base, journal):
     def create_model(self, params: dict, dump: bool = True) -> typing.Optional[Model]:
         """
         Create a model, update list of created models and index of models.
+
         :param   params: dictionary of parameters to create the model.
          The following parameters are special and handled differently:
            * reference -- the reference directory. If not there (or None) then self.refDir is used.
@@ -196,7 +197,7 @@ class SubmitStudy(Study, model_base, journal):
         if config_path.exists():
             raise ValueError(f"config_path {config_path} already exists")
         paramDir = copy.deepcopy(params)
-        reference = paramDir.pop('reference', self.refDir)
+        reference = self.expand(paramDir.pop('reference', self.refDir))
         model_name = paramDir.pop('model_name', self.model_name)
         post_process = self.config.getv('postProcess')
         run_info = self.config.run_info()
