@@ -361,7 +361,7 @@ class testRunSubmit(unittest.TestCase):
         # run DFOLS "naked"
         # set up DFOLS
         dfols_config = configData.DFOLS_config()
-        dfols_config['maxfun'] = 75 # making this 100 seems to cause an extra evaluation and problems with the Jacobian.
+        dfols_config['maxfun'] = 125 # making this 100 seems to cause an extra evaluation and problems with the Jacobian.
         dfols_config['rhobeg'] = 1e-1
         dfols_config['rhoend'] = 1e-3
         # general configuration of DFOLS -- which can be overwritten by config file

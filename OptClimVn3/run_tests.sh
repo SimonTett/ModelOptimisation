@@ -8,7 +8,8 @@ do
     # did test work?
     status=$?
     if [[ "$status" -ne 0 ]] ; then # no
-	echo "Test case $f failed. Fix and rerun" 
+	echo "Test case $f failed. Fix and rerun by:" 
+	echo "python -m unittest $f"
 	exit # exist. User please fix!
     fi
 	
