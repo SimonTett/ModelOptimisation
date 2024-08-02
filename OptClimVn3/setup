@@ -1,6 +1,9 @@
 # setup env for OptCLIMVn3
 # Run with . ./setup
 # change OPTCLIMTOP for your system
+conda deactivate # deactivate any existing conda envx
+conda activate /exports/applications/apps/SL7/anaconda/2022.05 # python 3.9
+source venv/bin/activate # and activate my own version of the 3.9 env
 export OPTCLIMTOP=/exports/csce/eddie/geos/groups/OPTCLIM/software/optimise2023/ModelOptimisation
 VN3=$OPTCLIMTOP/OptClimVn3
 export PYTHONPATH=$VN3:$VN3/Models:$VN3/support:$PYTHONPATH
