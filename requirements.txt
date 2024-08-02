@@ -1,12 +1,15 @@
 # should be in a python 3.,9 (or above env)
 ipython
-numpy~=1.2
-scitools-iris~=3.3.1
+numpy~=1.26
+cf-units~=3.1
+scitools-iris~=3.8
 pathlib~=1.0.1
 xarray~=2023.6.0
 netcdf4~=1.6.0
-matplotlib~=3.6.0
+matplotlib~=3.6
 pandas~=2.2.2
 f90nml~=1.4.3
 scipy~=1.9.3
+pytest~=8.3
+matplotlib~=3.6
 DFO-LS

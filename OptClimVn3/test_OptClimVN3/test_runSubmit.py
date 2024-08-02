@@ -415,7 +415,7 @@ class testRunSubmit(unittest.TestCase):
                                , print_progress=False
                                , user_params=userParams
                                )
-        breakpoint()
+
 
         if solution.flag not in (solution.EXIT_SUCCESS, solution.EXIT_MAXFUN_WARNING):
             print("dfols failed with flag %i error : %s" % (solution.flag, solution.msg))

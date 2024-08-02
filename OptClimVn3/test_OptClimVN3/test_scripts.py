@@ -80,6 +80,7 @@ class testScripts(unittest.TestCase):
         """
         if platform.system() == 'Windows':
             cmd=['python']
+
         else:
             cmd=[]
         config_pth = Model.expand("$OPTCLIMTOP/OptClimVn3/configurations/dfols14param_opt3.json")

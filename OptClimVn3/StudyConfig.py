@@ -722,7 +722,7 @@ class OptClimConfig(dictFile):
 
         transMatrix = (np.diag(evalue[indx] ** (-0.5)).dot(evect[:, indx].T))  # what we need to do to transform to
         if dataFrame:
-            transMatrix = pd.DataFrame(transMatrix, index=np.arange(0, np.sum(indx)), columns=errCov.columns)
+            transMatrix = pd.DataFrame(transMatrix, index=np.arange(0, np.sum(indx),dtype='int64'), columns=errCov.columns)
         return transMatrix
 
     def steps(self, steps=None, paramNames=None):
