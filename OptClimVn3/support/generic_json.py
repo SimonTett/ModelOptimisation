@@ -130,12 +130,7 @@ def dict2series(x):
     :return: DataFrame
     """
     if isinstance(x,dict):
-        # muliple ways in which series can be docoded -- bad versioning.
-        if x.get('series') is not None:
-            return pd.Series(x['series'],index=x['index']).rename(x['name'])
-        else:
-            my_logger.warning('Going through old path. Need to update')
-            return pd.Series(x)
+        return pd.Series(x['series'],index=x['index']).rename(x['name'])
     elif isinstance(x,str):
         return pd.read_json(StringIO(x),typ='series')
     else:

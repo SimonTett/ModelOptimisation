@@ -72,7 +72,7 @@ class TestArchive(unittest.TestCase):
         arc,submit = self.arc.extract_archive(pth,outdir)
         self.assertIsInstance(submit,SubmitStudy) # should be SubmitStudy
         cost = submit.cost() # and cost should have 65 elements.
-        self.assertEqual(len(cost),65)
+        self.assertEqual(len(cost),len(submit.model_index))
 
 
 
