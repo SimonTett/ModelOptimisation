@@ -12,6 +12,8 @@ Provides classes and methods suitable for manipulating study configurations.  In
     TODO: Consider major re-factorisation of studyConfig -- it has been accreting functionality in an unplanned way.
      Perhaps splitting into core and derived values might be the way to go.
 
+    # TODO: modify pd.read_json calls to wrap data in StringIO
+    #  see https://github.com/pandas-dev/pandas/issues/52271
 
 
 """
@@ -31,6 +33,7 @@ import generic_json
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from io import StringIO
 import xarray  # TODO -- consider removing dependence on xarray
 
 __version__ = '3.0.0'
@@ -1237,7 +1240,7 @@ class OptClimConfig(dictFile):
         for arg in keys:  # get back the value
             try:
                 typ = alg_info['__' + arg + '_type']  # get the type(series or dataframe)
-                df = pd.read_json(alg_info[arg], orient='split', typ=typ_lookup[typ])
+                df = pd.read_json(StringIO(alg_info[arg]), orient='split', typ=typ_lookup[typ])
                 if dtype is not None:
                     df = df.astype(dtype)
             except KeyError:  # failed to find so set to None
@@ -1405,7 +1408,7 @@ class OptClimConfig(dictFile):
 
         self.setv("BOBYQA", BOBYQAinfo)  # store the diagnostic info.
 
-        return pd.read_json(BOBYQAinfo.get('diagnostic'), orient='split')
+        return pd.read_json(StringIO(BOBYQAinfo.get('diagnostic')), orient='split')
 
     def simObs(self, simObs=None, best=False):
         """
@@ -1486,7 +1489,7 @@ class OptClimConfig(dictFile):
 
         directories = self.getv('dirValues', [])
         if len(directories) == 0: return pd.Series()
-        directories = pd.read_json(directories, typ='series')
+        directories = pd.read_json(StringIO(directories), typ='series')
 
         if best:
             directories = directories[self.bestEval]

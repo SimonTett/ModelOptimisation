@@ -275,6 +275,7 @@ class SubmitStudy(Study, model_base, journal):
 
     @classmethod
     def load_SubmitStudy(cls, config_path: [pathlib.Path, str],
+                         error:generic_json.type_error='error',
                          Study: bool = False) -> typing.Union[Study, SubmitStudy]:
         """
         Load a SubmitStudy (or anything that inherits from it) from a file.
@@ -286,7 +287,7 @@ class SubmitStudy(Study, model_base, journal):
         config_path = cls.expand(config_path)
         # convert str to path and or expand user or env vars.
 
-        obj:SubmitStudy = cls.load(config_path,check_types=[SubmitStudy])
+        obj:SubmitStudy = cls.load(config_path,check_types=[SubmitStudy],error=error)
 
         #TODO -- consider removing these as archive handles the rewritting needed to make work.
         # Instead trigger an error???
@@ -423,7 +424,7 @@ class SubmitStudy(Study, model_base, journal):
             path = cls.translate_path(ppath)  # this will be a path
             if not (isinstance(path, pathlib.Path) or type(
                     path) == right_pure_path_type):  # not the right kind of pure path ?
-                my_logger.warning(f"Path {ppath} not of correct type. Skipping")
+                my_logger.warning(f"Path {ppath} not of correct type={type(path)} not {right_pure_path_type}. Skipping")
                 continue
 
             path = pathlib.Path(path)  # make path version which we can then load.

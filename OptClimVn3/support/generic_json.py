@@ -39,6 +39,7 @@ serialized version of the object.
 # with the byte representation,
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import numpy as np
@@ -46,8 +47,9 @@ import pandas as pd
 import pathlib
 import importlib # so we can do imports
 import typing
+from io import StringIO
 my_logger = logging.getLogger("OPTCLIM."+__name__) # logging for generic_json
-
+type_error = typing.Literal['raise','warn','ignore']
 
 def dump(obj,fp,*args,**kwargs):
     """
@@ -70,7 +72,7 @@ def dumps(obj, *args, **kwargs):
     """
     return json.dumps(obj, *args, cls=JSON_Encoder, **kwargs)
 
-def load(fp, *args, **kwargs):
+def load(fp, *args,error:type_error='raise', **kwargs):
     """
     Load object from file-like object fp. Uses json.load() with object_hook set to JSON_Encoder.decode
     :param fp: file pointer to read.
@@ -78,11 +80,11 @@ def load(fp, *args, **kwargs):
     :param kwargs:kwards to be passed to json.load
     :return:
     """
-    decode_obj = obj_to_from_dict() # create decode object
+    decode_obj = obj_to_from_dict(error=error) # create decode object
     return json.load(fp, *args, object_hook=decode_obj.decode,**kwargs) # and use it
 
 
-def loads(s, *args, **kwargs):
+def loads(s, *args, error:type_error ='raise', **kwargs):
     """
     Decode object from s. Uses json.loads() with object_hook set to JSON_Encoder.decode.
     See json.loads for documentation
@@ -91,8 +93,56 @@ def loads(s, *args, **kwargs):
     :param kwargs: kwargs to be passed to json.loads
     :return: result of json.loads
     """
-    decode_obj = obj_to_from_dict()
+    decode_obj = obj_to_from_dict(error=error)
     return json.loads(s, *args, object_hook=decode_obj.decode, **kwargs)
+
+def dict2df(x:dict):
+    """
+    Convert a dict or str to a pandas DataFrame
+    :param x: dict to convert
+    :return: DataFrame
+    """
+    if isinstance(x,dict):
+        result = pd.DataFrame.from_dict(x)
+        try:
+            index = pd.to_numeric(result.index)
+        except ValueError: # failed to convert to leave as is.
+            index = result.index
+        try:
+            rng_index = pd.RangeIndex(index.min(), index.max()+1)
+            delta = np.abs(index - rng_index).max()
+            if delta == 0:
+                result.index = rng_index
+                my_logger.debug('make_pandas_df setting RangeIndex')
+        except (ValueError,TypeError):
+            result.index = index
+        return result
+
+    elif isinstance(x,str):
+        return pd.read_json(StringIO(x))
+    else:
+        raise TypeError(f"Cannot convert {x} to DataFrame")
+
+def dict2series(x):
+    """
+    Convert a dict or str to a pandas series
+    :param x: dict to convert
+    :return: DataFrame
+    """
+    if isinstance(x,dict):
+        # muliple ways in which series can be docoded -- bad versioning.
+        if x.get('series') is not None:
+            return pd.Series(x['series'],index=x['index']).rename(x['name'])
+        else:
+            my_logger.warning('Going through old path. Need to update')
+            return pd.Series(x)
+    elif isinstance(x,str):
+        return pd.read_json(StringIO(x),typ='series')
+    else:
+        raise TypeError(f"Cannot convert {x} to Series")
+def conv_ndarray(x:dict):
+    result = np.array(x['data'],dtype=x['typ'])
+    return result
 
 class obj_to_from_dict:
     """
@@ -100,9 +150,14 @@ class obj_to_from_dict:
 
     """
     #TODO: Make this support tuples and also keys that are not strings.
-    FROM_VALUE = dict(ndarray=np.array,
-                      DataFrame=pd.read_json,
-                      Series=lambda x: pd.read_json(x,typ='series'),
+    #TODO: deal with provisional. For this version ignore it.
+    #TODO: have this be versionable. With some name read from the saved json file or passed in??
+
+
+    FROM_VALUE = dict(#ndarray=lambda x: np.array(x['data'],dtype=x['typ']),
+                      ndarray=conv_ndarray,
+                      DataFrame= dict2df,
+                      Series=dict2series,
                       Path=pathlib.Path,
                       PurePosixPath=pathlib.PurePosixPath,
                       PureWindowsPath=pathlib.PureWindowsPath,
@@ -111,19 +166,21 @@ class obj_to_from_dict:
                       set=set)
     # functions to convert value to object. These should be "factory"  classmethods
 
-    TO_VALUE = dict(ndarray=np.ndarray.tolist,
-                    DataFrame=pd.DataFrame.to_json,
-                    Series=pd.Series.to_json,
-                    Path = str,
-                    PurePosixPath=str,
-                    PureWindowsPath=str,
-                    WindowsPath=str,
-                    PosixPath=str,
-                    set=list) # functions to convert object to serializable object.
+    TO_VALUE = dict(
+        ndarray=lambda x: dict(data=x.tolist(), typ=str(x.dtype)),
+        DataFrame=lambda x: x.to_dict(),  # liangwj
+        Series=lambda x: dict(name=x.name, series=x.values, index=x.index.to_list()),
+        Path = str,
+        PurePosixPath=str,
+        PureWindowsPath=str,
+        WindowsPath=str,
+        PosixPath=str,
+        set=list)
+    # functions to convert object to serializable object.
     #TODO when needed add support for datetime
 
-    def __init__(self):
-        pass
+    def __init__(self,error:type_error='raise'):
+        self.error = error
 
 
 
@@ -160,6 +217,13 @@ class obj_to_from_dict:
 
         if conv_fn is None: # failed to find conversion function.
             errMsg = f"Did not find {class_name}. Allowed classes are " + " ".join(self.FROM_VALUE.keys())
+            if self.error == 'warn':
+                my_logger.warning(errMsg)
+                return None
+            elif self.error == 'ignore':
+                my_logger.debug(errMsg)
+                return None
+
             raise KeyError(errMsg)
 
         obj = conv_fn(values)
@@ -205,15 +269,17 @@ class obj_to_from_dict:
         """
 
         if "__cls__name__" in dct.keys():
-            name = dct.pop("__cls__name__")
-            module = dct.pop("__module__",None)
+            expect_count=2
+            name = dct["__cls__name__"]
+            module = dct.get("__module__",None)
             if module is not None: # have a module. Let's try and import it.
                 my_logger.info(f"importing {module}")
                 mod = importlib.import_module(module)
+                expect_count=3
                 # TODO check that mod has what we need. The reason for the import is to give us the decode methods...
 
-            data = dct.pop("object")
-            if len(dct) > 0:
+            data = dct["object"]
+            if len(dct) != expect_count:
                 raise TypeError("Invalid dct")
 
             obj = self.value_to_obj(name, data)
@@ -222,6 +288,90 @@ class obj_to_from_dict:
             return obj
         else:
             return dct
+
+
+    def rename_paths(self,dct_lst: typing.Union[dict, list],
+                   rewrite_paths: dict) -> typing.Union[dict, list]:
+        """
+        Recursively rename the paths elements of a dict or list produced by generic_json.
+        :param dct_lst:dict or list.
+        :param rewrite_paths: paths to rewrite.
+        Key is part for existing path to be made relative to and value is the new root.
+        :return: renamed dict or list
+        """
+        if not isinstance(dct_lst, (dict, list)):
+            raise TypeError(f'dct_lst should be a dict or list not {type(dct_lst)}')
+        result = copy.copy(dct_lst)  # nb shallow copy
+        if isinstance(dct_lst, dict) and (dct_lst.get('object') is not None):  # we are an encoded object
+            obj = dct_lst['object']
+            cls = dct_lst['__cls__name__']
+            if isinstance(obj, (dict, list)):  # keep descending as need to convert
+                rewrite_leaves = self.rename_paths(obj, rewrite_paths)
+                result['object'] = rewrite_leaves
+            elif cls in ['PosixPath', 'WindowsPath', 'PurePosixPath', 'PureWindowsPath','Path','PurePath']:
+                path = pathlib.PurePath(obj)
+                for k, v in rewrite_paths.items():
+                    try:
+                        new_path = v / path.relative_to(k)
+                        result['object'] = str(new_path)
+                        if cls.startswith('Pure'):
+                            result['__cls__name__'] = 'PurePath'
+                        else:
+                            result['__cls__name__'] = 'Path'
+                        my_logger.debug(f'Rewrote {path} to {new_path}')
+                        break  # stop converting once we have been successful.
+                    except ValueError:
+                        pass
+            else:
+                pass  # no change made.
+        elif isinstance(dct_lst, dict):
+            for k, v in dct_lst.items():
+                if isinstance(v, (dict, list)):
+                    result[k] = self.rename_paths(v, rewrite_paths)
+                else:
+                    pass
+        elif isinstance(dct_lst, list):
+            result = list()
+            for v in dct_lst:
+                if isinstance(v, (dict, list)):
+                    result.append(self.rename_paths(v, rewrite_paths))
+                else:
+                    result.append(v)
+
+        else:
+            pass
+        # return the result.
+        return result
+    def dct_lst_to_obj(self,dct_lst: typing.Union[dict, list]) -> typing.Any:
+        """
+      Recursively decode a dict containing appropriate meta-data to an object.
+      If dict has 'object' and '__class__name__' keys
+      then conversion will occur.
+        :param dct_lst: dict or list to be converted.
+        :return: converted dct_lst to object.
+        """
+        if isinstance(dct_lst, dict) and (dct_lst.get('object') is not None):  # we are an encoded object
+            obj = dct_lst['object']
+            if isinstance(obj, (dict, list)):  # keep descending as need to convert
+                decode_leaves = self.dct_lst_to_obj(obj)
+                result = copy.deepcopy(dct_lst)  # nb shallow copy
+                result['object'] = decode_leaves
+                result = self.decode(result)
+            else:  # just decode it
+                result = self.decode(dct_lst)
+        elif isinstance(dct_lst, dict):  # need to recurse but no decode at this level.
+            result = dict()
+            for k, v in dct_lst.items():
+                result[k] = self.dct_lst_to_obj(v)
+
+        elif isinstance(dct_lst, list):
+            result = list()
+            for v in dct_lst:
+                result.append(self.dct_lst_to_obj(v))
+        else:
+            result = dct_lst
+
+        return result
 
 class JSON_Encoder(json.JSONEncoder):
     def default(self, obj) :

@@ -133,6 +133,7 @@ class journal:
             {"=" * 60}
             STDERR 
             { e.stderr}"""
+            # TODO try again if this fails...
             my_logger.warning(str)
             raise
         except FileNotFoundError as e:  # cmd not found
@@ -283,6 +284,7 @@ class model_base:
     # class methods.
     @classmethod
     def load(cls, file: typing.Union[pathlib.Path, str],
+             error:generic_json.type_error = 'error',
              check_types:typing.Optional[typing.List]=None):
         """
         Load an object configuration from specified file.
@@ -297,7 +299,7 @@ class model_base:
         file = cls.expand(file)  # expand user and vars and convert str to path
 
         with open(file, 'rt') as fp:
-            cfg = generic_json.load(fp)
+            cfg = generic_json.load(fp, error=error)
             # this runs all the magic needed to create objects that we know about.
         if check_types is not None:
             logging.debug("Checking types against %s", check_types)

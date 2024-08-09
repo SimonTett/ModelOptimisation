@@ -16,10 +16,23 @@ import param_info
 from model_base import model_base # so we can detect my own derived types.
 
 
+class rootTest(unittest.TestCase):
+    def assertAllequal(self,data1,data2):
+        # TODO - have one version of this
+        for key,value in data1.items():
+            value2 =  data2[key]
+            if isinstance(value,pd.Series):
+                pdtest.assert_series_equal(value,value2)
+            elif isinstance(value,pd.DataFrame):
+                pdtest.assert_frame_equal(value,value2)
+            elif isinstance(value,np.ndarray):
+                nptest.assert_equal(value,value2)
+            elif isinstance(value,model_base):
+                self.assertEqual(vars(value), vars(value2))
+            else:
+                self.assertEqual(value,value2)
 
-
-
-class TestJsonEncoder(unittest.TestCase):
+class TestJsonEncoder(rootTest):
 
 
     def test_register_TO_VALUE(self):
@@ -66,7 +79,7 @@ class TestJsonEncoder(unittest.TestCase):
         :return:
         """
 
-        test = {"__cls__name__": "ndarray", "object": [1, 2, 3]}
+        test = {"__cls__name__": "ndarray", "object": dict(data=[1, 2, 3],typ='int64')}
         expect=np.array([1, 2, 3])
         decode = obj_to_from_dict()
         got = decode.decode(test)
@@ -77,9 +90,62 @@ class TestJsonEncoder(unittest.TestCase):
         nptest.assert_equal(test,got) # shou.d be identical
 
         # bad dict should raise a value error
-        test = {"__cls__name__": "ndarray", "object": [1, 2, 3],"comment":'some comment'}
+        test = {"__cls__name__": "ndarray", "object": dict( data=[1, 2, 3],typ='int64'),"comment":'some comment'}
         with self.assertRaises(TypeError):
             got = decode.decode(test)
+
+
+    def test_rename_paths(self):
+        """
+        Test rewrite_paths method
+        :return:
+        """
+        decode = obj_to_from_dict()
+        test = {"__cls__name__": "Path", "object": '/fred/james/harry.cfg'}
+        expect = pathlib.Path('/norma/andrew/harry.cfg')
+        rewrite = {pathlib.PurePath('/fred/james'): pathlib.PurePath('/norma/andrew')}
+        result = decode.rename_paths(test, rewrite)
+        got = decode.dct_lst_to_obj(result)
+        self.assertEqual(expect, got)
+        # now have a recursive case.
+        test=dict()
+        expect=dict()
+        for key in 'abc':
+            file = f'harry_{key}.cfg'
+            test[key]={"__cls__name__": "Path", "object": '/fred/james/'+file}
+            expect[key] = pathlib.Path('/norma/andrew')/file
+        for key in 'def':
+            file=f'harry_{key}.cfg'
+            test[key]={"__cls__name__": "Path", "object": '/orange/james/'+file}
+            expect[key] = pathlib.Path('/tangerine/andrew') / file
+        rewrite[pathlib.PurePath('/orange/james')]=pathlib.PurePath('/tangerine/andrew')
+        result  = decode.rename_paths(test,rewrite)
+        got = decode.dct_lst_to_obj(result)
+        self.assertEqual(expect, got)
+
+    def test_dct_lst_to_obj(self):
+        """
+        Test dct_lst_to_obj method
+        :return:
+        """
+        decode = obj_to_from_dict()
+        test = {"__cls__name__": "ndarray", "object": dict(data=[1, 2, 3],typ='int64')}
+        expect = np.array([1, 2, 3])
+        got = decode.dct_lst_to_obj(test)
+        nptest.assert_equal(expect, got)
+
+        test = dict(harry=3.2, fred=2)
+        got = decode.dct_lst_to_obj(test)
+        self.assertEqual(test, got)
+
+        # and recursive case
+        test['james']={"__cls__name__": "ndarray", "object": dict(data=[1, 2, 3],typ='int64')}
+        test['gordon']={"__cls__name__": "PurePosixPath", "object": '/fred/james/harry.cfg'}
+        expect = dict(harry=3.2, fred=2,james=np.array([1, 2, 3]),gordon=pathlib.PurePosixPath('/fred/james/harry.cfg'))
+        got = decode.dct_lst_to_obj(test)
+        self.assertAllequal(expect, got)
+
+
 
 
 
@@ -141,7 +207,7 @@ class TestJsonEncoder(unittest.TestCase):
 
 
 
-class TestJsonUtils(unittest.TestCase):
+class TestJsonUtils(rootTest):
     def setUp(self):
         nl= namelist_var.namelist_var(filepath=pathlib.Path('test_nl'), namelist='atmos', nl_var='fred')
         self.data = {'a': np.array([1, 2, 3]),
@@ -153,19 +219,7 @@ class TestJsonUtils(unittest.TestCase):
                      'g':nl,
                      'h': param_info.param_info()}
         self.data['h'].register('VF1',nl)
-    def assertAllequal(self,data1,data2):
-        for key,value in data1.items():
-            value2 =  data2[key]
-            if isinstance(value,pd.Series):
-                pdtest.assert_series_equal(value,value2)
-            elif isinstance(value,pd.DataFrame):
-                pdtest.assert_frame_equal(value,value2)
-            elif isinstance(value,np.ndarray):
-                nptest.assert_equal(value,value2)
-            elif isinstance(value,model_base):
-                self.assertEqual(vars(value), vars(value2))
-            else:
-                self.assertEqual(value,value2)
+
 
 
     def test_dump_load(self):

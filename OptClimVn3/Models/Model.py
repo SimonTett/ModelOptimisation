@@ -180,7 +180,8 @@ class Model(ModelBaseClass, journal):
         if (
                 isinstance(reference, pathlib.Path) and
                 ((model_dir == reference) or
-                 (model_dir.exists() and reference.samefile(model_dir)))):
+                 (model_dir.exists() and reference.samefile(model_dir)))
+        ):
             raise ValueError(f"Model_dir {model_dir} is the same as reference {reference}")
 
         self.reference = reference
