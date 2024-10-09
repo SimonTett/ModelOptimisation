@@ -291,7 +291,8 @@ class SubmitStudy(Study, model_base, journal):
 
         #TODO -- consider removing these as archive handles the rewritting needed to make work.
         # Instead trigger an error???
-        if not config_path.samefile(obj.config_path):
+        if (not isinstance(obj.config_path,pathlib.PurePath) and
+                obj.config_path.exists() and not config_path.samefile(obj.config_path)):
             my_logger.info(f"Modifying config path from  {obj.config_path} to {config_path}")
             obj.config_path = config_path
             obj.update_history(f"Modified config path from  {obj.config_path} to {config_path}")

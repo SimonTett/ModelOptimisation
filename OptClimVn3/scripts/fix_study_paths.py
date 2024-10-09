@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 # load Study and fix the paths.
 # new study gets written out.
-# this just uses pure json..
+# this mostly  uses pure json.
+# example use: OptClimVn3/scripts/fix_study_paths.py wenjun_data/dfols_random3/dfols_r.scfg wenjun_fix --clean --max_model_simulations 25 --write_config
 
 import json
 import argparse
@@ -13,9 +14,10 @@ import copy
 
 import SubmitStudy
 import generic_json
-import model_base
+import genericLib
 
-my_logger = logging.getLogger(__name__)
+
+
 def init_log(
         log: logging.Logger,
         level: str,
@@ -25,7 +27,7 @@ def init_log(
 ):
     """
     Set up logging on a logger! Will clear any existing logging.
-    TODO: roll into optclim general lib sp available to everything.
+    TODO: roll into optclim general lib so available to everything.
     :param log: logger to be changed
     :param level: level to be set.
     :param log_file:  if provided pathlib.Path to log to file
@@ -51,75 +53,34 @@ def init_log(
         fh.setFormatter(formatter)
         log.addHandler(fh)
     log.propagate = False
-# def rewrite(dct:typing.Union[dict,list],rewrite_paths:dict):
-#     # each entry consits of group of three:
-#     # __cls__name__
-#     #__object__
-#     #__module__
-#     if isinstance(dct,dict):
-#         cls_name = dct.get('__cls__name__')
-#         if cls_name is None:
-#             for k,value in dct.items():
-#                 if isinstance(value,(dict,list)):
-#                     rewrite(value,rewrite_paths)
-#         elif cls_name in ['PosixPath','WindowsPath','PureWindowsPath','PurePosixPath']:
-#             path = pathlib.PurePath(dct['object'])
-#             parent = path.parent
-#             for k,v in rewrite_paths.items():
-#                 if parent == k:
-#                     dct['object'] = str(v/path.name)
-#                     dct['__cls__name__'] = 'PurePosixPath'
-#                     my_logger.debug(f'Rewrote {parent} to {v}')
-#         else:
-#             if isinstance(dct['object'],dict):
-#                 rewrite(dct['object'],rewrite_paths)
-#     elif isinstance(dct,list):
-#         for value in dct:
-#             if isinstance(value, (dict, list)):
-#                 rewrite(value, rewrite_paths)
-#     else:
-#         pass
-#
-#
-#
-#
-#     elif isinstance(dct_lst, dict): # need to recurse but no rewrite at this level.
-#         result=dict()
-#         for k,value in dct_lst.items():
-#             if isinstance(value,(dict,list)) :
-#                 result[k] = rename_dct(value,rewrite_paths)
-#             else:
-#                 result[k] = value
-#
-#     elif isinstance(dct_lst, list):
-#         result = list()
-#         for value in dct_lst:
-#             if isinstance(value,(list,dict)):
-#                 result.append(rename_dct(value,rewrite_paths))
-#             else:
-#                 result.append(value)
-#     else:
-#         raise ValueError(f'Not list or dict... but {type(dct_lst)}')
-#
-#     return result
+    return log
 
-
-
-
-
-
-
-
-
-parser=argparse.ArgumentParser(description='Fix paths in a study.')
-parser.add_argument('input',type=pathlib.Path,help='Input configuration')
+parser=argparse.ArgumentParser(description='Fix paths in a study. \n Example: OptClimVn3/scripts/fix_study_paths.py wenjun_data/dfols_random3/dfols_r.scfg wenjun_fix --clean --max_model_simulations 25')
+parser.add_argument('input',type=pathlib.Path,help='Input study configuration')
 parser.add_argument('outdir',type=pathlib.Path,help='Output *directory*')
+parser.add_argument('--write_config',action='store_true',help='Write config out (from study config)')
+parser.add_argument('--clean',action='store_true',help='Remove all models that are not in state:PROCESSED')
+parser.add_argument('--max_model_simulations',type=int,help='Modify max_model_simulations when writing out config') # TODO allow a json file to overwrite
+parser.add_argument("-v", "--verbose", action='count', default=0,
+                    help="level of logging info level= 1 = info, level = 2 = debug ")
 #parser.add_argument('basedir',)
-init_log(my_logger,'DEBUG')
 args=parser.parse_args()
+
+if args.verbose >= 2:
+    level='DEBUG'
+elif args.verbose >= 1:
+    level = 'INFO'
+else:
+    level='WARNING'
+
+my_logger = genericLib.setup_logging(
+    level=level)
+
+
 input_dir = args.input.parent
 encoder = generic_json.JSON_Encoder()
 decode = generic_json.obj_to_from_dict(error='warn')
+clean=args.clean
 with args.input.open() as fp:
     config = json.load(fp)
 
@@ -133,14 +94,15 @@ config_change['object']['refDir']=encoder.default(pathlib.PurePosixPath(refdir))
 
 
 outpath  =  decode.dct_lst_to_obj(config_change['object']['config_path'])
-with outpath.open('tw') as fp:
-    json.dump(config_change,fp)
+
 # iterate over the original config, load models, rewrite paths and write out.
+models_to_delete=[] # list of models to delete from *modified* study config
 for key,model_path in config['object']['model_index'].items():
     path = pathlib.PurePath(model_path['object'])
     in_pth = input_dir/path.relative_to(config_path.parent)
     if not in_pth.exists():
         my_logger.warning(f'Failed to find {in_pth} skipping ')
+        models_to_delete += [key]
         continue
     new_path=None
     for k, v in rewrite_paths.items():
@@ -153,6 +115,18 @@ for key,model_path in config['object']['model_index'].items():
     if new_path is not None:
         with in_pth.open('tr') as fp:
             model_config = json.load(fp)
+            model = decode.decode(model_config)
+            if model.status != 'PROCESSED':
+                my_logger.warning(f'{model.name } Status is {model.status} not PROCESSED ')
+                if clean:
+                    my_logger.warning(f'Removing {model.name}')
+                    if new_path.exists():
+                        new_path.unlink()
+                        my_logger.warning(f'Removed {new_path} for model {model.name}')
+
+
+                    models_to_delete  += [key]
+                    continue
         new_model_config = decode.rename_paths(model_config,rewrite_paths)
         # overwrite the path with new_path
         new_model_config['object']['config_path'] = encoder.default(new_path)
@@ -185,7 +159,26 @@ for key,model_path in config['object']['model_index'].items():
             json.dump(new_model_config,fp)
             my_logger.debug(f'Dumped model to {model_config_path}')
 
+# Remove from config_change all the models in the delete list.
+for key in models_to_delete:
+    mpath =  decode.decode(config_change['object']['model_index'].pop(key))
+    my_logger.debug(f'Removing model at {mpath} from config')
 
-
+with outpath.open('tw') as fp:
+    json.dump(config_change,fp) # write it out.
 #change_config.dump_config()
 mod_config = SubmitStudy.SubmitStudy.load(outpath,error='warn')
+if args.max_model_simulations:
+    mod_config.config.max_model_simulations(args.max_model_simulations)
+    my_logger.info(f'Set max_model_simulations to {args.max_model_simulations}')
+    mod_config.dump_config()
+## write out config if write_config provided.
+if args.write_config:
+    config_file = mod_config.config_path.parent/mod_config.config._filename.name
+    mod_config.config._filename = config_file
+    my_logger.info(f'Writing data to {config_file}')
+    mod_config.config.save(filename=config_file,verbose=True)
+    mod_config.dump_config()
+    print(f'To rerun study use: OptClimVn3/scripts/runAlgorithm.py {config_file} --readonly --update --dir {args.outdir}')
+    my_logger.info(f'Wrote out modified config to {outpath}')
+

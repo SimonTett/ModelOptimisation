@@ -1,6 +1,7 @@
 """
 simple model for testing. Model does very little!
 """
+import sys
 import typing
 import logging
 import fileinput
@@ -49,7 +50,7 @@ class simple_model(Model):
         cmd =[f'"{self.set_status_script}"', f'"{self.config_path}"', status]
         cmd = [f'{self.set_status_script}', '-v',f'{self.config_path}', status] # verbose
         if platform.system() == 'Windows':
-            cmd = ['python']+cmd
+            cmd = [sys.executable]+cmd
 
 
 

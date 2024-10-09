@@ -704,7 +704,8 @@ class OptClimConfig(dictFile):
 
         return cov
 
-    def transMatrix(self, scale=False, verbose=False, minEvalue=1e-6, dataFrame=True):
+    def transMatrix(self, scale:bool=False, verbose:bool=False,
+                    minEvalue:float=1e-6, dataFrame:bool=True,inverse:bool = False):
         """
         Return matrix that projects data onto eigenvectors of total covariance matrix
         :param scale: (Default False) Scale covariance.
@@ -722,10 +723,18 @@ class OptClimConfig(dictFile):
         # deal with small evalues.
         crit = evalue.max() * minEvalue
         indx = evalue > crit
+        ev_index=np.arange(0, indx.sum(),dtype='int64')
+        obs_index=errCov.columns
+        evalue = pd.Series(evalue[indx], index=ev_index)
+        evect = pd.DataFrame(evect[:, indx], columns=ev_index, index=obs_index)
+        if inverse: # return the inverse matrix
+            transMatrix = evect@pd.DataFrame(np.diag(evalue ** (0.5)),index=ev_index,columns=ev_index)
+        else:
+            transMatrix =pd.DataFrame(np.diag(evalue ** (-0.5)),index=ev_index,columns=ev_index)@ evect.T
 
-        transMatrix = (np.diag(evalue[indx] ** (-0.5)).dot(evect[:, indx].T))  # what we need to do to transform to
-        if dataFrame:
-            transMatrix = pd.DataFrame(transMatrix, index=np.arange(0, np.sum(indx),dtype='int64'), columns=errCov.columns)
+            #(np.diag(evalue[indx] ** (-0.5)).dot(evect[:, indx].T))  # what we need to do to transform to
+        if not dataFrame:
+            transMatrix = transMatrix.values
         return transMatrix
 
     def steps(self, steps=None, paramNames=None):
@@ -1184,7 +1193,7 @@ class OptClimConfig(dictFile):
     def alg_info(self, **argv):
         """
         : named arguments used to set algorithm information in config
-           Information is stored in config information based on name of algorithm
+           Information is stored in config information based on name of algorithm.
         :return:  specific algorithm information.
         """
 
@@ -1263,40 +1272,58 @@ class OptClimConfig(dictFile):
 
         return self.get_dataFrameInfo(['diagnostic'])
 
-    def jacobian(self, jacobian=None):
+    def jacobian(self, jacobian:typing.Optional[pd.DataFrame]=None,
+                 comment:typing.Optional[str]=None):
         """
-        Set jacobian if set. Return jacobian as pandas dataframe
-        :param jacobian: a pandas dataframe containing the jacobian information
+        Set jacobian if set.
+         Return jacobian as pandas dataframe.
+        :param jacobian: a pandas dataframe containing the jacobian information to be set.
+            Rows are observations, columns are parameters.
+        :param comment:  a comment to add to the configuration
         :return: jacobian -- converted to a float (the json conversion loses type info)
         """
 
         if jacobian is not None:
             self.set_dataFrameInfo(jacobian=jacobian)
+        if comment is not None:
+            self.alg_info(jacobian_comment=comment)
 
         return self.get_dataFrameInfo('jacobian', dtype=float)
 
-    def transJacobian(self, transJacobian=None):
+    def transJacobian(self, transJacobian:typing.Optional[pd.DataFrame]=None,
+                      comment:typing.Optional[str]=None):
         """
-        Set transformed jacobian if set. Return transJacobian as pandas dataframe
+        Set transformed jacobian if set. Return transformed Jacobian as pandas dataframe
         :param transJacobian: a pandas dataframe containing the transformed jacobian information.
            If not None will set values.
-        :return: transformed jacobian (J.Trans^T) where Trans is the transform matrix (see transMatrix)
+        :param comment: (optional) a comment to add to the configuration
+        :return: transformed jacobian
                converted to a float (the json conversion loses type info)
         """
 
+
         if transJacobian is not None:
             self.set_dataFrameInfo(transJacobian=transJacobian)
+        if comment is not None:
+            self.alg_info(transJacobian_comment=comment)
 
-        return self.get_dataFrameInfo('transJacobian', dtype=float)
 
-    def hessian(self, hessian=None):
+        jac= self.get_dataFrameInfo('transJacobian', dtype=float)
+
+        return jac
+
+    def hessian(self, hessian:typing.Optional[pd.DataFrame]=None,
+                comment:typing.Optional[str]=None):
         """
         :param hessian. If not None set hessian to this value. Should be a pandas dataframe.
+        :param comment: (optional) a comment to add to the configuration
         return -- returns the hessian matrix converted to a float (the json conversion loses type info).
         """
 
         if hessian is not None:
             self.set_dataFrameInfo(hessian=hessian)
+        if comment is not None:
+            self.alg_info(hessian_comment=comment)
 
         return self.get_dataFrameInfo('hessian', dtype=float)
 
@@ -2558,7 +2585,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
                     trace: bool = False,  # TODO remove trace -- replaced with logging
                     dirRewrite: typing.Optional[typing.Dict] = None,
                     #TODO consider removing this as saved config should have covariances in.
-                    scale: bool = False,
+                    scale: bool = False, # TODO remove scale -- should be got from the config.
                     constraint: typing.Optional[bool] = None,
                     read: bool = False,
                     CovTotal: typing.Optional[pd.DataFrame] = None,

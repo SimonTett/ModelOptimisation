@@ -1,5 +1,6 @@
 import json
 import platform
+import sys
 import unittest
 import generic_json
 import unittest.mock
@@ -132,10 +133,12 @@ class Test_simple_model(unittest.TestCase):
         model.parameters.update(sleep_time=1)
         model.instantiate()
         model.set_status("SUBMITTED") # make state submittable.
+        cmd = ["./"+str(model.submit_script),str(model.StudyConfig_path)]
         if platform.system() == 'Windows':
-            cmd = ['python',f'{model.submit_script}',f'{model.StudyConfig_path}']
-        else:
-            cmd = ["./"+str(model.submit_script),str(model.StudyConfig_path)]
+            #cmd = [sys.executable,f'{model.submit_script}',f'{model.StudyConfig_path}']
+            cmd.insert(0,sys.executable)
+        #else:
+            #cmd = ["./"+str(model.submit_script),str(model.StudyConfig_path)]
 
         # fake env so ID can be found.
         vars = ['JOB_ID','SLURM_JOB_ID']

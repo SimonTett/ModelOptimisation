@@ -9,11 +9,14 @@
       <sourceFolder url="file://$MODULE_DIR$/OptClimVn3/Models" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/OptClimVn3/scripts" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/OptClimVn3/support" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/OptClimVn3/test_OptClimVN3" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/OptClimVn2" />
-      <excludeFolder url="file://$MODULE_DIR$/venv" />
     </content>
-    <orderEntry type="jdk" jdkName="Python 3.9 (ModelOpt)" jdkType="Python SDK" />
+    <orderEntry type="jdk" jdkName="Python 3.11 (modelOpt_311)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
+  </component>
+  <component name="PackageRequirementsSettings">
+    <option name="requirementsPath" value="" />
   </component>
   <component name="TestRunnerService">
     <option name="PROJECT_TEST_RUNNER" value="py.test" />

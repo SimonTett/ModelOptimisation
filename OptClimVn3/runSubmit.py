@@ -4,6 +4,8 @@ import logging
 import typing
 import pathlib
 
+from mpl_toolkits.mplot3d.proj3d import inv_transform
+
 import Model
 from SubmitStudy import SubmitStudy
 
@@ -61,7 +63,7 @@ class runSubmit(SubmitStudy):
         return close_model,float(delta[indx])
 
     test_nondetermin_status = typing.Literal['error', 'warning'] # allowed values 
-    def restart(self,test_nondetermin:typing.Optional[typing.test_nondetermin_status]=None):
+    def restart(self,test_nondetermin:typing.Optional[test_nondetermin_status]=None):
         """
         Setup state for restart. Copies trace to prev_trace and sets trace to empty list.
         :param test_nondetermin -- verify that trace and prev_trace are consistent --
@@ -123,7 +125,8 @@ class runSubmit(SubmitStudy):
         self.trace.append(key)  # append key to the trace.
         return model
 
-    def transform_check(self,obs:pd.Series,model_name:str,
+    def transform_check(self,obs:pd.Series,
+                        model_name:str,
                         transform: typing.Optional[pd.DataFrame] = None,
                         scale: bool = False,
                         residual: bool = False,
@@ -138,7 +141,7 @@ class runSubmit(SubmitStudy):
         :param residual: If True obs are relative to target values
         :return: pandas series of transformed matrix.
 
-        Checks are that no deseried obs are missing and no nulls are in transformed series.
+        Checks are that no desired obs are missing and no nulls are in transformed series.
         """
 
         obsNames = self.config.obsNames()
@@ -155,6 +158,7 @@ class runSubmit(SubmitStudy):
             obs -= tgt
         if transform is not None:  # apply transform if required.
             obs = obs @ transform.T  # obs in nsim x nobs; transform  is nev x nobs.
+            #obs = transform@obs.T # how we should do it.
         null = obs.isnull()
         if np.any(null):
             raise ValueError("Obs contains null values at: " + ", ".join(obs.index[null]))
@@ -208,6 +212,9 @@ class runSubmit(SubmitStudy):
           This might require you to create  a partial function. Your life will probably be easier if you set df=True
           and work with dataframes in your function.
         TODO use "random" perturbation approach to find how many parallel cases we can run.
+        This is a bit tricky as gass-newton does three runs and then uses the best one. That means 1/3 chance we pick a
+        bad case. So will need to run this several times to have a decent prob of not picking case by chance.
+        One approach might be to test that the generated param sets are unique.
         """
 
         paramNames = self.config.paramNames()
@@ -379,7 +386,7 @@ class runSubmit(SubmitStudy):
           +/- is to keep perturbations towards the centre pf the domain.
         A more accurate version would run 2nd order differences around the base point.
         But (as yet) no need for this so not implemented. Probably best done with a centred option.
-        The Jacobian computed is the transformed Jacobian. (Apply Transpose matrix).
+        The Jacobian computed is the transformed Jacobian.
 
         :arg self -- a Submit object.
         :param scale -- If True apply scalings.
@@ -425,12 +432,8 @@ class runSubmit(SubmitStudy):
         obs = modelFn(params.values)  # compute the obs where we need to. This may generate model simulations
         dobs = obs.iloc[1:, :] - obs.iloc[0, :]
         dobs = dobs.set_index(delta.index)
-        jac = dobs.div(delta, axis=0)  # compute the Jacobian
-
-        finalConfig = self.runConfig()  # get the configuration
-        finalConfig.transJacobian(transJacobian=jac)  # store the jacobian.
-        hes = jac.T @ jac
-        finalConfig.hessian(hes)
+        jac = dobs.div(delta, axis=0).T  # compute the Jacobian
+        finalConfig = self.runConfig(scale=scale,transJacobian=jac)  # get the configuration.
         return finalConfig
 
     def runDFOLS(self, scale=True):
@@ -527,31 +530,24 @@ class runSubmit(SubmitStudy):
             raise optclim_exceptions.submitModel("dfols failed with lin alg error")
             # this is how DFOLS tells us it got NaN which then triggers running the next set of simulations.
 
-        # code here will be run when DFOLS has completed. It mostly is to put stuff in the final JSON file
-        # so can easily be looked at for subsequent analysis.
+        # Code here will be run when DFOLS has completed.
+        # It mostly puts stuff in the final JSON file so can easily be looked at for subsequent analysis.
         if solution.flag not in (solution.EXIT_SUCCESS, solution.EXIT_MAXFUN_WARNING):
             print("dfols failed with flag %i error : %s" % (solution.flag, solution.msg))
             raise Exception("Problem with dfols")
 
-        # need to wrap best sol and put in other information into the final results file.
-        filename= self.rootDir/(self.config.fileName().stem+"_final.json") # final confio
-        finalConfig = self.runConfig(scale=scale, add_cost=True,filename=filename)  # get final runInfo
-        best = pd.Series(solution.x, index=varParamNames).rename(finalConfig.name())
-        # Generic stuff (that is probably more useful). Probably need the Jacobian in "normal" space...
-        # But can transform model jacobian into smaller evect space.
+        # need to wrap the best sol and put in other information into the final results file.
+        filename= self.rootDir/(self.config.fileName().stem+"_final.json") # final config
+        best = pd.Series(solution.x, index=varParamNames) # best soln from DFOLS
+        # now compute jacobian and wrap it up as a dataframe.
         jacobian = solution.jacobian
         jacobian = pd.DataFrame(jacobian, columns=varParamNames, index=tMat.index)
-        finalConfig.transJacobian(jacobian)
-        hessian = jacobian @ jacobian.T
-        finalConfig.hessian(hessian)
-
-        finalConfig.optimumParams(optimum=best)  # store the optimum params.
-        # need to put in the best case -- which may not be the best evaluation as DFOLS ignores "burn in"
+        # create the final configuration
+        finalConfig = self.runConfig(scale=scale, add_cost=True,filename=filename,transJacobian=jacobian,best=best)  # get final runInfo
         solution.diagnostic_info.index = range(0, solution.diagnostic_info.shape[0])
         finalConfig.dfols_solution(solution=solution)
-        #finalConfig.setv('DFOLS_soln',vars(solution))
         print(f"DFOLS completed: Solution status: {solution.msg}")
-        finalConfig.save()
+        finalConfig.save() # save the config
         return finalConfig
 
     def runGaussNewton(self, verbose=False, scale=True):
@@ -597,24 +593,18 @@ class runSubmit(SubmitStudy):
                                                   configData.steps(paramNames=paramNames).values,
                                                   np.zeros(nObs), optimise,
                                                   cov=np.identity(nObs), cov_iv=intCov, trace=verbose)
-        filename = self.rootDir / (self.config.fileName().stem + "_final.json")  # final confio
-        finalConfig = self.runConfig(scale=scale, add_cost=True, filename=filename)  # get final runInfo
+        filename = self.rootDir / (self.config.fileName().stem + "_final.json")  # final config file name
+        jacobian = pd.DataFrame(info['jacobian'][-1, :, :].T, columns=paramNames,index=tMat.index)
+        best = pd.Series(best, index=paramNames,name=self.config.name())# wrap best result as pandas series
+        finalConfig = self.runConfig(scale=scale, add_cost=True, filename=filename,
+                                     best=best,transJacobian=jacobian)  # get final runInfo
         finalConfig.GNstatus(status)
         # Store the GN specific stuff. TODO consider removing these and just store the info.
         finalConfig.GNparams(info['bestParams'])
         finalConfig.GNcost(info['err_constraint'])
         finalConfig.GNalpha(info['alpha'])
-        # finalConfig.GNjacobian(info['jacobian']) #FIXME -- this needs fixing as we are in the evect space
-        finalConfig.GNhessian(info['hessian'])
-        # Generic stuff (that is probably more useful)
-        jacobian = pd.DataFrame(info['jacobian'][-1, :, :], index=paramNames)
-        finalConfig.transJacobian(jacobian)
-        hessian = jacobian @ jacobian.T
-        finalConfig.hessian(hessian)
 
-        best = pd.Series(best, index=finalConfig.paramNames(),
-                         name=finalConfig.name())  # wrap best result as pandas series
-        finalConfig.optimumParams(optimum=best)  # write the optimum params
+
         print("status", status)
 
         return finalConfig
@@ -635,6 +625,7 @@ class runSubmit(SubmitStudy):
         # pySOT -- probably won't work without some work. conda instal conda-forge pysot will install it.
         import pySOT
         warnings.warn("No testing done for pysot")
+        raise NotImplementedError('pysot not well implemented. ')
         configData = self.config
         optimise = configData.optimise().copy()  # get optimisation info
         tMat = configData.transMatrix()
@@ -704,9 +695,10 @@ class runSubmit(SubmitStudy):
         nf = len(controller.fevals)
 
         # need to wrap best soln xmin.
-        finalConfig = self.runCost(self.config, scale=scale)
-        finalConfig = self.runConfig(Config, finalConfig)  # get final runInfo
         best = pd.Series(xmin, index=paramNames)
-        finalConfig.optimumParams(**(best.to_dict()))  # write the optimum params
+        filename = self.rootDir / (self.config.fileName().stem + "_final.json")  # final config file name
+        finalConfig = self.runConfig(scale=scale, add_cost=True, filename=filename,
+                                     best=best)  # get final runInfo
+
         print("PYSOT completed")
         return finalConfig

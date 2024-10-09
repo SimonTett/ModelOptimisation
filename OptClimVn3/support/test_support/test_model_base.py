@@ -126,16 +126,15 @@ class Test_history(unittest.TestCase):
         self.history = journal()
 
     @unittest.mock.patch.object(journal, 'now', side_effect=gen_time())
-    def test_update_history(self,mck_now):
+    def test_update_history(self,mck):
         """ Verify that update_history works.
         Two cases to consider
             1) Multiple updates in short time. Need to "mock" datetime.datetime.now(tz=datetime.timezone.utc)
             2) Updates at different times.
 
          """
-
-        # NB gen_time() returns an interator and mock (magically) runs next on iterators.
         hist = self.history
+        # NB gen_time() returns an interator and mock (magically) runs next on iterators.
         # first update times using mock.
         for count in range(0, 20):
             msg = f"Count is {count}"
@@ -144,7 +143,7 @@ class Test_history(unittest.TestCase):
         #hist.print_history()
 
         test_now = datetime.datetime(1999, 12, 31, 23, 59, 59)
-        with unittest.mock.patch.object(hist, 'now', autospec=True, return_value=test_now):
+        with unittest.mock.patch.object(hist, 'now',  return_value=test_now):
             hist._history = {}  # set history empty
             # always have the same time here.
             lst = []

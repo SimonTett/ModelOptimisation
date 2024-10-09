@@ -1,7 +1,7 @@
 """
 Place to put tests for Submit.
 """
-
+import generic_test_support # std stuff for all tests.
 import copy
 import pathlib  # make working with file paths easier.
 import shutil
@@ -504,26 +504,26 @@ class testRunSubmit(unittest.TestCase):
             else:
                 scales = 1.0
             ref = fake_fn(configData, base.to_dict())*scales
-            jac_bare = []
+            jac = []
 
             for p in steps.index:
                 dd = base.copy()
                 dd.loc[p] -=  steps.loc[p]
                 delta = fake_fn(configData,dd.to_dict())*scales - ref
                 delta = delta.rename(p)  # name it by param
-                jac_bare.append(delta)
-            jac_bare = pd.DataFrame(jac_bare)  # convert to dataframe
+                jac.append(delta)
+            jac = pd.DataFrame(jac)  # convert to dataframe
             # and divide by steps to get jacobian
-            jac_bare = jac_bare.div(-steps, axis=0)
+            jac = jac.div(-steps, axis=0)
             # and apply linear transform
             Tmat = configData.transMatrix(scale=scale)
-            jac_bare = jac_bare @ Tmat.T
-            return jac_bare
+            jac_trans = jac @ Tmat.T
+            return jac.T,jac_trans.T
         # all wrapped so we get a Series
         nparam = len(optParams)
         # compute what we expect --
         refParam = configData.beginParam()
-        expect_jac = raw_jac(refParam,steps,scale=scale)
+        expect_jac,expect_trans_jac = raw_jac(refParam,steps,scale=scale)
         rSubmit = runSubmit.runSubmit(configData, 'test_jac',
                                       rootDir=self.rootDir, refDir=self.refDir)
         # setup Submit object.
@@ -540,16 +540,21 @@ class testRunSubmit(unittest.TestCase):
                 self.assertEqual(nparam + 1, nModels, f'Expected to have {nparam + 1} models ran')
 
         # now check jac is what we expect...
-        jac_run = finalConfig.transJacobian()
-        nptest.assert_allclose(jac_run, expect_jac, atol=1e-9)  # round trip through json removes some precision.
-
+        trans_jac_run = finalConfig.transJacobian()
+        jac_run = finalConfig.jacobian()
+        nptest.assert_allclose(trans_jac_run, expect_trans_jac, atol=1e-9)  # round trip through json removes some precision.
+        nptest.assert_allclose(jac_run,expect_jac,atol=1e-9)
+        # and check the Hessian is what we expect.
+        expect_hess = expect_trans_jac.T @ expect_trans_jac*2
+        hess_run = finalConfig.hessian()
+        nptest.assert_allclose(hess_run,expect_hess,atol=1e-9)
         # check that passing in optConfig works and that have nparam +1 cases.
         optConfig = copy.deepcopy(self.config)
         # set optimum values to max,
         param_range = configData.paramRanges()
         opt = param_range.loc['minParam',:]+0.9*param_range.loc['rangeParam',:]
         optConfig.optimumParams(optimum=opt)
-        expect_jac = raw_jac(opt, steps, scale=scale)
+        expect_jac,expect_jac_trans = raw_jac(opt, steps, scale=scale)
         rSubmit.delete() # clean up rSubmit -- no automatic deletion as want to keep disk stuff persistant.
         rSubmit = runSubmit.runSubmit(optConfig, 'test_opt_jac',
                                       rootDir=self.rootDir, refDir=self.refDir)
@@ -564,8 +569,10 @@ class testRunSubmit(unittest.TestCase):
                 # expect nparam+1 models
                 self.assertEqual(nparam + 1, nModels, f'Expected to have {nparam + 1} models ran')
         # now check jac is what we expect...
-        jac_run = finalConfig.transJacobian()
-        nptest.assert_allclose(jac_run, expect_jac, atol=1e-9)
+        trans_jac_run = finalConfig.transJacobian()
+        jac_run = finalConfig.jacobian()
+        nptest.assert_allclose(trans_jac_run, expect_jac_trans, atol=1e-9)
+        nptest.assert_allclose(jac_run,expect_jac,atol=1e-9)
 
     def test_runGaussNewton(self):
         """
@@ -638,7 +645,7 @@ class testRunSubmit(unittest.TestCase):
         self.assertEqual(status, 'Converged', msg='Expected to have converged')
         nptest.assert_allclose(best, expectparam, rtol=1e-4)  # close to 0.1%. Can probably do better by modifying covariance.
         # get out the jacobian for later comparision.
-        jac = info['jacobian'][-1, :, :]  # bare right now...
+        jac = info['jacobian'][-1, :, :].T  # bare right now...
         # now to run runGaussNewton.
 
         iterCount = 0

@@ -1,5 +1,6 @@
 # test the scripts
 import pathlib
+import sys
 import unittest
 import subprocess
 import tempfile
@@ -13,6 +14,7 @@ import os
 
 import StudyConfig
 from runSubmit import runSubmit # so we can test if we have one!
+import generic_test_support # sets up OPTCLIMTOP
 
 
 class testScripts(unittest.TestCase):
@@ -58,7 +60,7 @@ class testScripts(unittest.TestCase):
         model = self.setup_model()
 
         if platform.system() == 'Windows':
-            cmd = ['python',str(pth)]
+            cmd = [sys.executable,str(pth)]
         else:
             cmd = [str(pth)]
         cmd += [str(model.config_path),'RUNNING','-v']
@@ -79,7 +81,7 @@ class testScripts(unittest.TestCase):
         Success means it has worked!
         """
         if platform.system() == 'Windows':
-            cmd=['python']
+            cmd=[sys.executable]
 
         else:
             cmd=[]

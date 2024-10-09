@@ -1,15 +1,14 @@
-# should be in a python 3.,9 (or above env)
+# should be in a python 3.9-3.11 env as current cf-units version is not compatible with python 3.12
 ipython
-numpy~=1.26
-cf-units~=3.1
-scitools-iris~=3.8
-pathlib~=1.0.1
-xarray~=2023.6.0
+DFO-LS # always have the most current version of DFO-LS.
+numpy~=1.26 # TODO upgrade to 2+
+cf-units~=3.2
+#scitools-iris~=3.8
+xarray~=2024.9.0
 netcdf4~=1.6.0
 matplotlib~=3.6
 pandas~=2.2.2
 f90nml~=1.4.3
 scipy~=1.13
 pytest~=8.3
-matplotlib~=3.6
-DFO-LS
+

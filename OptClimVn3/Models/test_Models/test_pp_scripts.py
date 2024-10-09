@@ -1,3 +1,4 @@
+import sys
 import unittest
 import pathlib
 import subprocess
@@ -32,7 +33,7 @@ class test_post_process(unittest.TestCase):
         pth = self.script_dir / "pp_simple_model.py"
         self.assertTrue(pth.exists())
         if platform.system() == 'Windows':
-            cmd = ['python', str(pth)]
+            cmd = [sys.executable, str(pth)]
         else:
             cmd = [str(pth)]
         file_to_copy = self.tempDir/'model_output.json'

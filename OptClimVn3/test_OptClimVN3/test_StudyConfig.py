@@ -1,7 +1,7 @@
 """
 Test code for StudyConfig
 """
-
+import generic_test_support
 import os
 import pathlib
 
@@ -618,14 +618,18 @@ class testStudyConfig(unittest.TestCase):
 
         for scale in [True, False]:
             tMat = self.config.transMatrix(scale=scale)
+            inv_mat = self.config.transMatrix(scale=scale, inverse=True)
             cov = self.config.Covariances(scale=scale)['CovTotal']
             got = tMat.dot(cov).dot(tMat.T)
             expect = np.identity(got.shape[0])  # trans matrix might, in effect, truncate matrix.
             atol = 1e-7
             rtol = 1e-7
+            got2 = tMat@inv_mat
 
             nptest.assert_allclose(got, expect, atol=atol, rtol=rtol,
                                    err_msg=f' Scale {scale} Transform not giving I')
+            nptest.assert_allclose(got2, expect, atol=atol, rtol=rtol,
+                                   err_msg=f' Scale {scale} transform@inverse not giving I')
 
     def test_DFOLS_userParams(self):
         """
@@ -718,8 +722,9 @@ class testStudyConfig(unittest.TestCase):
 
         """
 
-        jac = pd.DataFrame(np.identity(5))
+        jac = pd.DataFrame(np.identity(21))
         jac.iloc[0, 1] = 0.0001
+
         self.config.transJacobian(jac)
         got = self.config.transJacobian()
         self.assertTrue(jac.equals(got))
@@ -732,9 +737,11 @@ class testStudyConfig(unittest.TestCase):
 
         jac = pd.DataFrame(np.identity(5))
         jac.iloc[0, 1] = 0.0001
-        self.config.jacobian(jac)
+        self.config.jacobian(jac,comment='test jacobian')
         got = self.config.jacobian()
         self.assertTrue(jac.equals(got))
+        got_comment = self.config.alg_info()['jacobian_comment']
+        self.assertEqual(got_comment,'test jacobian')
 
     def test_hessian(self):
         """

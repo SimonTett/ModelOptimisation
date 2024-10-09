@@ -18,6 +18,8 @@ import pandas as pd
 from model_base import model_base
 from Model  import Model # root class for all models.
 from StudyConfig import OptClimConfigVn3
+from test_data.gamil_test.generic_json_wenjun import my_logger
+
 
 class Study:
     # class attribute type information.
@@ -280,15 +282,39 @@ class Study:
         return cost
 
     def runConfig(self, filename: typing.Optional[pathlib.Path] = None,
-                  scale: bool = True, add_cost: bool = True) -> OptClimConfigVn3:
+                  scale: bool = True,
+                  add_cost: bool = True,
+                  best:typing.Optional[pd.Series]=None,
+                  transJacobian:typing.Optional[pd.DataFrame] = None,
+                  transJacobian_comment:typing.Optional[str] = None,
+                  jacobian:typing.Optional[pd.DataFrame] = None,
+                  jacobian_comment:typing.Optional[str] = None,
+                  hessian:typing.Optional[pd.DataFrame] = None,
+                  hessian_comment:typing.Optional[str] = None) -> OptClimConfigVn3:
         """
         **copy** self.config and add parameters and obs to it. Modified config is returned
         :param filename - pathlib to file (or None). Will override filepath in new config
-        :param scale -- passed to self.cost to compute cost when add_cost is True
+        :param scale -- passed to self.cost to compute cost when add_cost is True and also used to do inverse transform matrix
         :param add_cost -- add cost to the returned configuration
-        :return: modified config. The following methods will work:
+        :param best -- best evaluation parameter set
+        :param transJacobian -- transformed jacobian matrix. Rows are parameters, columns are observations.
+        :param jacobian -- jacobian matrix in initial original  space. Rows are parameters, columns are observations.
+          If not provided then transJacobian is used to compute jacobian
+        :param hessian -- hessian matrix.
+        If not proved but jacobian is then hessian is computed as 2*jacobian.T@jacobian -- min sum of squares.
+        :param transJacobian_comment -- comment for transJacobian
+        :param jacobian_comment -- comment for jacobian
+        :param hessian_comment -- comment for hessian
+        :return: modified config. The following methods may  work if appropriate data passed in:
             finalConfig.parameters() -- returns the parameters for each model simulation
             finalConfig.simObs() -- returns the simulated observations for each model simulation.
+            finalConfig.cost() -- returns the cost for each model simulation.
+            finalConfig.bestEval() -- returns the best evaluation.
+            finalConfig.optimumParams() -- returns the optimum parameters.
+            finalConfig.transJacobian() -- returns the transformed jacobian.
+            finalConfig.jacobian() -- returns the jacobian.
+            finalConfig.hessian() -- returns the hessian.
+            finalConfig.alg_info().get('jacobian_comment') -- returns the comment for the jacobian. Sim for other comments
 
         """
         newConfig = self.config.copy(filename=filename)  # copy the config.
@@ -304,7 +330,7 @@ class Study:
 
         newConfig.parameters(params)
         newConfig.simObs(obs)
-
+        paramNames = set(newConfig.paramNames())
         if add_cost:  # want to include cost. Which might be computed with scaling
             cost = self.cost(scale=scale)
             # update newConfig
@@ -314,6 +340,40 @@ class Study:
             if len(cost) > 0:
                 bestEval = cost.idxmin()
             newConfig.setv('bestEval', bestEval)  # best evaluation
+        # add in optimum param set if provided. May be different from best eval based on cost.
+        if best is not None:
+            newConfig.optimumParams(optimum=best)  # store the optimum params.
+        if transJacobian is not None:
+            # check columns are obs names
+            cols = set(transJacobian.columns)
+            if cols != paramNames:
+                raise ValueError(f"transJacobian columns {cols} do not match param names {paramNames}")
+            newConfig.transJacobian(transJacobian,comment=transJacobian_comment)
+            if jacobian is  None: # compute jacobian
+                my_logger.info('Computing jacobian from transJacobian')
+                inv_transM = newConfig.transMatrix(scale=scale, inverse=True)  # get the inverse transformation matrix
+                jacobian = inv_transM @ transJacobian  # transform jacobian to parameter space
+                jacobian_comment = 'Jacobian computed from transJacobian'
+            if hessian is None:
+                my_logger.info('Computing hessian from transJacobian')
+                hessian = 2 * transJacobian.T @ transJacobian # sum of squares
+                hessian_comment = 'Hessian computed from transJacobian assuming sum of squares'
+        # add jacobian  if provided  (or computed)
+        if jacobian is not None:
+            # check columns are obs names
+            cols=set(jacobian.columns)
+            paramNames = set(newConfig.paramNames())
+            if cols != paramNames:
+                raise ValueError(f"Jacobian columns {cols} do not match param names {paramNames}")
+            newConfig.jacobian(jacobian,comment=jacobian_comment)
+        if hessian is not None: #
+            # check columns and index are param names
+            if set(hessian.columns) != paramNames:
+                raise ValueError(f"Hessian columns {hessian.columns} do not match param names {paramNames}")
+            if set(hessian.index) != paramNames:
+                raise ValueError(f"Hessian index {hessian.index} do not match param names {paramNames}")
+            newConfig.hessian(hessian,comment=hessian_comment)
+
 
         return newConfig
 
