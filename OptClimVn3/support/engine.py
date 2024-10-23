@@ -20,7 +20,8 @@ class abstractEngine(model_base, journal):
     """
     Abstract class for Engines. Inherit and implement for your own class.
     """
-    allowed_eng = typing.Literal['SGE', 'SLURM']  # allowed engines
+
+    allowed_eng = typing.Literal['SGE', 'SLURM','SLURM_SYSU']  # allowed engines
 
     @classmethod
     def create_engine(cls, engine_name: allowed_eng = 'SGE',
@@ -31,13 +32,17 @@ class abstractEngine(model_base, journal):
         :param ssh_node: node to ssh to where engine can submit things
         Sets up engines which hold cmds for SGE or slurm respectively. .
         """
-
-        if engine_name == 'SGE':
-            return sge_engine(ssh_node=ssh_node)
-        elif engine_name == 'SLURM':
-            return slurm_engine(ssh_node=ssh_node)
-        else:
-            raise ValueError(f"Do not know what to do with engine_name = {engine_name}")
+        known_engines = dict(SGE=sge_engine, SLURM=slurm_engine,
+                             SLURM_SYSU=slurm_sysu_engine)  # known engines
+        return known_engines[engine_name](ssh_node=ssh_node)
+        # if engine_name == 'SGE':
+        #     return sge_engine(ssh_node=ssh_node)
+        # elif engine_name == 'SLURM':
+        #     return slurm_engine(ssh_node=ssh_node)
+        # elif engine_name == 'SLURM_SYSU':
+        #     return slurm_sysu_engine(ssh_node=ssh_node)
+        # else:
+        #     raise ValueError(f"Do not know what to do with engine_name = {engine_name}")
 
     def __init__(self, ssh_node: typing.Optional[str] = None):
         """
@@ -315,6 +320,11 @@ class slurm_engine(abstractEngine):
     """
     Engine for SLURM
     """
+    # define the commands used.
+    _submit_cmd:str = 'sbatch'
+    _control_cmd:str = 'control'
+    _kill_cmd:str = 'cancel'
+    _queue_cmd:str = 'squeue'
 
     def submit_cmd(self, cmd: typing.List, name: str,
                    outdir: typing.Optional[pathlib.Path] = None,
@@ -345,7 +355,8 @@ class slurm_engine(abstractEngine):
         if outdir is None:
             outdir = pathlib.Path.cwd() / 'output'
             my_logger.debug(f"Set outdir to {outdir}")
-        submit_cmd = ['yhbatch','-n',f'1', #f'--mem={mem}', f'--mincpus={n_cores}', f'--time={time}',
+        #TODO: Decide what to do about mem, mincpus, time. Perhaps have them as optional arguments and add them in...
+        submit_cmd = [self._submit_cmd,'-n',f'1', #f'--mem={mem}', f'--mincpus={n_cores}', f'--time={time}',
                       '--output', f'{outdir}/%x_%A_%a.out', '--error', f'{outdir}/%x_%A_%a.err',
                       '-J', name] #liangwj
         # --mem={mem}: Request mem mbytes  of memory per job
@@ -376,7 +387,7 @@ class slurm_engine(abstractEngine):
         :param jobid: The jobid of the job to be released
         :return: a list of things that can be ran!
         """
-        cmd = ['yhcontrol', 'release', jobid]  # Command to release_job a job #liangwj
+        cmd = [self._control_cmd, 'release', jobid]  # Command to release_job a job #liangwj
 
         cmd = self.connect_fn(cmd)
         return cmd
@@ -387,7 +398,7 @@ class slurm_engine(abstractEngine):
         :param jobid: The jobid to kill
         :return: command to be ran (a list)
         """
-        cmd = ['yhcancel', jobid] #liangwj
+        cmd = [self._kill_cmd, jobid] #liangwj
 
         cmd = self.connect_fn(cmd)
         return cmd
@@ -409,7 +420,7 @@ class slurm_engine(abstractEngine):
         :return: One of 'Running','Held','Error','Suspended','Queuing',"Failed","NotFound"
         """
 
-        cmd = ["squeue", f"--job_ids={job_id}", '--long']  # get the output in long form for specified job.
+        cmd = [self._queue_cmd, f"--job_ids={job_id}", '--long']  # get the output in long form for specified job.
         if not full_output:
             cmd += ['--noheader']
 
@@ -448,3 +459,13 @@ class slurm_engine(abstractEngine):
         except KeyError:
             raise ValueError("No SLURM_JOB_ID environment variable found. Are you running in SLURM env? ")
         return id
+
+class slurm_sysu_engine(slurm_engine):
+    """
+    SLURM as used at Sun Yat-Sen university. Differs from general slurm class as commands have been localised.
+     Only change is strings for some of the commands.
+    """
+    # Override  the commands used.
+    _submit_cmd:str = 'yhbatch'
+    _control_cmd:str = 'yhcontrol'
+    _kill_cmd:str = 'yhcancel'
