@@ -18,7 +18,7 @@ import pandas as pd
 from model_base import model_base
 from Model  import Model # root class for all models.
 from StudyConfig import OptClimConfigVn3
-from test_data.gamil_test.generic_json_wenjun import my_logger
+my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 
 
 class Study:
