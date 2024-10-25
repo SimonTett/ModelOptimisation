@@ -14,6 +14,8 @@ import copy
 from Models import HadCM3
 import genericLib
 
+genericLib.setup_env()
+
 
 
 def cmp_lines(path_1, path_2, ignore=None, verbose=False):

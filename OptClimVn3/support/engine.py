@@ -47,7 +47,7 @@ class abstractEngine(model_base, journal):
         # else:
         #     raise ValueError(f"Do not know what to do with engine_name = {engine_name}")
     @classmethod
-    def guess_engine(cls,ssh_node:typing.Optional[str] = None) -> abstractEngine:
+    def guess_engine(cls,ssh_node:typing.Optional[str] = None) -> typing.Optional[abstractEngine]:
 
         # work out what engine we can use which is platform dependant...Use this be seeing if job_status works
         engine_name = None
@@ -57,10 +57,11 @@ class abstractEngine(model_base, journal):
                 stat = eng.job_status('999999')
                 engine_name = name
                 break
-            except subprocess.CalledProcessError:
+            except (subprocess.CalledProcessError,FileNotFoundError):  # need to catch both for linux & windows.
                 pass
         if engine_name is None:
-            raise ValueError('Failed to find an engine_name')
+            eng = None
+            my_logger.warning('Failed to find an engine_name')
         return eng
     def __init__(self, ssh_node: typing.Optional[str] = None):
         """
@@ -291,18 +292,20 @@ class sge_engine(abstractEngine):
     def job_status(self, job_id: str, full_output: bool = False) -> str:
         """
         Return the status of a job. Tuple will contain strings. Needs to actually run.
-        Will raise FileNotFoundError if the command is not found.
+        Will raise FileNotFoundError (windows) or subprocess.CalledProcessError (linux) if the command is not found.
         :param job_id: job id for status to be checked.
         :param full_output If True will return (raw) full output
         :return: One of 'Running','Held','Error','Suspended','Queuing',"Failed"
         """
-        cmd = [f'qstat -j {job_id}']
+        cmd = ['qstat',f'-j {job_id}']
         cmd = self.connect_fn(cmd)  #
         cmd = [os.path.expandvars(c) for c in cmd]
         shell= False
         if len(cmd) == 1: # original output so need shell. ssh seems to run shell!
             shell=True
-        result = subprocess.run(cmd, capture_output=True, text=True,shell=shell) # if the cmd is not found this will generate a FileNotFoundError
+        result = subprocess.run(cmd, capture_output=True, text=True,shell=shell)
+        # if the cmd is not found this will generate a FileNotFoundError or
+
         if result.returncode == 1:
             return "notFound"
         result.check_returncode()
@@ -435,6 +438,7 @@ class slurm_engine(abstractEngine):
         Return the status of a job. Tuple will contain strings
         :param job_id: job id for status to be checked.
         :param full_output If True will return (raw) full output
+        Will raise FileNotFoundError (windows) or subprocess.CalledProcessError (linux) if the command is not found.
         :return: One of 'Running','Held','Error','Suspended','Queuing',"Failed","NotFound"
         """
 

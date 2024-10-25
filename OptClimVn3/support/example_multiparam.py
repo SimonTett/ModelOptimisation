@@ -13,7 +13,8 @@ def ctl_plus4k(models: typing.Dict[typing.Hashable,Model.Model]) -> typing.Optio
     """
     Return control values concatenated with differences from plus4k case. This is an example case
     :param models: Dict of models. Should have the keys control and plus4k
-    :return:Pandas series (or None) of concatenated series of ctl and delta. delta values have index begining delta_
+    :return:Pandas series (or None) of concatenated series of ctl and delta.
+     delta values have index beginning delta_
     """
 
     ctl = models['control'].simulated_obs # get the obs

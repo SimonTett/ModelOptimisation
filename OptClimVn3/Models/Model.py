@@ -127,6 +127,7 @@ class Model(ModelBaseClass, journal):
                  parameters: typing.Optional[dict] = None,
                  engine: typing.Optional[abstractEngine] = None,
                  run_info: typing.Optional[dict] = None,
+                 fake: bool = False,
                  study: typing.Optional["Study"] = None):
         # TODO add in verbose option so that set_model_status script has verbose options provided in.
         """
@@ -158,7 +159,7 @@ class Model(ModelBaseClass, journal):
            other keys are:
             runTime the time (seconds) for job
             runCode  the code to use to run the job.
-
+        :param fake -- if True then model is faked. No submission will be done.
         :param study -- a study. This is there in case model wants to interrogate it at init time.
         It is recommended that study **not** be stored as an attribute.
            If you do take great care and worry about recursion as study stores models.
@@ -199,7 +200,7 @@ class Model(ModelBaseClass, journal):
             self.set_post_process(post_process)
 
         # attributes to do with model meta-information.
-        self.fake = False  # did we fake the model? Changed later.
+        self.fake = fake  # did we fake the model? Changed later.
         self.perturb_count = 0  # how many times have we perturbed the model?
         self.submission_count = 0  # how mamy times have we submitted the model?
 
@@ -861,24 +862,24 @@ class Model(ModelBaseClass, journal):
         
         :return: None
         """
+        if not self.fake: # not faking
+            if len(self.model_jids) > 0:  # got some models to kill
+                curr_model_id = self.model_jids[-1]
+                status = self.engine.job_status(curr_model_id)
+                if status not in ['notFound']:
+                    cmd = self.engine.kill_job(curr_model_id)
+                    self.run_cmd(cmd)
+                    my_logger.debug(f"Killed model job id:{curr_model_id}")
+                else:
+                    my_logger.debug(f"Job {curr_model_id} not found.")
 
-        if len(self.model_jids) > 0:  # got some models to kill
-            curr_model_id = self.model_jids[-1]
-            status = self.engine.job_status(curr_model_id)
-            if status not in ['notFound']:
-                cmd = self.engine.kill_job(curr_model_id)
-                self.run_cmd(cmd)
-                my_logger.debug(f"Killed model job id:{curr_model_id}")
-            else:
-                my_logger.debug(f"Job {curr_model_id} not found.")
-
-        if self.pp_jid is not None:  # got a post-processing job.
-            status = self.engine.job_status(self.pp_jid)
-            if status not in ['notFound']:
-                cmd = self.engine.kill_job(self.pp_jid)
-                self.run_cmd(cmd)
-                my_logger.debug(f"Killed post-processing job id:{self.pp_jid}")
-            self.pp_jid = None  # killed it so should be no post processing job
+            if self.pp_jid is not None:  # got a post-processing job.
+                status = self.engine.job_status(self.pp_jid)
+                if status not in ['notFound']:
+                    cmd = self.engine.kill_job(self.pp_jid)
+                    self.run_cmd(cmd)
+                    my_logger.debug(f"Killed post-processing job id:{self.pp_jid}")
+                self.pp_jid = None  # killed it so should be no post processing job
 
         shutil.rmtree(self.model_dir, ignore_errors=True)
         my_logger.info(f"Deleted everything in {self.model_dir}")

@@ -10,10 +10,11 @@ import numpy.testing as nptest
 import pandas as pd
 import pandas.testing as pdtest
 
+import genericLib
 from model_base import model_base
 from model_base import journal
 import datetime
-
+genericLib.setup_env()
 def gen_time():
     # used to mock Model.now()
     time = datetime.datetime(2000, 1, 11, 0, 0, 0)

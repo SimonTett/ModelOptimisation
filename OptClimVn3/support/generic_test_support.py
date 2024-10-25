@@ -5,7 +5,7 @@ import pathlib
 import os
 import engine
 import subprocess
-
+raise RuntimeError("This module is not ready for use yet.")
 # set up OPTCLIMTOP for tests.
 here = pathlib.Path(__file__).parent
 os.environ['OPTCLIMTOP'] = str(here.parent.parent) # two levels up.

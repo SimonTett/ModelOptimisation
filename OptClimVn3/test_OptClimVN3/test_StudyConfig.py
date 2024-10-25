@@ -16,7 +16,8 @@ import xarray
 import copy
 
 import StudyConfig
-from genericLib import expand
+from genericLib import expand, setup_env
+setup_env()
 
 
 class testStudyConfig(unittest.TestCase):

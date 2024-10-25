@@ -8,9 +8,10 @@ from time import sleep
 import tempfile
 import os
 import engine
+import genericLib
 from Models import Model
 
-
+genericLib.setup_env()
 class TestEngine(unittest.TestCase):
     # tests for engines
 
@@ -54,14 +55,16 @@ class TestEngine(unittest.TestCase):
 
     def test_run_cmds(self):
         # test commands work. Needs to be done on a system basis. 
-        # Only runs on linux systems and setup for SGE with no connect fn.
+        # Only runs on system where engine found.
         # runs a simple network of 4 jobs none of which do much:
         # job1 -> job2, job4
         # job2, job1 -> job3
         #
-        # logging.basicConfig(force=True,level=logging.DEBUG)
-        #if platform.system() != "Linux":
+        logging.basicConfig(force=True,level=logging.DEBUG)
 
+        if self.engine is None:
+            logging.warning("No engine defined. Skipping test_run_cmds")
+            return
         log_pth = pathlib.Path(os.environ['OPTCLIMTOP'])/'tmp_test_engine' # where we are going to put log files
         print(f'log_pth is {log_pth}')
         log_pth.mkdir(exist_ok=True,parents=True) 

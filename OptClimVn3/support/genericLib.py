@@ -357,3 +357,19 @@ def std_post_process_setup(parser: argparse.ArgumentParser) -> typing.Tuple[argp
         my_logger.debug(f"{key}:{value}")
 
     return args,  post_process
+
+
+def setup_env():
+    """
+    Setup a default environment for OptClim. Sets the following variables iff they are undefined:
+      OPTCLIMTOP
+    :return: Nada
+    """
+
+    if 'OPTCLIMTOP' not in os.environ:
+        optclimtop = pathlib.Path(__file__).resolve().parents[2]
+        os.environ['OPTCLIMTOP'] = str(optclimtop)
+        my_logger.debug(f"Setting OPTCLIMTOP to {os.environ['OPTCLIMTOP']}")
+    else:
+        my_logger.debug(f"OPTCLIMTOP already set to {os.environ['OPTCLIMTOP']}")
+    return

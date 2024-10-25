@@ -1,4 +1,6 @@
 import unittest
+
+import genericLib
 from archive_study import archive_study
 import tarfile
 import tempfile
@@ -9,7 +11,7 @@ from simple_model import simple_model
 from SubmitStudy import SubmitStudy
 import StudyConfig
 
-
+genericLib.setup_env()
 class TestArchive(unittest.TestCase):
 
     def setUp(self):

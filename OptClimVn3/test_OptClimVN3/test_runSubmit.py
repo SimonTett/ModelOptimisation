@@ -15,7 +15,9 @@ import pandas.testing as pdtest
 import StudyConfig
 import optclim_exceptions
 import runSubmit
-from genericLib import fake_fn
+from genericLib import fake_fn,setup_env
+
+setup_env()  # setup environment variables
 
 
 def fake_run(rSubmit: runSubmit, scale: bool = True) -> typing.Callable:

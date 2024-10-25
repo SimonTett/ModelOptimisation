@@ -934,5 +934,5 @@ class HadCM3(Model):
 
         return None
 
-pth = HadCM3.expand("$OPTCLIMTOP/OptClimVn3/Models/parameter_config/HadCM3_Parameters.csv")
+pth = pathlib.Path(__file__).parent /'parameter_config/HadCM3_Parameters.csv'
 HadCM3.update_from_file(pth, duplicate=True)

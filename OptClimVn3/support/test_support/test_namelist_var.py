@@ -6,7 +6,7 @@ import unittest
 import genericLib
 from namelist_var import namelist_var
 
-
+genericLib.setup_env()
 class namelist_var_TestCase(unittest.TestCase):
     def setUp(self):
         """

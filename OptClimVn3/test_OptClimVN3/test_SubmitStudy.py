@@ -16,6 +16,8 @@ import engine
 from Model import Model
 import copy
 import pandas as pd
+import genericLib
+genericLib.setup_env()
 
 def gen_time():
     # used to mock Model.now()

@@ -2,6 +2,8 @@ import json
 import platform
 import sys
 import unittest
+
+import genericLib
 import generic_json
 import unittest.mock
 import SubmitStudy
@@ -18,7 +20,7 @@ import os
 Test simple_model.
 """
 
-
+genericLib.setup_env()
 class Test_simple_model(unittest.TestCase):
     def setUp(self) -> None:
         # set up a SubmitStudy as needed.

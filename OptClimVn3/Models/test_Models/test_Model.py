@@ -24,7 +24,7 @@ from Models import Model
 from Model import register_param
 from namelist_var import namelist_var
 
-
+genericLib.setup_env()
 def gen_time():
     # used to mock Model.now()
     time = datetime.datetime(2000, 1, 11, 0, 0, 0)

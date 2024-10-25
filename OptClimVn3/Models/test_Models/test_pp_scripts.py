@@ -9,7 +9,7 @@ import shutil
 import genericLib
 import json
 # Test post-process scripts.
-
+genericLib.setup_env()
 class test_post_process(unittest.TestCase):
 
     def setUp(self):

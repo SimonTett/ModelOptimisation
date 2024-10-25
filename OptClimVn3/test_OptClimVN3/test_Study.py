@@ -13,6 +13,7 @@ from Study import Study
 from Model import Model
 import pathlib
 
+genericLib.setup_env()
 
 
 

@@ -6,10 +6,12 @@ import numpy.testing as nptest
 from Optimise import doGaussNewton, calcErr, doLineSearch,  randSelect, gaussNewton, runJacobian, \
     GNjacobian
 from ref_code import doGaussNewton_ref, doLineSearch_ref  ## import reference code.
+import genericLib
+
 
 __author__ = 'stett2'
 
-
+genericLib.setup_env()
 ## tests for calcErr
 
 def optfunction(params, *extraArgs, randomScale=1e-9, **kwargs):
