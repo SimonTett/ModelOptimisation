@@ -1,0 +1,9 @@
+# setup env for OptCLIMVn3
+# Run with . ./setup
+# change OPTCLIMTOP for your system
+# school of geosciences fort setup
+export OPTCLIMTOP=/home/stett2/software/ModelOptimisation
+source $OPTCLIMTOP/opt_venv/bin/activate # activate environment
+VN3=$OPTCLIMTOP/OptClimVn3
+export PYTHONPATH=$VN3:$VN3/Models:$VN3/support:$PYTHONPATH
+export PATH=$VN3/scripts:$PATH
