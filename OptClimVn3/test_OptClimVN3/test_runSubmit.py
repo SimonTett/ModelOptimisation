@@ -1,13 +1,11 @@
 """
 Place to put tests for Submit.
 """
-import generic_test_support # std stuff for all tests.
 import copy
 import pathlib  # make working with file paths easier.
 import shutil
 import tempfile
 import typing
-import unittest
 import unittest.mock
 import numpy as np
 import numpy.testing as nptest
@@ -19,7 +17,6 @@ import optclim_exceptions
 import runSubmit
 from genericLib import fake_fn
 
-from Models import *
 
 def fake_run(rSubmit: runSubmit, scale: bool = True) -> typing.Callable:
     """ Instantiate and  run fake fns.
@@ -347,7 +344,6 @@ class testRunSubmit(unittest.TestCase):
         import pandas as pd
         import numpy as np
 
-        from numpy.random import default_rng
         scale = True  # applying scaling or not. Need to apply consistently
 
         configData = copy.deepcopy(self.config)

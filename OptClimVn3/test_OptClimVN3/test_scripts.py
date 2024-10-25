@@ -8,20 +8,20 @@ from Model import Model
 import platform
 import shutil
 
-import engine
+import generic_test_support # side effect of seting up optclimtiop being used here.
 import genericLib
 import os
+import engine
 
 import StudyConfig
 from runSubmit import runSubmit # so we can test if we have one!
-import generic_test_support # sets up OPTCLIMTOP
 
 
 class testScripts(unittest.TestCase):
 
     def setup_model(self):
         cpath = Model.expand("$OPTCLIMTOP/OptClimVn3/configurations/example_simple_model")
-        eng = engine.abstractEngine.create_engine('SGE')
+        eng = engine.abstractEngine.guess_engine()
 
         model = Model('test_model',
                             reference=cpath,engine=eng,

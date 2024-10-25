@@ -1,7 +1,6 @@
 """
 Test code for StudyConfig
 """
-import generic_test_support
 import os
 import pathlib
 

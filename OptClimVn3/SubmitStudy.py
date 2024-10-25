@@ -126,8 +126,13 @@ class SubmitStudy(Study, model_base, journal):
             my_logger.info(f"Already have {self.model_name} so not loading module")
 
         self.run_info = copy.deepcopy(config.run_info())  # copy run_info as modifying it.
-        eng = engine.abstractEngine.create_engine(self.run_info.pop('submit_engine'),
-                                                  ssh_node=self.run_info.pop('ssh_node', None))
+        # Set up submi engine for this node.
+        eng_name = self.run_info.pop('submit_engine',None)
+        ssh_node = self.run_info.pop('ssh_node', None)
+        if eng_name is None:
+            eng  = engine.abstractEngine.guess_engine(ssh_node=ssh_node)
+        else:
+            eng = engine.abstractEngine.create_engine(eng_name, ssh_node=ssh_node)
 
         self.engine = eng
 

@@ -1,7 +1,7 @@
 """
 Provide generic functions for job submission, job release_job, killing a job and extracting a jobid
-Provides implementations for SGE and SLURM. You might find your version of SGE or SLURM has subtle changes
-to extract the job-id. If so extend the relevant class and modify setup_engine.
+Provides implementations for SGE, SLURM & SLURM_SYSU (Slum as configured at sun yet-sen university, China).
+ You might find your version of SGE or SLURM has subtle changes to extract the job-id. If so extend the relevant class and modify setup_engine.
 """
 
 from __future__ import annotations
@@ -12,9 +12,12 @@ import subprocess
 import typing
 import pathlib
 from abc import ABCMeta, abstractmethod
+from subprocess import CalledProcessError
+
 from model_base import model_base, journal  # so can save things. The default to_dict, from_dict should work.
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
+
 
 class abstractEngine(model_base, journal):
     """
@@ -33,7 +36,7 @@ class abstractEngine(model_base, journal):
         Sets up engines which hold cmds for SGE or slurm respectively. .
         """
         known_engines = dict(SGE=sge_engine, SLURM=slurm_engine,
-                             SLURM_SYSU=slurm_sysu_engine)  # known engines
+                             SLURM_SYSU=slurm_sysu_engine )  # known engines
         return known_engines[engine_name](ssh_node=ssh_node)
         # if engine_name == 'SGE':
         #     return sge_engine(ssh_node=ssh_node)
@@ -43,7 +46,22 @@ class abstractEngine(model_base, journal):
         #     return slurm_sysu_engine(ssh_node=ssh_node)
         # else:
         #     raise ValueError(f"Do not know what to do with engine_name = {engine_name}")
+    @classmethod
+    def guess_engine(cls,ssh_node:typing.Optional[str] = None) -> abstractEngine:
 
+        # work out what engine we can use which is platform dependant...Use this be seeing if job_status works
+        engine_name = None
+        for name in ['SGE', 'SLURM', 'SLURM_SYSU']:
+            eng = cls.create_engine(name,ssh_node=ssh_node)
+            try:
+                stat = eng.job_status('999999')
+                engine_name = name
+                break
+            except subprocess.CalledProcessError:
+                pass
+        if engine_name is None:
+            raise ValueError('Failed to find an engine_name')
+        return eng
     def __init__(self, ssh_node: typing.Optional[str] = None):
         """
         Initialize an Engine instance
@@ -273,18 +291,18 @@ class sge_engine(abstractEngine):
     def job_status(self, job_id: str, full_output: bool = False) -> str:
         """
         Return the status of a job. Tuple will contain strings. Needs to actually run.
-        Could be turned into a gen command then parse the output.
+        Will raise FileNotFoundError if the command is not found.
         :param job_id: job id for status to be checked.
         :param full_output If True will return (raw) full output
         :return: One of 'Running','Held','Error','Suspended','Queuing',"Failed"
         """
-        cmd = [f'qstat | grep {job_id}']
+        cmd = [f'qstat -j {job_id}']
         cmd = self.connect_fn(cmd)  #
         cmd = [os.path.expandvars(c) for c in cmd]
         shell= False
         if len(cmd) == 1: # original output so need shell. ssh seems to run shell!
             shell=True
-        result = subprocess.run(cmd, capture_output=True, text=True,shell=shell)
+        result = subprocess.run(cmd, capture_output=True, text=True,shell=shell) # if the cmd is not found this will generate a FileNotFoundError
         if result.returncode == 1:
             return "notFound"
         result.check_returncode()
@@ -322,8 +340,8 @@ class slurm_engine(abstractEngine):
     """
     # define the commands used.
     _submit_cmd:str = 'sbatch'
-    _control_cmd:str = 'control'
-    _kill_cmd:str = 'cancel'
+    _control_cmd:str = 'scontrol'
+    _kill_cmd:str = 'scancel'
     _queue_cmd:str = 'squeue'
 
     def submit_cmd(self, cmd: typing.List, name: str,
@@ -367,10 +385,10 @@ class slurm_engine(abstractEngine):
             submit_cmd += ['-A', run_code]
         if rundir is not None:  # by default Slrum runs in cwd.
             submit_cmd += ['-D', str(rundir)]  # should be abs path.
-        if isinstance(hold, bool) and hold:  # got a book and its True. Just hold the job
+        if isinstance(hold, bool) and hold:  # got a held and it is True. Just hold the job
             submit_cmd += ['-H']  # Hold it
         if isinstance(hold, str):  # String -- hold on one job
-            submit_cmd += f'--dependency=afterok:{hold}'
+            submit_cmd += [f'--dependency=afterok:{hold}']
         if isinstance(hold, list) and (len(hold) > 0):
             # hold on multiple jobs (empty list means nothing to be held)
             submit_cmd += [f"--dependency=afterok:" + ":".join(hold)]  #liangwj
@@ -420,24 +438,31 @@ class slurm_engine(abstractEngine):
         :return: One of 'Running','Held','Error','Suspended','Queuing',"Failed","NotFound"
         """
 
-        cmd = [self._queue_cmd, f"--job_ids={job_id}", '--long']  # get the output in long form for specified job.
+        cmd = [self._queue_cmd, f"--job={job_id}", '--long']  # get the output in long form for specified job.
         if not full_output:
             cmd += ['--noheader']
 
         self.connect_fn(cmd)
-        result = subprocess.check_output(cmd, text=True)
+        try:
+            result = subprocess.check_output(cmd, text=True)
+        except subprocess.CalledProcessError as e:
+            if e.returncode == 1:
+                return "notFound"
+            else:
+                raise subprocess.CalledProcessError
+
         if full_output:
             return result
 
         codes = dict(
             PENDING='Queueing', RUNNING='Running', SUSPENDED='Suspended', CANCELLED='Failed', COMPLETING='Running',
             COMPLETED='Finished', CONFIGURING='Running', FAILED='Failed', TIMEOUT='Failed', PREEMPTED='Queuing',
-            NODE_FAIL='Failed', SPECIAL_EXIT='Failed')
+            NODE_FAIL='Failed', SPECIAL_EXIT='Failed',COMPLETI='Running')
 
         # check for job not present (either because it ran or was never there)
         # work out how to parse result.
         if len(result) == 0:  # nothing found
-            return "NotFound"
+            return "notFound"
         status = result.split()[4]   #liangwj
         if status.startswith("PENDING"):
             reason = result.split()[8].split("(")[1].replace(")","") #status.split("(")[1].replace(")", "") #liangwj
