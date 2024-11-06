@@ -158,9 +158,10 @@ class obj_to_from_dict:
                       PureWindowsPath=pathlib.PureWindowsPath,
                       WindowsPath=pathlib.Path,
                       PosixPath=pathlib.Path,
-                      set=set)
+                      set=set,
+                      int32=lambda x: np.int32(x['data'])
+    )
     # functions to convert value to object. These should be "factory"  classmethods
-
     TO_VALUE = dict(
         ndarray=lambda x: dict(data=x.tolist(), typ=str(x.dtype)),
         DataFrame=lambda x: x.to_dict(),  # liangwj
@@ -170,7 +171,9 @@ class obj_to_from_dict:
         PureWindowsPath=str,
         WindowsPath=str,
         PosixPath=str,
-        set=list)
+        set=list,
+        int32=lambda x: dict(data=int(x),typ=str(x.dtype))
+    )
     # functions to convert object to serializable object.
     #TODO when needed add support for datetime
 

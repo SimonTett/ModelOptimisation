@@ -366,16 +366,16 @@ class ModelTestCase(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.model.set_status("FLARTIBARTFAST")
 
-    def test_read_values(self):
+    def test_read_params(self):
         """
-        Test can read values.
+        Test can read param values.
         :return:
         """
         model = copy.deepcopy(self.model)
         model.model_dir = model.reference
         # expect values to as defined!
         expect_dir = dict(VF1=1, RHCRIT=0.7, ENTCOEF=3.0, G0=10)  # some params including a function.
-        got = model.read_values(list(expect_dir.keys()))
+        got = model.read_params(list(expect_dir.keys()))
         self.assertEqual(expect_dir, got)
 
     def test_instantiate(self):
@@ -594,14 +594,14 @@ class ModelTestCase(unittest.TestCase):
 
         model.instantiate()  # now instantiated
         model.status = 'FAILED'
-        v = model.read_values('VF1')
+        v = model.read_params('VF1')
         v['VF1'] *= (1 + 1e-7)  # small perturb
         with self.assertLogs(level='DEBUG') as log:
             model.perturb(v)
         self.assertEqual(log.output[-1], f"DEBUG:OPTCLIM.Model: parameters_no_key is now {v}")
         self.assertEqual(len(model._history), 5)
         # expect 5 bits of history. Created, Modified,Instantiated, perturbed using and setting status
-        p = model.read_values('VF1')
+        p = model.read_params('VF1')
         self.assertEqual(p, v)
         self.assertEqual(model.perturb_count, 1)  # perturbed it once.
         self.assertEqual(model.status, 'PERTURBED')
@@ -728,7 +728,7 @@ class ModelTestCase(unittest.TestCase):
                 model.submit_model()  # submit the model.
                 model.running()
                 model.set_failed()
-                ct = model.read_values('CT')
+                ct = model.read_params('CT')
                 print(ct)
                 ct['CT'] *= (1 + 1e-6)
                 model.perturb(ct)

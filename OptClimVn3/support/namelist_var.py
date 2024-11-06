@@ -6,9 +6,14 @@ import shutil
 import tempfile
 import f90nml
 import numpy as np
+import typing
+
+
 
 from model_base import model_base
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
+
+type_allowed_fortran = typing.Union[int, float, bool, str]  # types allowed in fortran
 
 
 @dataclasses.dataclass(frozen=True)
@@ -136,6 +141,7 @@ class namelist_var(model_base):
 
     @classmethod
     def nl_modify(cls, nl_info: iter, dirpath=pathlib.Path.cwd()):
+        #TDOO move to model as how it is done is rather model specific.
         """
         Modifiy namelist files. Sadly f90nml.patch() is a bit flaky.
           So, for each file we read in the entire contents. 
@@ -148,8 +154,9 @@ class namelist_var(model_base):
         Example usage namelist_var.nl_modify({VF1_nl:0.5,ENTCOEF_nl:[0.8,0.8,0.85,...0.9,0.95])
         """
 
-        namelists = cls.modify_namelists(nl_info, dirpath=dirpath)
-        for filepath, nl_patch in namelists.items():
+        namelists = cls.group_namelists(nl_info)
+        for fpath, nl_patch in namelists.items():
+            filepath=dirpath/fpath
             bak_file = filepath.with_name(filepath.name + ".bak")
             shutil.copy2(filepath, bak_file, follow_symlinks=False)  # keep symlinks as symlinks.
             my_logger.debug(f" {filepath} copied to {bak_file}")
@@ -168,7 +175,58 @@ class namelist_var(model_base):
         cls.clean_cache()  # cache now "dirty" (been modified) and so needs to  be cleaned.
         return True  # modification succeeded
 
+    grouped_nl = dict[str,dict[str,f90nml.namelist.Namelist]]  # type hint for grouped namelists
+    @staticmethod
+    def group_namelists(
+            nl_info: list[tuple['namelist_var', typing.Union[type_allowed_fortran, list[type_allowed_fortran]]]],
+            input_file_dict: typing.Optional[grouped_nl] = None) -> grouped_nl:
+        """
+        Group together namelist info by filepath and namelist name.
+        :param nl_info -- iterable of namelist, values.
+        :param input_file_dict -- if provided updates values (modifying input_file_dict as a side effect).
+        :return: dict indexed by the namelist filepath with
+        values being a f90nml Namelist (which contains all the updated namelist info).
+        Example usage grouped_nl =self.group_namelist([(VF1_nl,3.0), (RHCRIT_nl,[0.8,0.8,0.8,...0.9,0.95])])
 
+        """
+        if input_file_dict is None:
+            file_dict = {}
+            my_logger.debug('Initialising file_dict to empty')
+        else:
+            file_dict = input_file_dict
+            my_logger.debug('Using input_file_dict')
+        for (nl, value) in nl_info:
+            path = nl.filepath
+            if path not in file_dict.keys():  # Initialise file_dict[path]
+                file_dict[path] = f90nml.namelist.Namelist()
+                my_logger.debug(f"Initialised {path}")
+
+            if nl.namelist not in file_dict[path].keys():  # not got this namelist name so initialise it
+                file_dict[path][nl.namelist] = f90nml.namelist.Namelist()
+                my_logger.debug(f'Initialised {path}{nl.namelist}')
+
+            file_dict[path][nl.namelist][nl.nl_var] = value
+            if isinstance(value, np.ndarray):  # convert numpy arrays.
+                file_dict[path][nl.namelist][nl.nl_var] = value.tolist()
+            my_logger.debug(f"Setting {nl} to {value}")
+        return file_dict
+
+    @staticmethod
+    def to_fortran(value: type_allowed_fortran) -> str:
+        """
+        Convert scaler value to a fortran string. Has to handle int, float, bool & str
+        :param value: value to convert
+        :return: string
+        """
+        if isinstance(value, (int, float)):
+            v = str(value)
+        elif isinstance(value, bool):
+            v = '.true.' if value else '.false.'
+        elif isinstance(value, str):
+            v = "'" + value + "'"  # quotes around it.
+        else:
+            raise ValueError(f"Unsupported type {type(value)}")
+        return v
 
 
 

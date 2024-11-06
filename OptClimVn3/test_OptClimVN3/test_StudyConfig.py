@@ -8,6 +8,7 @@ import tempfile
 import unittest
 import json
 
+import dfols
 import numpy as np
 import numpy.testing as nptest
 import pandas as pd
@@ -819,12 +820,21 @@ class testStudyConfig(unittest.TestCase):
 
     def test_dfols_soln(self):
         # test that dfols_soln works.
-        # wil avoid runnign dfols as that involves a lot of hassle!
+        # wil avoid running dfols as that involves a lot of hassle!
         # instead will set up some variables
 
         from dfols.solver import OptimResults
+        import dfols
         import numpy as np
-        test_soln = OptimResults(*[indx * 12 + 0.1 for indx in range(0, 9)])
+
+        if dfols.__version__ >= '1.5.0': # dfols at version 11 added two args to OptimResults
+            no_vars =11
+            args = [indx * 12 + 0.1 for indx in range(0, no_vars)]
+            args[-1] = np.int32(args[-1])
+        else:
+            no_vars = 9
+            args = [indx * 12 + 0.1 for indx in range(0, no_vars)]
+        test_soln = OptimResults(*args)
         df = pd.DataFrame(np.ones((3, 3)) * 1.111, index=['a', 'b', 'c'], columns=['x', 'y', 'z'])
         test_soln.diagnostic_info = df
         self.config.dfols_solution(solution=test_soln)

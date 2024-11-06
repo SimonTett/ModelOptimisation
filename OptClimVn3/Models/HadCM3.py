@@ -125,7 +125,7 @@ class HadCM3(Model):
                 f"but only {len(self.parameters)} parameters are available")
 
         parameter = parameters_to_perturb[self.perturb_count]
-        parameters = self.read_values(parameter)
+        parameters = self.read_params(parameter)
         parameters[parameter] *= (1 + 1e-6)  # small parameter perturbation
         return super().perturb(parameters=parameters)
 

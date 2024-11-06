@@ -112,6 +112,8 @@ class param_info(model_base):
             raise NotImplementedError(f"Do not know how to deal with {stuff} of type {type(stuff)}")
         return result
 
+
+
     def param(self, model, parameter: str, value) -> list:
         """
         Return parameter information for a specific value as namelist/value tuple. Later functions will actually set them

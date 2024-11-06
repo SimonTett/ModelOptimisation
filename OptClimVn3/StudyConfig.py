@@ -28,6 +28,8 @@ import os
 import pathlib
 import re
 
+import dfols
+
 import generic_json
 
 import matplotlib.pyplot as plt
@@ -2253,8 +2255,9 @@ class OptClimConfigVn3(OptClimConfigVn2):
         :return: solution
         """
         from dfols.solver import OptimResults
+        import dfols
         if solution is not None:
-            # convert solution to something jsonable.
+            # convert the solution to something jsonable.
             conversion = generic_json.dumps(vars(solution))  # use generic_json to convert.
             self.setv('DFOLS_SOLUTION', conversion)
 
@@ -2262,7 +2265,11 @@ class OptClimConfigVn3(OptClimConfigVn2):
         if soln is None:  # not got anything so return None.
             return soln
         dct = generic_json.loads(soln)  # now have a dict.
-        soln = OptimResults(*range(0, 9))  # create empty OptimResults object
+        if dfols.__version__ >= '1.5.0':
+            nargs = 11
+        else:
+            nargs = 9
+        soln = OptimResults(*range(0, nargs))  # create empty OptimResults object
         for k, v in dct.items():  # fill in the instances
             if not hasattr(soln, k):
                 my_logger.warning(f"Would like to set attr {k} in soln but does not exist")

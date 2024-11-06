@@ -114,7 +114,7 @@ class testHadCM3(unittest.TestCase):
         self.model.instantiate()
         p = set(self.parameters.keys())
 
-        p = self.model.read_values(p)
+        p = self.model.read_params(p)
         for param,value in p.items():
             self.assertEqual(self.parameters[param],value,msg=f"Comparison failed for {param}")
 
@@ -154,7 +154,7 @@ class testHadCM3(unittest.TestCase):
         # test can set and read.
         shutil.copytree(self.refDir, self.model.model_dir, symlinks=True, dirs_exist_ok=True)
         self.model.set_params(expect_values)
-        got = self.model.read_values(list(expect_values.keys()))
+        got = self.model.read_params(list(expect_values.keys()))
         self.assertEqual(got, expect_values)
 
 
@@ -448,7 +448,7 @@ class testHadCM3(unittest.TestCase):
             self.model.status='FAILED'
             self.model.perturb()
             # get the namelist values back in
-            values = self.model.read_values(param)
+            values = self.model.read_params(param)
             expect = {param:params[param]*(1+1e-6)}
             self.assertEqual(values, expect)
             self.assertEqual(self.model.perturb_count,pcount+1)

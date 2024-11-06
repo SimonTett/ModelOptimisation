@@ -781,7 +781,7 @@ class Model(ModelBaseClass, journal):
 
         return obs  # return the obs.
 
-    def read_values(self, parameters: str | typing.List[str] | None, fail: bool = True) -> dict:
+    def read_params(self, parameters: str | typing.List[str] | None, fail: bool = True) -> dict:
         """
         Read parameter values from self.model_dir
         :param parameters: list of parameters OR parameter to read. If None all known parameters will be read.
@@ -796,7 +796,7 @@ class Model(ModelBaseClass, journal):
 
         for parameter in set(parameters):  # set means we iterate over unique parameters
             try:
-                result[parameter] = self.param_info.read_param(self, parameter)
+                result[parameter] = self.param_info.read_param(self, parameter) # TODO make this a *model* method.
             except (KeyError, FileNotFoundError):
                 if fail:
                     raise
@@ -921,7 +921,6 @@ class Model(ModelBaseClass, journal):
             return None
 
         my_logger.warning(f"Nothing set for {ensMember}. Override in your own model")
-
         return None
 
     def to_dict(self):
