@@ -165,7 +165,7 @@ class testHadCM3(unittest.TestCase):
         names = dict(MAX_ICE=[0.99, [0.99, 0.98]], CW=[2e-4, [2e-4, 5e-5]], ICE_DIFF=[2.5e-5, [2.5e-5, 2.5e-5]],
                      OCN_ISODIFF=[800, [800, 800]])  # name of var + expected value for what it sets
         for k, v in names.items():
-            result = self.model.param_info.param(self.model, k, v[0])
+            result = self.model.param( k, v[0])
             r = [v for (nl, v) in result]  # extract the values.
             self.assertEqual(r, v[1], msg=f'failed to compare for {k}')
 

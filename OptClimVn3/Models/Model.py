@@ -19,7 +19,7 @@ import xarray
 import json
 from model_base import journal
 from ModelBaseClass import ModelBaseClass, register_param
-from namelist_var import namelist_var
+from namelist_var import namelist_var,type_allowed_fortran
 from engine import abstractEngine
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
@@ -355,7 +355,7 @@ class Model(ModelBaseClass, journal):
         """
         Get iterable  of namelist/vars  to set.
         :param parameters: If None use self.parameters augmented by self.parameters_no_key
-        Calls self.param_info.gen_parameters to actually work out what namelists and values are to be set,
+        Calls self.gen_parameters to actually work out what namelists and values are to be set,
         then verifies  have iterable of namelist,value pairs.
         For some models you may want to override this method to deal with
           other ways of setting parameters.
@@ -369,7 +369,7 @@ class Model(ModelBaseClass, journal):
         else:
             self.update_history(f"Setting parameters using parameters {parameters} rather than self.parameters")
 
-        param_set_info = self.param_info.gen_parameters(self, **parameters)
+        param_set_info = self.gen_parameters( **parameters)
         # expecting a list of namelist/something, value pairs
         for (nl, value) in param_set_info:
             if not isinstance(nl, namelist_var):  # can only deal with namelists
@@ -780,7 +780,7 @@ class Model(ModelBaseClass, journal):
             raise ValueError("Obs contains null values at: " + ", ".join(obs.index[null]))
 
         return obs  # return the obs.
-
+    # Code to deal with parameters.
     def read_params(self, parameters: str | typing.List[str] | None, fail: bool = True) -> dict:
         """
         Read parameter values from self.model_dir
@@ -796,7 +796,7 @@ class Model(ModelBaseClass, journal):
 
         for parameter in set(parameters):  # set means we iterate over unique parameters
             try:
-                result[parameter] = self.param_info.read_param(self, parameter) # TODO make this a *model* method.
+                result[parameter] = self.read_param(parameter)
             except (KeyError, FileNotFoundError):
                 if fail:
                     raise
@@ -804,6 +804,80 @@ class Model(ModelBaseClass, journal):
                 result[parameter] = None
 
         return result
+
+    def read_param(self, parameter: str):
+        """
+        Read parameter value from model instance.
+        :param parameter: parameter wanted
+        :return: value. Depends on what is in the model...
+        """
+        try:
+            stuff = self.param_info.param_constructors[parameter][0]  # just want first element of list.
+        except KeyError:
+            raise KeyError(f"Parameter {parameter} not found.\n Allowed parameters are: " +
+                           " ".join(list(self.param_info.param_constructors.keys())))
+        if callable(stuff):  # is it a callable
+            result = stuff(self, None)  # callable. Run it in inverse mode.
+            my_logger.debug(f"Called {stuff.__qualname__} with inverse and got {result} ")
+
+        elif isinstance(stuff, namelist_var):
+            result = stuff.read_value(dirpath=self.model_dir)
+            my_logger.debug(f"Read data from {stuff}")
+        else:
+            raise NotImplementedError(f"Do not know how to deal with {stuff} of type {type(stuff)}")
+        return result
+
+    def param(self, parameter: str, value:type_allowed_fortran) -> list[tuple[namelist_var, type_allowed_fortran]]:
+        """
+        Return parameter information for a specific value as namelist/value tuple. Later functions will actually set them
+        :param parameter: parameter name
+        :param value: value to be set and passed to method
+        :return:
+        """
+        stuff = self.param_info.param_constructors[parameter]  # will fail if parameter does not exist.
+        if not isinstance(stuff, list):
+            raise ValueError(f"Parameter {parameter} did not return list but returned {stuff}")
+
+        result = []
+        for s in stuff:
+            if callable(s):  # function.
+                err_msg = f"Parameter {parameter} with {value} and method {s}  returned odd output. Should  either be: " \
+                          f"None, a tuple (nl,value) or list of such tuples "
+                r = s(self, value)  # run the function
+                my_logger.debug(f"Parameter {parameter} called {s.__qualname__} with {value} and returned {r}")
+                # check output.
+                if r is None:  # function did something but returned nothing.
+                    continue
+                elif isinstance(r, tuple) and (len(r) == 2):  # returned a 2-element tuple
+                    result.append(r)
+                elif isinstance(r, list):  # list -- check each element.
+                    for el in r:
+                        if not (isinstance(el, tuple) and (len(el) == 2)):
+                            raise ValueError(err_msg)
+                        result.append(el)
+                else:  # something else. Error!
+                    raise ValueError(err_msg)
+
+            else:  # singleton so extend result with tuple (s, value)
+                if not isinstance(s, namelist_var):
+                    raise ValueError(f"Parameter {parameter} returned {s} which is not a namelist_var")
+                result.append((s, value))
+                my_logger.debug(f"Parameter {parameter} set {s} to {value}")
+
+        return result
+
+    def gen_parameters(self, **kwargs):
+        """
+        Generate parameter settings.
+        :param kwargs: parameter/values
+        :return:list of things to be actually set. That actually should be done by the model
+        """
+
+        stuff_to_set = []
+        for parameter, value in kwargs.items():
+            stuff_to_set.extend(self.param(parameter, value))
+
+        return stuff_to_set  # this is a list of (variable_set_info, value)
 
     def is_instantiable(self) -> bool:
         """

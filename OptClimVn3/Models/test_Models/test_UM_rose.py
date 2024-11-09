@@ -89,8 +89,7 @@ class test_um_rose(unittest.TestCase):
         model = self.model
         model.create_model() # create the model
         nl_info= model.param_info
-        pars = nl_info.gen_parameters(self.model,
-                                      DP_CORR_STRAT=1e5,AI=0.03)
+        pars = model.gen_parameters( DP_CORR_STRAT=1e5,AI=0.03)
         model.write_nml_values(pars)
         # read back in the config and check that it only differs
         # for DP_CORR_STRAT & AI

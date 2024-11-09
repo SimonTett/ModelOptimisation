@@ -20,9 +20,8 @@ import pandas.testing as pdtest
 import engine
 import genericLib
 import generic_json
-from Models import Model
-from Model import register_param
 from namelist_var import namelist_var
+from myModel import myModel
 
 genericLib.setup_env()
 def gen_time():
@@ -35,42 +34,12 @@ def gen_time():
 
 
 # To get log info set --log-cli-level WARNING in "additional arguments " in pycharm config
-# remove any registered classes **except** Model.
-for k in Model.known_models():
-    if k != "Model":
-        Model.remove_class(k)
+# remove any registered classes **except** myModel.
+for k in myModel.known_models():
+    if k != "myModel":
+        myModel.remove_class(k)
 
 
-class myModel(Model):
-    @register_param('RHCRIT')
-    def cloudRHcrit(self, rhcrit):
-        """
-        Compute rhcrit on multiple model levels
-        :param rhcrit: meta parameter for rhcrit. If Noen relationship will be inverted.
-        :return: (value of meta parameter if inverse set otherwise
-           a tuple with namelist_var infor and  a list of rh_crit on model levels
-
-        """
-        # Check have 19 levels.
-        rhcrit_nl = namelist_var(filepath=pathlib.Path('CNTLATM'), nl_var='RHCRIT', namelist='RUNCNST')
-        curr_rhcrit = rhcrit_nl.read_value(dirpath=self.model_dir)
-        if len(curr_rhcrit) != 19:
-            raise ValueError("Expect 19 levels")
-        inverse = rhcrit is None
-        if inverse:
-            return rhcrit_nl.read_value(dirpath=self.model_dir)[3]
-        else:
-            cloud_rh_crit = 19 * [rhcrit]
-            cloud_rh_crit[0] = max(0.95, rhcrit)
-            cloud_rh_crit[1] = max(0.9, rhcrit)
-            cloud_rh_crit[2] = max(0.85, rhcrit)
-            return rhcrit_nl, cloud_rh_crit
-
-    print('hello')
-
-
-# , duplicate=False)
-myModel.update_from_file(myModel.expand("$OPTCLIMTOP/OptClimVn3/Models/parameter_config/example_Parameters.csv"))
 
 root_pth = myModel.expand("$OPTCLIMTOP/OptClimVn3")
 config = StudyConfig.readConfig(root_pth / "configurations/dfols14param_opt3.json")
@@ -96,7 +65,7 @@ class ModelTestCase(unittest.TestCase):
         # create a model and store it.
         tmpDir = tempfile.TemporaryDirectory()
         testDir = pathlib.Path(tmpDir.name)  # used throughout.
-        optclim3 = Model.expand('$OPTCLIMTOP/OptClimVn3/')
+        optclim3 = myModel.expand('$OPTCLIMTOP/OptClimVn3/')
         refDir = optclim3 / 'configurations/example_Model/reference'
         post_process = dict(script=optclim3 / 'scripts/comp_obs.py', output_file='sim_obs.json')
         self.post_process = post_process
@@ -106,6 +75,7 @@ class ModelTestCase(unittest.TestCase):
                              model_dir=testDir / 'study', post_process=post_process,
                              parameters=dict(RHCRIT=2, VF1=2.5, CT=2),
                              engine=eng)
+
         self.tmpDir = tmpDir
         self.testDir = testDir  # for clean up!
         self.refDir = refDir
@@ -139,13 +109,13 @@ class ModelTestCase(unittest.TestCase):
         """
         # remove any registered classes **except** Mode and myModel. Don't know why I need
         # to do this here as do it above..
-        for k in Model.known_models():
-            if k not in ["Model", 'myModel']:
-                Model.remove_class(k)
+        for k in myModel.known_models():
+            if k not in ['myModel']:
+                myModel.remove_class(k)
 
         # define a bunch of sub-classes to check all works
 
-        class model1(Model):
+        class model1(myModel):
 
             def __init__(self, *args, **kwargs):
                 if kwargs.get("verbose", False):
@@ -189,8 +159,8 @@ class ModelTestCase(unittest.TestCase):
             pass
 
         # test things.
-        self.assertEqual(['Model', 'myModel', 'model1', 'model2', 'model2mod', 'model3', 'model4'],
-                         Model.known_models(), )
+        self.assertEqual(['myModel', 'model1', 'model2', 'model2mod', 'model3', 'model4'],
+                         myModel.known_models(), )
         oh = 2
         init1 = dict(
             post_process=dict(high='five', script='$OPTCLIMTOP/OptClimVn3/scripts/comp_obs.py', outputPath='obs.json'),
@@ -198,14 +168,14 @@ class ModelTestCase(unittest.TestCase):
         init2 = copy.copy(init1)
         init2['post_process']['high'] = 'four'
         init2['parameters'] = dict(harry=2, fredSmith=2, fred=oh)
-        for name in ['Model', 'model1', 'model2', 'model3', 'model2mod', 'model4']:
-            t = Model.model_init(name, name, self.refDir, model_dir=self.testDir / name, **init1)
-            t2 = Model.model_init(name, name, self.refDir, model_dir=self.testDir / name, **init2)
+        for name in ['myModel', 'model1', 'model2', 'model3', 'model2mod', 'model4']:
+            t = myModel.model_init(name, name, self.refDir, model_dir=self.testDir / name, **init1)
+            t2 = myModel.model_init(name, name, self.refDir, model_dir=self.testDir / name, **init2)
             self.assertTrue(type(t) == type(t2), 'Types differ')
             self.assertEqual(t.class_name(), type(t).__name__)
         for name in ['unknown', 'model3aa']:  # unknown models should raise exceptions
             with self.assertRaises(ValueError):
-                t = Model.model_init(name, name, self.refDir, model_dir=self.testDir / name, **init1)
+                t = myModel.model_init(name, name, self.refDir, model_dir=self.testDir / name, **init1)
 
     def test_add_param_info(self):
 
@@ -214,7 +184,7 @@ class ModelTestCase(unittest.TestCase):
 
         expect_param_info = [nl1, nl2]
         pardict = dict(fred=2, james=3)
-        model = Model.model_init('myModel', 'test_model', self.refDir, post_process=self.post_process,
+        model = myModel.model_init('myModel', 'test_model', self.refDir, post_process=self.post_process,
                                  model_dir=self.testDir, parameters=pardict, )
         model.add_param_info(dict(vf1=nl1))
         model.add_param_info(dict(vf1=nl2), duplicate=True)
@@ -229,7 +199,7 @@ class ModelTestCase(unittest.TestCase):
         :return:
         """
         pardict = dict(fred=2, james=3)
-        model = Model('test_model', self.refDir, post_process=self.post_process,
+        model = myModel('test_model', self.refDir, post_process=self.post_process,
                       model_dir=self.testDir, parameters=pardict)
         cmd = [model.expand(self.post_process['script']), 'input.json', self.post_process['output_file']]
         expected_dct = dict(name='test_model', reference=self.refDir,
@@ -256,7 +226,7 @@ class ModelTestCase(unittest.TestCase):
         """
         pardict = dict(fred=2, james=3)
 
-        class model4(Model):
+        class model4(myModel):
             def fred(self, message):
                 print(f"Fred says: {message}")
 
@@ -265,11 +235,11 @@ class ModelTestCase(unittest.TestCase):
                 super().__init__(*args, **kwargs)
                 self.fredv = 10
 
-        for class_name in ['Model', 'model4', 'model5']:
-            model = Model.model_init(class_name, f'test_{class_name}01', self.refDir, post_process=self.post_process,
+        for class_name in ['myModel', 'model4', 'model5']:
+            model = myModel.model_init(class_name, f'test_{class_name}01', self.refDir, post_process=self.post_process,
                                      model_dir=self.testDir, parameters=pardict)
             model.dump_model()
-            lmodel = Model.load_model(model.config_path)
+            lmodel = myModel.load_model(model.config_path)
             self.assertEqual(lmodel.class_name(), class_name)
             self.assertAllequal(vars(model), vars(lmodel))
         lmodel.fred("Hello")
@@ -281,7 +251,7 @@ class ModelTestCase(unittest.TestCase):
         nl_iter = self.model.gen_params()
         # work out what we expect...
         expect = []
-        for nl, value in self.model.param_info.gen_parameters(self.model, **self.model.parameters):
+        for nl, value in self.model.gen_parameters( **self.model.parameters):
             expect.append((nl, value))
         self.assertEqual(nl_iter, expect)
 
@@ -356,7 +326,7 @@ class ModelTestCase(unittest.TestCase):
             self.assertEqual(h, omodeld['_history'])
 
             # read in the model
-            lmodel = Model.load_model(self.config_path)
+            lmodel = myModel.load_model(self.config_path)
             self.assertEqual(vars(lmodel), vars(self.model))  # check they are the same
             self.assertEqual(nhist, len(self.model._history))  # history right length
             # test failures
@@ -393,7 +363,7 @@ class ModelTestCase(unittest.TestCase):
         omodel = copy.deepcopy(self.model)
         self.model.instantiate()
 
-        mm = Model.load_model(self.config_path)
+        mm = myModel.load_model(self.config_path)
         self.assertEqual(vars(mm), vars(self.model))
         dd = vars(self.model)
         dd2 = vars(omodel)
@@ -538,16 +508,16 @@ class ModelTestCase(unittest.TestCase):
         :return:
         """
         # set up vars for grabbing ID
-        vars = ['JOB_ID', 'SLURM_JOB_ID']
-        for v in vars:
+        variables = ['JOB_ID', 'SLURM_JOB_ID']
+        for v in variables:
             os.environ[v] = '123456'
         model = self.model
         model.status = 'SUBMITTED'
         model.running()
         self.assertEqual(model.status, 'RUNNING')
         self.assertEqual(len(model._history), 2)  # should be two entries.
-        dmodel = Model.load_model(model.config_path)
-        self.assertEqual(dmodel, model)
+        dmodel = myModel.load_model(model.config_path)
+        self.assertEqual(vars(dmodel), vars(model))
         # also expect model.model_jids to contain extra ID
         self.assertEqual(model.model_jids, ['123456'])
 
@@ -637,7 +607,9 @@ class ModelTestCase(unittest.TestCase):
             self.assertEqual(model.status, 'SUCCEEDED')
             self.assertEqual(r, 'Ran PP')
             self.assertEqual(len(model._history), 2)
-            dmodel = Model.load_model(model.config_path)
+            dmodel = myModel.load_model(model.config_path)
+            self.model.compare_objects(dmodel)
+            print('input ',type(dmodel),' saved ',type(model))
             self.assertEqual(dmodel, model)
             self.assertEqual(len(model._output), 1)
 
@@ -654,7 +626,7 @@ class ModelTestCase(unittest.TestCase):
         Will do first by faking things!
         :return:
         """
-        model = Model('test001', self.refDir, post_process=self.post_process, model_dir=self.testDir)
+        model = myModel('test001', self.refDir, post_process=self.post_process, model_dir=self.testDir)
         model.fake = True
         model.status = 'SUCCEEDED'  # we have succeeded
         model.process()  # with fake
@@ -751,7 +723,7 @@ class ModelTestCase(unittest.TestCase):
 
     def test_set_post_process(self):
         # tests for set_post_process
-        model = Model('fred', self.refDir, post_process=self.post_process)
+        model = myModel('fred', self.refDir, post_process=self.post_process)
         pp = copy.deepcopy(self.post_process)
         script = model.expand(pp.pop('script'))
         output = pp.pop('output_file', 'sim_obs.json')
@@ -767,13 +739,13 @@ class ModelTestCase(unittest.TestCase):
         model.set_post_process(pp)
         self.assertEqual(model.post_process_cmd_script, ['python', script, input, output])
         # No PP
-        model = Model('fred', self.refDir)
+        model = myModel('fred', self.refDir)
         self.assertEqual(model.post_process_cmd_script, None)
         # set del pp['script']. Should give an error
         pp = copy.deepcopy(self.post_process)
         pp.pop('script')
         with self.assertRaises(ValueError):
-            model = Model('fred', self.refDir, post_process=pp)
+            model = myModel('fred', self.refDir, post_process=pp)
 
     def test_key(self):
         """
@@ -846,6 +818,67 @@ class ModelTestCase(unittest.TestCase):
         # test reprocessing works
         logging.warning("test_reprocessing not implemented")
         #raise NotImplementedError
+
+    def test_param(self):
+        # Test param works!
+        # TODO UPDATE THIS TEST. It came from the old version of the code(test_param_info) and needs updating.
+        model = self.model
+        model.instantiate() # need to instantiate to read param_info
+
+
+        result = model.param( 'VF1', 42)
+        nl_var1 = model.param_info.param_constructors['VF1'][0]
+        self.assertEqual(result, [(nl_var1, 42)])
+        result = model.param('ANVIL_FACTOR', 0.0)
+        nl_var2= model.param_info.param_constructors['ANVIL_FACTOR'][0]
+        self.assertEqual(result, [(nl_var2, 0.0)])
+        # Test with a callable
+
+        result = model.param('RHCRIT', 42)
+        nl_var3 = namelist_var(filepath=pathlib.Path('CNTLATM'), namelist='RUNCNST', nl_var='RHCRIT') # -- see defn of cloudRHcrit
+        nl_var3a = namelist_var(filepath=pathlib.Path('CNTLATM'), namelist='RUNCNST', nl_var='RHCRIT2',default=0.8) # -- see myModel
+        self.assertEqual(result, [(nl_var3, [42] * 19), (nl_var3a, 42)])
+        # test with a callable that returns a list
+        result = model.param('multi_var', 10.0)
+        self.assertTrue(len(result)==2)
+        for r,v in result:
+            self.assertEqual(v, 10.0)
+            self.assertIsInstance(r, namelist_var)
+        # test logs
+        with self.assertLogs(level=logging.DEBUG) as log:
+            a = model.param( 'VF1', 42)
+            b = model.param('RHCRIT', 10)
+        self.assertEqual(log.output,
+                         [f"DEBUG:OPTCLIM.Model:Parameter VF1 set {nl_var1} to 42",
+                          #f"DEBUG:OPTCLIM.myModel:Parameter VF1 set {nl_var2} to 42",
+                          f"DEBUG:OPTCLIM.Model:Parameter RHCRIT called {myModel.cloudRHcrit.__qualname__} with 10 and returned {(nl_var3, [10] * 19)}",
+                          f"DEBUG:OPTCLIM.Model:Parameter RHCRIT set {nl_var3a} to 10",])
+
+        # test failures
+        with self.assertRaises(ValueError):
+            model.param('fred', 10) # fred is a badly constructed parameter.
+        with self.assertRaises(KeyError):  # key does not exist.
+            model.param( 'Fred', 10)
+
+
+        with self.assertRaises(ValueError): # bad is a badly constructed function.
+            model.param( 'bad', 10)
+
+    def test_read_param(self):
+        """
+        Test that read_param works.
+        Need to create a model instance and then use that!
+        :return:
+        """
+
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            p = pathlib.Path(tmpdir)
+            model = myModel('fred', myModel.expand("$OPTCLIMTOP/OptClimVn3/configurations/example_Model/reference")
+                            , self.post_process, model_dir=p)  # depends on myModel
+            model.instantiate()
+            self.assertEqual(model.read_param( 'VF1'), 1)
+            self.assertEqual(model.read_param( 'RHCRIT'), 0.7)
 
 
 if __name__ == '__main__':
