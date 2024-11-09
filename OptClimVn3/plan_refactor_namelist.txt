@@ -1,0 +1,58 @@
+Plan to refactor namelist stuff.
+Original plan was that namelist_var would be generalisable. So if you had a different way of reading and writing params
+that would just be done by creating a new class and modifying code appropriately.
+However, I now think that reading and writing namelists (or other such things) should really be a property of the model.
+Model has an internal and (constant) representation of namelist information -- file, nl_name, nl_var,
+and knows how to read and write information from that.
+So namelist_var becomes a way of storing namelist information with different read/writes depending on how parameters are stored
+
+param_info provides a per *class* way of storing parameters.
+Why per class ? Want all instances to have the same param info  and easy way of setting them via a csv file.
+
+That implies the following changes to namelist_var:
+1) modify  read_value -> model  handles this.
+2) remove file_cache -> ditto
+3) remove modify_namelists -- replaced by group_namelists
+4) Rename nl_modify to write_nl_values_ftn_nl -- becomes a static method and available for Models to use.
+4) Add a write_nl_values_json -- writes the information as a json file.
+
+Changes to param_info which has methods that need model.
+But if those become methods in Model then model.param_info can be used to call the param_info methods
+Methods are:
+read_param() -> would call read_value to actually read the value
+param()
+gen_parameters() - generates list of parameters to be modified.
+
+
+Hard bit -- where is the cache -- becomes a property of an individual model
+Maybe it becomes a separate class? Which has read/write methods for different filesystems
+Model gets the following:
+value = model.read_value(namelist_var) # read the value out of the cache. If not in the cache try and read it in.
+model.update_params([namelist_var,values]) -- set the values in the cache. Anything not in the cache gets read in first.
+  This is nl_modify
+model.write_cache() --  write everything out and flush the internal store.
+Changes:
+Model.set_params
+
+cache classes -- json/namelist/rose (In theory could have multiple caches...) (Rename from cache its really internal rep)
+cache.load(filepath:pathlib.Path) -- load the data into the cache.
+value = cache.read_value(filepath:pathlib.Path,key:tuple) -- read a value from cache/filesystem. Loading file if needed
+cache.write() # writes everything in cache to permanent store.
+
+Implement with an abstract class and then write versions for json, fortran namelists and rose.
+Does gamil3 need something special? Probably -- looks like it wants to read in a namelist and then write it out again.
+So will need an implementation of read/write that is specific to that model.
+
+What should Model do? json is probably the most general. So go with that.
+Sadly cannot easily run HadCM3 which is a good test bed! Though the test cases will be useful.
+Wonder if I should spend some time and  energy getting HadCM3 working on eddie?
+
+Plan:
+1) refactor param_info/Model by moving the three methods to Model. Move the test cases. Test etc!
+2) Write the abstract class for cache. Write the json version. Modify simple_model to use new cache. Test etc!
+3) Modify hadcm3 to use the fortran_namelist cache. Test etc!
+4) remove code from namelist_var that is no longer needed. Modify Model to use json. Test etc!
+5) Remove json code from simple_model. test again.
+6) Modify gamil3 to use the fortran_namelist cache. (no test cases for this yet). Ask wenjun!
+
+
