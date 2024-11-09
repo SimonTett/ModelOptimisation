@@ -1,0 +1,199 @@
+{# Macro to calculate number of nodes required based on total tasks, #}
+{# OpenMP threads, hyperthreads and number of cores per node #}
+{%- macro node(t,o,h,pn) -%}
+  {{ ((t*o)/(h*pn)) | round (0, 'ceil') | int }}
+{%- endmacro -%}
+
+
+{% set APPN = MAIN_ATM_PPN %}
+{% set TASKS_RCF = MAIN_RCF_PROCX * MAIN_RCF_PROCY %}
+{% set TASKS_ATM = MAIN_ATM_PROCX * MAIN_ATM_PROCY + MAIN_IOS_NPROC %}
+{% set NODE_RCF = node(TASKS_RCF, MAIN_OMPTHR_RCF, MAIN_HYPTHR_RCF, APPN) %}
+{% set NODE_ATM = node(TASKS_ATM, MAIN_OMPTHR_ATM, MAIN_HYPTHR_ATM, APPN) %}
+
+{% set PREBUILDS = '' %}
+
+{# Set up start dumps #}
+{% set AINITIAL = NCI_AINITIAL_DIR + '/' + AINITIAL_FILE %}
+
+{% set UMDIR = "/opt/niwa/um_sys/um" %}
+    [[NIWA_XC50]]
+        pre-script = "ulimit -s unlimited"
+        [[[environment]]]
+            CUMF = {{UMDIR}}/vn10.8/xc50_ifort/utilities/um-cumf -ignore 15,20,22,28,29,30,38,40
+            UMDIR = {{UMDIR}}
+        [[[remote]]]
+            host = login.maui.niwa.co.nz
+
+    [[NIWA_XC50_BUILD_CCE]]
+        inherit = NIWA_XC50_BUILD
+        pre-script = """
+            module load PrgEnv-cray/6.0.4 craype-x86-skylake cray-netcdf/4.4.1.1.3
+            module load grib_api/1.23.1-CrayCCE-2017.06
+        """
+        [[[environment]]]
+            PLATFORM = xc50_cce
+            CONFIG = niwa-xc50-cce
+
+    [[NIWA_XC50_BUILD_IFORT]]
+        inherit = NIWA_XC50_BUILD
+        pre-script = """
+            module load PrgEnv-cray/6.0.4 craype-x86-skylake cray-netcdf/4.6.1.2
+            module swap PrgEnv-cray/6.0.4 PrgEnv-intel/6.0.4
+            module load eccodes
+            module load shumlib/2018.06.1-CrayIntel-18.08-no-openmp
+        """
+        [[[environment]]]
+            PLATFORM = xc50_ifort
+            CONFIG = niwa-xc50-ifort
+
+# Submission setup - SLURM
+    [[NIWA_XC50_SL]]
+        [[[job]]]
+            batch system = slurm
+        [[[directives]]]
+            --partition = nesi_research
+            --time = 02:00:00
+            --mem-per-cpu = 1G
+
+    [[NIWA_XC50_BUILD]]
+        pre-script = "module load slurm"
+        inherit = NIWA_XC50
+        [[[environment]]]
+            ROSE_TASK_N_JOBS = 6
+            DRHOOK = false
+        [[[job]]]
+            batch system = background
+
+    [[RETRIES]]
+        [[[job]]]
+            execution retry delays =
+
+    [[LINUX]]
+        [[[environment]]]
+            PLATFORM = linux
+            UMDIR = {{UMDIR}}
+        [[[job]]]
+            batch system = background
+        [[[remote]]]
+            host = localhost
+
+
+    [[EXTRACT_RESOURCE]]
+        inherit = LINUX
+        [[[remote]]]
+            host = $(rose host-select $ROSE_ORIG_HOST)
+
+    [[HPC]]
+        pre-script = "module load cray-netcdf/4.4.1.1.6; module load cray-hdf5 "
+        [[[directives]]]
+        [[[environment]]]
+            PLATFORM = xc40
+            UMDIR = /opt/niwa/um_sys/um
+        [[[job]]]
+            batch system = slurm
+            submission retry delays = 
+        [[[remote]]]
+            host = login.maui.niwa.co.nz
+
+    [[HPC_SERIAL]]
+        inherit = NIWA_XC50
+        [[[directives]]]
+            --nodes = 1 
+            --ntasks = 1
+        [[[environment]]]
+            ROSE_TASK_N_JOBS = 1
+
+    [[UMBUILD]]
+        inherit = NIWA_XC50_BUILD_IFORT
+        [[[environment]]]
+            OPTIM = safe
+            OPENMP= false
+            PREBUILD =
+
+    [[UMBUILD_RESOURCE]]
+        [[[job]]]
+            execution time limit = PT2H
+
+    [[STARTDUMP]]
+        [[[environment]]]
+            AINITIAL = {{AINITIAL}}
+
+    [[INSTALL_RESOURCE]]
+        inherit = HPC_SERIAL
+        [[[job]]]
+            execution time limit = PT1M
+
+    [[UM_PARALLEL]]
+        inherit = NIWA_XC50, NIWA_XC50_SL
+        [[[environment]]]
+            MPICH_COLL_SYNC = MPI_Gatherv
+            MPICH_GNI_MAX_EAGER_MSG_SIZE = 65536
+            MPICH_GNI_MAX_VSHORT_MSG_SIZE = 8192
+            MPICH_MAX_THREAD_SAFETY = multiple
+            OMP_STACKSIZE = 2G
+            ROSE_LAUNCHER = srun
+
+    [[RCF_RESOURCE]]
+        inherit = NIWA_XC50_SL, NIWA_XC50
+        pre-script = "module load slurm"
+        [[[directives]]]
+            --time=00:15:00
+            --nodes = {{NODE_RCF}}
+            --ntasks = {{TASKS_RCF}}
+            --cpus-per-task = {{MAIN_OMPTHR_RCF}}
+        [[[environment]]]
+            ROSE_LAUNCHER_ULIMIT_OPTS = -s unlimited -c unlimited
+            OMP_NUM_THREADS = {{MAIN_OMPTHR_RCF}}
+
+    [[ATMOS_RESOURCE]]
+        inherit = UM_PARALLEL
+        [[[directives]]]
+            --time = 12:00:00
+            --nodes = {{NODE_ATM}}
+            --ntasks = {{TASKS_ATM}}
+            --hint = nomultithread
+            --cpus-per-task = {{MAIN_OMPTHR_ATM}}
+        [[[environment]]]
+            OMP_NUM_THREADS = {{MAIN_OMPTHR_ATM}}
+            ROSE_LAUNCHER_ULIMIT_OPTS = -s unlimited -c unlimited
+
+    [[PPBUILD_RESOURCE]]
+        inherit = HPC_SERIAL
+        [[[job]]]
+            execution time limit = PT5M
+
+    [[POSTPROC_RESOURCE]]
+        inherit = HPC_SERIAL, RETRIES
+        #pre-script = "module load Anaconda2/4.2.0-GCC-4.8.5 ; module load Mule ; ulimit -s unlimited"
+        pre-script = "set +u ; export PATH=/home/williamsjh/miniconda2/bin:$PATH ; source activate master ; set -u ; ulimit -s unlimited"
+        [[[environment]]]
+            PLATFORM = xc50_ifort
+            MOOPROJECT = ''
+        [[[job]]]
+            execution time limit = PT1H
+
+    [[PPTRANSFER_RESOURCE]]
+        inherit = HPC_SERIAL
+        pre-script = "set +u ; export PATH=/home/williamsjh/miniconda2/bin:$PATH ; source activate master ; set -u ; ulimit -s unlimited"
+        [[[environment]]]
+            PLATFORM = xc50_ifort
+        [[[job]]]
+            execution time limit = PT1H
+
+    [[SUPERMEAN_RESOURCE]]
+        [[[job]]]
+            execution time limit = PT2H
+            batch system = background
+
+    [[LOGS_RESOURCE]]
+        inherit = LINUX, RETRIES
+
+    [[WALLCLOCK_RESOURCE]]
+        inherit = HPC_SERIAL, RETRIES
+        pre-script = module load moose-client-wrapper
+        [[[job]]]
+            execution time limit = PT2M
+
+    [[HOUSEKEEP_RESOURCE]]
+        inherit = LINUX

@@ -1,0 +1,74 @@
+{# Test runs that need to run a full period #}
+
+{% if TEST_PE %}
+        [[[ R1 ]]]
+            graph = """
+                    atmos_main[^]:submit => atmos_lrun & atmos_pe
+                    atmos_lrun & atmos_pe => rose_ana_pe
+                    rose_ana_pe:finish => housekeeping
+                    """
+{% endif %}
+
+{% if TEST_OMP %}
+        [[[ R1 ]]]
+            graph = """
+                    atmos_main[^]:submit => atmos_lrun & atmos_omp
+                    atmos_lrun & atmos_omp => rose_ana_omp
+                    rose_ana_omp:finish => housekeeping
+                    """
+{% endif %}
+
+{% if TEST_NOOMP %}
+        {% set NOOMP_FCMUM_GRAPH = 'fcm_make_um_noomp' %}
+        {% set NOOMP_FCMUM_GRAPH = NOOMP_FCMUM_GRAPH ~ ' => fcm_make2_um_noomp' if SITE in DBLE_FCMUM else NOOMP_FCMUM_GRAPH %}
+        [[[ R1 ]]]
+            graph = """
+                    {{ NOOMP_FCMUM_GRAPH ~ ' => atmos_noomp' if TASK_BUILD_UM else '' }}
+                    atmos_main[^]:submit => atmos_lrun & atmos_noomp
+                    atmos_lrun & atmos_noomp => rose_ana_noomp
+                    rose_ana_noomp:finish => housekeeping
+                    """
+{% endif %}
+
+{% if TEST_INCS %}
+        [[[ R1 ]]]
+            graph = """
+                    atmos_main[^]:submit => atmos_lrun & atmos_incs
+                    atmos_lrun & atmos_incs => rose_ana_incs
+                    rose_ana_incs:finish => housekeeping
+                    """
+{% endif %}
+
+{% if TEST_NOSTASH %}
+        [[[ R1 ]]]
+            graph = """
+                    atmos_main[^]:submit => atmos_lrun & atmos_nostash
+                    atmos_lrun & atmos_nostash => rose_ana_nostash
+                    rose_ana_nostash:finish => housekeeping
+                    """
+{% endif %}
+
+{# Test runs that need to run a shorter resubmission period #}
+{# This should be the dump frequency in the UM job          #}
+
+{% if TEST_CRUN %}
+        [[[ R1 ]]]
+            graph = atmos_main[^]:submit => atmos_lrun & atmos_crun & atmos_nrun
+        [[[ R3//{{NCRUN_RESUB}} ]]]
+            graph = """
+                    atmos_crun[-{{NCRUN_RESUB}}] => atmos_crun
+                    atmos_lrun[^] & atmos_crun & atmos_nrun => rose_ana_crun
+                    rose_ana_crun:finish => housekeeping
+                    """
+{% endif %}
+
+{% if TEST_NRUN %}
+        [[[ R1 ]]]
+            graph = atmos_main[^]:submit => atmos_lrun & atmos_nrun
+        [[[ R3//{{NCRUN_RESUB}} ]]]
+            graph = """
+                    atmos_nrun[-{{NCRUN_RESUB}}] => atmos_nrun
+                    atmos_lrun[^] & atmos_nrun => rose_ana_nrun
+                    rose_ana_nrun:finish => housekeeping
+                    """
+{% endif %}

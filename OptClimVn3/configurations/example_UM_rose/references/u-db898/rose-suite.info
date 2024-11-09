@@ -1,0 +1,13 @@
+description=Copy of u-db533/trunk@272905
+info=THIS IS THE 1.1 RELEASE OF UKESM.
+    =It is an atmosphere-only (AMIP) configuration.  Suites with
+    =settings for fully coupled configurations are also available,
+    =with settings for either a pre-industrial control experiment
+    =(originally named u-cj511) or a historical experiment
+    =(originally named u-cj512).
+    =
+    =For more information about this release, please see
+    =https://cms.ncas.ac.uk/unified-model/configurations/ukesm/relnotes-1.1
+owner=simontett
+project=UKESM
+title=UKESM1.1 AMIP, UM 13.1, Gregorian, Nudged (ERA-5)
