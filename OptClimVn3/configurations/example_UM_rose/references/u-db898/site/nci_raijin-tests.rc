@@ -1,0 +1,50 @@
+    [[ROSE_ANA_RESOURCE]]
+        inherit = HPC
+        [[[job]]]
+            execution time limit = PT10M
+
+    [[UMBUILD_NOOMP]]
+        inherit = UMBUILD
+        [[[environment]]]
+            OPENMP= false
+
+    [[ATMOS_NCRUN_RESOURCE]]
+        inherit = ATMOS_RESOURCE
+        [[[job]]]
+            execution time limit = {{ NCRUN_CLOCK }}
+
+    [[ATMOS_PE_RESOURCE]]
+        inherit = ATMOS_RESOURCE
+        [[[environment]]]
+            ROSE_LAUNCHER_PREOPTS = -n {{ cpus(PE_ATM_PROCX, PE_ATM_PROCY, PE_IOS_NPROC, 1) }} --map-by slot:PE={{PE_OMPTHR_ATM}}
+        [[[ directives ]]]
+            -l ncpus = {{ cpus(PE_ATM_PROCX, PE_ATM_PROCY, PE_IOS_NPROC, PE_OMPTHR_ATM) }}
+            -l mem   = {{ mem(PE_ATM_PROCX, PE_ATM_PROCY, PE_IOS_NPROC, PE_OMPTHR_ATM) }}
+
+    [[ATMOS_OMP_RESOURCE]]
+        inherit = ATMOS_RESOURCE
+        [[[environment]]]
+            ROSE_LAUNCHER_PREOPTS = -n {{ cpus(OMP_ATM_PROCX, OMP_ATM_PROCY, OMP_IOS_NPROC, 1) }} --map-by slot:PE={{OMP_OMPTHR_ATM}}
+        [[[ directives ]]]
+            -l ncpus = {{ cpus(OMP_ATM_PROCX, OMP_ATM_PROCY, OMP_IOS_NPROC, OMP_OMPTHR_ATM) }}
+            -l mem   = {{ mem(OMP_ATM_PROCX, OMP_ATM_PROCY, OMP_IOS_NPROC,OMP_OMPTHR_ATM) }}
+
+    [[ATMOS_NOOMP_RESOURCE]]
+        inherit = ATMOS_RESOURCE
+        [[[environment]]]
+            ROSE_LAUNCHER_PREOPTS = -n {{ cpus(MAIN_ATM_PROCX, MAIN_ATM_PROCY, MAIN_IOS_NPROC, 1) }}
+        [[[ directives ]]]
+            -q       = {{NCI_QUEUE}}
+            -l ncpus = {{ cpus(MAIN_ATM_PROCX, MAIN_ATM_PROCY, MAIN_IOS_NPROC, 1) }}
+            -l mem   = {{ mem(MAIN_ATM_PROCX, MAIN_ATM_PROCY, MAIN_IOS_NPROC, 1) }}
+
+    [[MULE_RESOURCE]]
+         # Module trickery required get iris and mule working together.
+         pre-script="""
+           module use ~access/modules
+           module unload python
+           module load iris
+           module unload python/2.7.6-matplotlib
+           module unload python/2.7.6
+           module load pythonlib/mule
+           """

@@ -1,0 +1,285 @@
+#!jinja2
+
+{# Define known sites #}
+{% set KNOWN_SITE_CFGS = ['archer2', 'meto_cray', 'monsoon', 'nci_raijin', 'niwa_cray'] %}
+{# Comment out the following test until assert (introduced at cylc-7.2.0) works at all sites:
+{{ assert(SITE in KNOWN_SITE_CFGS, "Site not recognised") }}
+#}
+
+{# Set default task run command to optionally use site specific opt configs #}
+{% set TASK_RUN_COMMAND = "rose task-run --verbose -O '(" + SITE + ")'" %}
+
+{# Command for UM must make sure using main executable #}
+{% set UM_TASK_RUN_COMMAND = TASK_RUN_COMMAND ~ ' --path="share/fcm_make_um/build-*/bin"' %}
+
+{# Set rose date command and associated print-format options #}
+{% set ROSEDATE = "rose date -c --calendar=" ~ EXPT_CALENDAR %}
+{% set PFMT_YR = "--print-format='%Y'" %}
+{% set PFMT_MONTH = "--print-format='%Y%b'" %}
+{% set PFMT_DUMP = "--print-format='%Y%m%d_%H'" %}
+{% set PFMT_UM_PT = "--print-format='%Y,%m,%d,%H,%M,%S'" %}
+{% set PFMT_UM_DUR = "--print-format='y,m,d,h,M,s'" %}
+
+{# Set jinja2 variables based on values from rose-suite.conf file #}
+{% set CONFIG_OPT = '(' ~ EXPT_CONFIG ~ ') (' ~ EXPT_HORIZ ~ ') (' ~ EXPT_CALENDAR ~ ') ' ~ EXPT_AEROSOLS %}
+{% set CONFIG_OPT = CONFIG_OPT ~ ' (norecon)' if not TASK_RECON else CONFIG_OPT %}
+{% set BITCOMP_NRUN_OPT = 'bitcomp' if BITCOMP_NRUN else '' %}
+
+{# Test to determine when to use double fcm_make_um task #}
+{% set DBLE_FCMUM = ['archer2', 'nci_raijin'] %}
+
+[cylc]
+    UTC mode = True
+    [[events]]
+        mail events = shutdown
+
+[scheduling]
+
+    cycling mode            = {{EXPT_CALENDAR}}
+    initial cycle point     = {{EXPT_BASIS}}
+    final cycle point       = +{{EXPT_RUNLEN}}-PT1S
+    max active cycle points = 4
+
+    [[special tasks]]
+        sequential = atmos_main, postproc, archive_integrity, pptransfer, supermean, housekeeping, rose_arch_logs
+
+    [[dependencies]]
+
+        {# Set up build graph #}
+        {% if TASK_BUILD_UM %}
+        {% set BUILD_GRAPH = 'fcm_make_um' %}
+        {% set BUILD_GRAPH = BUILD_GRAPH ~ ' => fcm_make2_um' if SITE in DBLE_FCMUM else BUILD_GRAPH %}
+        {% set BUILD_GRAPH = BUILD_GRAPH ~ ' => recon' if TASK_RECON else BUILD_GRAPH %}
+        {% set BUILD_GRAPH = BUILD_GRAPH ~ ' => atmos_main' if TASK_RUN else BUILD_GRAPH %}
+
+        [[[ R1 ]]]
+            graph = {{ BUILD_GRAPH }}
+        {% endif %}
+
+        {# Set up first cycle graph #}
+        {% set INIT_GRAPH = 'install_cold => install_ancil' %}
+        {% set INIT_GRAPH = INIT_GRAPH ~ ' => recon' if TASK_RECON else INIT_GRAPH %}
+        {% set INIT_GRAPH = INIT_GRAPH ~ ' => atmos_main' if TASK_RUN else INIT_GRAPH %}
+
+        [[[ R1 ]]]
+            graph = {{ INIT_GRAPH }}
+
+{% if TASK_RUN %}
+
+        {# Set up postproc #}
+        {% if TASK_POSTPROC %}
+        [[[ R1 ]]]
+            graph = fcm_make_pp => fcm_make2_pp => postproc
+        {% endif %}
+        {% if TASK_ARCHIVE_INTEGRITY is defined %}
+          {% if TASK_ARCHIVE_INTEGRITY %}
+        [[[ {{EXPT_RESUB_ARCHIVE_INTEGRITY}} ]]]
+            graph = postproc => archive_integrity => housekeeping
+        [[[ R1//^+{{EXPT_RUNLEN}}-{{EXPT_RESUB}} ]]]
+            graph = postproc => archive_integrity => housekeeping
+          {% endif %}
+        {% endif %}
+
+
+        {# Set up cycling graph #}
+        {% set RESUB_GRAPH = '' %}
+        {% set RESUB_GRAPH = RESUB_GRAPH ~ 'postproc => ' if TASK_POSTPROC else RESUB_GRAPH %}
+        {% set RESUB_GRAPH = RESUB_GRAPH ~ 'pptransfer => ' if TASK_PPTRANSFER else RESUB_GRAPH %}
+        {% set RESUB_GRAPH = RESUB_GRAPH ~ 'supermean => ' if TASK_SUPERMEAN else RESUB_GRAPH %}
+        {% set RESUB_GRAPH = RESUB_GRAPH ~ 'rose_arch_logs => ' if TASK_ARCH_LOG else RESUB_GRAPH %}
+        {% set RESUB_GRAPH = RESUB_GRAPH ~ 'housekeeping' %}
+
+        [[[ {{EXPT_RESUB}} ]]]
+            graph = atmos_main => {{ RESUB_GRAPH }}
+
+        {% if TASK_ARCH_WALL %}
+        [[[ R1//^+{{EXPT_RUNLEN}}-{{EXPT_RESUB}} ]]]
+            graph = atmos_main => rose_arch_wallclock => housekeeping
+        {% endif %}
+
+{# Include tests graph if required #}
+{% if TASK_TESTS %}
+%include suite-tests-graph.rc
+{% endif %}
+
+{% endif %}
+
+[runtime]
+    [[root]]
+        script = {{TASK_RUN_COMMAND}}
+        env-script = "eval $(rose task-env)"
+        [[[environment]]]
+            {# Logicals for decision making based on initial cycle #}
+            IS_CYLC_SUITE_INITIAL_CYCLE_POINT = $(if [ $CYLC_TASK_CYCLE_POINT == $CYLC_SUITE_INITIAL_CYCLE_POINT ]; then echo "true"; else echo "false"; fi)
+            IS_CYLC_TASK_TRY_NUMBER_1 = $(if [ $CYLC_TASK_TRY_NUMBER -eq 1 ]; then echo "true"; else echo "false"; fi)
+            {# Dates used in apps #}
+            BASIS_UM_PT = $({{ROSEDATE}} {{PFMT_UM_PT}} {{EXPT_BASIS}})
+            BASIS_YR = $({{ROSEDATE}} {{PFMT_YR}} {{EXPT_BASIS}})
+            DATEC_DUMP = $({{ROSEDATE}} {{PFMT_DUMP}})
+            {# RUNID for file names used in UM, postproc and rose_ana apps  #}
+            {# Set up the runid which controls the first five characters of #}
+            {# the output filenames. This can either be the final five      #}
+            {# characters of the suite id or RUNID_USR as set by the user.  #}
+            {% if RUNID %}
+            RUNID = $(echo -n $CYLC_SUITE_NAME | cut -d - -f 2 | cut -c 1-5)
+            {% else %}
+            RUNID = {{RUNID_USR}}
+            {% endif %}
+            {# UM version being used, required in postproc app #}
+            UM_VN = 11.4
+            ARCHIVE_SET = $CYLC_SUITE_NAME
+        [[[events]]]
+            mail events = submission retry, retry, submission failed, failed, submission timeout, timeout
+            submission timeout = P1D
+
+    [[UM]]
+        script = {{UM_TASK_RUN_COMMAND}}
+        [[[environment]]]
+            FLUME_IOS_NPROC = {{MAIN_IOS_NPROC}}
+            RCF_NPROCX = {{MAIN_RCF_PROCX}}
+            RCF_NPROCY = {{MAIN_RCF_PROCY}}
+            ROSE_APP_OPT_CONF_KEYS = {{CONFIG_OPT}} {{BITCOMP_NRUN_OPT}}
+            ROSE_TASK_APP = um
+            UM_ATM_NPROCX = {{MAIN_ATM_PROCX}}
+            UM_ATM_NPROCY = {{MAIN_ATM_PROCY}}
+
+    [[RECONFIGURE]]
+        inherit = UM
+        [[[environment]]]
+            HYPERTHREADS = {{MAIN_HYPTHR_RCF}}
+            OMP_NUM_THREADS = {{MAIN_OMPTHR_RCF}}
+            TASKEND = $BASIS_UM_PT
+
+    [[ATMOS]]
+        inherit = UM
+        [[[environment]]]
+            HYPERTHREADS = {{MAIN_HYPTHR_ATM}}
+            OMP_NUM_THREADS = {{MAIN_OMPTHR_ATM}}
+            CONTINUE = $(if $IS_CYLC_SUITE_INITIAL_CYCLE_POINT && $IS_CYLC_TASK_TRY_NUMBER_1; then echo "false"; else echo "true"; fi)
+            TASKEND = $({{ROSEDATE}} {{PFMT_UM_DUR}} --offset2={{EXPT_RESUB}} {{EXPT_BASIS}} ref)
+
+    [[RUN_MAIN]]
+        [[[environment]]]
+            DATAM = $ROSE_DATA/{{DATAM}}
+
+    {% if SITE in DBLE_FCMUM %}
+    [[fcm_make_um]]
+        inherit = RUN_MAIN, EXTRACT_RESOURCE, UMBUILD
+    [[fcm_make2_um]]
+        inherit = RUN_MAIN, UMBUILD_RESOURCE, UMBUILD
+    {% else %}
+    [[fcm_make_um]]
+        inherit = RUN_MAIN, UMBUILD_RESOURCE, UMBUILD
+    {% endif %}
+
+    [[install_cold]]
+        inherit = RUN_MAIN, STARTDUMP, INSTALL_RESOURCE
+        [[[environment]]]
+            ROSE_APP_OPT_CONF_KEYS = {{CONFIG_OPT}}
+
+    [[install_ancil]]
+        inherit = RUN_MAIN, INSTALL_RESOURCE
+        pre-script = . $ROSE_DATA/etc/um_ancils_gl
+        [[[environment]]]
+            ROSE_APP_OPT_CONF_KEYS = {{CONFIG_OPT}}
+
+    [[recon]]
+        inherit = RUN_MAIN, RCF_RESOURCE, RECONFIGURE
+
+    [[atmos_main]]
+        inherit = RUN_MAIN, ATMOS_RESOURCE, ATMOS
+        post-script = save_wallclock.sh {{EXPT_RESUB}}
+
+    [[fcm_make_pp]]
+        inherit = RUN_MAIN, EXTRACT_RESOURCE
+    [[fcm_make2_pp]]
+        inherit = RUN_MAIN, PPBUILD_RESOURCE
+
+    [[POSTPROC]]
+        [[[environment]]]
+            CYCLEPERIOD = {{EXPT_RESUB}}
+
+    [[postproc]]
+        inherit = RUN_MAIN, POSTPROC_RESOURCE, POSTPROC
+        [[[environment]]]
+            MODELBASIS = $BASIS_UM_PT
+
+    [[pptransfer]]
+        inherit = RUN_MAIN, PPTRANSFER_RESOURCE
+        [[[environment]]]
+            CYCLEPERIOD = {{EXPT_RESUB}}
+            ROSE_TASK_APP = postproc
+
+    [[supermean]]
+        inherit = RUN_MAIN, SUPERMEAN_RESOURCE, POSTPROC
+        [[[environment]]]
+            BASIS = $({{ROSEDATE}} {{EXPT_BASIS}})
+            TCYCLE = $({{ROSEDATE}} ref)
+            NCYCLE = $({{ROSEDATE}} --offset={{EXPT_RESUB}} ref)
+
+   [[archive_integrity]]
+        inherit = RUN_MAIN, POSTPROC_RESOURCE, POSTPROC
+        [[[job]]]
+            execution time limit = PT20M
+            execution retry delays = 3*PT1H
+        [[[environment]]]
+            ROSE_TASK_APP = postproc
+            ROSE_APP_COMMAND_KEY = verify
+
+    [[rose_arch_logs]]
+        inherit = RUN_MAIN, LOGS_RESOURCE
+        [[[environment]]]
+            ROSE_APP_OPT_CONF_KEYS = logs
+            ROSE_TASK_APP = rose_arch
+
+    [[rose_arch_wallclock]]
+        inherit = RUN_MAIN, WALLCLOCK_RESOURCE
+        [[[environment]]]
+            ROSE_APP_OPT_CONF_KEYS = wallclock
+            ROSE_TASK_APP = rose_arch
+
+    [[housekeeping]]
+        inherit = RUN_MAIN, HOUSEKEEP_RESOURCE
+
+{# Include site specific configurations #}
+{% if SITE == 'archer2' %}
+%include site/archer2.rc
+{% elif SITE == 'meto_cray' %}
+%include site/meto_cray.rc
+{% elif SITE == 'monsoon' %}
+%include site/monsoon.rc
+{% elif SITE == 'nci_raijin' %}
+%include site/nci_raijin.rc
+{% elif SITE == 'niwa_cray' %}
+%include site/niwa_cray.rc
+{% endif %}
+
+{# Include tests runtime if required #}
+{% if TASK_RUN and TASK_TESTS %}
+%include suite-tests-runtime.rc
+{% if SITE == 'archer2' %}
+%include site/archer-tests.rc
+{% elif SITE == 'meto_cray' %}
+%include site/meto_cray-tests.rc
+{% elif SITE == 'monsoon' %}
+%include site/monsoon-tests.rc
+{% elif SITE == 'nci_raijin' %}
+%include site/nci_raijin-tests.rc
+{% elif SITE == 'niwa_cray' %}
+%include site/niwa_cray-tests.rc
+{% endif %}
+{% endif %}
+
+
+[visualization]
+    initial cycle point = {{EXPT_BASIS}}
+    final cycle point = +{{EXPT_RESUB}}
+    default node attributes = style=filled, color=black, fillcolor=khaki
+    [[node attributes]]
+        RECONFIGURE = fillcolor=green
+        ATMOS = fillcolor=dodgerblue
+        POSTPROC = fillcolor=tomato
+        RUN_TESTS = fillcolor=lightskyblue
+        ROSE_ANA = fillcolor=pink
+        supermean = fillcolor=yellow
+        housekeeping = fillcolor=red

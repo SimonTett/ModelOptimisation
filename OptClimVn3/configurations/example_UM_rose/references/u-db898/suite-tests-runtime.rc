@@ -1,0 +1,124 @@
+    {# Families #}
+
+    [[ROSE_ANA]]
+        inherit = MULE_RESOURCE, ROSE_ANA_RESOURCE
+        [[[environment]]]
+            MAIN_DATAM = $ROSE_DATA/{{DATAM}}_LRUN
+            ROSE_TASK_APP = rose_ana
+            TEST_DATE = $({{ROSEDATE}} {{PFMT_DUMP}} --offset={{NCRUN_RESUB}} --offset={{NCRUN_RESUB}} --offset={{NCRUN_RESUB}})
+
+    [[RUN_TESTS]]
+
+    {% for test in ['CRUN', 'NRUN', 'LRUN', 'PE', 'OMP', 'NOOMP', 'INCS', 'NOSTASH'] : %}
+    [[TEST_{{test}}]]
+        inherit = RUN_TESTS
+        [[[environment]]]
+            DATAM = $ROSE_DATA/{{DATAM}}_{{test}}
+    {% endfor %}
+
+    {# Build tasks #}
+
+    {% if SITE in DBLE_FCMUM %}
+    [[fcm_make_um_noomp]]
+        inherit = TEST_NOOMP, EXTRACT_RESOURCE, UMBUILD_NOOMP
+        [[[environment]]]
+            ROSE_TASK_APP = fcm_make_um
+    [[fcm_make2_um_noomp]]
+        inherit = TEST_NOOMP, UMBUILD_RESOURCE, UMBUILD_NOOMP
+        [[[environment]]]
+            ROSE_TASK_APP = fcm_make_um
+    {% else %}
+    [[fcm_make_um_noomp]]
+        inherit = TEST_NOOMP, UMBUILD_RESOURCE, UMBUILD_NOOMP
+        [[[environment]]]
+            ROSE_TASK_APP = fcm_make_um
+    {% endif %}
+
+    {# UM tasks #}
+    [[ATMOS_TEST]]
+        inherit = ATMOS
+        [[[environment]]]
+            TASKEND = $({{ROSEDATE}} {{PFMT_UM_DUR}} --offset={{NCRUN_RESUB}} --offset={{NCRUN_RESUB}} --offset={{NCRUN_RESUB}} {{EXPT_BASIS}} ref)
+            ROSE_APP_OPT_CONF_KEYS = {{CONFIG_OPT}}  {{BITCOMP_NRUN_OPT}} testdumping
+
+    [[atmos_lrun]]
+        inherit = TEST_LRUN, ATMOS_TEST, ATMOS_TEST_RESOURCE
+
+    [[atmos_crun]]
+        inherit = TEST_CRUN, ATMOS_TEST, ATMOS_NCRUN_RESOURCE
+        [[[environment]]]
+            TASKEND = $({{ROSEDATE}} {{PFMT_UM_DUR}} --offset2={{NCRUN_RESUB}} {{EXPT_BASIS}} ref)
+
+    [[atmos_nrun]]
+        inherit = TEST_NRUN, ATMOS_TEST, ATMOS_NCRUN_RESOURCE
+        [[[environment]]]
+            BASIS_YR = $({{ROSEDATE}} {{PFMT_YR}})
+            CONTINUE = false
+            BASIS_UM_PT = $({{ROSEDATE}} {{PFMT_UM_PT}})
+            ROSE_APP_OPT_CONF_KEYS = {{CONFIG_OPT}} $(if $IS_CYLC_SUITE_INITIAL_CYCLE_POINT; then echo "{{BITCOMP_NRUN_OPT}}"; else echo "bitcomp nruntest"; fi) testdumping 
+            TASKEND = $({{ROSEDATE}} {{PFMT_UM_DUR}} --offset2={{NCRUN_RESUB}} ref ref)
+
+    [[atmos_pe]]
+        inherit = TEST_PE, ATMOS_TEST, ATMOS_PE_RESOURCE
+        [[[environment]]]
+            FLUME_IOS_NPROC = {{PE_IOS_NPROC}}
+            HYPERTHREADS = {{PE_HYPTHR_ATM}}
+            OMP_NUM_THREADS = {{PE_OMPTHR_ATM}}
+            UM_ATM_NPROCX = {{PE_ATM_PROCX}}
+            UM_ATM_NPROCY = {{PE_ATM_PROCY}}
+
+    [[atmos_omp]]
+        inherit = TEST_OMP, ATMOS_TEST, ATMOS_OMP_RESOURCE
+        [[[environment]]]
+            FLUME_IOS_NPROC = {{OMP_IOS_NPROC}}
+            HYPERTHREADS = {{OMP_HYPTHR_ATM}}
+            OMP_NUM_THREADS = {{OMP_OMPTHR_ATM}}
+            UM_ATM_NPROCX = {{OMP_ATM_PROCX}}
+            UM_ATM_NPROCY = {{OMP_ATM_PROCY}}
+
+    [[atmos_noomp]]
+        inherit = TEST_NOOMP, ATMOS_TEST, ATMOS_NOOMP_RESOURCE
+        script = {{ UM_TASK_RUN_COMMAND ~ ' --path="share/fcm_make_um_noomp/build-*/bin"' }}
+
+    [[atmos_incs]]
+        inherit = TEST_INCS, ATMOS_TEST, ATMOS_RESOURCE
+        [[[environment]]]
+            ROSE_APP_OPT_CONF_KEYS = {{CONFIG_OPT}} {{BITCOMP_NRUN_OPT}} testdumping nostash incs
+
+    [[atmos_nostash]]
+        inherit = TEST_NOSTASH, ATMOS_TEST, ATMOS_RESOURCE
+        [[[environment]]]
+            ROSE_APP_OPT_CONF_KEYS = {{CONFIG_OPT}} {{BITCOMP_NRUN_OPT}} testdumping nostash
+
+    {# rose ana tasks #}
+
+    [[rose_ana_crun]]
+        inherit = TEST_CRUN, ROSE_ANA
+        [[[environment]]]
+            TEST_DATE = $({{ROSEDATE}} {{PFMT_DUMP}} --offset={{NCRUN_RESUB}})
+
+    [[rose_ana_nrun]]
+        inherit = TEST_NRUN, ROSE_ANA
+        [[[environment]]]
+            TEST_DATE = $({{ROSEDATE}} {{PFMT_DUMP}} --offset={{NCRUN_RESUB}})
+            ROSE_APP_OPT_CONF_KEYS = progs nodates
+
+    [[rose_ana_pe]]
+        inherit = TEST_PE, ROSE_ANA
+
+    [[rose_ana_omp]]
+        inherit = TEST_OMP, ROSE_ANA
+ 
+    [[rose_ana_noomp]]
+        inherit = TEST_NOOMP, ROSE_ANA
+
+    [[rose_ana_incs]]
+        inherit = TEST_INCS, ROSE_ANA
+        [[[environment]]]
+            TEST_INCS_DATE = $({{ROSEDATE}} {{PFMT_MONTH}} | tr [A-Z] [a-z])
+            ROSE_APP_OPT_CONF_KEYS = progs incs
+
+    [[rose_ana_nostash]]
+        inherit = TEST_NOSTASH, ROSE_ANA
+        [[[environment]]]
+            ROSE_APP_OPT_CONF_KEYS = progs
