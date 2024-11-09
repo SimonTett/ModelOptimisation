@@ -827,7 +827,7 @@ class testStudyConfig(unittest.TestCase):
         import dfols
         import numpy as np
 
-        if dfols.__version__ >= '1.5.0': # dfols at version 11 added two args to OptimResults
+        if dfols.__version__ >= '1.5.1': # dfols at version 1.5.1 added two args to OptimResults
             no_vars =11
             args = [indx * 12 + 0.1 for indx in range(0, no_vars)]
             args[-1] = np.int32(args[-1])
