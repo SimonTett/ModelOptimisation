@@ -2265,7 +2265,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
         if soln is None:  # not got anything so return None.
             return soln
         dct = generic_json.loads(soln)  # now have a dict.
-        if dfols.__version__ >= '1.5.0':
+        if dfols.__version__ >= '1.5.1':
             nargs = 11
         else:
             nargs = 9
