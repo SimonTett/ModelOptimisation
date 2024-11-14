@@ -263,7 +263,7 @@ class ModelTestCase(unittest.TestCase):
         # use gen_params to get parameters aand then check they are as expected.
         nl_iter = self.model.gen_params()
         for (nl, value) in nl_iter:
-            got = nl.read_value(dirpath=self.model.model_dir, clean=True)
+            got = nl.read_value(dirpath=self.model.model_dir)
             self.assertEqual(value, got)
 
     def test_changed_nl(self):

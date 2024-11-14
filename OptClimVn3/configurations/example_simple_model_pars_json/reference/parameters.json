@@ -1,0 +1,34 @@
+{
+  "system":
+  {
+    "sleep_time": 15,
+    "sleep_time_comment": "How many seconds to sleep for",
+    "fail_probability": 0.0,
+    "fail_probability_comment":"probability of failure"
+  },
+  "system_comment": "System variables",
+  "model_params":
+  {
+    "CT": 0.0001,
+        "EACF": 0.5,
+        "ENTCOEF": 3.0,
+        "ICE_SIZE": 3e-05,
+        "RHCRIT": 0.7,
+        "VF1": 1.0,
+        "CW": 0.0002,
+        "CW_comment": "Seed parameter which  affects CW_SEA & CW_LAND",
+        "DYNDIFF": 12.0,
+        "DYNDIFF_comment": "Seed parameter which affects DIFF_COEFF, DIFF_COEFF_Q, DIFF_EXP & DIFF_EXP_Q",
+        "KAY_GWAVE": 20000.0,
+        "KAY_GWAVE_comment": "Seed parameter which also affects KAY_LEE_GWAVE",
+        "ASYM_LAMBDA": 0.15,
+        "CHARNOCK": 0.012,
+        "CHARNOCK_comment": "Note this is Murphy et al, 200X and is different from that reported in Yamazaki et al, 2013",
+        "G0": 10.0,
+        "Z0FSEA": 0.0013,
+        "ALPHAM": 0.5,
+        "ALPHAM_comment": "Seed parameter which affects DTICE and ALPHAM"
+  },
+  "model_params_comment": "parameters for the model. Simple model does not actually care! These come from hadCm3",
+  "comment": "Reference params for simple_model_pars_json"
+}

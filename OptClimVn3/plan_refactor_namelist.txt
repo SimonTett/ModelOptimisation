@@ -49,10 +49,29 @@ Wonder if I should spend some time and  energy getting HadCM3 working on eddie?
 
 Plan:
 1) refactor param_info/Model by moving the three methods to Model. Move the test cases. Test etc! Done!
-2) Write the abstract class for cache. Write the json version. Modify simple_model to use new cache. Test etc!
-3) Modify hadcm3 to use the fortran_namelist cache. Test etc!
+2) Write the abstract class for cache. Write the json version. Add a new model that uses json functionality based on simple_model. Test etc!
+
+2a) Have namelists register themselves (so user can add one) with a name.
+3) Write the namelist version of the cache. Modify hadcm3 to use the fortran_namelist cache. Test etc!
 4) remove code from namelist_var that is no longer needed. Modify Model to use json. Test etc!
 5) Remove json code from simple_model. test again.
 6) Modify gamil3 to use the fortran_namelist cache. (no test cases for this yet). Ask wenjun!
 
+Status as of 10/11/24
+Working on json version. Have a simple_model_pars_json.py which contains a class for json simple model.
+And a reference config of the model
 
+
+Alternative plan:
+1) Writing/Reading is a responsibility of the namelist_var and its inherited classes.
+2) 'cache' is a property of the model. It is a dictionary of configs indexed by filenames (from namelist_var)
+3) namelist_var.read_value(model.cache). Alt is model.read_var(namelist_var)
+namelist_var.read_config() -> read existing config. and return it.  config.write() # write a config
+Which means need a bunch of classes for reading/writing configs. (json, fortran namelist, rose)
+
+
+could namelist_var generate the cache config if it doesn't exist?
+namelist_var.read_config() -> read config and return it.
+self.read_var(namelist_var) -> read from cache. Load up cache if needed.
+self.update_var(namelist_var,value) -> update cache with value.
+self.config_write() -> write the cache to disk.

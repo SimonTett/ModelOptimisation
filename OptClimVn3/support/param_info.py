@@ -1,4 +1,7 @@
-from __future__ import annotations
+# TODO add some checking.
+# 1) All namelists return the same types for a file
+# 2) functions also!
+#from __future__ import annotations
 
 import logging
 import pathlib
@@ -8,7 +11,9 @@ import numpy as np
 import pandas as pd
 
 from model_base import model_base
-from namelist_var import namelist_var
+#from namelist_var import namelist_var
+import namelist_var
+
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}") # so this module has its own logging.
 
 
@@ -36,6 +41,7 @@ class param_info(model_base):
         self.param_constructors = dict()  # information on parameters -- currently namelist_var or functions
         self.got_vars = set()  # set of the known variables (namelist or functions)
         self.known_functions = dict()  # known functions indexed by __qualname__
+        self.file_info = dict() # where we store indexed by filenames the expected type. Will be used to check things are as expected.
 
     def update(self, other_param_info):
         """
@@ -105,7 +111,7 @@ class param_info(model_base):
             result = stuff(model, None)  # callable. Run it in inverse mode.
             my_logger.debug(f"Called {stuff.__qualname__} with inverse and got {result} ")
 
-        elif isinstance(stuff, namelist_var):
+        elif isinstance(stuff, namelist_var.namelist_var):
             result = stuff.read_value(dirpath=model.model_dir)
             my_logger.debug(f"Read data from {stuff}")
         else:
@@ -180,7 +186,7 @@ class param_info(model_base):
                     d = dict(parameter=param, type='function')
                     d.update(function_name=value.__qualname__)
                     series.append(pd.Series(d))
-                elif isinstance(value, namelist_var):
+                elif isinstance(value, namelist_var.namelist_var):
                     d = dict(parameter=param, type='namelist_var')
                     d.update(value.to_dict())
                     d['filepath'] = str(d['filepath'])
@@ -191,7 +197,7 @@ class param_info(model_base):
         # want fixed ordering of columns in df.
         ordering = ['parameter', 'type']
         ordering.extend(
-            namelist_var.__dataclass_fields__.keys())  # namelist_var is a dataclass so that is how we get the keys
+            namelist_var.namelist_var.__dataclass_fields__.keys())  # namelist_var is a dataclass so that is how we get the keys
         ordering.append('function_name')
         df = df.reindex(columns=pd.Index(ordering))
         return df
@@ -207,11 +213,15 @@ class param_info(model_base):
         :param kwargs -- all remaining arguments are passed to read_csv.
         :return: Nothing.Modifies self in place
         """
+
+        lookup = dict(namelist_var=namelist_var.namelist_var,
+                      json_var = namelist_var.JsonNamelistVar)
+        # TODO once working move to some more automatic system of registering namelist like variables.
         def str_to_ifb(value:typing.Optional[str]) -> typing.Optional[bool,float,int]:
             """
             Convert a string to a bool, float or int. If None passed return None
-            :param value: value to be converted
-            :return: converted value
+            :param value: value to be converted.
+            :return: converted value.
             """
             if value is None:
                 return None
@@ -228,9 +238,17 @@ class param_info(model_base):
 
         parameter_df = pd.read_csv(self.expand(filepath), **kwargs)
         parameter_df = parameter_df.replace({np.nan:None}) # replace any Nan with None. (on write out None get written as nan)
+
         for indx, row in parameter_df.iterrows():
             param, typ = row.loc[['parameter', 'type']]
-            if typ == 'namelist_var':
+            if typ == 'function':
+                # check we have it and warn if not.
+                fname = row.loc["function_name"]
+                if fname not in self.known_functions.keys():
+                    my_logger.warning(f"Function {fname} not found. Likely some discrepancy")
+                else:
+                    my_logger.debug(f"Got function {fname} for parameter {param}")
+            elif typ in lookup:
                 name = row.loc['name']
                 if pd.isnull(name):  # no name defined set it to param.
                     name = param
@@ -238,20 +256,23 @@ class param_info(model_base):
                 default = row.loc['default']
                 if isinstance(default,str):
                     default = str_to_ifb(default)
-
-                nl = namelist_var(filepath=pathlib.Path(row.loc['filepath']), namelist=row.loc['namelist'],
+                # check filename typ is constant over a file ..
+                # Move this to a check fn which can report and give user chance to fix!
+                # can also run functions and check they are OK too. 
+                filepath = pathlib.Path(row.loc['filepath'])
+                expected_type = self.file_info.get(filepath,typ)
+                if expected_type != typ:
+                    raise ValueError(f"Got multiple types for same file for {param}. Existing: {expected_type} requested {typ} ")
+                if filepath not in self.file_info:
+                    self.file_info[filepath]= typ
+                # done checking no duplicate types.
+                nl = lookup[typ](filepath=filepath, namelist=row.loc['namelist'],
                                   nl_var=row.loc['nl_var'], default=default,name=name)
+
                 self.register(param, nl, duplicate=duplicate)
                 my_logger.debug(f"Registered {nl} for parameter {param}")
-            elif typ == 'function':
-                # check we have it and warn if not.
-                fname = row.loc["function_name"]
-                if fname not in self.known_functions.keys():
-                    my_logger.warning(f"Function {fname} not found. Likely some discrepancy")
-                my_logger.debug(f"Got function {fname} for parameter {param}")
-                continue
             else:
-                raise NotImplementedError(f"No implementation for type {type}")
+                raise NotImplementedError(f"No implementation for type {typ}")
 
         my_logger.info(f"Registered {len(parameter_df.index)} parameters")
 

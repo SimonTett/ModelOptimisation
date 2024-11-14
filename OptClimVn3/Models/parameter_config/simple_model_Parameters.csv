@@ -1,0 +1,9 @@
+parameter,type,filepath,namelist,nl_var,default,name,function_name
+VF1,json_var,parameters.json,model_params,vf1,1.0,,
+ICE_SIZE,json_var,parameters.json,model_params,ice_size,3e-5,,
+ENTCOEF,json_var,parameters.json,model_params,entcoef,3.0,,
+CT,json_var,parameters.json,model_params,ct,1e-4,,
+ASYM_LAMBDA,json_var,parameters.json,model_params,asym_lambda,0.15,,
+CHARNOCK,json_var,parameters.json,model_params,charnock,0.012,,
+G0,json_var,parameters.json,model_params,g0,10.0,,
+Z0FSEA,json_var,parameters.json,model_params,z0fsea,0.0013,,
