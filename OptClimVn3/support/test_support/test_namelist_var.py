@@ -2,9 +2,11 @@ import pathlib
 import shutil
 import tempfile
 import unittest
+from unittest.mock import patch,mock_open
+
 
 import genericLib
-from namelist_var import namelist_var
+from namelist_var import namelist_var,BaseConfig,NamelistVar,JSON_Config
 
 genericLib.setup_env()
 class namelist_var_TestCase(unittest.TestCase):
@@ -149,8 +151,178 @@ class namelist_var_TestCase(unittest.TestCase):
         self.assertEqual(nl.__repr__(),f'TEST: {str(nl.filepath)}&BIG_NL small_var default:2')
 
 
+import json
+
+def mock_read(allow_missing=False):
+    """
+    Mock read function
+    :param allow_missing:
+    :return:
+    """
+    config={
+          "system":
+          {
+            "sleep_time": 15,
+            "sleep_time_comment": "How many seconds to sleep for",
+            "fail_probability": 0.0,
+            "fail_probability_comment":"probability of failure"
+          },
+          "system_comment": "System variables",
+          "model_params":
+          {
+            "CT": 0.0001,
+                "EACF": 0.5,
+                "ENTCOEF": 3.0,
+                "ICE_SIZE": 3e-05,
+                "RHCRIT": 0.7,
+                "VF1": 1.0,
+                "CW": 0.0002,
+                "CW_comment": "Seed parameter which  affects CW_SEA & CW_LAND",
+                "DYNDIFF": 12.0,
+                "DYNDIFF_comment": "Seed parameter which affects DIFF_COEFF, DIFF_COEFF_Q, DIFF_EXP & DIFF_EXP_Q",
+                "KAY_GWAVE": 20000.0,
+                "KAY_GWAVE_comment": "Seed parameter which also affects KAY_LEE_GWAVE",
+                "ASYM_LAMBDA": 0.15,
+                "CHARNOCK": 0.012,
+                "CHARNOCK_comment": "Note this is Murphy et al, 200X and is different from that reported in Yamazaki et al, 2013",
+                "G0": 10.0,
+                "Z0FSEA": 0.0013,
+                "ALPHAM": 0.5,
+                "ALPHAM_comment": "Seed parameter which affects DTICE and ALPHAM"
+          },
+          "model_params_comment": "parameters for the model. Simple model does not actually care! These come from hadCm3",
+          "comment": "Reference params for simple_model_pars_json"
+        }
+
+    return config
 
 
+
+class test_BaseConfig(unittest.TestCase):
+
+    @patch.object(BaseConfig, 'read', side_effect=mock_read)
+    def setUp(self,mck):
+        # Setup code here
+        # Make  a temp dir and copy the reference case to it.
+        self.tmpDir = tempfile.TemporaryDirectory()
+        self.refDir = genericLib.expand('$OPTCLIMTOP/OptClimVn3/configurations/example_simple_model_pars_json/reference')
+        self.root_dir = pathlib.Path(self.tmpDir.name)
+        shutil.copytree(self.refDir, self.root_dir,dirs_exist_ok=True)
+        self.rel_filepath = pathlib.Path('parameters.json')
+        self.config = BaseConfig(root_dir=self.root_dir, rel_filepath=self.rel_filepath,type_name='correct_type')
+        #
+
+    def tearDown(self):
+        # Teardown code here
+        self.tmpDir.cleanup()
+
+    def test_filepath(self):
+        # Test case for filepath method
+        # Suggested test case: Check if the returned path is correct
+        expected_path = self.root_dir / self.rel_filepath
+        self.assertEqual(self.config.filepath(), expected_path)
+
+    def test_check_right_nl(self):
+        # Test case for check_right_nl method
+        # Check if the method raises ValueError for mismatched type_name
+        namelist = NamelistVar(type_name='wrong_type', filepath=self.rel_filepath, namelist='test', nl_var='var')
+        with self.assertRaises(ValueError):
+            self.config.check_right_nl(namelist)
+        # Check if the method raises ValueError for mismatched filename.
+        namelist = NamelistVar(type_name='correct_type', filepath=pathlib.Path('wrong_file.json'), namelist='test', nl_var='var')
+        with self.assertRaises(ValueError):
+            self.config.check_right_nl(namelist)
+        #and get True for correct
+        namelist = NamelistVar(type_name='correct_type', filepath=self.rel_filepath, namelist='test', nl_var='var')
+        self.assertTrue(self.config.check_right_nl(namelist))
+
+
+    def test_check_ok(self):
+        # Test case for check_ok method
+        # Suggested test case: Check if the method returns True for valid namelist
+        namelist = NamelistVar(type_name='correct_type', filepath=self.rel_filepath, namelist='test', nl_var='var')
+        self.config.modified_values[namelist] = False
+        self.assertTrue(self.config.check_ok(namelist))
+        # and Fails for modified
+        self.config.modified_values[namelist] = True
+        with self.assertRaises(ValueError):
+            self.config.check_ok(namelist)
+
+
+    def test_backup(self):
+        # Test case for backup method
+        # Suggested test case: Check if the backup file is created correctly
+        config = self.config
+        backup_path = config.backup( backup=True)
+        self.assertTrue(backup_path.exists())
+
+    def test_namelist_names(self):
+        # Test case for namelist_names method
+        # Check if the method returns the correct list of namelist names
+        self.config.config = {'namelist1': {}, 'namelist2': {}}
+        self.assertEqual(self.config.namelist_names(), ['namelist1', 'namelist2'])
+
+    def test_var_names(self):
+        # Test case for var_names method
+        #  Check if the method returns the correct list of variable names for a given namelist
+        self.config.config = {'namelist1': {'var1': 1, 'var2': 2}}
+        self.assertEqual(self.config.var_names('namelist1'), ['var1', 'var2'])
+
+class TestJSON_Config(unittest.TestCase):
+
+    def setUp(self):
+
+        self.root_dir = genericLib.expand("$OPTCLIMTOP/OptClimVn3/configurations/example_simple_model_pars_json/reference")
+        self.rel_filepath = pathlib.Path('parameters.json')
+        self.config = JSON_Config(root_dir=self.root_dir, rel_filepath=self.rel_filepath)
+
+    def tearDown(self):
+        pass
+
+    @patch('pathlib.Path.open', new_callable=mock_open, read_data='{"key": "value"}')
+    def test_read(self, mock_file):
+        # Test the read method to ensure it correctly reads JSON data from a file
+        config = self.config.read()
+        self.assertEqual(config, {"key": "value"})
+
+    @patch('pathlib.Path.open', new_callable=mock_open) # critical this is here else the config would be overwritten
+    @patch('pathlib.Path.rename') # critical this is here else the config would be overwritten
+    def test_write(self, mock_rename,mock_file):
+        # Test the write method to ensure it correctly writes JSON data to a file
+        self.config.config = {"key": "value"}
+        self.config.write()
+        mock_file.assert_called_once_with('w+t')
+        # Check what would have been written out is as expected
+        # Get the file handle used by the mock
+        handle = mock_file()
+        # Get the actual written data
+        written_data = ''.join(call.args[0] for call in handle.write.call_args_list)
+        # Expected JSON string
+        expected_data = json.dumps({"key": "value"}, indent=2)
+
+        self.assertEqual(written_data, expected_data)
+        # check backup happened.
+        back_file = self.config.filepath()
+        back_file = back_file.parent/(back_file.name+'.bak')
+        mock_rename.assert_called_once_with( back_file)
+
+    def test_read_value(self):
+        # Test the read_value method to ensure it correctly reads a value from the config
+        self.config.config = {"namelist": {"var": 1}}
+        namelist = NamelistVar(type_name='json_nl', filepath=self.rel_filepath, namelist='namelist', nl_var='var')
+        value = self.config.read_value(namelist)
+        self.assertEqual(value, 1)
+
+    def test_update_value(self):
+        # Test the update_value method to ensure it correctly updates a value in the config
+        self.config.config = {"namelist": {"var": 1}}
+        namelist = NamelistVar(type_name='json_nl', filepath=self.rel_filepath, namelist='namelist', nl_var='var')
+        self.config.update_value(namelist, 2)
+        self.assertEqual(self.config.config["namelist"]["var"], 2)
+        self.assertTrue(self.config.modified_values[namelist])
+        # check get an error if update twice.
+        with self.assertRaises(ValueError):
+            self.config.update_value(namelist, 3)
 
 
 if __name__ == '__main__':

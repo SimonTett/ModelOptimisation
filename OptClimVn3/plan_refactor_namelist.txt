@@ -50,12 +50,14 @@ Wonder if I should spend some time and  energy getting HadCM3 working on eddie?
 Plan:
 1) refactor param_info/Model by moving the three methods to Model. Move the test cases. Test etc! Done!
 2) Write the abstract class for cache. Write the json version. Add a new model that uses json functionality based on simple_model. Test etc!
-
-2a) Have namelists register themselves (so user can add one) with a name.
-3) Write the namelist version of the cache. Modify hadcm3 to use the fortran_namelist cache. Test etc!
-4) remove code from namelist_var that is no longer needed. Modify Model to use json. Test etc!
-5) Remove json code from simple_model. test again.
-6) Modify gamil3 to use the fortran_namelist cache. (no test cases for this yet). Ask wenjun!
+2a) Have configs register themselves  with name of namelist_type.
+2b) Add tests. Done!
+2c) Modify simple_models_pars_json to use the new functionality. Test etc!
+3) Run simple_model_pars_json.py -- verifying that it works.
+4) Write the namelist version of the cache. Modify hadcm3 to use the fortran_namelist cache. Test etc!
+5) remove code from namelist_var that is no longer needed. Modify Model to use json. Test etc!
+6) Remove json code from simple_model. test again.
+7) Modify gamil3 to use the fortran_namelist cache. (no test cases for this yet). Ask wenjun!
 
 Status as of 10/11/24
 Working on json version. Have a simple_model_pars_json.py which contains a class for json simple model.

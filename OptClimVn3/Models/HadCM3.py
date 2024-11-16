@@ -18,6 +18,32 @@ import engine
 import genericLib
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}") # have this anywhere you want logging
+# Uncomment once ready for HaCM3.
+# import  namelist_var as nlvar
+# def namelist_var(filepath: typing.Optional[pathlib.Path]= None,
+#                  namelist: typing.Optional[str] = None,
+#                  nl_var: typing.Optional[str] =None,
+#                  default:typing.Optional[typing.Any]= None) -> nlvar.NamelistVar:
+#     """
+#     Thin wrapper around NamelistVar so that it produces sensible default namelists! .
+#     :param filepath: relative path to file
+#     :param nl_var: variable name
+#     :param namelist: namelist name
+#     :param default: default value
+#     :return: a namelist_var -- set up for namelist_var
+#     """
+#
+#     if filepath is None:
+#         filepath = pathlib.Path('CNTLATM')
+#     if namelist is None:
+#         namelist = 'SLBC21'
+#     if nl_var is None:
+#         ValueError("Need to specify nl_var")
+#
+#     return nlvar.NamelistVar(type_name='namelist_var',filepath=filepath, nl_var=nl_var, namelist=namelist, default=default)
+
+
+
 def IDLinterpol(inyold, inxold, xnew):
     """
     :param inyold: 3 element tupple of y values
@@ -251,14 +277,13 @@ class HadCM3(Model):
                     print(line[0:-1])  # remove newline
 
 
-    def submit_cmd(self, run_info: dict, engine: engine) -> typing.List[str]:
+    def submit_cmd(self) -> typing.List[str]:
         """
-        :param run_info -- run information.
-          should include runCode and runTime.
-        :param engine -- engine info. Not used  but provided with superclass method
 
         :return:  cmd to be run.
         """
+        run_info = self.run_info
+        engine = self.engine
         # HadCM3 runs a script which creates the job and then submits it...
         if self.status in ['INSTANTIATED', 'PERTURBED']:
             script = self.model_dir/"SUBMIT"

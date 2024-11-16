@@ -28,6 +28,8 @@ import f90nml
 import numpy as np
 import typing
 
+from numpy.distutils.misc_util import rel_path
+
 from model_base import model_base
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
@@ -35,28 +37,64 @@ my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 type_allowed_fortran = typing.Union[int, float, bool, str]  # types allowed in fortran
 
 
+"""
+Stuff for handling configurations. These go with coupled objects for namelist variables (or equivalent).
+To add a new type of configuration you need to add a new class which inherits from BaseConfig.
+You will need to implement read, write, read_value and update_value methods.
+Use the decorator register_class_info to register the class with the name of the namelist_var.
+You need to define the mapping from parameters to configuration changes. 
+Two ways -- define functions (and register them with register_param) or read them in from a csv file.
+See HadCM3 for examples which use namelist_var. 
+"""
+def register_class_info(name: typing.Union[str,list[str]]):
+    """
+    Register a config  class via name
+    :param name: Name of the related namelist_var
+    :return: A decorated class with  class_init updated.
+    class_init is a dictionary with keys being the name and values being the __init__ function to create the configuration.
+    """
+    if isinstance(name, str): # convert to a list if need be.
+        name = [name]
+    def decorator(cls):
+        # Ensure the class has a superclass with the required attribute
+        if not (hasattr(cls, 'config_init')):
+            raise AttributeError(f"Superclass of {cls.__name__} must have config_init attributes")
+
+        # Add the information to the superclass's class_info attribute
+
+
+        for n in name: # add all the known names to the class_init
+            cls.config_init[n] = cls
+            # this is init function for the generated config. Here for namelists to generate
+            # a config based on their type_name  .
+
+        return cls
+    return decorator
 class BaseConfig:
     """
     base class for configurations. Should not be instantiated. Here to provide std things which are overwritten.
     If need to add methods which could be done by a dict put them here!
-    """
 
-    def __init__(self, rel_filepath: pathlib.Path,
-                 root_dir: pathlib.Path = pathlib.Path.cwd(),
-                 allow_missing:bool = False):
+    """
+    config_init=dict() # Keys are namelist class and values are __init__ fn to create appropriate config.
+    def __init__(self,   root_dir: pathlib.Path = pathlib.Path.cwd(),
+                 rel_filepath: pathlib.Path = None,
+                 allow_missing:bool = False,
+                 type_name: typing.Optional[str] = None):
         """
         :param rel_filepath: relative path to file containing namelists.
         :param root_dir: root_dir.
 
-        Keep these two separate as rel_filepath comes from namelist & root_dir from model.
+        Keeping these two separate variables as rel_filepath comes from namelist & root_dir from model.
         """
 
         self.rel_filepath = rel_filepath
         self.root_dir = root_dir
-        self.modified = False
         self.config = self.read(allow_missing=allow_missing)
         self.modified_values = dict()
-        # track what was modified. If something updates or writes a modified value then trigger an error
+        # Track what was modified. If something updates or writes a modified value then trigger an error.
+        self.type_name = type_name # expected type_name. Complain if not right.
+
 
     # utility methods.
     def filepath(self) -> pathlib.Path:
@@ -66,28 +104,34 @@ class BaseConfig:
         """
         return self.root_dir / self.rel_filepath
 
-    def check_right_nl(self, namelist: 'namelist_var'):
+    def check_right_nl(self, namelist: 'NamelistVar') -> bool:
         """
-        Check the namelist and config match! Will fail with ValueError
+        Check the namelist and config match! Will fail with ValueError if Not and return True if OK.
         :param namelist: namelist to check
         :return: Nada
         """
+        if (self.type_name is not None) and (self.type_name != namelist.type_name):
+            raise ValueError(f'Expected {self.type_name}  for {namelist}.')
         if self.rel_filepath != namelist.filepath:
             raise ValueError(f'Looking in the wrong config. f{self.rel_filepath} != {namelist.filepath} for {namelist}')
+        return True
 
-    def check_ok(self,namelist):
+    def check_ok(self,namelist) -> bool:
         """
-        Check that OK -- right filepath and not modified the variable.
+        Check that config  OK -- namelist compatible and not modified the variable.
         :param namelist: namelist we are checking for
-        :return: nade -- raises errors
+        :return: True if OK
         """
+
+        # check if modified the variable already and throw an error if so.
         if self.modified_values.get(namelist,False): # already modified this value trigger an error
-            ValueError(f'Attempting to use modified value of {namelist}. You will need to modify code to allow this.')
+            raise ValueError(f'Attempting to use modified value of {namelist}. You will need to modify code to allow this.')
         # check that namelist.filepath is the same as self.relpath
-        self.check_right_nl(namelist)
+        ok = self.check_right_nl(namelist)
+        return ok
 
     def backup(self,
-               path: typing.Optional[pathlib.Path],
+               path: typing.Optional[pathlib.Path]=None,
                backup: bool = True) -> pathlib.Path:
         """
         Work out path to write config too. If it exists backup file first(if backup True).
@@ -99,63 +143,20 @@ class BaseConfig:
         if path is None:
             path = self.filepath()  # will be overwriting the original
         if backup and path.exists():
-            backup_name = path.parent / (path.name + '.bak')
-            path.rename(backup_name)
-            my_logger.debug(f'Renamed {path} to {backup_name}')
+            backup_path = path.parent / (path.name + '.bak')
+            path.rename(backup_path)
+            my_logger.debug(f'Renamed {path} to {backup_path}')
 
-        return path
+        return backup_path
 
 
     # end of utility functions.
-
-    # template classes for inherited classes. All raise NotImplementedError if called as need to
-    # be written for each type of config.
-
-    def read(self,allow_missing:bool = False):
-        """
-        Should be overwritten by classes that inherit
-        :return:
-        """
-        raise NotImplementedError('Implement read for your class -- do not call the abstract class.')
-
-    def write(self, path: typing.Optional[pathlib.Path],
-              backup: bool = True):
-        """
-        Should be overwitten by classes that inherit
-        :param path:
-        :param backup:
-        :return:
-        """
-        raise NotImplementedError('Implement write for your class -- do not call the abstract class.')
-
-    def read_value(self, namelist,
-                   raise_error: bool = True) -> type_allowed_fortran:
-        """
-        Read the  value from the config
-        :param namelist: namelist to use
-        :param raise_error: if True and namelist not found raise an error.
-        :return: value
-        """
-
-        raise NotImplementedError('Implement read_value for your class -- do not call the abstract class')
-
-    def update_value(self, namelist,
-                     value,
-                     create: bool = False):
-        """
-        Update the config with the values in namelist
-
-        :param namelist: namelist
-        :param value: value to set namelist in the config too.
-        :param create: If True create values. if False fail if values do not exist.
-        """
-        raise NotImplementedError('Implement update_value for your class -- do not call the abstract class')
 
     # methods to return some information about the config.
     def namelist_names(self) -> list[str]:
         """
         Get the namelist names
-        :return: a list of the namelist  names
+        :return: a list of the known namelist names
         """
         namelists = [k for k in self.config.keys()]
         return namelists
@@ -169,17 +170,68 @@ class BaseConfig:
         return var_names
 
 
-class JsonNamelistConfig(BaseConfig):
+    # template classes for inherited classes. All raise NotImplementedError if called as need to
+    # be written for each type of config.
+    def read(self,allow_missing:bool = False):
+        """
+        Should be overwritten by classes that inherit
+        :return:
+        """
+        raise NotImplementedError('Implement read for your class -- do not call the abstract class.')
+
+    def write(self,
+              path: typing.Optional[pathlib.Path]=None,
+              backup: bool = True):
+        """
+        Should be overwitten by classes that inherit
+        :param path: path to write out to.
+        :param backup:If True backup the file if it exists
+        :return:the path written to
+        """
+        raise NotImplementedError('Implement write for your class -- do not call the abstract class.')
+
+    def read_value(self, namelist:'BaseNamelist',
+                   raise_error: bool = True) -> type_allowed_fortran:
+        """
+        Read the  value from the config
+        :param namelist: namelist to use
+        :param raise_error: if True and namelist not found raise an error.
+        :return: value
+        """
+
+        raise NotImplementedError('Implement read_value for your class -- do not call the abstract class')
+
+    def update_value(self, namelist:'BaseNamelist',
+                     value,
+                     create: bool = False):
+        """
+        Update the config with the values in namelist
+
+        :param namelist: namelist
+        :param value: value to set namelist in the config too.
+        :param create: If True create values. if False fail if values do not exist.
+        """
+        raise NotImplementedError('Implement update_value for your class -- do not call the abstract class')
+
+
+
+@register_class_info('json_nl')
+class JSON_Config(BaseConfig):
     """
     Class to handle json namelist files.
-    Base class provides much of what is needed including the __init__
+    Base class provides much of what is needed, including  __init__ .
+    This provides read, write, read_value and update_value methods.
     """
+    # class variables
+    indent = 2  # how much to indent json files by. Change if you want different indention.
+    default = None # What gets called to serialize objects. None is std.
+
 
     def read(self,allow_missing:bool = False) -> dict:
         """
-        Read in json config -- which will be a dict.
+        Read in JSON config -- which will be a dict.
         :param allow_missing: Allow filepath to not exist. Create empty dict if it does not exist.
-        :return: json config
+        :return: JSON config as dict
         """
         filepath = self.filepath()
         try:
@@ -195,25 +247,25 @@ class JsonNamelistConfig(BaseConfig):
 
         return config
 
-    def write(self, path: typing.Optional[pathlib.Path],
+    def write(self, path: typing.Optional[pathlib.Path]=None,
               backup: bool = True):
         """
         Write out the config (which is a dict) to a file.
-        :param path: path  to write namelist info as a json file. if not specified will be
-          constructed using self.backup()
-        :param backup: passed to self.backup
+        :param path: where to write namelist info as a JSON file. if not specified will be
+          constructed using self.backup() which will backup the file. .
+        :param backup: passed to self.backup.
         """
         path = self.backup(path,backup=backup)
         with path.open('w+t') as fp:
-            json.dump(self.config,fp,indent=2)
+            json.dump(self.config,fp,indent=self.indent,default=self.default)
 
 
-    def read_value(self, namelist,
+    def read_value(self, namelist: 'NamelistVar',
                    raise_error: bool = True) -> type_allowed_fortran:
         """
         Read value from config.
         :param namelist:
-        :param raise_error: If True raise an error.
+        :param raise_error: If True raise an error if Value not found.  (othewise return None)
         :return: value.
         """
         self.check_ok(namelist)
@@ -221,50 +273,54 @@ class JsonNamelistConfig(BaseConfig):
         if value is None:
             if raise_error:
                 raise KeyError(f'Failed to find {namelist} in {self.filepath()}')
-            my_logger.debug(f'Failed to find {namelist} in {self.filepath()}')
+            my_logger.warning(f'Failed to find {namelist} in {self.filepath()}')
+
         return value
 
-    def update_value(self, namelist,
+    def update_value(self, namelist: 'NamelistVar',
                      value:type_allowed_fortran,
-                     create: bool = False): # update value might call the super class which takes an optional init type??
+                     create: bool = False):
         """
         Update values in config
         :param namelist: namelist
         :param value: value to be updated
-        :param create: Create the key if needed.
+        :param create: Create the key if needed. Generally should not be set.
         :return:
         """
 
         self.check_ok(namelist)
-        if create:
-            if self.config.get(namelist.namelist) is None:
-                self.config[namelist.namelist] = dict()  # set up an empty dict
-        else:
-            # try and read it. If var or namelist don't exist  then KeyError will be raised
-            try:
-                value = self.config[namelist.namelist][namelist.nl_var]
-            except KeyError:
-                my_logger.warning(f'Failed to find {namelist} in config read from {self.filepath}')
+        if create and self.config.get(namelist.namelist) is None:
+            self.config[namelist.namelist] = dict()  # set up an empty dict
 
-        self.config[namelist.namelist][namelist.nl_var] = value  # set the value
-        self.modified_values[namelist] = True  # modified this namelist!
+        try:
+            self.config[namelist.namelist][namelist.nl_var] = value  # set the value
+        except KeyError:
+            my_logger.warning(f'Failed to find {namelist} in config read from {self.filepath}')
+            raise
+
+        self.modified_values[namelist] = True #  namelist has been modified.
         my_logger.debug(f"Setting {namelist_var} to {value}")
 
-
+@register_class_info(['namelist_var','fortran_nl']) # have namelist_var for compatibility with earlier code.
 class FortranNamelistConfig(BaseConfig):
     """
     Class to handle fortran namelist files.
     Inherits from base_config_namelist. No __init__ is provided as base class is fine!
 
     """
-
+    # Control how namelist is output. Default values as call variables. Modify them if you want to change how
+    # writing is done.
+    end_comma = True
+    uppercase = True
     def read(self,allow_missing:bool = False) -> f90nml.namelist.Namelist:
         """
         Read in namelist config. Really here as will have different types of configs each with their own way of reading.
         """
         filepath = self.filepath()
         try:
-            config = f90nml.read(filepath)
+            parser = f90nml.parser.Parser()
+            # Here one could modify the parser to change how I/O done. But that is not needed yet!
+            config = parser.read(filepath)
         except FileNotFoundError:
             if allow_missing:
                 my_logger.warning(f'File {filepath} does not exist. Making empty config')
@@ -285,10 +341,14 @@ class FortranNamelistConfig(BaseConfig):
         :param backup  passed to self.backup().
         """
         path = self.backup(path, backup=backup)
-        f90nml.write(self.config, path, force=True)
+        config_to_write = copy.copy(self.config)  # make a copy so we can modify it.
+        # Modify parameters of the config to control how it is written.
+        config_to_write.end_comma = self.end_comma
+        config_to_write.uppercase = self.uppercase
+        config_to_write.write(path, force=True)  # force overwriting of file.
         my_logger.info(f'Wrote config to {path}')
 
-    def read_value(self, namelist: 'namelist_var',
+    def read_value(self, namelist: 'NamelistVar',
                    raise_error: bool = True) -> type_allowed_fortran:
         """
         Read the namelist value from the config.
@@ -305,7 +365,7 @@ class FortranNamelistConfig(BaseConfig):
             my_logger.debug(f'Failed to find {namelist} in {self.filepath()}')
         return value
 
-    def update_value(self, namelist: 'namelist_var',
+    def update_value(self, namelist:  'NamelistVar',
                      value: type_allowed_fortran,
                      create: bool = False):
         """
@@ -331,21 +391,56 @@ class FortranNamelistConfig(BaseConfig):
         self.modified_values[namelist] = True # modified this namelist!
         my_logger.debug(f"Setting {namelist_var} to {value}")
 
+def register_class_info(name: typing.Union[str,list[str]], init_func: typing.Callable):
+    """
+    Register a namelist class via name and also provide the init_function to create the relevant config class.
+    :param name: Name of the class
+    :param init_func: Init function for the related config class.
+    :return: A decorated class with config_init and class_init updated.
+    """
+    if isinstance(name, str): # convert to a list if need be.
+        name = [name]
+    def decorator(cls):
+        # Ensure the class has a superclass with the required attribute
+        if not (hasattr(cls, 'config_init') and hasattr(cls, 'class_init')):
+            raise AttributeError(f"Superclass of {cls.__name__} must have config_init  & class_init attributes")
+
+        # Add the information to the superclass's class_info attribute
+        cls.config_init[cls] = init_func # the init function for the config class.
+
+        for n in name: # add all the known names to the class_init
+            cls.class_init[n] = cls # this is init function for the generated class.
+
+        return cls
+    return decorator
+
+## Stuff for namelist vars.
+# These are data type with named fields. To extend you need to inherit from Namelistvar and add new fields.
+# You  also need to do the following:
+#  1) functions you write produce the correct types
+#  2) modify param_info.read_from_file to generate the right tu
+#
+
 @dataclasses.dataclass(frozen=True)
-class BaseNamelist:
+class NamelistVar:
     """
     Class to handle namelist variables.
     """
-    filepath: pathlib.Path
-    namelist: str
-    nl_var: str
-    name: str = None
-    default: any = None
+    type_name:str # name of the namelist_var which tells us what config to use.
+    filepath: pathlib.Path # relative path to the file being use
+    namelist: str # name of the namelist
+    nl_var: str # name of the namelist variable
+    name: str = None # parameter name
+    default: any = None # default value
 
+    # ** class variables **
+    config_init=dict() # Keys are namelist class and values are __init__ fn to create appropriate config.
+    class_init=dict() # Keys are names and values are __init__ fn to create appropriate namelist_var.
+    # Keys are the cls name  and values are the name and classes which do the reading/writing.
     def __repr__(self):
         """ Representation -- the name and the cpts"""
-        r = self.__class__.__name__+' '
-        r += f"{self.filepath}&{self.namelist} {self.nl_var}"
+        r = self.type_name
+        r += f"-{self.filepath}: {self.namelist}&{self.nl_var}"
         if self.default is not None:
             r += f" default:{self.default}"
         if self.name is not None:
@@ -353,31 +448,29 @@ class BaseNamelist:
 
         return r
 
-    @classmethod
-    def gen_config(cls,root_dir: pathlib.Path,
-                   rel_path: pathlib.Path) -> BaseConfig:
+
+    def init_config(self,root_dir: pathlib.Path
+                   ,**kwargs) -> BaseConfig:
         """
         Generate a config of appropriate type by reading one in.
-        :param rel_path: relative path to where the config file is
+        Looks up init function in class_init and uses that to generate the config.
         :param root_dir: root directory for relative paths.
-        :return: config
+        All other kwargs are passed to the init function.
+        :return: A config of the appropriate type.
         """
-        raise NotImplementedError(f'{cls.__name__}.{__name__} should nto be directly called ')
-        config = BaseConfig(rel_path, root_dir=root_dir)
+        try:
+            init_fn = BaseConfig.config_init[self.type_name]
+
+        except KeyError:
+            keys = BaseConfig.config_init.keys()
+            my_logger.warning(f'Failed to find {self.type_name} in class_info. Allowed names are {", " .join(keys)}. Did you register it?')
+            raise
+        config = init_fn(root_dir,self.filepath,type_name=self.type_name,**kwargs) # call the init function
         return config
 
-class JsonNamelistVar(BaseNamelist):
-    """
-    JSON version of namelists. Same as the base config except gen_config is different
-    """
-    def gen_config(cls,root_dir: pathlib.Path,
-                   rel_path: pathlib.Path) -> JsonNamelistConfig:
-        """
-        See BaseNamelist.gen_config for argument details. This version retunrs a JsonNamelistConfig
 
-        """
-        config = JsonNamelistConfig(root_dir,rel_path)
-        return config
+
+## When done all below can be removed.
 
 @dataclasses.dataclass(frozen=True)
 class namelist_var(model_base): # not sure I need to inherit from model_base as no need to write instances out.
