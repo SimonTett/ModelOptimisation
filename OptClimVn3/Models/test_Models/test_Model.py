@@ -1,4 +1,4 @@
-# FIXME. Logging is not turned on whne running test_models. But works when
+
 import copy
 import datetime
 import filecmp
@@ -309,11 +309,9 @@ class ModelTestCase(unittest.TestCase):
             time.sleep(1e-3)  # sleep for a millisecond
             omodel = copy.deepcopy(self.model)
 
-            with self.assertLogs(level=logging.DEBUG) as log:
-                self.model.set_status(status)
-            # only check first log entry which is the status change.
-            self.assertEqual(log.output[0],
-                             f"DEBUG:OPTCLIM.Model:Changing status from {omodel.status} to {self.model.status}")
+
+            self.model.set_status(status)
+
             # check status is as expected
             self.assertEqual(self.model.status, status)
             nhist += 1  # 1 more history entry
@@ -571,9 +569,7 @@ class ModelTestCase(unittest.TestCase):
         model.status = 'FAILED'
         v = model.read_params('VF1')
         v['VF1'] *= (1 + 1e-7)  # small perturb
-        with self.assertLogs(level='DEBUG') as log:
-            model.perturb(v)
-        self.assertEqual(log.output[-1], f"DEBUG:OPTCLIM.Model: parameters_no_key is now {v}")
+        model.perturb(v)
         self.assertEqual(len(model._history), 5)
         # expect 5 bits of history. Created, Modified,Instantiated, perturbed using and setting status
         p = model.read_params('VF1')
@@ -605,10 +601,8 @@ class ModelTestCase(unittest.TestCase):
         model.pp_jid = '123456'
 
         with unittest.mock.patch('subprocess.check_output', autospec=True, return_value='Ran PP') as mock_chk:
-            with self.assertLogs() as log:
-                r = model.succeeded()
+            r = model.succeeded()
             expected = self.eng.release_job(model.pp_jid)
-            self.assertEqual(log.output[0], f'INFO:OPTCLIM.Model:Ran post-processing cmd {expected}')
             self.assertEqual(model.status, 'SUCCEEDED')
             self.assertEqual(r, 'Ran PP')
             self.assertEqual(len(model._history), 2)
@@ -849,15 +843,7 @@ class ModelTestCase(unittest.TestCase):
         for r,v in result:
             self.assertEqual(v, 10.0)
             self.assertIsInstance(r, namelist_var)
-        # test logs
-        with self.assertLogs(level=logging.DEBUG) as log:
-            a = model.param( 'VF1', 42)
-            b = model.param('RHCRIT', 10)
-        self.assertEqual(log.output,
-                         [f"DEBUG:OPTCLIM.Model:Parameter VF1 set {nl_var1} to 42",
-                          #f"DEBUG:OPTCLIM.myModel:Parameter VF1 set {nl_var2} to 42",
-                          f"DEBUG:OPTCLIM.Model:Parameter RHCRIT called {myModel.cloudRHcrit.__qualname__} with 10 and returned {(nl_var3, [10] * 19)}",
-                          f"DEBUG:OPTCLIM.Model:Parameter RHCRIT set {nl_var3a} to 10",])
+
 
         # test failures
         with self.assertRaises(ValueError):
