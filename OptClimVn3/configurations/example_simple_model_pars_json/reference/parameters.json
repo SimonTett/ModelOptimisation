@@ -10,10 +10,11 @@
   "model_params":
   {
     "CT": 0.0001,
+    "N_VERT_LEVELS": 3,
         "EACF": 0.5,
         "ENTCOEF": 3.0,
         "ICE_SIZE": 3e-05,
-        "RHCRIT": 0.7,
+        "RHCRIT": [0.7,0.7,0.7],
         "VF1": 1.0,
         "CW": 0.0002,
         "CW_comment": "Seed parameter which  affects CW_SEA & CW_LAND",

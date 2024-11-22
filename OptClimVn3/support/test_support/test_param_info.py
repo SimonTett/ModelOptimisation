@@ -11,7 +11,7 @@ import pandas.testing as pdtest
 
 import genericLib
 from namelist_var import namelist_var
-from param_info import param_info
+from param_info import ParamInfo
 from Models import Model, register_param
 genericLib.setup_env()
 """
@@ -24,7 +24,7 @@ class TestParamInfo(unittest.TestCase):
         return value ** 2
 
     def setUp(self):
-        self.param_info = param_info()
+        self.param_info = ParamInfo()
         # set up test case.
         nl_var1 = namelist_var(filepath=pathlib.Path('fred.nl'), namelist='atmos', nl_var='VF1', name='VF1', default=1)
         nl_var2 = namelist_var(filepath=pathlib.Path('fred.nl'), namelist='atmos', nl_var='VF2', name='VF2',
@@ -64,7 +64,7 @@ class TestParamInfo(unittest.TestCase):
 
     def test_register(self):
         # Test registered a namelist (well a list of anything)
-        p = param_info()
+        p =  ParamInfo()
         p.register('VF1', 'nl_var1')
         p.register('VF1', 'nl_var2', duplicate=True)
         self.assertEqual(p.param_constructors['VF1'], ['nl_var1', 'nl_var2'])
@@ -102,7 +102,7 @@ class TestParamInfo(unittest.TestCase):
 
     def test_param(self):
         # Test with a namelist
-        p = param_info()
+        p = ParamInfo()
         nl_var1 = namelist_var(filepath=pathlib.Path('ATMCNTL'), namelist='atmos', nl_var='vf1')
         nl_var2 = namelist_var(filepath=pathlib.Path('ATMCNTL'), namelist='atmos', nl_var='vf2')
         p.register('VF1', nl_var1)
@@ -148,7 +148,7 @@ class TestParamInfo(unittest.TestCase):
 
     def test_to_dict(self):
         # Test with a namelist
-        p = param_info()
+        p =  ParamInfo()
         p.register('VF1', 'nl_var1')
         p.register('VF2', 'nl_var2')
         self.assertEqual(p.to_dict(), dict(VF1=['nl_var1'], VF2=['nl_var2']))
@@ -173,12 +173,12 @@ class TestParamInfo(unittest.TestCase):
     def test_from_dict(self):
         # Test with a namelist
         dct = {'VF1': ['nl_var1', 'nl_var2']}
-        result = param_info.from_dict(dct)
+        result =  ParamInfo().from_dict(dct)
         self.assertEqual(result.param_constructors, {'VF1': ['nl_var1', 'nl_var2']})
 
         # test fn doesn't get added.
         dct = {'VF1': ['nl_var1', 'nl_var2'], 'RHCRIT': [['function', 'set_RHCRIT']]}
-        result = param_info.from_dict(dct)
+        result =  ParamInfo().from_dict(dct)
         self.assertEqual(result.param_constructors, {'VF1': ['nl_var1', 'nl_var2']})
 
     def test_to_DataFrame(self):
@@ -204,7 +204,7 @@ class TestParamInfo(unittest.TestCase):
             return value ** 2
 
         dct = {'VF1': [nl_var1, nl_var2], 'OCDIFF': [nl_var3], 'RHCRIT': [['function', 'set_RHCRIT']]}
-        params = param_info.from_dict(dct)
+        params =  ParamInfo().from_dict(dct)
         params.register('FN', fn)
         expect = f"""VF1 [{nl_var1} {nl_var2} ]
 OCDIFF [{nl_var3} ]
@@ -215,7 +215,7 @@ FN [function: {fn.__qualname__} ]
     def test_update_from_file(self):
         # test add_parameters_from_file
         # need to generate a file.
-        p = param_info()
+        p =  ParamInfo()
         # register functions
         p.register('FN', self.fn)
         with tempfile.NamedTemporaryFile(mode='w', prefix='.csv', delete=False) as tfile:
@@ -227,7 +227,7 @@ FN [function: {fn.__qualname__} ]
         self.assertEqual(p.to_dict(), self.param_info.to_dict())
         self.assertEqual(vars(p), vars(self.param_info))
         # try again with no fn. Expect a warning message
-        p = param_info()
+        p =  ParamInfo()
         with tempfile.NamedTemporaryFile(mode='w', prefix='.csv', delete=False) as tfile:
             file = tfile.name
             self.expected_df.to_csv(file, index=False)
@@ -243,8 +243,8 @@ FN [function: {fn.__qualname__} ]
         :return: nada
         """
         # simple test.
-        orig = param_info()
-        new = param_info()
+        orig =  ParamInfo()
+        new = ParamInfo()
         orig.update(new)
         self.assertTrue(len(orig.param_constructors) == 0)  # update empty from empty gives empty
         new.register('cf1', 'nl_cf1')

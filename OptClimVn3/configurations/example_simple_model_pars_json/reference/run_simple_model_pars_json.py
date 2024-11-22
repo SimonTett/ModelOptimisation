@@ -22,6 +22,10 @@ with open("parameters.json", 'r') as fp:
 system_params = params['system']
 # remove any keys that look like comments from params
 model_params = {k:v for k,v in params['model_params'].items() if not k.endswith('_comment')}
+# need to convert any lists to a scaler. Pick the first element.
+for k in model_params.keys():
+    if isinstance(model_params[k],list):
+        model_params[k] = model_params[k][0]
 
 
 print("Model Parameters are ",model_params)
@@ -38,4 +42,4 @@ if np.random.uniform(0,1.0) < pfail:
 sim_obs = fake_fn(config, model_params).to_dict() # generate some fake obs!
 with open("model_output.json", "w+t") as fp: # and write them out
     json.dump(sim_obs, fp,indent=2)
-#sys.exit(0) # we are finished
+sys.exit(0) # we are finished

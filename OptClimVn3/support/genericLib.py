@@ -26,7 +26,7 @@ def setup_logging(level:typing.Optional[int] = None,
                   log_config:typing.Optional[dict]=None):
     """
     Setup logging. 
-    :param: level: level of logging . If None logging.WARNING will be used
+    :param: level: level of logging. If None logging.WARNING will be used
     :param: rootname: rootname for logging. if None OPTCLIM will be used. 
     :param: log_config config dict for logging.config --
           see https://docs.python.org/3/library/logging.config.html

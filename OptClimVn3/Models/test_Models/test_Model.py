@@ -1,3 +1,4 @@
+# FIXME. Logging is not turned on whne running test_models. But works when
 import copy
 import datetime
 import filecmp
@@ -24,6 +25,7 @@ from namelist_var import namelist_var
 from myModel import myModel
 
 genericLib.setup_env()
+
 def gen_time():
     # used to mock Model.now()
     time = datetime.datetime(2000, 1, 11, 0, 0, 0)
@@ -82,6 +84,7 @@ class ModelTestCase(unittest.TestCase):
         self.config_path = self.model.config_path
         self.eng = engine.abstractEngine.create_engine('SGE')
 
+
     def tearDown(self):
         """
         Clean up by removing the temp directory contents
@@ -89,6 +92,7 @@ class ModelTestCase(unittest.TestCase):
         """
         shutil.rmtree(self.testDir, onerror=genericLib.errorRemoveReadonly)
         self.tmpDir.cleanup()
+
 
     def assertAllequal(self, data1, data2):
         for key, value in data1.items():
@@ -304,6 +308,7 @@ class ModelTestCase(unittest.TestCase):
                        'SUCCEEDED', 'PROCESSED']:
             time.sleep(1e-3)  # sleep for a millisecond
             omodel = copy.deepcopy(self.model)
+
             with self.assertLogs(level=logging.DEBUG) as log:
                 self.model.set_status(status)
             # only check first log entry which is the status change.
@@ -882,4 +887,5 @@ class ModelTestCase(unittest.TestCase):
 
 
 if __name__ == '__main__':
+    logging.basicConfig(level=logging.DEBUG, force=True)
     unittest.main()

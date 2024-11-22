@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from model_base import model_base
-from  param_info import param_info
+from  param_info import ParamInfo
 import logging
 import copy
 import typing
@@ -41,12 +41,12 @@ class ModelBaseClass(model_base):
     #param_info = param_info()
 
     @classmethod
-    def register_functions(cls) -> param_info:
+    def register_functions(cls) -> ParamInfo:
         """
         Register all functions in the class
         :return: param_info to be merged into other information,
         """
-        my_param_info = param_info()
+        my_param_info = ParamInfo()
         for name, member in cls.__dict__.items():
             # Loop through all members of the subclass and populate param_info
             # accordingly. These should all be functions.
@@ -72,9 +72,9 @@ class ModelBaseClass(model_base):
         # With this definition, all params in parent classes are duplicated
         # in subclasses.
 
-        my_param_info = param_info()
+        my_param_info = ParamInfo()
         for bcls in reversed(cls.__bases__):  # iterate over base classes updating parameters from them.
-            parent_param_info = getattr(bcls, 'param_info', param_info())
+            parent_param_info = getattr(bcls, 'param_info', ParamInfo())
             my_param_info.update(parent_param_info)  # update overwrites existing info for named parameters.
             my_logger.info(f"Updated param_info from {bcls}")
         if hasattr(cls, 'param_info'):  # Already got param_info. Update from it
@@ -189,4 +189,4 @@ class ModelBaseClass(model_base):
         Remove param info
         :return: Nada
         """
-        cls.param_info = param_info()
+        cls.param_info = ParamInfo()

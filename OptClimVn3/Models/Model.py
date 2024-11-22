@@ -510,6 +510,12 @@ class Model(ModelBaseClass, journal):
         self.model_dir.mkdir(parents=True, exist_ok=True)  # create the directory if needed.
         my_logger.info(f"Created {self.model_dir}")
         if not self.fake:
+            # empty the directory (if we are creating)
+            for file in self.model_dir.iterdir():
+                if file.is_dir():
+                    shutil.rmtree(file)
+                else:
+                    file.unlink()
             shutil.copytree(self.reference, self.model_dir, symlinks=True, dirs_exist_ok=True)  # copy from reference.
 
     def set_status(self, new_status: type_status, check_existing: bool = True) -> None:

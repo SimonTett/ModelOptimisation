@@ -27,9 +27,6 @@ import tempfile
 import f90nml
 import numpy as np
 import typing
-
-from numpy.distutils.misc_util import rel_path
-
 from model_base import model_base
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
@@ -210,8 +207,7 @@ class BaseConfig:
         return ok
 
     def backup(self,
-               path: typing.Optional[pathlib.Path]=None,
-               backup: bool = True) -> pathlib.Path:
+               path: typing.Optional[pathlib.Path]=None) -> pathlib.Path:
         """
         Work out path to write config too. If it exists backup file first(if backup True).
         :param path: path -- if None will be self.filename.
@@ -221,12 +217,15 @@ class BaseConfig:
 
         if path is None:
             path = self.filepath()  # will be overwriting the original
-        if backup and path.exists():
+        if path.exists():
             backup_path = path.parent / (path.name + '.bak')
+            if backup_path.exists():
+                raise ValueError(f'Backup file {backup_path} already exists. ')
+
             path.rename(backup_path)
             my_logger.debug(f'Renamed {path} to {backup_path}')
 
-        return backup_path
+        return path
 
 
     # end of utility functions.
@@ -260,14 +259,20 @@ class BaseConfig:
 
     def write(self,
               path: typing.Optional[pathlib.Path]=None,
-              backup: bool = True):
+              backup: bool = True) -> pathlib.Path:
         """
-        Should be overwitten by classes that inherit
+        Should be overwitten by classes that inherit.
+         This superclass does backing up!
         :param path: path to write out to.
         :param backup:If True backup the file if it exists
-        :return:the path written to
+        :return:the path (to be) written to
         """
-        raise NotImplementedError('Implement write for your class -- do not call the abstract class.')
+        if path is None:
+            path = self.filepath()
+        if backup:
+            path = self.backup(path)
+
+        return path
 
     def read_value(self, namelist:NamelistVar,
                    raise_error: bool = True) -> type_allowed_fortran:
@@ -334,10 +339,12 @@ class JSON_Config(BaseConfig):
           constructed using self.backup() which will backup the file. .
         :param backup: passed to self.backup.
         """
-        path = self.backup(path,backup=backup)
+        path = super().write(path, backup=backup)
+
         with path.open('w+t') as fp:
             json.dump(self.config,fp,indent=self.indent,default=self.default)
-
+        my_logger.info(f'Wrote config to {path}')
+        return path
 
     def read_value(self, namelist: 'NamelistVar',
                    raise_error: bool = True) -> type_allowed_fortran:
@@ -378,7 +385,7 @@ class JSON_Config(BaseConfig):
             raise
 
         self.modified_values[namelist] = True #  namelist has been modified.
-        my_logger.debug(f"Setting {namelist_var} to {value}")
+        my_logger.debug(f"Setting {namelist} to {value}")
 
 @register_class_info(['namelist_var','fortran_nl']) # have namelist_var for compatibility with earlier code.
 class FortranNamelistConfig(BaseConfig):
@@ -419,8 +426,7 @@ class FortranNamelistConfig(BaseConfig):
           If not specified will be constructed using self.backup().
         :param backup  passed to self.backup().
         """
-        path = self.backup(path, backup=backup)
-        config_to_write = copy.copy(self.config)  # make a copy so we can modify it.
+
         # Modify parameters of the config to control how it is written.
         config_to_write.end_comma = self.end_comma
         config_to_write.uppercase = self.uppercase
@@ -476,7 +482,7 @@ class FortranNamelistConfig(BaseConfig):
 class GroupConfig(model_base):
     # class to handle a group of configs. Really just a dict of configs + root_dir
 
-    def __init__(self, root_dir: pathlib.Path):
+    def __init__(self, root_dir: typing.Optional[pathlib.Path]= None):
         """
 
         :param root_dir: The root directory for relative paths.
@@ -492,6 +498,7 @@ class GroupConfig(model_base):
         if namelist.filepath not in self.configs.keys():
             config = namelist.init_config(self.root_dir)
             self.configs[config.rel_filepath] = config
+            my_logger.debug(f'Read in config for {namelist} from {config.rel_filepath}')
 
     def read_value(self, namelist: NamelistVar, raise_error: bool = True) -> type_allowed_fortran:
         """
@@ -522,13 +529,14 @@ class GroupConfig(model_base):
         Set & write the values in the configs.
         :param nl_values: dictionary indexed by NamelistVar with values to set.
 
-        After writing the configs are reset.
+        After writing, the configs are reset.
         """
         for namelist, value in nl_values.items():  # update values
             self.update_value(namelist, value)
 
         for config in self.configs.values():  # Iterate over configs and write them out.
             config.write()
+            my_logger.debug(f'Wrote out {config} to {config.filepath()}')
         self.configs = dict()  # reset the configs.
 
     def to_dict(self) -> dict:

@@ -217,8 +217,9 @@ class TestJsonUtils(rootTest):
                      'e':dict(fred=True,james=2,harry=4.5,gordon='some text'),
                      'f':[1,2,3,'more test'],
                      'g':nl,
-                     'h': param_info.param_info()}
-        self.data['h'].register('VF1',nl)
+                     #'h': param_info.ParamInfo()
+                     }
+        #self.data['h'].register('VF1',nl)
 
 
 

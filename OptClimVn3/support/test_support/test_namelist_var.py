@@ -248,10 +248,10 @@ class test_BaseConfig(unittest.TestCase):
 
     def test_backup(self):
         # Test case for backup method
-        # Suggested test case: Check if the backup file is created correctly
+        # Check if the backup file is created correctly if config exists.
         config = self.config
-        backup_path = config.backup(backup=True)
-        self.assertTrue(backup_path.exists())
+        path = config.backup()
+        self.assertFalse(path.exists())
 
     def test_namelist_names(self):
         # Test case for namelist_names method

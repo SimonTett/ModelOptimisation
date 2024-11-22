@@ -10,14 +10,14 @@ import typing
 import numpy as np
 import pandas as pd
 
-from model_base import model_base
+import genericLib
 #from namelist_var import namelist_var
 import namelist_var
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}") # so this module has its own logging.
 
 
-class param_info(model_base):
+class ParamInfo():
     """
     Provides support for parameters that map to namelists and functions that return namelists (or nothing).
     This is used in Model.
@@ -34,6 +34,8 @@ class param_info(model_base):
 
     Example:
     """
+
+    #file_info: dict[pathlib.Path,str] = dict()# holds all the file info. Indexed by filename.
     def __init__(self):
         """
         Initialise the params instance by setting param_constructors to an empty dict
@@ -41,7 +43,7 @@ class param_info(model_base):
         self.param_constructors = dict()  # information on parameters -- currently namelist_var or functions
         self.got_vars = set()  # set of the known variables (namelist or functions)
         self.known_functions = dict()  # known functions indexed by __qualname__
-        self.file_info = dict() # where we store indexed by filenames the expected type. Will be used to check things are as expected.
+        self.file_info = dict() # where we store indexed by the relative filenames the expected type. Will be used to check things are as expected.
 
     def update(self, other_param_info):
         """
@@ -80,7 +82,17 @@ class param_info(model_base):
                         self.known_functions.pop(v.__qualname__, None)
             except KeyError:
                 pass
-
+        # add the new type to the set of file_info. Triggering an error if not.
+        if isinstance(var_to_set, (namelist_var.NamelistVar,namelist_var.namelist_var)):
+            if isinstance(var_to_set, namelist_var.NamelistVar):
+                type_name = var_to_set.type_name
+            else:
+                type_name = 'namelist_var'
+            if var_to_set.filepath in self.file_info:
+                if self.file_info[var_to_set.filepath] != type_name:
+                    raise ValueError(f"File {var_to_set.filepath} has multiple types {self.file_info[var_to_set.filepath]} and {type_name}")
+            else:
+                self.file_info[var_to_set.filepath] = type_name
         if var_to_set in self.got_vars:
             raise ValueError(f"Already got var {var_to_set}. No duplicates allowed")
         self.got_vars.add(var_to_set)
@@ -215,9 +227,9 @@ class param_info(model_base):
         """
 
         lookup = dict(namelist_var=namelist_var.namelist_var,
-                      json_var = namelist_var.JsonNamelistVar)
+                      json_var = namelist_var.NamelistVar)
         # TODO once working move to some more automatic system of registering namelist like variables.
-        def str_to_ifb(value:typing.Optional[str]) -> typing.Optional[bool,float,int]:
+        def str_to_ifb(value:typing.Optional[str]) -> typing.Optional[typing.Union[bool,float,int]]:
             """
             Convert a string to a bool, float or int. If None passed return None
             :param value: value to be converted.
@@ -236,7 +248,7 @@ class param_info(model_base):
 
             return result
 
-        parameter_df = pd.read_csv(self.expand(filepath), **kwargs)
+        parameter_df = pd.read_csv(genericLib.expand(filepath), **kwargs)
         parameter_df = parameter_df.replace({np.nan:None}) # replace any Nan with None. (on write out None get written as nan)
 
         for indx, row in parameter_df.iterrows():
@@ -296,8 +308,10 @@ class param_info(model_base):
         Generate a dictionary rep using param_constructors. If callable the function name will be returned.
         Otherwise will be left alone.
         :return: dict
+        TODO: Check if actually used. SFBT thinks it is never used in anger.
         """
-        dct = {}
+        my_logger.warning('Calling to_dict.')
+        dct=dict()
         for key, lst in self.param_constructors.items():
             dct[key] = []
             for value in lst:
@@ -313,6 +327,7 @@ class param_info(model_base):
         Tricky part is need to ignore the functions.
         :return: object
         """
+
         obj = cls()  # follow std initialisation.
         for key, lst in dct.items():
             values = obj.param_constructors.get(key, [])  # empty list of not already defined
@@ -334,3 +349,95 @@ class param_info(model_base):
         :return:
         """
         return list(self.param_constructors.keys())
+
+    ## new code. To replace update_from_file
+    from namelist_var import NamelistVar
+    def update_from_file_new(self, filepath: pathlib.Path|str, duplicate: bool = False, **kwargs):
+        """
+        Add parameters from file.
+        :param filepath: path to csv file (can be anything accepted by pandas.read_csv).
+          parameter type  filepath namelist nl_var name -- extend for different types.
+          For this implementation type **must** be namelist_var. Extend for different ways of specifing parameters.
+          All four parameters needed to create a namelist_var must be present
+        :param duplicate: If True allow duplicates otherwise final parameter found is used.
+        :param kwargs -- all remaining arguments are passed to read_csv.
+        :return: Nothing.Modifies self in place
+        """
+
+        # TODO once working move to some more automatic system of registering namelist like variables.
+        def str_to_ifb(value:typing.Optional[str]) -> typing.Optional[typing.Union[bool,float,int]]:
+            """
+            Convert a string to a bool, float or int. If None passed return None
+            :param value: value to be converted.
+            :return: converted value.
+            """
+            if value is None:
+                return None
+            if value.lower() == 'true':
+                result = True
+            elif value.lower() == 'false':
+                result = False
+            elif '.' in value:
+                result = float(value)
+            else:
+                result = int(value)
+
+            return result
+
+        parameter_df = pd.read_csv(genericLib.expand(filepath), **kwargs)
+        parameter_df = parameter_df.replace({np.nan:None}) # replace any Nan with None. (on write out None get written as nan)
+
+        for indx, row in parameter_df.iterrows():
+            param, typ = row.loc[['parameter', 'type']]
+            if typ == 'function':
+                # check we have it and warn if not.
+                fname = row.loc["function_name"]
+                if fname not in self.known_functions.keys():
+                    my_logger.warning(f"Function {fname} not found. Likely some discrepancy")
+                else:
+                    my_logger.debug(f"Got function {fname} for parameter {param}")
+            else:
+                name = row.loc['name']
+                if pd.isnull(name):  # no name defined set it to param.
+                    name = param
+                # convert default
+                default = row.loc['default']
+                if isinstance(default,str):
+                    default = str_to_ifb(default)
+
+                nl = namelist_var.NamelistVar(type_name=typ, filepath=pathlib.Path(row.loc['filepath']),
+                                              namelist=row.loc['namelist'],
+                                              nl_var=row.loc['nl_var'], default=default, name=name)
+
+                self.register(param, nl, duplicate=duplicate)
+                my_logger.debug(f"Registered {nl} for parameter {param}")
+
+        my_logger.info(f"Registered {len(parameter_df.index)} parameters")
+
+    def check_ok(self)-> bool:
+        """
+        TODO: consider moving to Model as can then check functions.
+        Check that params are OK:
+        1) Namelists are all the same type for a file.
+        """
+        from namelist_var import NamelistVar
+        file_nls:dict[pathlib.Path:NamelistVar]=dict() # store the first NameListVar for a file.
+        bad_nls=dict()
+        for key, lst in self.param_constructors.items():
+            for value in lst:
+                if callable(value): # Not possible to test these without an instantiated model.
+                    continue
+                elif isinstance(value,NamelistVar):
+                    filep = value.filepath
+                    if filep not in file_nls:
+                        file_nls[filep]=value
+                    else:
+                        if file_nls[filep].type_name != value.type_name:
+                            bad_nls[filep] = True
+                            # warn that we have multiple types for same file.
+                            my_logger.warning(f'File {filep} has multiple types {file_nls[filep].type_name} and {value.type_name}')
+                else:
+                    my_logger.error(f"Unknown type {value} for {key}")
+        if len(bad_nls) > 0: # got some bad nls. So trigger an error.
+            raise ValueError(f"Multiple types for following files: {' '.join([str(k) for k in bad_nls.keys()])}")
+        return True
