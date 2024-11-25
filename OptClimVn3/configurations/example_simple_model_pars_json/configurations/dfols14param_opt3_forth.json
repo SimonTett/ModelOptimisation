@@ -1,5 +1,5 @@
 {
-    "history": "Test config for DFOLS algorithm and Vn3 of OptClim. Perturbing 14 parameters and using simple_model. Running on Forth",
+    "history": "Test config for DFOLS algorithm and Vn3 of OptClim. Perturbing 14 parameters and using simple_model_pars_json. Running on Forth",
     "Developer_comment": "StudyConfig.py provides methods that work with this configuration file. Remember to change them if you change structure of this.",
     "version": 3,
     "version_comment": "Version ID",
@@ -17,7 +17,7 @@
 	"ssh_node2_comment": null,
 	"ssh_node": null,
 	"ssh_node_comment":"If not null then name of machine which has access to engine. Will ssh to this machine to submit commands",
-        "modelName": "simple_model",
+        "modelName": "simple_model_pars_json",
         "modelName_comment": "Name of model that is ran. MUST be provided",
         "maxRuns": null,
         "maxRuns_comment": "Maximum number of runs to do in parallel. Runs submitted is 2x this + 1.",
@@ -36,7 +36,7 @@
     "initial": {
         "initParams": {
             "_comment": "Initial values for parameters to be optimised. Set to null to use default values.  ",
-            "VF1": 1.0,
+	    "VF1": 1.0,
             "RHCRIT": 0.0,
             "ICE_SIZE": 0.0,
             "ENTCOEF": 1.0,
@@ -55,10 +55,8 @@
         "initScale_comment": "If true then startParams range from 0 to 1 where 0 means min value; 1 max value.",
         "fixedParams": {
             "_comment": " List of parameters and values that are fixed and not modified in optimisation. Set to null to use default values",
-            "START_TIME": "1998-12-01",
-            "START_TIME_comment": "Start time as an iso string",
-            "RUN_TARGET": "P6Y4M",
-            "RUN_TARGET_comment": "RUN_TARGET as an iso duration string."
+	    "sleep_time":10,
+	    "sleep_time_comment":"No of secs to sleep "
         },
         "fixedScale": false,
         "fixedScale_comment": "If true then scalable fixedParams range from 0 to 1 where 0 means min value; 1 max value."
@@ -66,7 +64,7 @@
         "Parameters": "INCLUDE $OPTCLIMTOP/OptClimVn3/configurations/parameters_hadam3.ijson",
         "study": {
         "comment": "Parameters that specify the study. Used by framework and not by optimisation routines",
-        "referenceModelDirectory": "$OPTCLIMTOP/OptClimVn3/configurations/example_simple_model/reference",
+        "referenceModelDirectory": "$OPTCLIMTOP/OptClimVn3/configurations/example_simple_model_pars_json/reference",
         "referenceModelDirectory_comment": "Directory where reference model configuration exists. Default is START_DIR/start",
         "covariance": {
             "comment": "Covariance matrices and operations on them. If CovObsErr and CovIntVar are *both* specified then CovTotal will be computed from them",

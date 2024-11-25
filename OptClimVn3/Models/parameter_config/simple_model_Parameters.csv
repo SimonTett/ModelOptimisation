@@ -7,5 +7,10 @@ ASYM_LAMBDA,json_nl,parameters.json,model_params,ASYM_LAMBDA,0.15,,
 CHARNOCK,json_nl,parameters.json,model_params,CHARNOCK,0.012,,
 G0,json_nl,parameters.json,model_params,G0,10.0,,
 Z0FSEA,json_nl,parameters.json,model_params,Z0FSEA,0.0013,,
+EACF,json_nl,parameters.json,model_params,EACF,0.3,,
+DYNDIFF,json_nl,parameters.json,model_params,DYNDIFF,12.,,
+CW,json_nl,parameters.json,model_params,CW,0.3,,
+KAY_GWAVE,json_nl,parameters.json,model_params,EACF,20e3,,
+ALPHAM,json_nl,parameters.json,model_params,ALPHAM,0.3,,
 failp,json_nl,parameters.json,system,fail_probability,0
 sleep_time,json_nl,parameters.json,system,sleep_time,15

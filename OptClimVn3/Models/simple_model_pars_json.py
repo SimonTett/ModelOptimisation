@@ -22,7 +22,7 @@ from namelist_var import NamelistVar, type_allowed_fortran,GroupConfig
 
 namelist_var = functools.partial(NamelistVar, type_name='json_nl')  # make it easier to create NamelistVar
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
-class simple_model_pars(Model):
+class simple_model_pars_json(Model):
     #StudyconfigPath:pathlib.Path
     # simple model.. Need to have personal version of submit_cmd, modify_model, perturb
     # all other methods are as Model.
@@ -314,5 +314,5 @@ class simple_model_pars(Model):
 
 
 pth = pathlib.Path(__file__).parent /'parameter_config/simple_model_Parameters.csv'
-simple_model_pars.update_from_file(pth, duplicate=True)
+simple_model_pars_json.update_from_file(pth, duplicate=True)
 
