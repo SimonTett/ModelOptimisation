@@ -24,7 +24,7 @@ namelist_var = functools.partial(NamelistVar, type_name='json_nl')  # make it ea
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 class simple_model_pars_json(Model):
     #StudyconfigPath:pathlib.Path
-    # simple model.. Need to have personal version of submit_cmd, modify_model, perturb
+    # simple model.. Need to have its own  version of submit_cmd, modify_model, perturb
     # all other methods are as Model.
 
     def __init__(self, *args, study= None, **kwargs): # study should be a study but study imports model.

@@ -10,6 +10,7 @@
       <sourceFolder url="file://$MODULE_DIR$/OptClimVn3/scripts" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/OptClimVn3/support" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/OptClimVn3/test_OptClimVN3" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/OptClimVn3/Models/test_Models" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/OptClimVn2" />
       <excludeFolder url="file://$MODULE_DIR$/venv" />
     </content>

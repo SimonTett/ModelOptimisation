@@ -12,6 +12,7 @@ import shutil
 import stat
 import pathlib
 import typing
+import importlib
 
 import numpy as np
 import pandas as pd
@@ -63,7 +64,20 @@ def setup_logging(level:typing.Optional[int] = None,
     optclim_logger.propagate = False # stop propogation to root level.
 # see https://jdhao.github.io/2020/06/20/python_duplicate_logging_messages/
     return optclim_logger
-        
+
+def get_fn(mod_fn_str:str) -> typing.Callable:
+    """
+    Load a function from a module.
+    :param mod_fn_str:
+    :return: a callable
+    """
+    mod, fn_name = mod_fn_str.rsplit('.', maxsplit=1)
+    module = importlib.import_module(mod)  # import the module
+    fn = getattr(module, fn_name)
+    if not callable(fn):
+        raise AttributeError(f"{fn_name} is not a callable in {mod}")
+
+    return fn
 def fake_fn(config: "OptClimConfigVn3", params: dict) -> pd.Series:
     """
     Wee test fn for trying out things.

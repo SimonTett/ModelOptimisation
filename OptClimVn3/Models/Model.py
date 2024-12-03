@@ -116,6 +116,27 @@ class Model(ModelBaseClass, journal):
         obj.fill_attrs(dct2)
         return obj
 
+    @classmethod
+    def load_model(cls, model_path: pathlib.Path):
+        """
+        Load a configuration
+        :param model_path:  where the configuration is stored
+          config_path will be set to model_path
+          model_dir will be set to model_path.parent.
+          warnings given if these are changes.
+        :return: loaded model
+        """
+        model = super().load(model_path)  # Using json "magic". See generic_json for what actually happens.
+
+        if not model.config_path.samefile(model_path):
+            my_logger.warning(f"Model {model} model_path changed to {model_path}")
+            model.config_path = model_path  # Replace config_path with where we actually loaded it from.
+
+        if not model.model_dir.samefile(model_path.parent):
+            my_logger.warning(f"Model {model} model_dir changed to {model_path.parent} ")
+            model.model_dir = model_path.parent # update directory with where we actually loaded it from. TODO make this more generic.
+        return model
+
     # methods now.
     def __init__(self,
                  name: str,

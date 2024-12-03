@@ -10,7 +10,7 @@ import SubmitStudy
 import tempfile
 import pathlib
 import engine
-from simple_model_pars_json import simple_model_pars as simple_model
+from simple_model_pars_json import simple_model_pars_json as simple_model
 import StudyConfig
 import shutil
 import re
