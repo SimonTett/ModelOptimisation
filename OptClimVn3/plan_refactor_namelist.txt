@@ -24,7 +24,7 @@ param()
 gen_parameters() - generates list of parameters to be modified.
 
 
-Hard bit -- where is the cache -- becomes a property of an individual model
+Hard bit -- where is the cache -- becomes a property of an individual model instance
 Maybe it becomes a separate class? Which has read/write methods for different filesystems
 Model gets the following:
 value = model.read_value(namelist_var) # read the value out of the cache. If not in the cache try and read it in.
@@ -56,8 +56,9 @@ Plan:
 2d) Modify simple_models_pars_json to use the new functionality. Test etc! Done
 3) Run simple_model_pars_json.py -- verifying that it works. Done
 Fix -- Models registration/import imports module using the same name as the class. Need to change this.
-
+Done that which involved a bunch of changes to ModelBaseClass.
 4) Write the fortran namelist version of the cache. Modify hadcm3 to use the fortran_namelist cache. Test etc!
+Done.
 5) remove code from namelist_var that is no longer needed. Modify Model to use json. Test etc!
 6) Remove json code from simple_model. test again.
 7) Modify gamil3 to use the fortran_namelist cache. (no test cases for this yet). Ask wenjun!
@@ -80,3 +81,14 @@ namelist_var.read_config() -> read config and return it.
 self.read_var(namelist_var) -> read from cache. Load up cache if needed.
 self.update_var(namelist_var,value) -> update cache with value.
 self.config_write() -> write the cache to disk.
+
+
+# Plan to move methods to Model.
+1) __init__ sets up configs -- remove code from simple_model_pars_json.py and HadCM3
+2) Move the following from HadCM3 to Model:
+    * read_nl_value
+    * gen_params
+    * set_params
+    * read_param
+    * param
+    * update_from_file

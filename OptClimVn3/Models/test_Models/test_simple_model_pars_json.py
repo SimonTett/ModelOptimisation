@@ -131,8 +131,7 @@ class Test_simple_model_pars_json(unittest.TestCase):
         m.instantiate()
         m.dump_model()
         m2 = m.load_model(m.config_path)
-        m2 == m
-        self.assertEqual(m,m2)
+        self.assertEqual(m.to_dict(),m2.to_dict())
 
     def test_run_simple_model(self):
         """ Actually test running the model works."""

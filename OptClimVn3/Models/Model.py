@@ -110,7 +110,7 @@ class Model(ModelBaseClass, journal):
         :return: initialized object
         """
         # TODO -- optionally (?) read from post_process_file -- which is an update.
-        # OR do as a seperate method,
+        # OR do as a separate method,
         dct2 = cls.convert_pure_paths(dct)
         obj = cls(name=dct2.pop('name'), reference=dct2.pop('reference'))  # create an default instance
         obj.fill_attrs(dct2)

@@ -35,14 +35,16 @@ def register_param(name: str) -> typing.Callable:
 
 
 class ModelBaseClass(model_base):
+    # T
     """
     A base class for all models. uses __init_subclass__ to setup param_info from superclasses and registered methods.
     See register_param function above which tags functions while the init_subclass uses those tags to put that
     function in the param_info attribute. This class inherits from model base which through its __init_subclass__
-    which sets up things for dumping and loading instances to disk as a json file. TODO -- merge into model_base.
+    which sets up things for dumping and loading instances to disk as a json file.
+    Provides *class* methods to register classes in ModelBaseClass -- so 'global' state.
+    This allows right initialisation to be done.
     """
-    class_registry = dict()  # where class information for model_init is used.
-    #param_info = param_info()
+    class_registry = dict()  # where class information for model_init is used. This should be at ModelBaseClass.
     param_info = ParamInfo()
     # Where parameter information is stored. Note is a *class* attribute as instances should have the same parameters
     @classmethod
@@ -195,7 +197,7 @@ class ModelBaseClass(model_base):
     @classmethod
     def update_from_file(cls, filepath: pathlib.Path, duplicate=True):
         """
-        Update class info on known parameters from CSV file
+        Update **class info** on known parameters from CSV file
          Calls param_info.update_from_file(filepath) to actually do it!
          See documentation for that
         :param filepath: path to csv file
@@ -203,16 +205,6 @@ class ModelBaseClass(model_base):
         :return:
         """
         cls.param_info.update_from_file(filepath, duplicate=duplicate)
-
-    # @classmethod
-    # def reset_params(cls):
-    #     # TODO -- consider removing as not used.
-    #     """
-    #     Remove all param info setting param_info to a new instance of ParamInfo
-    #     And reset class_registry to a dict
-    #     :return: Nada
-    #     """
-    #     cls.param_info = ParamInfo()
 
 
 

@@ -10,7 +10,7 @@ import SubmitStudy
 import tempfile
 import pathlib
 import engine
-from Models import *
+from simple_model import simple_model
 import StudyConfig
 import shutil
 import re

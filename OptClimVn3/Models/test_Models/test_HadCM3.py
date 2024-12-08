@@ -11,11 +11,13 @@ import tempfile
 import unittest
 import pathlib
 import copy
+
+import namelist_var
 from Models import HadCM3
 import genericLib
-
+import logging
 genericLib.setup_env()
-
+logging.basicConfig(level=logging.INFO,force=True)
 
 
 def cmp_lines(path_1, path_2, ignore=None, verbose=False):
@@ -72,7 +74,7 @@ class testHadCM3(unittest.TestCase):
 
         tmpDir = tempfile.TemporaryDirectory()
         testDir = pathlib.Path(tmpDir.name)  # used throughout.
-        refDir = pathlib.Path(HadCM3.expand('$OPTCLIMTOP/Configurations')) / 'xnmea'  # need a coupled model.
+        refDir = genericLib.expand('$OPTCLIMTOP/OptClimVn3/configurations/example_HadCM3')  # need a coupled model.
 
         simObsDir = HadCM3.expand('$OPTCLIMTOP/test_in')
         self.tmpDir = tmpDir  # really a way of keeping in context
@@ -85,6 +87,7 @@ class testHadCM3(unittest.TestCase):
         self.model = HadCM3(name='testM', reference=refDir,
                             model_dir=testDir, post_process=post_process,
                             parameters=parameters)
+
         self.config_path = self.model.config_path
 
         shutil.copy(simObsDir / '01_GN' / 'h0101' / 'observables.nc',
@@ -120,16 +123,18 @@ class testHadCM3(unittest.TestCase):
 
         self.assertEqual(self.model.status,'INSTANTIATED')
         model = self.model.load_model(self.model.config_path)
-        self.assertEqual(vars(model),vars(self.model ))
+
+        self.assertEqual(model.to_dict(),self.model.to_dict())
 
 
     def test_hadcm3_params(self):
         """
-        Test that HadCM3 parameters workby setting them and reading them back in.
+        FIXME: Test failing -- likely because writing not working...
+        Test that HadCM3 parameters work by setting them and reading them back in.
         :return:
         """
 
-        expect_values = {"CT": 1e-4, "EACF": 0.5, "ENTCOEF": 3.0, "ICE_SIZE": 30e-6,
+        expect_values = {"CT": 1.2e-4, "EACF": 0.5, "ENTCOEF": 3.0, "ICE_SIZE": 30e-6,
                          "RHCRIT": 0.7, "VF1": 1.0, "CW": 2e-4, "DYNDIFF": 12.0, "KAY_GWAVE": 2e4,
                          'SPHERICAL_ICE': False,
                          #'IA_N_DROP_MIN': 4E7, 'IA_KAPPA_SCALE': 0.5, 'IA_N_INFTY': 3.75E89,
@@ -155,7 +160,7 @@ class testHadCM3(unittest.TestCase):
         shutil.copytree(self.refDir, self.model.model_dir, symlinks=True, dirs_exist_ok=True)
         self.model.set_params(expect_values)
         got = self.model.read_params(list(expect_values.keys()))
-        self.assertEqual(got, expect_values)
+        self.assertEqual(expect_values,got)
 
 
         # test that "functions" work as expected.,
@@ -450,8 +455,8 @@ class testHadCM3(unittest.TestCase):
             # get the namelist values back in
             values = self.model.read_params(param)
             expect = {param:params[param]*(1+1e-6)}
-            self.assertEqual(values, expect)
-            self.assertEqual(self.model.perturb_count,pcount+1)
+            self.assertEqual(expect,values)
+            self.assertEqual(pcount+1, self.model.perturb_count)
 
 
     def test_createPostProcessFile(self):

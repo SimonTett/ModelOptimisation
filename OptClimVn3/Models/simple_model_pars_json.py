@@ -18,11 +18,12 @@ from ModelBaseClass import register_param
 import pathlib
 import copy
 from namelist_var import NamelistVar, type_allowed_fortran,GroupConfig
+from temp_model import tempModel
 
 
 namelist_var = functools.partial(NamelistVar, type_name='json_nl')  # make it easier to create NamelistVar
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
-class simple_model_pars_json(Model):
+class simple_model_pars_json(tempModel):
     #StudyconfigPath:pathlib.Path
     # simple model.. Need to have its own  version of submit_cmd, modify_model, perturb
     # all other methods are as Model.
@@ -45,7 +46,7 @@ class simple_model_pars_json(Model):
                 self.StudyConfig_path = pathlib.Path.cwd()/self.StudyConfig_path
         self.submit_script = pathlib.PurePath('run_simple_model_pars_json.py')
         self.continue_script = self.submit_script # continue is just submit
-        self.configs=GroupConfig(root_dir=self.model_dir)
+
 
     # model generation fns.
 
@@ -194,123 +195,7 @@ class simple_model_pars_json(Model):
         return super().archive(archive,rootDir, 
                                extra_files=files_to_archive)
 
-    ## to implement (overriding everything else. For now. Once working will be pushed back to Model).
-    ## parameter related methods
-    def gen_params(self,
-                   parameters: typing.Optional[dict] = None) -> dict[NamelistVar:type_allowed_fortran]:
-        """
-        Compute dict of namelists/values that will be used to set the parameters.
-        :param parameters: If None use self.parameters augmented by self.parameters_no_key.
-        :return: An iterable of  namelist, value pairs.
-        Example: nl_values= model.gen_params()
-        """
-        if parameters is None:
-            parameters = copy.deepcopy(self.parameters)
-            parameters.update(self.parameters_no_key)  # augment/update from parameters_no_key
-        else:
-            self.update_history(f"Setting parameters using parameters {parameters} rather than self.parameters")
-        param_set_info = []
-        for parameter, value in parameters.items():
-            param_set_info.extend(self.param(parameter, value))
-        result = dict()
-        for (nl,value) in param_set_info:
-            if nl in result:
-                raise ValueError(f"Duplicate namelist {nl} in param_set_info")
-            result[nl]=value
 
-        return result
-
-    def set_params(self, parameters: typing.Optional[dict] = None):
-
-        """
-        Set parameters by patching namelist.
-        Override if you want more than namelists.
-         If self.fake is True then no parameters are set.
-        :param self: Model instance
-        :param parameters -- dict(or None) of parameters to use.
-        :return: Nothing
-        """
-        if self.fake:
-            return  # nothing to be done if faking.
-        nl = self.gen_params(parameters=parameters) # get the namelist/value stuff
-        self.configs.write_values(nl) # and write them all out.
-
-
-    def read_param(self, parameter: str) -> type_allowed_fortran:
-        """
-        Read parameter value from model instance.
-        :param parameter: parameter wanted
-        :return: value. Depends on what is in the model...
-        """
-        try:
-            stuff = self.param_info.param_constructors[parameter][0]  # just want the first element of the list.
-        except KeyError:
-            raise KeyError(f"Parameter {parameter} not found.\n Allowed parameters are: " +
-                           " ".join(list(self.param_info.param_constructors.keys())))
-
-        if callable(stuff):  # is it a callable? If so run it in inverse mode.
-            result = stuff(self, None)
-            my_logger.debug(f"Called {stuff.__qualname__} with inverse and got {result} ")
-        else:
-            result = self.configs.read_value(stuff)
-            my_logger.debug(f"Read data from {stuff}")
-
-        return result
-
-    def param(self, parameter: str,
-              value:type_allowed_fortran) -> list[tuple[NamelistVar, type_allowed_fortran]]:
-        """
-        Return parameter information for a specific value as namelist/value tuple. Later functions will actually set them
-        :param parameter: parameter name
-        :param value: value to be set and passed to method
-        :return:
-        """
-        try:
-            stuff = self.param_info.param_constructors[parameter]  # will fail if parameter does not exist.
-        except KeyError:
-            raise KeyError(f"Parameter {parameter} not found.\n Allowed parameters are: " +
-                           " ".join(list(self.param_info.param_constructors.keys())))
-        if not isinstance(stuff, list):
-            raise ValueError(f"Parameter {parameter} did not return list but returned {stuff}")
-        result = []
-        for s in stuff:
-            if callable(s):  # function.
-                err_msg = f"Parameter {parameter} with {value} and method {s}  returned odd output. Should  either be: " \
-                          f"None, a tuple (NamelistVar,value) or list of such tuples "
-                r = s(self, value)  # run the function
-                my_logger.debug(f"Parameter {parameter} called {s.__qualname__} with {value} and returned {r}")
-                # check output.
-                if r is None:  # function did something but returned nothing.
-                    continue
-                elif isinstance(r, tuple) and (len(r) == 2) and isinstance(r[0],NamelistVar):  # returned a 2-element tuple
-                    result.append(r)
-                elif isinstance(r, list):  # list -- check each element.
-                    for el in r:
-                        if not (isinstance(el, tuple) and (len(el) == 2) and isinstance(el[0], NamelistVar)):
-                            raise ValueError(err_msg)
-                        result.append(el)
-                else:  # something else  so raise an error!
-                    raise ValueError(err_msg)
-
-            else:  # Singleton so append result with tuple (s, value).
-                if not isinstance(s, NamelistVar):
-                    raise ValueError(f"Parameter {parameter} returned {s} which is not a NamelistVar")
-                result.append((s, value))
-                my_logger.debug(f"Parameter {parameter} set {s} to {value}")
-
-        return result
-
-    @classmethod
-    def update_from_file(cls, filepath: pathlib.Path, duplicate=True):
-        """
-        Update class info on known parameters from CSV file
-         Calls param_info.update_from_file(filepath) to actually do it!
-         See documentation for that
-        :param filepath: path to csv file
-        :param duplicate -- allow duplicates.
-        :return:
-        """
-        cls.param_info.update_from_file_new(filepath, duplicate=duplicate)
 
 
 pth = pathlib.Path(__file__).parent /'parameter_config/simple_model_Parameters.csv'

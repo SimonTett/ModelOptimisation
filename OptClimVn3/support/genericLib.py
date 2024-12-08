@@ -155,7 +155,7 @@ def parse_isoduration( s: str | typing.List) -> typing.List|str:
             durn.append(float(d))
     elif isinstance(s, list) and len(s) == 6:  # invert list
         durn = 'P'
-        my_logger.debug("Converting {s} to string")
+        my_logger.debug(f"Converting {s} to string")
         for element, chars in zip(s, ['Y', 'M', 'D', 'H', 'M', 'S']):
             if element != 0:
                 if isinstance(element, float) and element.is_integer():

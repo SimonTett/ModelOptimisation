@@ -1,11 +1,14 @@
+import logging
 import pathlib
 import shutil
 import tempfile
 import unittest
 from unittest.mock import patch, mock_open
 
+import f90nml
+
 import genericLib
-from namelist_var import namelist_var, BaseConfig, NamelistVar, JSON_Config, GroupConfig
+from namelist_var import namelist_var, BaseConfig, NamelistVar, JSON_Config, GroupConfig,FortranNamelistConfig
 
 genericLib.setup_env()
 
@@ -207,7 +210,7 @@ class test_BaseConfig(unittest.TestCase):
         self.root_dir = pathlib.Path(self.tmpDir.name)
         shutil.copytree(self.refDir, self.root_dir, dirs_exist_ok=True)
         self.rel_filepath = pathlib.Path('parameters.json')
-        self.config = BaseConfig(root_dir=self.root_dir, rel_filepath=self.rel_filepath, type_name='correct_type')
+        self.config = BaseConfig(root_dir=self.root_dir, rel_filepath=self.rel_filepath)
         #
 
     def tearDown(self):
@@ -232,13 +235,13 @@ class test_BaseConfig(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.config.check_right_nl(namelist)
         #and get True for correct
-        namelist = NamelistVar(type_name='correct_type', filepath=self.rel_filepath, namelist='test', nl_var='var')
+        namelist = NamelistVar(type_name='base_nl', filepath=self.rel_filepath, namelist='test', nl_var='var')
         self.assertTrue(self.config.check_right_nl(namelist))
 
     def test_check_ok(self):
         # Test case for check_ok method
         # Suggested test case: Check if the method returns True for valid namelist
-        namelist = NamelistVar(type_name='correct_type', filepath=self.rel_filepath, namelist='test', nl_var='var')
+        namelist = NamelistVar(type_name='base_nl', filepath=self.rel_filepath, namelist='test', nl_var='var')
         self.config.modified_values[namelist] = False
         self.assertTrue(self.config.check_ok(namelist))
         # and Fails for modified
@@ -322,6 +325,82 @@ class TestJSON_Config(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.config.update_value(namelist, 3)
 
+class TestFortranNamelist_Config(unittest.TestCase):
+
+    def setUp(self):
+        self.root_dir = genericLib.expand(
+            "$OPTCLIMTOP/OptClimVn3/configurations/example_HadAM3/reference")
+        self.rel_filepath = pathlib.Path('CNTLATM')
+        self.config = FortranNamelistConfig(root_dir=self.root_dir, rel_filepath=self.rel_filepath)
+
+    def tearDown(self):
+        pass
+
+
+    def test_read(self):
+        # Test the read method to ensure it correctly reads namelist data from a file
+        config = self.config.read()
+        # check two distinct namelists/vars
+        test={
+            ('RUNCNST','ALPHAM'):0.5,
+            ('RUNCNST','DIFF_COEFF'):[5.470e+08,5.470e+08,5.470e+08,5.470e+08,
+ 5.470e+08,5.470e+08,5.470e+08,5.470e+08,5.470e+08,5.470e+08,5.470e+08,
+ 5.470e+08,5.470e+08,5.470e+08,5.470e+08,5.470e+08,5.470e+08,5.470e+08,
+ 4.000e+06],
+            ('NLSTCATM','L_CLD_area'):False,
+            ('NLSTCATM','H_LWBANDS'):8,
+        }
+        for k,v in test.items():
+            self.assertEqual(config[k[0]][k[1]],v)
+
+    @patch('builtins.open', new_callable=mock_open)
+    @patch('pathlib.Path.rename')  # critical this is here else the config would be overwritten
+    def test_write(self, mock_rename, mock_open):
+        # Test the write method to ensure it correctly writes fortran data to a file
+        self.config.config = f90nml.Namelist()
+        self.config.config['RUNCNST'] = {'ALPHAM': 0.5}
+        self.config.write()
+        mock_open.assert_called_once_with(self.config.filepath() ,'w')
+        # Check what would have been written out is as expected
+        # Get the file handle used by the mock
+        handle = mock_open()
+        # Get the actual written data
+        written_data = ''.join(call.args[0] for call in handle.write.call_args_list)
+        # Expected formatted nl string
+        from io import StringIO
+        buffer = StringIO()
+        config = self.config.config
+        config.end_comma= True
+        config.uppercase = True
+        f90nml.write(self.config.config,buffer)
+        expected_data = buffer.getvalue()
+
+        self.assertEqual(written_data, expected_data)
+        # check backup happened.
+        back_file = self.config.filepath()
+        back_file = back_file.parent / (back_file.name + '.bak')
+        mock_rename.assert_called_once_with(back_file)
+
+    def test_read_value(self):
+        # Test the read_value method to ensure it correctly reads a value from the config
+
+        namelist = NamelistVar(type_name='namelist_var', filepath=self.rel_filepath, namelist='NLSTCATM', nl_var='LEXPAND_OZONE')
+        value = self.config.read_value(namelist)
+        self.assertEqual(value, True)
+        # try and read with wrong kind of namelist triggers an error
+        namelist = NamelistVar(type_name='json_nl', filepath=self.rel_filepath, namelist='NLSTCATM', nl_var='LEXPAND_OZONE')
+        with self.assertRaises(ValueError):
+            self.config.read_value(namelist)
+
+    def test_update_value(self):
+        # Test the update_value method to ensure it correctly updates a value in the config
+        namelist = NamelistVar(type_name='namelist_var', filepath=self.rel_filepath, namelist='namelist', nl_var='var')
+        self.config.update_value(namelist, 2,create=True)
+        self.assertEqual(self.config.config["namelist"]["var"], 2)
+        self.assertTrue(self.config.modified_values[namelist])
+        # check get an error if update twice.
+        with self.assertRaises(ValueError):
+            self.config.update_value(namelist, 3)
 
 class TestGroupConfig(unittest.TestCase):
 
