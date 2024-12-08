@@ -129,7 +129,7 @@ class testHadCM3(unittest.TestCase):
 
     def test_hadcm3_params(self):
         """
-        FIXME: Test failing -- likely because writing not working...
+
         Test that HadCM3 parameters work by setting them and reading them back in.
         :return:
         """
