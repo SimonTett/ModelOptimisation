@@ -28,6 +28,7 @@ import f90nml
 import numpy as np
 import typing
 from model_base import model_base
+import metomi.rose.config
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 
@@ -195,15 +196,17 @@ class BaseConfig:
             raise ValueError(f'Looking in the wrong config. f{self.rel_filepath} != {namelist.filepath} for {namelist}')
         return True
 
-    def check_ok(self,namelist) -> bool:
+    def check_ok(self,namelist,
+                 check_modify:bool = True) -> bool:
         """
         Check that config  OK -- namelist compatible and not modified the variable.
         :param namelist: namelist we are checking for
+        :param check_modify: If True check that the variable has not been modified already.
         :return: True if OK
         """
 
         # check if modified the variable already and throw an error if so.
-        if self.modified_values.get(namelist,False): # already modified this value trigger an error
+        if check_modify and self.modified_values.get(namelist,False): # already modified this value trigger an error
             raise ValueError(f'Attempting to use modified value of {namelist}. You will need to modify code to allow this.')
         # check that namelist.filepath is the same as self.relpath
         ok = self.check_right_nl(namelist)
@@ -214,7 +217,7 @@ class BaseConfig:
         """
         Work out path to write config too. If it exists backup file first(if backup True).
         :param path: path to write data.-- if None will be self.filename.
-        `  uf pTH EXISTS THEN IT WILL BE Backed up to path.bak. If the backup poath exists will raise an error.
+        If path exists then it will be backed up to path.bak. If the backup path exists will raise an error.
         :return: path to write data to
         """
 
@@ -409,9 +412,6 @@ class FortranNamelistConfig(BaseConfig):
         filepath = self.filepath()
         try:
             config = f90nml.read(filepath)
-            #parser = f90nml.parser.Parser()
-            # Here one could modify the parser to change how I/O done. But that is not needed yet!
-            #config = parser.read(filepath)
         except FileNotFoundError:
             if allow_missing:
                 my_logger.warning(f'File {filepath} does not exist. Making empty config')
@@ -484,6 +484,145 @@ class FortranNamelistConfig(BaseConfig):
         self.modified_values[namelist] = True # modified this namelist!
         my_logger.debug(f"Setting {namelist} to {value}")
 
+@register_class_info('um_rose')
+class UMroseNamelistConfig(BaseConfig):
+    # utility function to convert data to something Fortran namelists expect.
+    @staticmethod
+    def to_fortran(value: type_allowed_fortran) -> str:
+        """
+        Convert scaler or list or value to a fortran string. Has to handle int, float, bool & str
+        :param value: value to convert
+        :return: string
+        """
+        if isinstance(value,list):
+            v = [UMroseNamelistConfig.to_fortran(val) for val in value]
+            v = ','.join(v) # and stick them together with ','.
+        elif isinstance(value, (int, float)):
+            v = str(value)
+        elif isinstance(value, bool):
+            v = '.true.' if value else '.false.'
+        elif isinstance(value, str):
+            v = "'" + value + "'"  # quotes around it.
+        else:
+            raise ValueError(f"Unsupported type {type(value)}")
+        return v
+    # utility function to convert strings back to values
+    @staticmethod
+    def parse_value(value:str) -> type_allowed_fortran:
+        """
+        Parse strings from umrose config. They are **sort of** fortran namelist text so will
+          use f90nml to parse them.
+        :param value: str to be parsed,
+        :return: type_allowed_fortran (int,float,bool, str or array of such)
+        """
+
+        s = f"&temp_nl nl_var = {value} /"
+        result = f90nml.reads(s)["temp_nl"]["nl_var"]
+        return result
+
+    def read(self,allow_missing:bool = False) -> metomi.rose.config.ConfigNode:
+        """
+        Read in namelist config. Normally called from __init__
+        Really here as will have different types of configs each with their own way of reading.
+        """
+        filepath = self.filepath()
+        try:
+            config = metomi.rose.config.load(str(filepath))
+        except FileNotFoundError:
+            if allow_missing:
+                my_logger.warning(f'File {filepath} does not exist. Making empty config')
+                config = metomi.rose.config.ConfigNode()  # empty config
+            else:
+                my_logger.warning(f'File {filepath} does not exist. Try setting allow_missing=True')
+                raise  # raise the error
+
+        return config
+
+    def write(self,
+              path: typing.Optional[pathlib.Path]=None,
+              backup: bool = True) -> pathlib.Path:
+        """
+        Write out the UM rose namelists to the file.
+        :param path -- path to write namelist to.
+          If not specified will be constructed using self.backup().
+        :param backup  passed to self.backup().
+        """
+        path = super().write(path, backup=backup)  # call the superclass write method.
+        config_to_write = copy.copy(self.config)  # make a copy so we can modify it.
+        path.unlink(missing_ok=True) # need to remove the file as dump errors if the file exists...
+        try:
+            metomi.rose.config.dump(config_to_write, str(path))  # dump the modified config
+        except FileExistsError as err : # windows does not like to rename over an existing path. Sigh. And dump creates it...
+            # dump really should not create it. It only does so it can set file permissions...
+            # but hacking the code is probably not sensible.... But I might raise an issue.
+            # need to extract the filename for the handle
+            if err.errno != 17: # we only need to deal with this
+                raise  # raise the error
+            my_logger.warning('Hacking (probably only on windows) problems with dump which creates a file and then renames tmp file to it')
+            # remove filename2 and rename filename1 to filename2
+            file= pathlib.Path(err.filename)
+            file2= pathlib.Path(err.filename2)
+            file2.unlink() #remove the file we want to rename to
+            file.rename(file2) # and actually do the rename
+
+
+        my_logger.info(f'Wrote UM rose namelist config to {path}')
+        return path
+
+
+
+    def read_value(self, namelist:NamelistVar,
+                   raise_error: bool = True,
+                   check_modify:bool = True) -> type_allowed_fortran:
+        """
+        Read the namelist value from the config.
+        :param namelist: namelist to use.
+        :param raise_error: if True and namelist not found raise an error.
+        :param check_modify: If True check that the variable has not been modified already.
+        :return: value
+        """
+        self.check_ok(namelist,check_modify=check_modify)
+        value = self.config.get([namelist.namelist, namelist.nl_var]).value
+        if value is None:
+            if raise_error:
+                raise KeyError(f'Failed to find {namelist} in {self.filepath()}')
+            my_logger.debug(f'Failed to find {namelist} in {self.filepath()}')
+            value = namelist.default # return the default value
+        else:
+            # need to parse this string to convert to value. This is a bit of a pain.
+            # use f90nml to do that -- which does not seem to have parse from  fortan nml to value public fn.
+            # Not worth caching as we probably will only
+            # read 10-20 variables.  If we read 100s+ then worth rewritting to be more efficient
+            # and read a whole namelist (rather than just individual vars in the namelist)
+            value = self.parse_value(value) # convert it to numeric value.
+        return value
+
+
+    def update_value(self, namelist:NamelistVar,
+                     value,
+                     create: bool = False):
+        """
+        Update the config with the values in namelist
+
+        :param namelist: namelist
+        :param value: value to set namelist in the config too.
+        :param create: If True create values. if False fail if values do not exist.
+        """
+        self.check_ok(namelist)
+        if create:
+            if self.config.get(namelist.namelist) is None:
+                self.config[namelist.namelist] = metomi.rose.config.ConfigNode()  # set up an empty namelist
+        else:
+            # try and read it. If var or namelist don't exist  then KeyError will be raised
+            try:
+                self.config.get([namelist.namelist,namelist.nl_var])  # don't want the val
+            except KeyError:
+                my_logger.warning(f'Failed to find {namelist} in config read from {self.filepath}')
+                raise  # raise the error now.
+
+        self.config.set((namelist.namelist,namelist.nl_var), self.to_fortran(value))  # set the value -- convert to string
+        self.modified_values[namelist] = True  # modified this namelist!
+        my_logger.debug(f"Setting {namelist} to {value}")
 
 class GroupConfig(model_base):
     # class to handle a group of configs. Really just a dict of configs + root_dir
@@ -773,19 +912,4 @@ class namelist_var(model_base): # not sure I need to inherit from model_base as 
             ValueError('do not call this')
         return file_dict
 
-    @staticmethod
-    def to_fortran(value: type_allowed_fortran) -> str: #TODO  Move to rose_config
-        """
-        Convert scaler value to a fortran string. Has to handle int, float, bool & str
-        :param value: value to convert
-        :return: string
-        """
-        if isinstance(value, (int, float)):
-            v = str(value)
-        elif isinstance(value, bool):
-            v = '.true.' if value else '.false.'
-        elif isinstance(value, str):
-            v = "'" + value + "'"  # quotes around it.
-        else:
-            raise ValueError(f"Unsupported type {type(value)}")
-        return v
+

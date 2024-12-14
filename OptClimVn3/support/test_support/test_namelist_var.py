@@ -6,12 +6,14 @@ import unittest
 from unittest.mock import patch, mock_open
 
 import f90nml
+import metomi.rose.config
 
 import genericLib
-from namelist_var import namelist_var, BaseConfig, NamelistVar, JSON_Config, GroupConfig,FortranNamelistConfig
+from namelist_var import namelist_var, BaseConfig, NamelistVar, \
+    JSON_Config, GroupConfig,FortranNamelistConfig,UMroseNamelistConfig
 
 genericLib.setup_env()
-
+logging.basicConfig(level=logging.INFO,force=True)
 
 class namelist_var_TestCase(unittest.TestCase):
     def setUp(self):
@@ -128,12 +130,6 @@ class namelist_var_TestCase(unittest.TestCase):
             got = nl.read_value(dirpath=self.dirPath, clean=True)
             self.assertEqual(got, v, msg=f"Failed for {nl}")
 
-    # def test_nl_name(self):
-    #     """ Test nl_Name is as expected"""
-    #     nl = namelist_var(filepath=pathlib.Path('../test.nl'),namelist='BIG_NL',nl_var='small_var',name='TINY')
-    #     self.assertEqual(nl.Name(),'TINY')
-    #     nl = namelist_var(filepath=pathlib.Path('../test.nl'),namelist='BIG_NL',nl_var='small_var')
-    #     self.assertEqual(nl.Name(),f'{str(nl.filepath)}&BIG_NL small_var')
 
     def test_repr(self):
         """
@@ -397,6 +393,83 @@ class TestFortranNamelist_Config(unittest.TestCase):
         namelist = NamelistVar(type_name='namelist_var', filepath=self.rel_filepath, namelist='namelist', nl_var='var')
         self.config.update_value(namelist, 2,create=True)
         self.assertEqual(self.config.config["namelist"]["var"], 2)
+        self.assertTrue(self.config.modified_values[namelist])
+        # check get an error if update twice.
+        with self.assertRaises(ValueError):
+            self.config.update_value(namelist, 3)
+
+class TestUMroseNamelistConfig(unittest.TestCase):
+    def setUp(self):
+        self.root_dir = genericLib.expand(
+            "$OPTCLIMTOP/OptClimVn3/configurations/example_UM_rose/references/u-db898")
+        self.rel_filepath = pathlib.Path('app/um/rose-app.conf')
+        self.config = UMroseNamelistConfig(root_dir=self.root_dir, rel_filepath=self.rel_filepath)
+        self.test_values = {
+            ('namelist:clmchfcg','clim_fcg_levls_cfc114'): [-32768.0]*167,
+            ('namelist:jules_sea_seaice', 'alpham'): 0.72,
+            ('namelist:run_cloud', 'l_add_cca_to_mcica'): True,
+            ('namelist:run_radiation', 'h_lwbands'): 9,
+        }
+
+    def tearDown(self):
+        pass
+
+    def test_read(self):
+        # Test the read method to ensure it correctly reads namelist data from a file
+        config = self.config.read()
+        # check  distinct namelists/vars
+
+        for k, v in self.test_values.items():
+            print(k)
+            self.assertEqual(self.config.parse_value(config.get(k).value), v)
+    # rose.config.dump opens a named temp file and writes to that. Then renames the temp file to the tgt.
+
+    def test_write(self):
+
+        # Test the write method to ensure it correctly writes fortran data to a file
+        # need to copy the reference and load it.
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pth = pathlib.Path(tmpdir)
+            shutil.copytree(self.root_dir,pth,dirs_exist_ok=True)
+            config = UMroseNamelistConfig(root_dir=pth,rel_filepath=self.rel_filepath)
+            config.config = metomi.rose.config.ConfigNode() # empty it.
+            for k,v in self.test_values.items():
+                config.config.set(k,config.to_fortran(v))
+            config.write() # write it out.
+            # check backup file exists
+
+            back_file = config.filepath()
+            back_file = back_file.parent / (back_file.name + '.bak')
+            self.assertTrue(back_file.exists())
+            # now read config in and check values are as expected.
+            new_config = UMroseNamelistConfig(root_dir=pth,rel_filepath=self.rel_filepath)
+            for k,v in self.test_values.items():
+                got_value = new_config.config.get(k).value
+                got_value = new_config.parse_value(got_value)
+                self.assertEqual(got_value,v)
+
+
+    def test_read_value(self):
+        # Test the read_value method to ensure it correctly reads a value from the config
+
+        namelist = NamelistVar(type_name='um_rose', filepath=self.rel_filepath,
+                               namelist='namelist:run_ozone',
+                               nl_var='zon_av_ozone')
+        value = self.config.read_value(namelist)
+        self.assertEqual(value, False)
+        # try and read with wrong kind of namelist triggers an error
+        namelist = NamelistVar(type_name='json_nl', filepath=self.rel_filepath, namelist='namelist:run_ozone',
+                               nl_var='zon_av_ozone')
+        with self.assertRaises(ValueError):
+            self.config.read_value(namelist)
+
+    def test_update_value(self):
+        # Test the update_value method to ensure it correctly updates a value in the config
+
+        namelist = NamelistVar(type_name='um_rose', filepath=self.rel_filepath, namelist='namelist', nl_var='var')
+        self.config.update_value(namelist, 2, create=True)
+        got=self.config.read_value(namelist,check_modify=False)
+        self.assertEqual(got,2)
         self.assertTrue(self.config.modified_values[namelist])
         # check get an error if update twice.
         with self.assertRaises(ValueError):

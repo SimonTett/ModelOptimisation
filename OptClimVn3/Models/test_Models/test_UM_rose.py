@@ -36,9 +36,7 @@ class test_um_rose(unittest.TestCase):
         self.testDir = testDir
         # create a model and store it.
         self.refDir = refDir
-        filepath =os.environ['OPTCLIMTOP']+'/OptClimVn3/configurations/example_UM_rose/references/u-db898/app/um/rose-app.conf'
-        self.config_filepath = pathlib.Path(filepath)
-        self.config = metomi.rose.config.load(filepath)
+        filepath =os.environ['OPTCLIMTOP']+'/OptClimVn3/configurations/example_UM_rose/references/u-db898/OptClimVn3/configurations/example_UM_rose/references/u-db898'
         post_process = dict(script='$OPTCLIMTOP/OptClimVn3/scripts/comp_obs.py', output_file='obs.json')
         self.post_process = post_process
         self.model = UM_rose(name='testM', reference=refDir,
@@ -66,48 +64,9 @@ class test_um_rose(unittest.TestCase):
 
         dct = self.model.to_dict()
         dct_comp = vars(self.model)
-        dct_comp.pop('_config_cache')
+        dct_comp.pop('configs')
         self.assertEqual(dct_comp,dct)
 
-    def test_file_cache(self):
-        """
-        Test file_cache works.
-        :return:
-        """
-
-
-        config = self.model.file_cache(self.config_filepath)
-        self.assertIsInstance(config,metomi.rose.config.ConfigNode)
-        self.assertEqual(config,
-                         self.model._config_cache[self.config_filepath])
-
-    def test_write_nml_values(self):
-        """
-        Test that write_nml_values works!
-        :return:
-        """
-        model = self.model
-        model.create_model() # create the model
-        nl_info= model.param_info
-        pars = model.gen_parameters( DP_CORR_STRAT=1e5,AI=0.03)
-        model.write_nml_values(pars)
-        # read back in the config and check that it only differs
-        # for DP_CORR_STRAT & AI
-        fname = pars[0][0].filepath
-        file = model.model_dir/fname
-        # check configs *only* difference are the values of variables changed.
-        with open(file,'r+t') as fp:
-            config = metomi.rose.config.load(fp)
-        file = self.refDir/fname
-        with open(file,'r+t') as fp:
-            config_o = metomi.rose.config.load(fp)
-        self.assertNotEqual(config,config_o)
-        # modify config_o to have changed pars and then verify they are the same.
-        # Know that filepath is the same so no need to worry about that.
-        for p in pars:
-            config_o.set(['namelist:'+p[0].namelist,p[0].nl_var],
-                         namelist_var.to_fortran(p[1]))
-        self.assertEqual(config,config_o)
 
 
     def test_read_param(self):
@@ -140,10 +99,9 @@ class test_um_rose(unittest.TestCase):
 
         self.assertEqual(self.model.status,'INSTANTIATED')
         model = self.model.load_model(self.model.config_path)
-        # to make sure loaded model is equal need to flush cache.
-        #TODO -- have an _eq_ method that does not compare any cache values.
-        self.model.clean_cache()
-        self.assertEqual(vars(model),vars(self.model ))
+
+
+        self.assertEqual(model.to_dict(),self.model.to_dict())
 
     def test_set_params(self ):
         """
@@ -152,21 +110,14 @@ class test_um_rose(unittest.TestCase):
         """
         # copy the ref dir into the model_dir
         shutil.copytree(self.refDir,self.model.model_dir,dirs_exist_ok=True)
-        self.model.set_params(parameters=dict(AI=1e-2))
-        # read in AI from the config
-        v = self.model.read_param('AI')
-        self.assertEqual(v,1e-2)
+        params = dict(AI=1e-2,DP_CORR_STRAT=500.0,TWO_D_FSD_FACTOR=2,ENT_FAC_DP= 1.0)
+        self.model.set_params(parameters=params)
+        # test values
+        for p,v in params.items():
+            self.assertEqual(v,self.model.read_param(p))
 
-    def test_read_nml_var(self):
-        """
-        test read_nml_var
-        :return:
-        """
 
-        AI_nl = self.model.param_info.param_constructors['AI'][0]
-        shutil.copytree(self.refDir, self.model.model_dir, dirs_exist_ok=True)
-        v=self.model.read_nml_var(AI_nl)
-        self.assertEqual(v,2.5700e-02)
+
 
 if __name__ == '__main__':
     unittest.main()
