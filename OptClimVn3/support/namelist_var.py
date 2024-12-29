@@ -22,10 +22,7 @@ import dataclasses
 import json
 import logging
 import pathlib
-import shutil
-import tempfile
 import f90nml
-import numpy as np
 import typing
 from model_base import model_base
 import metomi.rose.config
@@ -35,40 +32,16 @@ my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 type_allowed_fortran = typing.Union[int, float, bool, str,list[int,float,bool,str]]  # types allowed in fortran
 
 
-def register_class_info(name: typing.Union[str,list[str]], init_func: typing.Callable):
-    """
-    Register a namelist class via name and also provide the init_function to create the relevant config class.
-    :param name: Name of the class
-    :param init_func: Init function for the related config class.
-    :return: A decorated class with config_init and class_init updated.
-    """
-    if isinstance(name, str): # convert to a list if need be.
-        name = [name]
-    def decorator(cls):
-        # Ensure the class has a superclass with the required attribute
-        if not (hasattr(cls, 'config_init') and hasattr(cls, 'class_init')):
-            raise AttributeError(f"Superclass of {cls.__name__} must have config_init  & class_init attributes")
-
-        # Add the information to the superclass's class_info attribute
-        cls.config_init[cls] = init_func # the init function for the config class.
-
-        for n in name: # add all the known names to the class_init
-            cls.class_init[n] = cls # this is init function for the generated class.
-
-        return cls
-    return decorator
 
 ## Stuff for namelist vars.
-# These are data type with named fields. To extend you need to inherit from Namelistvar and add new fields.
-# You  also need to do the following:
-#  1) functions you write produce the correct types
-#  2) modify param_info.read_from_file to generate the right tu
-#
+
 
 @dataclasses.dataclass(frozen=True)
 class NamelistVar:
     """
     Class to handle namelist variables.
+    A namelist is defined from relative filepath, namelist name and variable name. Also includes name,type_name and default.
+You might be able to extend this if you need something more complex.
     """
     type_name:str # name of the namelist_var which tells us what config to use.
     filepath: pathlib.Path # relative path to the file being use
@@ -112,21 +85,25 @@ class NamelistVar:
         config = init_fn(root_dir,self.filepath,**kwargs) # call the init function
         return config
 
-
+    def to_dict(self) -> dict:
+        """ Return a dictionary representation, suitable to conversion to JSON,  of namelist-var.  """
+        d = dataclasses.asdict(self)
+        return d
 
 """
-Stuff for handling configurations. These go with coupled objects for namelist variables (or equivalent).
+Stuff for handling configurations. These go with namelist)var. They are all registered with a name
+that matches the type_name in the namelist.
 To add a new type of configuration you need to add a new class which inherits from BaseConfig.
 You will need to implement read, write, read_value and update_value methods.
 Use the decorator register_class_info to register the class with the name of the namelist_var.
 You need to define the mapping from parameters to configuration changes. 
 Two ways -- define functions (and register them with register_param) or read them in from a csv file.
-See HadCM3 for examples which use namelist_var. 
+See HadCM3 for examples 
 """
 def register_class_info(name: typing.Union[str,list[str]]):
     """
-    Register a config  class via name
-    :param name: Name or list of Names of the related namelist_var
+    Register a config  class via name.
+    :param name: Name or list of Names of the related namelist_var.
     :return: A decorated class with  class_init updated.
     class_init is a dictionary with keys being the name and values being the __init__ function to create the configuration.
     """
@@ -170,11 +147,18 @@ class BaseConfig:
 
         self.rel_filepath = rel_filepath
         self.root_dir = root_dir
-        self.config = self.read(allow_missing=allow_missing)
+        self.config=None # config is read in from file.
+        self.modified_values = None # track what has been modified.
+        self.reset(allow_missing=allow_missing)
+
+
+    def reset(self,allow_missing:bool = False):
+        """
+        Reset the config by reading in from file and setting modified_values to empty.
+        """
+        self.config = self.read()
         self.modified_values = dict()
         # Track what was modified. If something updates or writes a modified value then trigger an error.
-
-
 
     # utility methods.
     def filepath(self) -> pathlib.Path:
@@ -407,7 +391,7 @@ class FortranNamelistConfig(BaseConfig):
     uppercase = True
     def read(self,allow_missing:bool = False) -> f90nml.namelist.Namelist:
         """
-        Read in namelist config. Really here as will have different types of configs each with their own way of reading.
+        Read in namelist config.
         """
         filepath = self.filepath()
         try:
@@ -520,7 +504,7 @@ class UMroseNamelistConfig(BaseConfig):
         result = f90nml.reads(s)["temp_nl"]["nl_var"]
         return result
 
-    def read(self,allow_missing:bool = False) -> metomi.rose.config.ConfigNode:
+    def read(self,allow_missing:bool = True) -> metomi.rose.config.ConfigNode:
         """
         Read in namelist config. Normally called from __init__
         Really here as will have different types of configs each with their own way of reading.
@@ -565,7 +549,7 @@ class UMroseNamelistConfig(BaseConfig):
             file2.unlink() #remove the file we want to rename to
             file.rename(file2) # and actually do the rename
 
-
+        self.reset()
         my_logger.info(f'Wrote UM rose namelist config to {path}')
         return path
 
@@ -582,7 +566,7 @@ class UMroseNamelistConfig(BaseConfig):
         :return: value
         """
         self.check_ok(namelist,check_modify=check_modify)
-        value = self.config.get([namelist.namelist, namelist.nl_var]).value
+        value = self.config.get([namelist.namelist, namelist.nl_var])
         if value is None:
             if raise_error:
                 raise KeyError(f'Failed to find {namelist} in {self.filepath()}')
@@ -594,7 +578,7 @@ class UMroseNamelistConfig(BaseConfig):
             # Not worth caching as we probably will only
             # read 10-20 variables.  If we read 100s+ then worth rewritting to be more efficient
             # and read a whole namelist (rather than just individual vars in the namelist)
-            value = self.parse_value(value) # convert it to numeric value.
+            value = self.parse_value(value.value) # convert it to numeric value.
         return value
 
 
@@ -610,15 +594,14 @@ class UMroseNamelistConfig(BaseConfig):
         """
         self.check_ok(namelist)
         if create:
-            if self.config.get(namelist.namelist) is None:
+            if self.config.get([namelist.namelist]) is None:
                 self.config[namelist.namelist] = metomi.rose.config.ConfigNode()  # set up an empty namelist
         else:
-            # try and read it. If var or namelist don't exist  then KeyError will be raised
-            try:
-                self.config.get([namelist.namelist,namelist.nl_var])  # don't want the val
-            except KeyError:
-                my_logger.warning(f'Failed to find {namelist} in config read from {self.filepath}')
-                raise  # raise the error now.
+            # try and read it. If var or namelist don't exist  then None will be returned
+            if self.config.get([namelist.namelist,namelist.nl_var])  is None:
+                err_msg = f'Failed to find {namelist} in config read from {self.filepath()}'
+                my_logger.warning(err_msg)
+                raise KeyError # raise the error
 
         self.config.set((namelist.namelist,namelist.nl_var), self.to_fortran(value))  # set the value -- convert to string
         self.modified_values[namelist] = True  # modified this namelist!
@@ -635,12 +618,14 @@ class GroupConfig(model_base):
         self.configs: dict[pathlib.Path, BaseConfig] = dict()
         self.root_dir = root_dir
 
-    def load_config(self, namelist: NamelistVar):
+    def load_config(self, namelist: NamelistVar,reload:bool = False):
         """
         Load in the config for the namelist if not present.
+
         :param namelist: namelist to load in.
+        :param reload:  If True then reload the config.
         """
-        if namelist.filepath not in self.configs.keys():
+        if namelist.filepath not in self.configs.keys() or reload:
             config = namelist.init_config(self.root_dir)
             self.configs[config.rel_filepath] = config
             my_logger.debug(f'Read in config for {namelist} from {config.rel_filepath}')
@@ -657,29 +642,34 @@ class GroupConfig(model_base):
         value = self.configs[namelist.filepath].read_value(namelist, raise_error=raise_error)
         return value
 
-    def update_value(self, namelist: NamelistVar, value: type_allowed_fortran):
+    def update_value(self, namelist: NamelistVar,
+                     value: type_allowed_fortran,
+                     create: bool = False):
         """
         Update the value in the config.
         :param namelist: namelist being updated
         :param value: value to set
+        :param create: If True create the 'namelist' if it does not exist.
         :return: Name
 
         Side effect -- will load in data to config if not already loaded.
         """
         self.load_config(namelist)
-        self.configs[namelist.filepath].update_value(namelist, value)
+        self.configs[namelist.filepath].update_value(namelist, value,create=create)
 
     def write_values(self,
                      nl_values: dict[NamelistVar, type_allowed_fortran],
-                     backup: bool = True):
+                     backup: bool = True,
+                     create: bool = False):
         """
         Set & write the values in the configs.
         :param nl_values: dictionary indexed by NamelistVar with values to set.
         :param backup: If True backup the file if it exists.
+        :param create: If True create the 'namelist' if it does not exist.
         After writing, the configs are reset.
         """
         for namelist, value in nl_values.items():  # update values
-            self.update_value(namelist, value)
+            self.update_value(namelist, value,create=create)
 
         for config in self.configs.values():  # Iterate over configs and write them out.
             config.write(backup=backup)
@@ -695,221 +685,5 @@ class GroupConfig(model_base):
         dct = vars(self)
         dct['configs'] = dict()  # no need to serialise  the cached configs.
         return dct
-
-
-
-## When done all below can be removed.
-
-@dataclasses.dataclass(frozen=True)
-class namelist_var(model_base): # not sure I need to inherit from model_base as no need to write instances out.
-    """
-    Class to handle namelist variables. Provides several **class** methods.
-    """
-    filepath: pathlib.Path
-    namelist: str
-    nl_var: str
-    name: str = None
-    default: any = None
-
-
-    def __repr__(self):
-        """ Representation -- the name and the cpts"""
-        r = f"{self.filepath}&{self.namelist} {self.nl_var}"
-        if self.default is not None:
-            r += f" default:{self.default}"
-        if self.name is not None:
-            r = f"{self.name}: " + r
-
-        return r
-
-    _file_cache = dict()  # where we cache files TODO remove.
-
-    @staticmethod
-    def gen_config(root_dir: pathlib.Path,
-                   rel_path: pathlib.Path) -> FortranNamelistConfig:
-        """
-        Generate a config of appropriate type by reading one in.
-        :param rel_path: rel_path to where the config file is
-        :param root_dir: root directory for relative paths.
-        :return: config
-        """
-        config = FortranNamelistConfig(rel_path, root_dir=root_dir)
-        return config
-
-    def read_value(self,
-                   dirpath: pathlib.Path = pathlib.Path.cwd(),
-                   clean: bool = False): # REMOVE
-        """ Read  value from disk file containing namelists. Files will be cached to speed up subsequent reads.
-        :param dir: Directory where namelist is.
-        :param clean -- If True clean the cache before reading.
-        """
-        namelists = self.file_cache(dirpath / self.filepath, clean=clean)
-        try:
-            value = namelists[self.namelist].get(self.nl_var.lower(), self.default)
-        except KeyError:  # namelist does not exist. Use default value
-            value = self.default
-            my_logger.info(f"Failed to read {self.namelist} returning {self.default} for {self.nl_var}")
-        if value is None:
-            raise KeyError(f"{self} not found")
-        return value
-
-    def to_dict(self):# REMOVE
-        """ Return a dictionary representation, suitable to conversion to JSON,  of namelist-var.  """
-        d = dataclasses.asdict(self)
-        return d
-
-    # class methods now!
-    @classmethod
-    def from_dict(cls, dct):# REMOVE
-        """
-        Generate namelist_var from dictionary
-        :param dct: dct
-        :return: return  namelist initialised from dict.
-        """
-        return cls(**dct)
-
-    @classmethod
-    def clean_cache(cls):# REMOVE
-        """
-    Clean out the file cache
-        :return:
-        """
-        cls._file_cache = dict()
-
-    @classmethod
-    def file_cache(cls, filepath: pathlib.Path,
-                   clean: bool = False, make_copy: bool = True):# REMOVE/move to Model
-        """
-        Read/cache file
-        :param filepath: path to file containing namelist
-        :param clean: If True,clean the cache
-        :param make_copy: If True, make a deep copy of the cached data
-        :return: namelists in the file. Will read in data if needed.
-        """
-        if clean:
-            cls._file_cache = dict()  # reset the cache.
-        if filepath in cls._file_cache.keys():
-            namelists = cls._file_cache[filepath]
-        else:
-            namelists = f90nml.read(filepath)
-            cls._file_cache[filepath] = namelists
-            my_logger.info(f"Read in data from {filepath}")
-        if make_copy:
-            namelists = copy.deepcopy(namelists)
-        return namelists
-
-    @classmethod
-    def modify_namelists(cls, nl_info: iter,
-                         dirpath: pathlib.Path = pathlib.Path.cwd(),
-                         update: bool = False,
-                         clean: bool = False) -> dict:# REMOVE
-        """
-        Update dict indexed by files. Each containing a f90nml namelist.
-        Really for internal use by this class.
-        :param nl_info -- iterable of namelist, values.
-        :param dirpath: path to root directory for namelists
-        :param clean: clean cache if set to True
-        :param update If true will update namelist from (cached) file system. If not will return nl info for changes.
-        :return: dict indexed by the namelist filepath
-
-        Example usage files=files_to_change([(VF1_nl,3.0), (RHCRIT_nl,[0.8,0.8,0.8,...0.9,0.95])],dirpath=pathlib.Path('test_dir'))
-        """
-        file_dict = {}
-        for (nl, value) in nl_info:
-            if not isinstance(nl, namelist_var):
-                raise ValueError(f"{nl} is {type(nl)} expecting type: namelist_var")
-            path = dirpath / nl.filepath
-            if path not in file_dict.keys():  # got this file? if not add it in.
-                if update:
-                    file_dict[path] = cls.file_cache(path, clean=clean)  # not got it so use cache
-                    my_logger.debug(f"Updating namelists in {path}")
-                else:
-                    file_dict[path] = f90nml.namelist.Namelist()  # initialise to empty namelist.
-                    my_logger.debug(f"Setting {path} empty")
-
-            if nl.namelist.lower() not in file_dict[path].keys():
-                my_logger.debug(f"Setting {nl.namelist.lower()} to empty")
-                file_dict[path][nl.namelist.lower()] = f90nml.namelist.Namelist()
-
-            file_dict[path][nl.namelist.lower()][nl.nl_var.lower()] = value
-            if isinstance(value, np.ndarray):  # convert numpy arrays.
-                file_dict[path][nl.namelist.lower()][nl.nl_var.lower()] = value.tolist()
-            my_logger.debug(f"Setting {nl}  to {value}")
-
-        return file_dict
-
-    @classmethod
-    def nl_modify(cls, nl_info: iter, dirpath=pathlib.Path.cwd()):# REMOVE
-        #TDOO move to model as how it is done is rather model specific.
-        """
-        Modifiy namelist files. Sadly f90nml.patch() is a bit flaky.
-          So, for each file we read in the entire contents. 
-         Update using the changes, write to a temp file, remove the input file
-            and move the temp file to the original location.
-        :param nl_info: iterable of namelist_var, value pairs,
-          will also clear cache after all modification done.
-        :return: nada though all files used will be modified.
-
-        Example usage namelist_var.nl_modify({VF1_nl:0.5,ENTCOEF_nl:[0.8,0.8,0.85,...0.9,0.95])
-        """
-
-        namelists = cls.group_namelists(nl_info)
-        for fpath, nl_patch in namelists.items():
-            filepath = dirpath / fpath
-            bak_file = filepath.with_name(filepath.name + ".bak")
-            shutil.copy2(filepath, bak_file, follow_symlinks=False)  # keep symlinks as symlinks.
-            my_logger.debug(f" {filepath} copied to {bak_file}")
-            with tempfile.NamedTemporaryFile(dir=dirpath, delete=False, mode='w') as tmpNL:
-                # control how namelist is output.
-                nl_patch.end_comma = True
-                nl_patch.uppercase = True
-                nl_patch.logical_repr = ('.FALSE.', '.TRUE.')  # how to represent false and true
-                full_nl = f90nml.read(filepath)
-                full_nl.update(**nl_patch)
-                f90nml.write(full_nl, tmpNL)
-                tmpNL.close()
-            filepath.unlink()  # remove the input file
-            pathlib.Path(tmpNL.name).rename(filepath)  # move temp file to original location.
-            my_logger.info(f"Modified {filepath}")
-        cls.clean_cache()  # cache now "dirty" (been modified) and so needs to  be cleaned.
-        return True  # modification succeeded
-
-    grouped_nl = dict[str, dict[str, f90nml.namelist.Namelist]]  # type hint for grouped namelists
-
-    @staticmethod
-    def group_namelists(
-            nl_info: list[tuple['namelist_var', typing.Union[type_allowed_fortran, list[type_allowed_fortran]]]],
-            input_file_dict: typing.Optional[grouped_nl] = None) -> grouped_nl:
-        """
-        Group together namelist info by filepath and namelist name.
-        :param nl_info -- iterable of namelist, values.
-        :param input_file_dict -- if provided updates values (modifying input_file_dict as a side effect).
-        :return: dict indexed by the namelist filepath with
-        values being a f90nml Namelist (which contains all the updated namelist info).
-        Example usage grouped_nl =self.group_namelist([(VF1_nl,3.0), (RHCRIT_nl,[0.8,0.8,0.8,...0.9,0.95])])
-
-        """
-        if input_file_dict is None:
-            file_dict = {}
-            my_logger.debug('Initialising file_dict to empty')
-        else:
-            file_dict = input_file_dict
-            my_logger.debug('Using input_file_dict')
-        for (nl, value) in nl_info:
-            path = nl.filepath
-            if path not in file_dict.keys():  # Initialise file_dict[path]
-                file_dict[path] = f90nml.namelist.Namelist()
-                my_logger.debug(f"Initialised {path}")
-
-            if nl.namelist not in file_dict[path].keys():  # not got this namelist name so initialise it
-                file_dict[path][nl.namelist] = f90nml.namelist.Namelist()
-                my_logger.debug(f'Initialised {path}{nl.namelist}')
-
-            file_dict[path][nl.namelist][nl.nl_var] = value
-            if isinstance(value, np.ndarray):  # convert numpy arrays.
-                file_dict[path][nl.namelist][nl.nl_var] = value.tolist()
-            my_logger.debug(f"Setting {nl} to {value}")
-            ValueError('do not call this')
-        return file_dict
 
 

@@ -10,7 +10,7 @@ import pandas as pd
 import pandas.testing as pdtest
 
 import genericLib
-from namelist_var import namelist_var
+from namelist_var import NamelistVar
 from param_info import ParamInfo
 from Models import Model, register_param
 genericLib.setup_env()
@@ -23,13 +23,15 @@ class TestParamInfo(unittest.TestCase):
     def fn(self, model, value):
         return value ** 2
 
+
+
     def setUp(self):
         self.param_info = ParamInfo()
         # set up test case.
-        nl_var1 = namelist_var(filepath=pathlib.Path('fred.nl'), namelist='atmos', nl_var='VF1', name='VF1', default=1)
-        nl_var2 = namelist_var(filepath=pathlib.Path('fred.nl'), namelist='atmos', nl_var='VF2', name='VF2',
+        nl_var1 = NamelistVar(type_name='namelist_var',filepath=pathlib.Path('fred.nl'), namelist='atmos', nl_var='VF1', name='VF1', default=1)
+        nl_var2 = NamelistVar(type_name='namelist_var',filepath=pathlib.Path('fred.nl'), namelist='atmos', nl_var='VF2', name='VF2',
                                default=2.0)
-        nl_var3 = namelist_var(filepath=pathlib.Path('fred.nl'), namelist='ocean', nl_var='OCDIFF', name='OCDIFF',
+        nl_var3 = NamelistVar(type_name='namelist_var',filepath=pathlib.Path('fred.nl'), namelist='ocean', nl_var='OCDIFF', name='OCDIFF',
                                default=False)
         self.param_info.register('FN', self.fn)
         self.param_info.register('VF1', nl_var1)
@@ -100,51 +102,6 @@ class TestParamInfo(unittest.TestCase):
             f"DEBUG:OPTCLIM.param_info:Parameter RHCRIT2 uses method {set_RHCRIT2.__qualname__} ",
         ])
 
-    def test_param(self):
-        # Test with a namelist
-        p = ParamInfo()
-        nl_var1 = namelist_var(filepath=pathlib.Path('ATMCNTL'), namelist='atmos', nl_var='vf1')
-        nl_var2 = namelist_var(filepath=pathlib.Path('ATMCNTL'), namelist='atmos', nl_var='vf2')
-        p.register('VF1', nl_var1)
-        result = p.param(None, 'VF1', 42)
-        self.assertEqual(result, [(nl_var1, 42)])
-        p.register('VF1', nl_var2, duplicate=True)
-        result = p.param(None, 'VF1', 42)
-        self.assertEqual(result, [(nl_var1, 42), (nl_var2, 42)])
-
-        # Test with a callable
-        nl_var1a = namelist_var(filepath=pathlib.Path('ATMCNTL'), namelist='atmos', nl_var='rhcrit')
-        nl_var2a = namelist_var(filepath=pathlib.Path('ATMCNTL'), namelist='atmos', nl_var='rhcrit2')
-
-        def set_RHCRIT(model, value):
-            return [(nl_var1a, [value] * 19), (nl_var2a, [value] * 10)]
-
-        p.register('RHCRIT', set_RHCRIT)
-        result = p.param(None, 'RHCRIT', 42)
-        self.assertEqual(result, [(nl_var1a, [42] * 19), (nl_var2a, [42] * 10)])
-        # test logs
-        with self.assertLogs(level=logging.DEBUG) as log:
-            a = p.param(None, 'VF1', 42)
-            b = p.param(None, 'RHCRIT', 10)
-        self.assertEqual(log.output,
-                         [f"DEBUG:OPTCLIM.param_info:Parameter VF1 set {nl_var1} to 42",
-                          f"DEBUG:OPTCLIM.param_info:Parameter VF1 set {nl_var2} to 42",
-                          f"DEBUG:OPTCLIM.param_info:Parameter RHCRIT called {set_RHCRIT.__qualname__} with 10 and returned {[(nl_var1a, [10] * 19), (nl_var2a, [10] * 10)]}"])
-
-        # test failures
-        p.param_constructors['fred'] = 2
-        with self.assertRaises(ValueError):
-            p.param(None, 'fred', 10)
-        with self.assertRaises(KeyError):  # key does not exist.
-            p.param(None, 'Fred', 10)
-
-        # bad fn.
-        def bad_fn(model, value):
-            return value
-
-        p.register('bad', bad_fn)
-        with self.assertRaises(ValueError):
-            p.param(None, 'bad', 10)
 
     def test_to_dict(self):
         # Test with a namelist
@@ -196,9 +153,9 @@ class TestParamInfo(unittest.TestCase):
             method()
             self.assertEqual(mock_stdout.getvalue(), expected_output)
 
-        nl_var1 = namelist_var(filepath=pathlib.Path('fred.nl'), namelist='atmos', nl_var='VF1', name='VF1')
-        nl_var2 = namelist_var(filepath=pathlib.Path('fred.nl'), namelist='atmos', nl_var='VF2', name='VF2')
-        nl_var3 = namelist_var(filepath=pathlib.Path('fred.nl'), namelist='ocean', nl_var='OCDIFF', name='OCDIFF')
+        nl_var1 = NamelistVar(type_name='namelist_var',filepath=pathlib.Path('fred.nl'), namelist='atmos', nl_var='VF1', name='VF1')
+        nl_var2 = NamelistVar(type_name='namelist_var',filepath=pathlib.Path('fred.nl'), namelist='atmos', nl_var='VF2', name='VF2')
+        nl_var3 = NamelistVar(type_name='namelist_var',filepath=pathlib.Path('fred.nl'), namelist='ocean', nl_var='OCDIFF', name='OCDIFF')
 
         def fn(model, value):
             return value ** 2
@@ -256,49 +213,6 @@ FN [function: {fn.__qualname__} ]
         new.register('cf2', 'nl_cf2')  # do same for new
         self.assertEqual(vars(orig), vars(new))  # should be identical
 
-    def test_read_param(self):
-        """
-        Test that read_param works.
-        Need to create a model instance and then use that!
-        :return:
-        """
-
-        class myModel(Model):
-            @register_param('RHCRIT')
-            def rhcrit(self, rhcrit):
-                """
-                Compute rhcrit on multiple model levels
-                :param rhcrit: meta parameter for rhcrit
-                :param inverse: default False. If True invert the relationship
-                :return: (value of meta parameter if inverse set otherwise
-                   a tuple with namelist_var infor and  a list of rh_crit on model levels
-
-                """
-                # Check have 19 levels.
-                rhcrit_nl = namelist_var(filepath=pathlib.Path('CNTLATM'), nl_var='RHCRIT', namelist='RUNCNST')
-                curr_rhcrit = rhcrit_nl.read_value(dirpath=self.model_dir)
-                if len(curr_rhcrit) != 19:
-                    raise ValueError("Expect 19 levels")
-                inverse = rhcrit is None
-                if inverse:
-                    return rhcrit_nl.read_value(dirpath=self.model_dir)[3]
-                else:
-                    cloud_rh_crit = 19 * [rhcrit]
-                    cloud_rh_crit[0] = max(0.95, rhcrit)
-                    cloud_rh_crit[1] = max(0.9, rhcrit)
-                    cloud_rh_crit[2] = max(0.85, rhcrit)
-                    return (rhcrit_nl, cloud_rh_crit)
-
-        pth = genericLib.expand("$OPTCLIMTOP/OptClimVn3/Models/parameter_config/example_Parameters.csv")
-        myModel.update_from_file(pth)
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            p = pathlib.Path(tmpdir)
-            model = myModel('fred', myModel.expand("$OPTCLIMTOP/OptClimVn3/configurations/example_Model/reference")
-                            , self.post_process, model_dir=p)  # depends on myModel
-            model.instantiate()
-            self.assertEqual(model.param_info.read_param(model, 'VF1'), 1)
-            self.assertEqual(model.param_info.read_param(model, 'RHCRIT'), 0.7)
 
 
 if __name__ == '__main__':

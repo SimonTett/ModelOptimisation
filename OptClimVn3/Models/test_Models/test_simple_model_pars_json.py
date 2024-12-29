@@ -10,6 +10,7 @@ import SubmitStudy
 import tempfile
 import pathlib
 import engine
+from namelist_var import NamelistVar
 from simple_model_pars_json import simple_model_pars_json as simple_model
 import StudyConfig
 import shutil
@@ -157,99 +158,7 @@ class Test_simple_model_pars_json(unittest.TestCase):
         self.assertEqual(model2.status,'SUCCEEDED')
         self.assertEqual(model2.model_jids,['123456'])
 
-    def test_gen_params(self):
-        """
-        Test cases:
-        - Test with no params. Should get appropriate values back
-        - Test with `parameters` containing valid data.
-        - Test to ensure `ValueError` is raised for duplicate namelist.
-        """
-        model = self.model
-        shutil.copytree(self.refDir,model.model_dir)
-        result = model.gen_params()
-        pars = model.parameters.copy()
-        pars.update(model.parameters_no_key)
-        self.assertEqual(len(result),len(pars))
-        for key,v in pars.items():
-            nl,v2 = model.param_info.param(model,key,v)[0]
-            self.assertEqual(result[nl],v2)
 
-        # Specify some parameters
-        params = dict(VF1=3.0,RHCRIT=0.6)
-        result = model.gen_params(params)
-        self.assertEqual(len(result),len(params))
-        for key,v in params.items():
-            nl,v2 = model.param_info.param(model,key,v)[0]
-            self.assertEqual(result[nl],v2)
-
-        # test for duplicate namelist.
-        # that means hacking param_info to have a duplicate namelist.
-        model.param_info.param_constructors['VF2']=model.param_info.param_constructors['VF1']
-        # Could do this properly using register but that stops duplicate nl.
-
-
-        with self.assertRaises(ValueError):
-            model.gen_params(dict(VF1=3.0,RHCRIT=0.6,VF2=3.1))
-
-
-
-    def test_read_param(self):
-        """
-        Test cases:
-        - Test with a RHCRIT  that is callable and get back
-        - Test with VF1 that is a `NamelistVar`.
-        - Test with an invalid `parameter` to ensure `KeyError` is raised.
-        """
-
-        self.model.instantiate()
-        with (self.model.model_dir/'parameters.json').open('r+t') as f:
-            param_values = json.load(f)
-        rhcrit = self.model.read_param('RHCRIT')
-        self.assertEqual(rhcrit,param_values["model_params"]['RHCRIT'][0])
-        vf1 = self.model.read_param('VF1')
-        self.assertEqual(vf1,param_values["model_params"]['VF1'])
-        with self.assertRaises(KeyError):
-            self.model.read_param('INVALID')
-
-    def test_param(self):
-        """
-        Test cases:
-        - Test with a `parameter` that returns a callable.
-        - Test with a `parameter` that returns a `NamelistVar`.
-        - Test to ensure `KeyError` is raised for invalid `parameter`.
-        - Test that bad function returns `ValueError`.
-        - test that function returning None accpeted and returns empty list.
-        """
-        # NamelistVar test
-        expected_nl = self.model.param_info.param_constructors['VF1'][0]
-        expected_val = 2.3
-        (nl,val) = self.model.param('VF1',expected_val)[0]
-        self.assertEqual(nl,expected_nl)
-        self.assertEqual(val,expected_val)
-        # callable
-        result = self.model.param('RHCRIT',0.5)[0]
-        fn = self.model.param_info.param_constructors['RHCRIT'][0]
-        self.assertTrue(callable(fn))
-        expected = fn(self.model,0.5)
-        self.assertEqual(result,expected)
-
-        # invalid parameter
-        with self.assertRaises(KeyError):
-            self.model.param('INVALID',0.5)
-
-        # add a dogey fn which returns the wrong kind of thing.
-
-        def bad_fn(self,val):
-            return 1
-        def none_fn(self,val):
-            return None
-
-        self.model.param_info.param_constructors['BAD'] = [bad_fn]
-        self.model.param_info.param_constructors['NONE'] = [none_fn]
-        with self.assertRaises(ValueError):
-            self.model.param('BAD',0.5)
-
-        self.assertEqual(self.model.param('NONE',0.5),[])
 
 
 

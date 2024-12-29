@@ -9,142 +9,12 @@ import f90nml
 import metomi.rose.config
 
 import genericLib
-from namelist_var import namelist_var, BaseConfig, NamelistVar, \
+from namelist_var import BaseConfig, NamelistVar, \
     JSON_Config, GroupConfig,FortranNamelistConfig,UMroseNamelistConfig
 
 genericLib.setup_env()
 logging.basicConfig(level=logging.INFO,force=True)
 
-class namelist_var_TestCase(unittest.TestCase):
-    def setUp(self):
-        """
-        Setup for reads. Will have a model + bunch of namelists
-        :return:
-        """
-        # copy reference case to tempdir.
-
-        tmpDir = tempfile.TemporaryDirectory()
-        testDir = pathlib.Path(tmpDir.name)  # used throughout.
-        refDir = namelist_var.expand('$OPTCLIMTOP/Configurations/xnmea')  # need a coupled model.
-        simObsDir = 'test_in'
-        self.dirPath = testDir
-        self.refPath = refDir
-        self.tmpDir = tmpDir  # really a way of keeping in context
-        self.testDir = testDir
-
-        shutil.rmtree(self.testDir, onerror=genericLib.errorRemoveReadonly)
-        shutil.copytree(refDir, self.testDir)  # copy everything over.
-        nl_list = []
-        self.values = [1.0, 10.0,
-                       1e-4,
-                       [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
-                       3.0]
-        for file, nl, var, name in zip(['CNTLATM', 'CNTLATM', 'CNTLATM', 'CNTLATM', 'CNTLATM'],
-                                       ['SLBC21', 'RUNCNST', 'SLBC21', 'SLBC21', 'SLBC21'],
-                                       ['VF1', 'DTICE', 'CT', 'EACF', 'ENTCOEF'],
-                                       ['vf1', 'DTICE', 'ct', 'eacf', 'entcoef']):
-            nl = namelist_var(filepath=pathlib.Path(file), namelist=nl, nl_var=var, name=name)
-            nl_list.append(nl)
-        self.namelist = nl_list
-
-    def tearDown(self):
-        shutil.rmtree(self.testDir, onerror=genericLib.errorRemoveReadonly)
-        self.tmpDir.cleanup()  # and actually remove it explicitly
-
-    def test_file_cache(self):
-        """
-        Test file_cache. Read twice get the same result.
-        :return:
-        """
-        nl = self.namelist[0]
-
-        for nl in self.namelist:
-            v1 = namelist_var.file_cache(self.dirPath / nl.filepath, clean=True)  # clear cache
-            v2 = namelist_var.file_cache(self.dirPath / nl.filepath)  # read (hopefully using the cache)
-            self.assertEqual(v1, v2)  #values are the same
-
-    def test_modify_namelists(self):
-        """
-        Test modify namelists
-        :return:
-        """
-        file_dict = namelist_var.modify_namelists([], dirpath=self.dirPath)  # should be empty
-        self.assertEqual(len(file_dict), 0)
-        # expect len of unique files
-        file_dict = namelist_var.modify_namelists(zip(self.namelist, self.values), dirpath=self.dirPath)
-        files = set([nl.filepath for nl in self.namelist])
-        self.assertEqual(len(files), len(file_dict))
-        for nl in self.namelist:
-            self.assertEqual(file_dict[self.dirPath / nl.filepath][nl.namelist][nl.nl_var],
-                             nl.read_value(dirpath=self.dirPath))
-
-        file_dict = namelist_var.modify_namelists(zip(self.namelist, [v * 2 for v in self.values]),
-                                                  dirpath=self.dirPath,
-                                                  update=True)
-        # now have set of namelists and values. Check they are as expected.
-
-        for nl in self.namelist:
-            self.assertEqual(file_dict[self.dirPath / nl.filepath][nl.namelist][nl.nl_var],
-                             nl.read_value(dirpath=self.dirPath) * 2, msg=f"Failed for {nl}")
-
-    def test_nl_modify(self):
-        """
-        Test namelist modification
-        Patch the values. Should have expected bak files and values as expected
-        :return:
-        """
-        values = []
-        for v in self.values:
-            if isinstance(v, list):
-                lst = [vv + 1 for vv in v]
-                values.append(lst)
-            else:
-                values.append(v + 1)
-        nl_items = list(zip(self.namelist, values))
-        patch = namelist_var.nl_modify(nl_items, dirpath=self.dirPath)
-        self.assertTrue(patch)  # worked
-        # check namelists are as expected
-        for nl, value in nl_items:
-            got = nl.read_value(dirpath=self.dirPath)
-            self.assertEqual(got, value)
-
-        for nl, v, v2 in zip(self.namelist, self.values, values):
-            pth = self.dirPath / nl.filepath
-            bak = pth.parent / (pth.name + '.bak')  #check for backup files
-            nl2 = namelist_var(filepath=bak.relative_to(self.dirPath), namelist=nl.namelist, nl_var=nl.nl_var)
-            self.assertTrue(bak.exists() and bak.is_file())
-            self.assertEqual(nl2.read_value(dirpath=self.dirPath), v)
-            self.assertEqual(nl.read_value(dirpath=self.dirPath), v2)
-
-    def test_nl_read(self):
-        """
-        Test reading namelist.
-        :return:
-        """
-
-        for nl, v in zip(self.namelist, self.values):
-            got = nl.read_value(dirpath=self.dirPath)
-            self.assertEqual(got, v, msg=f"Failed for {nl}")
-        # try again cleaning cache each time. Should get same results
-        for nl, v in zip(self.namelist, self.values):
-            got = nl.read_value(dirpath=self.dirPath, clean=True)
-            self.assertEqual(got, v, msg=f"Failed for {nl}")
-
-
-    def test_repr(self):
-        """
-        Test representation is as expected.
-        :return:
-        """
-        nl = namelist_var(filepath=pathlib.Path('../test.nl'), namelist='BIG_NL', nl_var='small_var')
-        self.assertEqual(nl.__repr__(), f'{str(nl.filepath)}&BIG_NL small_var')
-
-        nl = namelist_var(filepath=pathlib.Path('../test.nl'), namelist='BIG_NL', nl_var='small_var', default=2)
-        self.assertEqual(nl.__repr__(), f'{str(nl.filepath)}&BIG_NL small_var default:2')
-
-        nl = namelist_var(filepath=pathlib.Path('../test.nl'), namelist='BIG_NL', nl_var='small_var', default=2,
-                          name='TEST')
-        self.assertEqual(nl.__repr__(), f'TEST: {str(nl.filepath)}&BIG_NL small_var default:2')
 
 
 import json
@@ -400,8 +270,12 @@ class TestFortranNamelist_Config(unittest.TestCase):
 
 class TestUMroseNamelistConfig(unittest.TestCase):
     def setUp(self):
-        self.root_dir = genericLib.expand(
+        self.ref_dir = genericLib.expand(
             "$OPTCLIMTOP/OptClimVn3/configurations/example_UM_rose/references/u-db898")
+        tmp_dir = tempfile.TemporaryDirectory()
+        self.tmp_dir = tmp_dir
+        self.root_dir = pathlib.Path(tmp_dir.name)
+        shutil.copytree(self.ref_dir, self.root_dir,dirs_exist_ok=True)
         self.rel_filepath = pathlib.Path('app/um/rose-app.conf')
         self.config = UMroseNamelistConfig(root_dir=self.root_dir, rel_filepath=self.rel_filepath)
         self.test_values = {
@@ -412,7 +286,7 @@ class TestUMroseNamelistConfig(unittest.TestCase):
         }
 
     def tearDown(self):
-        pass
+        self.tmp_dir.cleanup()
 
     def test_read(self):
         # Test the read method to ensure it correctly reads namelist data from a file
@@ -474,6 +348,29 @@ class TestUMroseNamelistConfig(unittest.TestCase):
         # check get an error if update twice.
         with self.assertRaises(ValueError):
             self.config.update_value(namelist, 3)
+
+        # check what happens if update an existing namelist
+        namelist2 = NamelistVar(type_name='um_rose', filepath=self.rel_filepath, namelist='namelist:run_radiation',
+                                nl_var='two_d_fsd_factor')
+        self.config.update_value(namelist2, 1.6)
+        # check get failure if value does not exist
+        namelist2f = NamelistVar(type_name='um_rose', filepath=self.rel_filepath, namelist='namelist:run_radiation',
+                                nl_var='two_d_fsd_factor2')
+        with self.assertRaises(KeyError) as error:
+            self.config.update_value(namelist2f, 2)
+        # check that other values are ok
+
+        # write out
+        self.config.write()
+        self.config.reset()
+        # make sure the value is still there.
+        got = self.config.read_value(namelist, check_modify=False)
+        self.assertEqual(got, 2)
+        # ane make sure another value is also there
+        namelist3=NamelistVar(type_name='um_rose', filepath=self.rel_filepath, namelist='namelist:run_cloud', nl_var='allicetdegc')
+        got = self.config.read_value(namelist3)
+        self.assertEqual(got, -20.0)
+
 
 class TestGroupConfig(unittest.TestCase):
 

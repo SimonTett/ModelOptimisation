@@ -8,7 +8,7 @@ import fileinput
 import re
 import json
 from ModelBaseClass import register_param
-from namelist_var import namelist_var
+from namelist_var import NamelistVar
 
 my_logger=logging.getLogger(f"OPTLIM.{__name__}")
 print(my_logger,"my_logger")
@@ -246,7 +246,7 @@ class GAMIL3_new(Model):
 
         if value == 0:
             return None
-        nl = namelist_var(nl_var="pertlim", namelist="atmexp", filepath=pathlib.Path("user_nl_gamil"))
+        nl = NamelistVar(type_name='namelist_var',nl_var="pertlim", namelist="atmexp", filepath=pathlib.Path("user_nl_gamil"))
         return (nl, value * 1e-14)
 
 

@@ -11,7 +11,7 @@ import pathlib
 import genericLib
 import shutil
 
-from namelist_var import namelist_var
+
 
 genericLib.setup_env() # set up default env.
 
@@ -94,7 +94,7 @@ class test_um_rose(unittest.TestCase):
         self.model.instantiate()
         p = set(self.parameters.keys())
 
-        params_got = self.model.read_params(p)
+        params_got = self.model.read_params(list(p))
         self.assertEqual(params_got,self.parameters)
 
         self.assertEqual(self.model.status,'INSTANTIATED')

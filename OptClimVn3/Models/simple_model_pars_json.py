@@ -68,8 +68,8 @@ class simple_model_pars_json(tempModel):
         nvert = 3 # hard coded for now.
         rhcrit_nl = namelist_var(nl_var='RHCRIT', namelist='model_params',
                                  filepath=pathlib.Path('parameters.json'), default=0.7)
-        inverse = (rhcrit is None)
-        if inverse:
+
+        if rhcrit is None:
             cloud_rh_crit:type_allowed_fortran = self.configs.read_value(rhcrit_nl)
             rhcrit:float = cloud_rh_crit[0]
             expected = nvert * [rhcrit]
@@ -77,7 +77,7 @@ class simple_model_pars_json(tempModel):
                 raise ValueError(f"Expected rhcrit {np.array(expected)} but got {np.array(cloud_rh_crit)}")
             return rhcrit
         else:
-            cloud_rh_crit = nvert * [rhcrit]
+            cloud_rh_crit:list[float] = nvert * [rhcrit]
         return rhcrit_nl, cloud_rh_crit
 
 
