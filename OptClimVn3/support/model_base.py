@@ -133,7 +133,6 @@ class journal:
             {"=" * 60}
             STDERR 
             { e.stderr}"""
-            # TODO try again if this fails...
             my_logger.warning(str)
             raise
         except FileNotFoundError as e:  # cmd not found
@@ -216,7 +215,6 @@ class model_base:
                 pass
         return result
 
-    # TODO -- find a more elegant way of providing this functionality.
     @classmethod
     def from_dict(cls, dct: dict):
         """

@@ -1,6 +1,6 @@
 """
 simple model for testing. With parameters in json file.  Model does very little!
-TODO: replace simple_model.py once done.
+
 """
 import functools
 import sys
@@ -59,7 +59,6 @@ class simple_model_pars_json(tempModel):
         :param value: value to set rhcrit to.
         :return: list of tuples (NamelistVar,value)
         """
-        #TODO have a model method for read_value and update_values.
         # Code to read number of vertical levels from the config
         # not used as this model is really for testing
         #n_level_nl = namelist_var(nl_var='N_VERT_LEVELS', namelist='model_params',

@@ -117,7 +117,6 @@ class runSubmit(SubmitStudy):
                 # OR set maxFn to min(max_model_simulations,maxFn).
 
         elif model.status != "PROCESSED":  # not processed so raise ValueError and complain.
-            # TODO add in random generation to allow look ahead
             raise ValueError(f"{model} status != PROCESSED but is {model.status}")
         else:  # got a model.
             my_logger.debug(f"Using existing model {model}")
@@ -211,10 +210,6 @@ class runSubmit(SubmitStudy):
           likely need to add the runSubmit object to the list of arguments and then do runSubmit.stdFunction(.... )
           This might require you to create  a partial function. Your life will probably be easier if you set df=True
           and work with dataframes in your function.
-        TODO use "random" perturbation approach to find how many parallel cases we can run.
-        This is a bit tricky as gass-newton does three runs and then uses the best one. That means 1/3 chance we pick a
-        bad case. So will need to run this several times to have a decent prob of not picking case by chance.
-        One approach might be to test that the generated param sets are unique.
         """
 
         paramNames = self.config.paramNames()
@@ -516,7 +511,6 @@ class runSubmit(SubmitStudy):
                                        user_params=userParams)
 
         except np.linalg.linalg.LinAlgError:
-            # FIXME -- problem with dfols in that it occasionally generates two cases.
             # will remove the last case in self.trace and self.model_index if that happens.
             # this is  a hack and hopefully DFOLS gets updated to avoid this.
             n_inst_models = len(self.models_to_instantiate())

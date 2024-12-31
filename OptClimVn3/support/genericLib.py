@@ -60,10 +60,46 @@ def setup_logging(level:typing.Optional[int] = None,
     formatter = logging.Formatter(fmt)
     console_handler.setFormatter(formatter)
 
-    optclim_logger.addHandler(console_handler) # turning this on gives duplicate messages. FIXME.
-    optclim_logger.propagate = False # stop propogation to root level.
+    optclim_logger.addHandler(console_handler) # turning this on gives duplicate messages.
+    optclim_logger.propagate = False # stop propogation to root level which suppresses duplicate messages.
 # see https://jdhao.github.io/2020/06/20/python_duplicate_logging_messages/
     return optclim_logger
+
+def init_log(
+        log: logging.Logger,
+        level: str,
+        log_file: typing.Optional[typing.Union[pathlib.Path, str]] = None,
+        datefmt: typing.Optional[str] = '%Y-%m-%d %H:%M:%S',
+        mode: str = 'a'
+) -> logging.Logger:
+    """
+    Set up logging on a logger! Will clear any existing logging.
+    :param log: logger to be changed
+    :param level: level to be set.
+    :param log_file:  if provided pathlib.Path to log to file
+    :param mode: mode to open log file with (a  -- append or w -- write)
+    :param datefmt: date format for log.
+    :return: nothing -- existing log is modified.
+    """
+    log.handlers.clear()
+    log.setLevel(level)
+    formatter = logging.Formatter('%(asctime)s %(levelname)s:  %(message)s',
+                                  datefmt=datefmt
+                                  )
+    ch = logging.StreamHandler(sys.stderr)
+    ch.setFormatter(formatter)
+    log.addHandler(ch)
+    # add a file handler.
+    if log_file:
+        if isinstance(log_file, str):
+            log_file = pathlib.Path(log_file)
+        log_file.parent.mkdir(exist_ok=True, parents=True)
+        fh = logging.FileHandler(log_file, mode=mode + 't')  #
+        fh.setLevel(level)
+        fh.setFormatter(formatter)
+        log.addHandler(fh)
+    log.propagate = False
+    return log
 
 def get_fn(mod_fn_str:str) -> typing.Callable:
     """

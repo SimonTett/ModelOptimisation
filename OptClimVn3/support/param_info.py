@@ -138,80 +138,6 @@ class ParamInfo():
         df = df.reindex(columns=pd.Index(ordering))
         return df
 
-    def update_from_file(self, filepath: pathlib.Path|str, duplicate: bool = False, **kwargs):
-        """
-        Add parameters from file.
-        :param filepath: path to csv file (can be anything accepted by pandas.read_csv).
-          parameter type  filepath namelist nl_var name -- extend for different types.
-          For this implementation type **must** be namelist_var. Extend for different ways of specifing parameters.
-          All four parameters needed to create a namelist_var must be present
-        :param duplicate: If True allow duplicates otherwise final parameter found is used.
-        :param kwargs -- all remaining arguments are passed to read_csv.
-        :return: Nothing.Modifies self in place
-        """
-
-        lookup = dict(namelist_var=namelist_var.namelist_var,
-                      json_var = namelist_var.NamelistVar)
-        # TODO once working move to some more automatic system of registering namelist like variables.
-        def str_to_ifb(value:typing.Optional[str]) -> typing.Optional[typing.Union[bool,float,int]]:
-            """
-            Convert a string to a bool, float or int. If None passed return None
-            :param value: value to be converted.
-            :return: converted value.
-            """
-            if value is None:
-                return None
-            if value.lower() == 'true':
-                result = True
-            elif value.lower() == 'false':
-                result = False
-            elif '.' in value:
-                result = float(value)
-            else:
-                result = int(value)
-
-            return result
-
-        parameter_df = pd.read_csv(genericLib.expand(filepath), **kwargs)
-        parameter_df = parameter_df.replace({np.nan:None}) # replace any Nan with None. (on write out None get written as nan)
-
-        for indx, row in parameter_df.iterrows():
-            param, typ = row.loc[['parameter', 'type']]
-            if typ == 'function':
-                # check we have it and warn if not.
-                fname = row.loc["function_name"]
-                if fname not in self.known_functions.keys():
-                    my_logger.warning(f"Function {fname} not found. Likely some discrepancy")
-                else:
-                    my_logger.debug(f"Got function {fname} for parameter {param}")
-            elif typ in lookup:
-                name = row.loc['name']
-                if pd.isnull(name):  # no name defined set it to param.
-                    name = param
-                # convert default
-                default = row.loc['default']
-                if isinstance(default,str):
-                    default = str_to_ifb(default)
-                # check filename typ is constant over a file ..
-                # Move this to a check fn which can report and give user chance to fix!
-                # can also run functions and check they are OK too. 
-                filepath = pathlib.Path(row.loc['filepath'])
-                expected_type = self.file_info.get(filepath,typ)
-                if expected_type != typ:
-                    raise ValueError(f"Got multiple types for same file for {param}. Existing: {expected_type} requested {typ} ")
-                if filepath not in self.file_info:
-                    self.file_info[filepath]= typ
-                # done checking no duplicate types.
-                nl = lookup[typ](filepath=filepath, namelist=row.loc['namelist'],
-                                  nl_var=row.loc['nl_var'], default=default,name=name)
-
-                self.register(param, nl, duplicate=duplicate)
-                my_logger.debug(f"Registered {nl} for parameter {param}")
-            else:
-                raise NotImplementedError(f"No implementation for type {typ}")
-
-        my_logger.info(f"Registered {len(parameter_df.index)} parameters")
-
     def print_parameters(self):
         """
         Print out the parameters we have registered
@@ -288,7 +214,6 @@ class ParamInfo():
         :return: Nothing.Modifies self in place
         """
 
-        # TODO once working move to some more automatic system of registering namelist like variables.
         def str_to_ifb(value:typing.Optional[str]) -> typing.Optional[typing.Union[bool,float,int]]:
             """
             Convert a string to a bool, float or int. If None passed return None
@@ -340,7 +265,6 @@ class ParamInfo():
 
     def check_ok(self)-> bool:
         """
-        TODO: consider moving to Model as can then check functions.
         Check that params are OK:
         1) Namelists are all the same type for a file.
         """

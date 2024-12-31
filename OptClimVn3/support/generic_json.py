@@ -33,9 +33,9 @@ method converts an object to something that can be serialized by JSON. It takes 
 serialized version of the object.
 
 """
-#TODO -- for numpy arrays. Write out the dtype, size and then conver the array to bytes.
+#TODO -- for numpy arrays. Write out the dtype, size and then convert the array to bytes.
 #  for reading undo this.  Generalise to pandas objects? That way precision will be retained.
-# but probably requires some hacking -- call the to_json function and thne replace the data cpt
+# but probably requires some hacking -- call the to_json function and then replace the data cpt
 # with the byte representation,
 from __future__ import annotations
 
@@ -77,7 +77,8 @@ def load(fp, *args,error:type_error='raise', **kwargs):
     Load object from file-like object fp. Uses json.load() with object_hook set to JSON_Encoder.decode
     :param fp: file pointer to read.
     :param args:args to be passed to json.load
-    :param kwargs:kwards to be passed to json.load
+    :param error: what to do if an error occurs. Used in the decode method.
+    :param kwargs:keywords to be passed to json.load
     :return:
     """
     decode_obj = obj_to_from_dict(error=error) # create decode object
@@ -145,8 +146,7 @@ class obj_to_from_dict:
 
     """
     #TODO: Make this support tuples and also keys that are not strings.
-    #TODO: deal with provisional. For this version ignore it.
-    #TODO: have this be versionable. With some name read from the saved json file or passed in??
+
 
 
     FROM_VALUE = dict(#ndarray=lambda x: np.array(x['data'],dtype=x['typ']),
@@ -161,7 +161,7 @@ class obj_to_from_dict:
                       set=set,
                       int32=lambda x: np.int32(x['data'])
     )
-    # functions to convert value to object. These should be "factory"  classmethods
+    # functions to convert value to object. These should be "factory"  class methods
     TO_VALUE = dict(
         ndarray=lambda x: dict(data=x.tolist(), typ=str(x.dtype)),
         DataFrame=lambda x: x.to_dict(),  # liangwj
@@ -175,7 +175,7 @@ class obj_to_from_dict:
         int32=lambda x: dict(data=int(x),typ=str(x.dtype))
     )
     # functions to convert object to serializable object.
-    #TODO when needed add support for datetime
+
 
     def __init__(self,error:type_error='raise'):
         self.error = error
@@ -255,14 +255,16 @@ class obj_to_from_dict:
         :param dct: dict to be decoded.
 
         If dct contains the key __cls__name__ then it will be decoded using value_to_obs.
-        If not dct will be returned as no decoding neeed.
+        If not dct will be returned as no decoding needed.
 
          Dct, for decoding,  should be of the form:
         {
             "__cls__name__" : "class_name",
+            "__module__" : "module_name",
             "object" : Stuff to be decoded
         }
         ValueError will be raised if the dct is not of this form.
+        __module__ is optional and is used to import the module where the class is defined.
         :return: input dct (if no decoding needed) or a decoded object.
         """
 
@@ -274,7 +276,6 @@ class obj_to_from_dict:
                 my_logger.info(f"importing {module}")
                 mod = importlib.import_module(module)
                 expect_count=3
-                # TODO check that mod has what we need. The reason for the import is to give us the decode methods...
 
             data = dct["object"]
             if len(dct) != expect_count:

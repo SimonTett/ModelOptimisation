@@ -84,7 +84,6 @@ class Model(ModelBaseClass, journal):
           _post_process_output -- name of output file for post-processing
         Note that update_history and store_output (see Journal for doc for those) set up private attributes.
     """
-    # TODO -- remove references to namelists and replace with more general thing. Specific models do namelists!
     post_proccess_json = "post_process.json"  # where post-process info gets written
     status_info = dict(CREATED=None,
                        INSTANTIATED=["CREATED"],  # Instantiate a model requires it to have been created
@@ -119,7 +118,7 @@ class Model(ModelBaseClass, journal):
 
         if not model.model_dir.samefile(model_path.parent):
             my_logger.warning(f"Model {model} model_dir changed to {model_path.parent} ")
-            model.model_dir = model_path.parent # update directory with where we actually loaded it from. TODO make this more generic.
+            model.model_dir = model_path.parent # update directory with where we actually loaded it from.
         return model
 
     # methods now.
@@ -219,7 +218,7 @@ class Model(ModelBaseClass, journal):
             parameters = {}
         else:
             parameters = copy.deepcopy(parameters)
-        # TODO check that parameters exist in lookup.
+
         self.parameters = parameters
         self.parameters_no_key = {}  # parameters that do not generate key and augment/modify parameters.
 
