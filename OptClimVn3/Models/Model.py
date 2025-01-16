@@ -1,5 +1,50 @@
 """
-Class for abstract Model and namelists.
+Class for abstract Model
+All different types of models should inherit from this. It provides the core methods
+and information needed,
+
+To add a new model you likely need to do, at least, the following:
+
+1) Implement your own version of modify_model.
+   It should first call the super class modify_model method to do the basic stuff.
+   Your code should turn your reference configuration into a stand along configuration running
+     in self.model_dir.
+   You should also modify the configuration so that:
+   a) just before model starts running insert:
+       self.set_status_script self.config_path RUNNING
+    This could be run every time a model starts running which could be multiple times. This case has not be tested.
+   b) Insert  in the configuration after the model has finished all its simulations:
+        self.set_status_script self.config_path SUCCEEDED
+    c) Optionally insert in the config where errors are detected:
+        self.set_status_script self.config_path FAILED
+
+2) Implement your own version of submit_cmd so it returns the command to submit the model to your Q system,
+
+3) Define your parameters.
+ Hopefully they can be described by a 'namelist  -- file, group name & variable name.
+ See support/namelist_var.py.
+ See namelist_var.py for guidance on existing types of 'namelists' and guidance for adding new ones.
+
+ Easy is parameters whose values directly set one or more 'namelist variables' to that value.
+ For this the recommended approach is to create a csv file with the parameter names and namelist values.
+ For examples See the csv files  in parameter_config.
+ After the model class has been defined then do :
+     ModelClass.update_from_file(path_to_config_file)
+ where path_to_config_file is a pathlib.Path of the parameter configuration file.
+
+ More tricky you might have a 'hyper' parameter which modifies multiple namelist variable,
+ sets a namelist variable to an error, or modifies the model in some other way.
+ To do this you need to write a function and register the function using ModelBaseClass.register_param
+ Your methods should take a single value or None. If None the method should return a scaler which is the current value of
+ the parameter (as set in the configuration files) this is 'inverse'. If a value is passed  the function should
+ either return a list of namelist,value tuples OR silently set the values itself and return None. See HadCM3 for an extensive set of methods for possible examples.
+
+4) Write a study configuration file. This is a json file that describes the study. You will need to define
+  many elements in the run_info dict. See existing cases in configurations to see what is needed.
+  Note you can include various things in this configuration file.
+
+Do write tests for your new Model testing your new and modified methods.
+
 """
 from __future__ import annotations
 
@@ -89,7 +134,7 @@ class Model(ModelBaseClass, journal):
                        INSTANTIATED=["CREATED"],  # Instantiate a model requires it to have been created
                        SUBMITTED=['INSTANTIATED', 'PERTURBED', 'CONTINUE'],
                        # Submitting needs it to have been instantiated, perturbed or to be continued.
-                       RUNNING=["SUBMITTED"],  # running needed it should have been submitted
+                       RUNNING=["SUBMITTED"],  # running the model should have been submitted
                        FAILED=["RUNNING", "SUBMITTED"],  # Failed means it should have been running or SUBMITTED
                        PERTURBED=["FAILED"],  # Allowed to perturb a model after it failed.
                        CONTINUE=["FAILED", "PERTURBED"],
@@ -586,6 +631,9 @@ class Model(ModelBaseClass, journal):
         if CONTINUE runs on  [self.continue_script]
         output should go to model_dir/'model_output' which will be created if it does not exist.
         """
+        # TODO -- As Model should never be directly instantiated then
+        #  consider moving this into simple_model and just having very generic version for Model case.
+        # Then indiviudal model classes can run the generic code first and then do their own thing.
         if self.status in ['INSTANTIATED', 'PERTURBED']:
             script = self.submit_script
         elif self.status == 'CONTINUE':
@@ -965,7 +1013,7 @@ class Model(ModelBaseClass, journal):
 
         Example:
         with tarfile.open(archive_file, "w") as archive:
-            model.archive(rootDir=pathlib.Path("my_root_dir")
+            model.archive(archive, rootDir=pathlib.Path("my_root_dir")
         """
         if extra_files is None:
             extra_files = []

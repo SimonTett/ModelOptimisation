@@ -7,15 +7,23 @@ Models have lots of different ways of handling configurations. This module provi
 broadly if your model has its own way of doing configurations you will need to add new classes to this  module.
 See base_config for base (recommend you inherit from this)
  Module provides json, fortran namelist & rose methods:
- json config_json
- fortran_namelist config_fortran_namelist
- rose_namelist config_rose_namelist
 
-This module assumes something else (Model) is handling the control so getting the right configurations.
-And its own read_param() handles caching -- checks if the required file already loaded and if not loads it.
-Similarly, handles updating. That may cause a potential problem in that parameter change modifies something in the model
-which read then uses. So non-deterministic in that order might matter...
-For now this does not matter.
+ type_name        config class
+ -------------------------------
+ json_nl          JSON_Config
+ fortran_nl       FortranNamelistConfig
+ um_rose         config_rose_namelist
+
+Namelist variables are encapsulated in NamelistVar. See that for description.
+Key is the type_name which links to a registered class which handles I/O of the namelist variables.
+
+If you want a new way of dealing with I.O for your namelist variables then you should subclass BaseConfig and
+  use the register_class_info decorator. See BaseConfig for what is needed when subclassing.
+
+
+tge GroupConfig class handles multiple files each, in principle, with their own way of doing I/O.
+In practice, it is likely that all files use the same I/O approach.
+
  """
 import copy
 import dataclasses
@@ -43,12 +51,12 @@ class NamelistVar:
     A namelist is defined from relative filepath, namelist name and variable name. Also includes name,type_name and default.
 You might be able to extend this if you need something more complex.
     """
-    type_name:str # name of the namelist_var which tells us what config to use.
-    filepath: pathlib.Path # relative path to the file being use
+    type_name:str # name of the namelist_var which tells us what kind of namelist we are .
+    filepath: pathlib.Path # relative path to the file where namelist lives
     namelist: str # name of the namelist
     nl_var: str # name of the namelist variable
     name: str = None # parameter name
-    default: any = None # default value
+    default: type_allowed_fortran = None # default value
 
     # ** class variables **
     config_init=dict() # Keys are namelist class and values are __init__ fn to create appropriate config.
@@ -91,19 +99,19 @@ You might be able to extend this if you need something more complex.
         return d
 
 """
-Stuff for handling configurations. These go with namelist)var. They are all registered with a name
+Stuff for handling configurations. These go with NameListVar. They are all registered with a name
 that matches the type_name in the namelist.
 To add a new type of configuration you need to add a new class which inherits from BaseConfig.
 You will need to implement read, write, read_value and update_value methods.
 Use the decorator register_class_info to register the class with the name of the namelist_var.
-You need to define the mapping from parameters to configuration changes. 
-Two ways -- define functions (and register them with register_param) or read them in from a csv file.
-See HadCM3 for examples 
+Do write some test cases for your new/modified methods.  
+You need to define the mapping from parameters to configuration changes. See Model description for guidance. 
+
 """
 def register_class_info(name: typing.Union[str,list[str]]):
     """
     Register a config  class via name.
-    :param name: Name or list of Names of the related namelist_var.
+    :param name: Name or list of Names of the related configurations.
     :return: A decorated class with  class_init updated.
     class_init is a dictionary with keys being the name and values being the __init__ function to create the configuration.
     """
@@ -116,18 +124,17 @@ def register_class_info(name: typing.Union[str,list[str]]):
 
         # Add the information to the superclass's class_info attribute
 
-
         for n in name: # add all the known names to the class_init
             cls.config_init[n] = cls
 
         cls.type_name = name
-            # this is init function for the generated config. Here for namelists to generate
-            # a config based on their type_name  .
+        # this is init function for the generated config. Here for namelists to generate
+        # a config based on their type_name  .
 
         return cls
     return decorator
 
-@register_class_info('base_nl')
+@register_class_info('base_nl') # needed for testing...
 class BaseConfig:
     """
     base class for configurations. Should not be instantiated. Here to provide std things which are overwritten.
@@ -292,7 +299,7 @@ class BaseConfig:
 @register_class_info('json_nl')
 class JSON_Config(BaseConfig):
     """
-    Class to handle json namelist files.
+    Class to handle json namelist files -- where variables are stored in dicts in a json file.
     Base class provides much of what is needed, including  __init__ .
     This provides read, write, read_value and update_value methods.
     """
@@ -470,6 +477,9 @@ class FortranNamelistConfig(BaseConfig):
 
 @register_class_info('um_rose')
 class UMroseNamelistConfig(BaseConfig):
+    """
+    Class to handle I/O of namelists for UM rose configurations.
+    """
     # utility function to convert data to something Fortran namelists expect.
     @staticmethod
     def to_fortran(value: type_allowed_fortran) -> str:
@@ -494,7 +504,7 @@ class UMroseNamelistConfig(BaseConfig):
     @staticmethod
     def parse_value(value:str) -> type_allowed_fortran:
         """
-        Parse strings from umrose config. They are **sort of** fortran namelist text so will
+        Parse strings from um_rose config. They are **sort of** fortran namelist text so will
           use f90nml to parse them.
         :param value: str to be parsed,
         :return: type_allowed_fortran (int,float,bool, str or array of such)
@@ -574,10 +584,6 @@ class UMroseNamelistConfig(BaseConfig):
             value = namelist.default # return the default value
         else:
             # need to parse this string to convert to value. This is a bit of a pain.
-            # use f90nml to do that -- which does not seem to have parse from  fortan nml to value public fn.
-            # Not worth caching as we probably will only
-            # read 10-20 variables.  If we read 100s+ then worth rewritting to be more efficient
-            # and read a whole namelist (rather than just individual vars in the namelist)
             value = self.parse_value(value.value) # convert it to numeric value.
         return value
 

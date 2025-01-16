@@ -4,19 +4,18 @@ import logging
 import typing
 
 
-from ModelBaseClass import register_param # might be used to allow functions.
-#from Model import Model # note this seems to be quite important. Import Model from Model means the registration does not happen..
-from temp_model import  tempModel
+from ModelBaseClass import register_param # Used to allow functions. Currently none defined.
+from Model import Model
 import pathlib
 
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}") # have this anywhere you want logging
 
-class UM_rose(tempModel):
+class UM_rose(Model):
     """
     Class to support the Unified model running in ROSE.
     Complication is that this class will need to run a rose job on another super-computer
-    Also need to deal with rose handing of namelists.
+
 
     """
 
@@ -55,7 +54,7 @@ class UM_rose(tempModel):
             self.set_status_script self.config_path RUNNING
         3) Add to the cylc config after the model has finished
            self.set_status_script self.config_path SUCCEEDED
-        4) Optionally add to the cylc config where errors are detexted
+        4) Optionally add to the cylc config where errors are detected
                self.set_status_script self.config_path FAILED
 
         """
