@@ -24,7 +24,7 @@ param()
 gen_parameters() - generates list of parameters to be modified.
 
 
-Hard bit -- where is the cache -- becomes a property of an individual model
+Hard bit -- where is the cache -- becomes a property of an individual model instance
 Maybe it becomes a separate class? Which has read/write methods for different filesystems
 Model gets the following:
 value = model.read_value(namelist_var) # read the value out of the cache. If not in the cache try and read it in.
@@ -43,16 +43,26 @@ Implement with an abstract class and then write versions for json, fortran namel
 Does gamil3 need something special? Probably -- looks like it wants to read in a namelist and then write it out again.
 So will need an implementation of read/write that is specific to that model.
 
-What should Model do? json is probably the most general. So go with that.
+What should Model do? JSON is probably the most general. So go with that.
 Sadly cannot easily run HadCM3 which is a good test bed! Though the test cases will be useful.
 Wonder if I should spend some time and  energy getting HadCM3 working on eddie?
 
 Plan:
-1) refactor param_info/Model by moving the three methods to Model. Move the test cases. Test etc!
-2) Write the abstract class for cache. Write the json version. Modify simple_model to use new cache. Test etc!
-3) Modify hadcm3 to use the fortran_namelist cache. Test etc!
-4) remove code from namelist_var that is no longer needed. Modify Model to use json. Test etc!
-5) Remove json code from simple_model. test again.
-6) Modify gamil3 to use the fortran_namelist cache. (no test cases for this yet). Ask wenjun!
+1) refactor param_info/Model by moving the three methods to Model. Move the test cases. Test etc! Done!
+2) Write the abstract class for cache. Write the json version. Add a new model that uses json functionality based on simple_model. Test etc!
+2a) Have configs register themselves  with name of namelist_type.
+2b) Add tests. Done!
+2c) Add GroupConfig and tests. Done
+2d) Modify simple_models_pars_json to use the new functionality. Test etc! Done
+3) Run simple_model_pars_json.py -- verifying that it works. Done
+Fix -- Models registration/import imports module using the same name as the class. Need to change this.
+Done that which involved a bunch of changes to ModelBaseClass.
+4) Write the fortran namelist version of the cache. Modify hadcm3 to use the fortran_namelist cache. Test etc!
+Done.
+5) Add rose namelist config based on work in UM_rose.py. Test etc
+Done. json simple model working on forth.
 
+5) remove code from namelist_var that is no longer needed. Modify Model to use new approach and test.
+Done and all tests pass. Still to test on forth
+Get Wenjun to test gamil3_new with the new approach.
 

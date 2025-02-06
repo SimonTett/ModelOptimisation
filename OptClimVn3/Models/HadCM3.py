@@ -6,8 +6,8 @@ import typing  # TODO add type hints to all functions/methods.
 import numpy as np
 
 from ModelBaseClass import register_param
-from Model import Model # note this seems to be quite important. Import Model from Model means the registration does not happen..
-from namelist_var import namelist_var
+from temp_model import tempModel # note this seems to be quite important. Import Model from Model means the registration does not happen..
+from namelist_var import NamelistVar
 import pathlib
 import datetime
 import fileinput
@@ -16,8 +16,34 @@ import re
 import stat
 import engine
 import genericLib
+import copy
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}") # have this anywhere you want logging
+
+def namelist_var(filepath: typing.Optional[pathlib.Path]= None,
+                 namelist: typing.Optional[str] = None,
+                 nl_var: typing.Optional[str] =None,
+                 default:typing.Optional[typing.Any]= None) -> NamelistVar:
+    """
+    Thin wrapper around NamelistVar so that it produces sensible default fortran  namelists! .
+    :param filepath: relative path to file
+    :param nl_var: variable name
+    :param namelist: namelist name
+    :param default: default value
+    :return: a namelist_var -- set up for namelist_var
+    """
+
+    if filepath is None:
+        filepath = pathlib.Path('CNTLATM')
+    if namelist is None:
+        namelist = 'SLBC21'
+    if nl_var is None:
+        ValueError("Need to specify nl_var")
+
+    return NamelistVar(type_name='namelist_var',filepath=filepath, nl_var=nl_var, namelist=namelist, default=default)
+
+
+
 def IDLinterpol(inyold, inxold, xnew):
     """
     :param inyold: 3 element tupple of y values
@@ -51,7 +77,7 @@ def IDLinterpol(inyold, inxold, xnew):
 import math
 
 
-class HadCM3(Model):
+class HadCM3(tempModel):
     """
     HadCM3 class.
       Not much different from Model except defines  a bunch of parameters and functions used to modify namelists.
@@ -70,7 +96,6 @@ class HadCM3(Model):
             raise ValueError("HadXM3 limited to 5 character names")
         super().__init__(name, reference,**kwargs)  # call super class init and then override
         # modify submit_script & continue_script
-
         self.submit_script = 'SUBMIT'
         self.continue_script = 'SUBMIT.cont'
         self.post_process_file = 'post_process.sh' # extra attributed needed.
@@ -251,14 +276,13 @@ class HadCM3(Model):
                     print(line[0:-1])  # remove newline
 
 
-    def submit_cmd(self, run_info: dict, engine: engine) -> typing.List[str]:
+    def submit_cmd(self) -> typing.List[str]:
         """
-        :param run_info -- run information.
-          should include runCode and runTime.
-        :param engine -- engine info. Not used  but provided with superclass method
 
         :return:  cmd to be run.
         """
+        run_info = self.run_info
+        engine = self.engine
         # HadCM3 runs a script which creates the job and then submits it...
         if self.status in ['INSTANTIATED', 'PERTURBED']:
             script = self.model_dir/"SUBMIT"
@@ -398,7 +422,7 @@ class HadCM3(Model):
         :return: timestep in seconds
         """
         timestep_nl = namelist_var(filepath=pathlib.Path('CNTLATM'), namelist='NLSTCATM', nl_var='A_ENERGYSTEPS')
-        steps_per_day = timestep_nl.read_value(dirpath=self.model_dir)
+        steps_per_day = self.read_nl_value(timestep_nl)
         timestep = 3600.0 * 24 / steps_per_day
         return timestep
 
@@ -411,8 +435,8 @@ class HadCM3(Model):
         """
         dx_nl, dy_nl = (namelist_var(filepath=pathlib.Path('SIZES'), nl_var=var, namelist='NLSIZES')
                         for var in ['ROW_LENGTH', 'P_ROWS'])
-        result = np.array([2 / dx_nl.read_value(dirpath=self.model_dir),
-                           1 / (dy_nl.read_value(dirpath=self.model_dir) - 1)]) * np.pi
+        result = np.array([2 / self.read_nl_value(dx_nl),
+                           1 / (self.read_nl_value(dy_nl) - 1)]) * np.pi
 
         # do some unit conversions
         RADIUS = 6.37123e06  # radius of earth
@@ -436,7 +460,7 @@ class HadCM3(Model):
         """
 
         lev_nl = namelist_var(filepath=pathlib.Path('SIZES'), nl_var='P_LEVELS', namelist='NLSIZES')
-        no_levels = lev_nl.read_value(dirpath=self.model_dir)
+        no_levels = self.read_nl_value(lev_nl)
         if (expect is not None) and (no_levels != expect):
             raise ValueError(f"Expected {expect} levels but got {no_levels}")
 
@@ -462,7 +486,7 @@ class HadCM3(Model):
         eacf_nl = namelist_var(filepath=pathlib.Path('CNTLATM'), namelist='SLBC21', nl_var='EACF',default=0.5)
         inverse = eacf is None
         if inverse:
-            eacf_val = eacf_nl.read_value(dirpath=self.model_dir)
+            eacf_val = self.read_nl_value(eacf_nl)
             if len(eacf_val) != nlev:
                 raise ValueError("EA CF namelist {eacf_nl} has len {len(eacf_val)} not {nlev}")
             return eacf_val[0]
@@ -498,14 +522,14 @@ class HadCM3(Model):
         inverse = sphIce is None
         if inverse:  # inverse -- so  extract value and test for consistency
             # check all is OK
-            sph = (nl[0].read_value(dirpath=self.model_dir) == 1)
+            sph = (self.read_nl_value(nl[0]) == 1)
             if sph:
                 values = values_sph
             else:
                 values = values_nonSph
             # check  namelist values are consistent
             for n, v in zip(nl, values):
-                vr = n.read_value(dirpath=self.model_dir)
+                vr = self.read_nl_value(n)
                 assert vr == v, f"Got {vr} but expected {v} for nl {n}"
 
             return sph
@@ -534,10 +558,10 @@ class HadCM3(Model):
                                         ['NLSTCALL', 'NLSTCALL'])]
         inverse = time_input is None
         if inverse:
-            time = namelistData[0].read_value(dirpath=self.model_dir)  # read the first one!
+            time = self.read_nl_value(namelistData[0])  # read the first one!
             # check times are the same
             for nl in namelistData[1:]:
-                t2 = nl.read_value(dirpath=self.model_dir)
+                t2 = self.read_nl_value(nl)
                 if t2 != time:
                     raise ValueError(f"Times differ for {namelistData[0]} and {nl}")
             time = datetime.datetime(*time)  # convert to datetime
@@ -567,10 +591,10 @@ class HadCM3(Model):
                                             ['NLSTCALL', 'NLSTCALL'])]
         inverse = duration is None
         if inverse:
-            durn = namelistData[0].read_value(dirpath=self.model_dir)
+            durn = self.read_nl_value(namelistData[0])
             # check rest are OK
             for nl in namelistData[1:]:
-                d2 = nl.read_value(dirpath=self.model_dir)
+                d2 = self.read_nl_value(nl)
                 if d2 != durn:
                     raise ValueError(f"Durations differ between {nl} and {namelistData[0]}")
             # convert to string
@@ -616,8 +640,8 @@ class HadCM3(Model):
         jobid2_nl = namelist_var(nl_var='JOB_ID', namelist='NLSTCALL', filepath=pathlib.Path('CONTCNTL'))
         inverse = (name is None)
         if inverse:
-            name = exper_nl.read_value(self.model_dir) + jobid_nl.read_value(self.model_dir)
-            name2 = exper_nl.read_value(self.model_dir) + jobid_nl.read_value(self.model_dir)
+            name = self.read_nl_value(exper_nl) + self.read_nl_value(jobid_nl)
+            name2 = self.read_nl_value(exper_nl) + self.read_nl_value(jobid_nl)
             if name != name2:
                 raise ValueError(f"Name1 {name} and name2 {name} differ")
             return name  #
@@ -640,7 +664,7 @@ class HadCM3(Model):
         cw_sea_nl = namelist_var(nl_var='CW_SEA', namelist='RUNCNST', filepath=pathlib.Path('CNTLATM'))
         inverse = (cw_land is None)
         if inverse:
-            return cw_land_nl.read_value(dirpath=self.model_dir)
+            return self.read_nl_value(cw_land_nl)
         else:
             cwl = [1e-04, 2e-04, 2e-03]
             cws = [2e-05, 5e-05, 5e-04]
@@ -660,7 +684,7 @@ class HadCM3(Model):
                             for var in ['KAY_GWAVE', 'KAY_LEE_GWAVE'])
         inverse = (kay is None)
         if inverse:
-            v = gwave.read_value(dirpath=self.model_dir)
+            v = self.read_nl_value(gwave)
             return v
         else:  # from MIke's code (in turn from R code)
             gwd_pt = [1e04, 1.5e04, 2e04]
@@ -681,7 +705,7 @@ class HadCM3(Model):
                                for var in ['ALPHAM', 'DTICE'])
         inverse = (alpham is None)
         if inverse:
-            return alpham_nl.read_value(dirpath=self.model_dir)
+            return self.read_nl_value(alpham_nl)
         else:
             mins = [0.5, 0.57, 0.65]  # alpham values
             maxs = [10., 5., 2.]  # corresponding dtice values
@@ -756,8 +780,8 @@ class HadCM3(Model):
         DPHI = self.dx_dy()[1]
         inverse = (diff_time is None)
         if inverse:
-            powerDiff = diff_exp_nl.read_value(dirpath=self.model_dir)[0] * 2
-            diff_time_hrs = self.diff_fn(diff_coeff_nl.read_value(dirpath=self.model_dir)[0], dyndel=powerDiff,
+            powerDiff = self.read_nl_value(diff_exp_nl)[0] * 2
+            diff_time_hrs = self.diff_fn(self.read_nl_value(diff_coeff_nl)[0], dyndel=powerDiff,
                                          inverse=inverse)
             # round to 3 dps
             diff_time_hrs = round(diff_time_hrs, 3)
@@ -780,7 +804,7 @@ class HadCM3(Model):
         rhcrit_nl = namelist_var(nl_var='RHCRIT', namelist='RUNCNST', filepath=pathlib.Path('CNTLATM'), default=0.7)
         inverse = (rhcrit is None)
         if inverse:
-            cloud_rh_crit = rhcrit_nl.read_value(dirpath=self.model_dir)
+            cloud_rh_crit = self.read_nl_value(rhcrit_nl)
             rhcrit = cloud_rh_crit[3]
             expected = 19 * [rhcrit]
             for it, v in enumerate([0.95, 0.9, 0.85]):
@@ -808,8 +832,8 @@ class HadCM3(Model):
                                       for var in ['EDDYDIFFN', 'EDDYDIFFS'])
         inverse = (OcnIceDiff is None)
         if inverse:
-            v = iceDiff_nlNH.read_value(dirpath=self.model_dir)
-            v_sh = iceDiff_nlSH.read_value(dirpath=self.model_dir)
+            v = self.read_nl_value(iceDiff_nlNH)
+            v_sh = self.read_nl_value(iceDiff_nlSH)
             if v != v_sh:
                 raise ValueError(
                     "Ocean ice diffusion coefficient is not the same for northern and southern hemispheres")
@@ -831,8 +855,8 @@ class HadCM3(Model):
                                     for var in ['AMXNORTH', 'AMXSOUTH'])
         inverse = (iceMaxConc is None)
         if inverse:
-            v = iceMax_nlNH.read_value(dirpath=self.model_dir)
-            v2 = iceMax_nlSH.read_value(dirpath=self.model_dir)
+            v = self.read_nl_value(iceMax_nlNH)
+            v2 = self.read_nl_value(iceMax_nlSH)
             if min(0.98, v) != v2:
                 raise ValueError(f"SH Ocean ice maximum concentration = {v2} not {min(0.98, v)}")
             return v
@@ -853,8 +877,8 @@ class HadCM3(Model):
                                     for var in ['AM0_SI', 'AM1_SI'])
         inverse = (ocnIsoDiff is None)
         if inverse:
-            v = ocnDiff_AM0.read_value(dirpath=self.model_dir)
-            v2 = ocnDiff_AM1.read_value(dirpath=self.model_dir)
+            v = self.read_nl_value(ocnDiff_AM0)
+            v2 = self.read_nl_value(ocnDiff_AM1)
             if v != v2:
                 raise ValueError(f"Ocean isopycnal diffusion coefficients differ")
             return v
@@ -873,11 +897,11 @@ class HadCM3(Model):
 
         inverse = (value is None)
         if inverse:
-            value = nl.read_value(dirpath=self.model_dir)
+            value = self.read_nl_value(nl)
             return value.split(':')[1].lstrip()  # extract value from passed in name list removing space when doing so.
         else:
             # read existing value to get the parameter name and then re-order
-            value_nml = nl.read_value(dirpath=self.model_dir)
+            value_nml = self.read_nl_value(nl)
 
             parameter = value_nml.split(':')[0]
             st = f"{parameter}: {value}"
@@ -933,6 +957,7 @@ class HadCM3(Model):
             return None
 
         return None
+    #
 
 pth = pathlib.Path(__file__).parent /'parameter_config/HadCM3_Parameters.csv'
 HadCM3.update_from_file(pth, duplicate=True)

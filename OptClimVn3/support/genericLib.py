@@ -12,6 +12,7 @@ import shutil
 import stat
 import pathlib
 import typing
+import importlib
 
 import numpy as np
 import pandas as pd
@@ -26,7 +27,7 @@ def setup_logging(level:typing.Optional[int] = None,
                   log_config:typing.Optional[dict]=None):
     """
     Setup logging. 
-    :param: level: level of logging . If None logging.WARNING will be used
+    :param: level: level of logging. If None logging.WARNING will be used
     :param: rootname: rootname for logging. if None OPTCLIM will be used. 
     :param: log_config config dict for logging.config --
           see https://docs.python.org/3/library/logging.config.html
@@ -59,11 +60,60 @@ def setup_logging(level:typing.Optional[int] = None,
     formatter = logging.Formatter(fmt)
     console_handler.setFormatter(formatter)
 
-    optclim_logger.addHandler(console_handler) # turning this on gives duplicate messages. FIXME.
-    optclim_logger.propagate = False # stop propogation to root level.
+    optclim_logger.addHandler(console_handler) # turning this on gives duplicate messages.
+    optclim_logger.propagate = False # stop propogation to root level which suppresses duplicate messages.
 # see https://jdhao.github.io/2020/06/20/python_duplicate_logging_messages/
     return optclim_logger
-        
+
+def init_log(
+        log: logging.Logger,
+        level: str,
+        log_file: typing.Optional[typing.Union[pathlib.Path, str]] = None,
+        datefmt: typing.Optional[str] = '%Y-%m-%d %H:%M:%S',
+        mode: str = 'a'
+) -> logging.Logger:
+    """
+    Set up logging on a logger! Will clear any existing logging.
+    :param log: logger to be changed
+    :param level: level to be set.
+    :param log_file:  if provided pathlib.Path to log to file
+    :param mode: mode to open log file with (a  -- append or w -- write)
+    :param datefmt: date format for log.
+    :return: nothing -- existing log is modified.
+    """
+    log.handlers.clear()
+    log.setLevel(level)
+    formatter = logging.Formatter('%(asctime)s %(levelname)s:  %(message)s',
+                                  datefmt=datefmt
+                                  )
+    ch = logging.StreamHandler(sys.stderr)
+    ch.setFormatter(formatter)
+    log.addHandler(ch)
+    # add a file handler.
+    if log_file:
+        if isinstance(log_file, str):
+            log_file = pathlib.Path(log_file)
+        log_file.parent.mkdir(exist_ok=True, parents=True)
+        fh = logging.FileHandler(log_file, mode=mode + 't')  #
+        fh.setLevel(level)
+        fh.setFormatter(formatter)
+        log.addHandler(fh)
+    log.propagate = False
+    return log
+
+def get_fn(mod_fn_str:str) -> typing.Callable:
+    """
+    Load a function from a module.
+    :param mod_fn_str:
+    :return: a callable
+    """
+    mod, fn_name = mod_fn_str.rsplit('.', maxsplit=1)
+    module = importlib.import_module(mod)  # import the module
+    fn = getattr(module, fn_name)
+    if not callable(fn):
+        raise AttributeError(f"{fn_name} is not a callable in {mod}")
+
+    return fn
 def fake_fn(config: "OptClimConfigVn3", params: dict) -> pd.Series:
     """
     Wee test fn for trying out things.
@@ -141,7 +191,7 @@ def parse_isoduration( s: str | typing.List) -> typing.List|str:
             durn.append(float(d))
     elif isinstance(s, list) and len(s) == 6:  # invert list
         durn = 'P'
-        my_logger.debug("Converting {s} to string")
+        my_logger.debug(f"Converting {s} to string")
         for element, chars in zip(s, ['Y', 'M', 'D', 'H', 'M', 'S']):
             if element != 0:
                 if isinstance(element, float) and element.is_integer():

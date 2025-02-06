@@ -1,6 +1,6 @@
 parameter,type,filepath,namelist,nl_var,default,name,function_name
-DP_CORR_STRAT,namelist_var,app/um/rose-app.conf,run_radiation,dp_corr_strat,10000.0,,
-TWO_D_FSD_FACTOR,namelist_var,app/um/rose-app.conf,run_radiation,two_d_fsd_factor,1.5,,
-ENT_FAC_DP,namelist_var,app/um/rose-app.conf,run_radiation,ent_fac_dp,1.13,,
-AI,namelist_var,app/um/rose-app.conf,run_precip,ai,2.57e-2,,
+DP_CORR_STRAT,um_rose,app/um/rose-app.conf,namelist:run_radiation,dp_corr_strat,10000.0,,
+TWO_D_FSD_FACTOR,um_rose,app/um/rose-app.conf,namelist:run_radiation,two_d_fsd_factor,1.5,,
+ENT_FAC_DP,um_rose,app/um/rose-app.conf,namelist:run_convection,ent_fac_dp,1.13,,
+AI,um_rose,app/um/rose-app.conf,namelist:run_precip,ai,2.57e-2,,
 

@@ -625,7 +625,6 @@ class SubmitStudy(Study, model_base, journal):
 
         This algorithm is not particularly robust to failure -- if anything fails the various jobs will be sitting around
         Releasing them will be quite tricky! You can always kill everything, remove any continuing models and start again.
-        TODO: make this a bit more robust.
         The models and study will contain info on jobs so you might be able to fix/kill by hand.
         """
 

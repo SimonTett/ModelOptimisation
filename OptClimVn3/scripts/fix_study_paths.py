@@ -24,10 +24,9 @@ def init_log(
         log_file: typing.Optional[typing.Union[pathlib.Path, str]] = None,
         datefmt: typing.Optional[str] = '%Y-%m-%d %H:%M:%S',
         mode: str = 'a'
-):
+) -> logging.Logger:
     """
     Set up logging on a logger! Will clear any existing logging.
-    TODO: roll into optclim general lib so available to everything.
     :param log: logger to be changed
     :param level: level to be set.
     :param log_file:  if provided pathlib.Path to log to file
@@ -135,7 +134,6 @@ for key,model_path in config['object']['model_index'].items():
         pure_path_vars = ['reference','submit_script','continue_script','set_status_script','post_process_cmd_script']
         for key in pure_path_vars:
             if isinstance(model_config['object'][key],list):
-                # TODO -- have recursive encoder.
                 result = []
                 for c in model_config['object'][key]:
                     if isinstance(c,dict) and '__cls__name__' in c:

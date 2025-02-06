@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import importlib
+
 from model_base import model_base
-from  param_info import param_info
+from  param_info import ParamInfo
 import logging
 import copy
 import typing
 import pathlib
+import genericLib
+genericLib.setup_env()
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 
@@ -31,22 +35,25 @@ def register_param(name: str) -> typing.Callable:
 
 
 class ModelBaseClass(model_base):
+    # T
     """
     A base class for all models. uses __init_subclass__ to setup param_info from superclasses and registered methods.
     See register_param function above which tags functions while the init_subclass uses those tags to put that
     function in the param_info attribute. This class inherits from model base which through its __init_subclass__
-    which sets up things for dumping and loading instances to disk as a json file. TODO -- merge into model_base.
+    which sets up things for dumping and loading instances to disk as a json file.
+    Provides *class* methods to register classes in ModelBaseClass -- so 'global' state.
+    This allows right initialisation to be done.
     """
-    class_registry = dict()  # where class information for model_init is used.
-    #param_info = param_info()
-
+    class_registry = dict()  # where class information for model_init is used. This should be at ModelBaseClass.
+    param_info = ParamInfo()
+    # Where parameter information is stored. Note is a *class* attribute as instances should have the same parameters
     @classmethod
-    def register_functions(cls) -> param_info:
+    def register_functions(cls) -> ParamInfo:
         """
         Register all functions in the class
         :return: param_info to be merged into other information,
         """
-        my_param_info = param_info()
+        my_param_info = ParamInfo()
         for name, member in cls.__dict__.items():
             # Loop through all members of the subclass and populate param_info
             # accordingly. These should all be functions.
@@ -54,7 +61,7 @@ class ModelBaseClass(model_base):
             if getattr(member, '_is_param', False):
                 param_name = getattr(member, '_name')
                 my_param_info.register(param_name, member)
-                my_logger.info(f"Registered param {param_name}")
+                my_logger.info(f"Registered param {param_name} for {cls.__name__}")
         return my_param_info  # should be merged into rest of param_info.
 
     def __init_subclass__(cls, **kwargs):
@@ -72,9 +79,9 @@ class ModelBaseClass(model_base):
         # With this definition, all params in parent classes are duplicated
         # in subclasses.
 
-        my_param_info = param_info()
+        my_param_info = ParamInfo()
         for bcls in reversed(cls.__bases__):  # iterate over base classes updating parameters from them.
-            parent_param_info = getattr(bcls, 'param_info', param_info())
+            parent_param_info = getattr(bcls, 'param_info', ParamInfo())
             my_param_info.update(parent_param_info)  # update overwrites existing info for named parameters.
             my_logger.info(f"Updated param_info from {bcls}")
         if hasattr(cls, 'param_info'):  # Already got param_info. Update from it
@@ -83,25 +90,53 @@ class ModelBaseClass(model_base):
         my_param_info.update(cls.register_functions())
 
         cls.param_info = copy.deepcopy(my_param_info)
-        ModelBaseClass.register_class(cls)
+        ModelBaseClass.register_class(newcls=cls)
         # register the class for subsequent creation. This allows model_init to work.
         my_logger.info(f"Registered {cls.__name__}")
 
     @classmethod
-    def register_class(cls, newcls: typing.Any):
+    def register_class(cls,
+                       newcls: typing.Optional[typing.Callable]=None,
+                       name: typing.Optional[str] = None) -> typing.Callable:
         """
         Register class
+        :param newcls: class to register. If None then class_name will be loaded.
+        :param name: name to register it under. If None use the class name.
+          If name is XXXX.YYYY then genericLib.get_fn(name) will be called.
+              This will load module XXXX and extract fn from it.  The class name will be removed
+              from the registry to stop duplication.
         """
-        my_logger.info(f"Registering class {newcls.__name__}")
-        ModelBaseClass.class_registry[newcls.__name__] = newcls
+        if newcls is None and name is not None:
+            newcls = genericLib.get_fn(name)
+            # this might register the Model. So remove it.
+            c=ModelBaseClass.class_registry.pop(newcls.__name__,None)
+            if c is not None:
+                my_logger.info(f'Removed class {newcls.__name__}')
+        elif name is None:
+            name = newcls.__name__
+        elif (name is not None) and (cls is not None):
+            pass
+        else:
+            raise ValueError("You must specify either newcls or name")
+        my_logger.info(f"Registering class with name {name}")
+        ModelBaseClass.class_registry[name] = newcls
+        return newcls
 
     @classmethod
-    def remove_class(cls, name: str | None = None):
+    def remove_class(cls,
+                     name: typing.Optional[str]  = None,
+                     all_classes:bool = False) -> typing.Any:
         """
-        Remove class from registry. By default self.
-        :param name . If not None the name of a class to be removed
-        :return: Class removed from registry
+        Remove class from registry. By default class.
+        :param name. If not None the name of a class to be removed
+        :param all. If True all classes will be removed.
+        :return: Class removed from register or None
         """
+
+        if all_classes:
+            ModelBaseClass.class_registry = dict()
+            return None
+
         if name is None:
             name = cls.__name__
 
@@ -114,8 +149,8 @@ class ModelBaseClass(model_base):
     @classmethod
     def known_models(cls):
         """
-        Return list of known models
-        :return: list of know models
+        Return list of known models.
+        :return: list of known models.
         """
         return list(cls.class_registry.keys())
 
@@ -125,44 +160,32 @@ class ModelBaseClass(model_base):
         Create a model
         :param class_name: name of class to make
         :param args: positional arguments to pass to initiation
-        :param kwargs: kwargs to pass to init
-        :return: new model object
+        :param kwargs: kwargs to pass to init.
+        :return: New model object.
         """
         try:
-            newcls = ModelBaseClass.class_registry[class_name]
+            newcls = ModelBaseClass.class_registry[class_name] # do we already have it?
+            my_logger.debug(f"Loaded {class_name} from registry")
         except KeyError:
-            raise ValueError(f"Failed to find {class_name}. Allowed classes are " + " ".join(cls.class_registry.keys()))
+            if '.' in class_name:  # Specifying via module.class_name. Will use the module to import the class.
+                newcls = ModelBaseClass.register_class(name=class_name) # register the class.
+                my_logger.info(f'Loaded {newcls.__name__} from {class_name}')
+
+            else: # not specified by module.
+                raise ValueError(f"Failed to find {class_name}. Allowed classes are " + " ".join(cls.class_registry.keys()))
+
         result = newcls(*args, **kwargs)
-        my_logger.debug(f"Created {class_name}")
+        my_logger.debug(f"Created {class_name} with args {args} and kwargs {kwargs}")
         return result
 
-    @classmethod
-    def load_model(cls, model_path: pathlib.Path):
-        """
-        Load a configuration
-        :param model_path:  where the configuration  is stored
-          config_path will be set to model_path
-          model_dir will be set to model_path.parent.
-          warnings given if these are changes.
-        :return: loaded model
-        """
-        model = super().load(model_path)  # using json "magic". See generic_json for what actually happens.
 
-        if not model.config_path.samefile(model_path):
-            my_logger.warning(f"Model {model} model_path changed to {model_path}")
-            model.config_path = model_path  # replace config_path with where we actually loaded it from.
-
-        if not model.model_dir.samefile(model_path.parent):
-            my_logger.warning(f"Model {model} model_dir changed to {model_path.parent} ")
-            model.model_dir = model_path.parent # update directory with where we actually loaded it from. TODO make this more generic.
-        return model
 
     @classmethod
     def add_param_info(cls, param_info: dict, duplicate=True):
         """
         Add information on parameters and functions.
 
-        :param param_info: a dict with keys variable names and values either a namelist_var or callable.
+        :param param_info: A dict with keys variable names and values either a namelist_var or callable.
           You probably should not use a callable here as better to register it when declared.
         :param duplicate If True allow duplicates which will add new namelist/callable info to existing.
         :return: Nothing
@@ -174,7 +197,7 @@ class ModelBaseClass(model_base):
     @classmethod
     def update_from_file(cls, filepath: pathlib.Path, duplicate=True):
         """
-        Update class info on known parameters from CSV file
+        Update **class info** on known parameters from CSV file
          Calls param_info.update_from_file(filepath) to actually do it!
          See documentation for that
         :param filepath: path to csv file
@@ -183,10 +206,5 @@ class ModelBaseClass(model_base):
         """
         cls.param_info.update_from_file(filepath, duplicate=duplicate)
 
-    @classmethod
-    def remove_param(cls):
-        """
-        Remove param info
-        :return: Nada
-        """
-        cls.param_info = param_info()
+
+

@@ -1,5 +1,50 @@
 """
-Class for abstract Model and namelists.
+Class for abstract Model
+All different types of models should inherit from this. It provides the core methods
+and information needed,
+
+To add a new model you likely need to do, at least, the following:
+
+1) Implement your own version of modify_model.
+   It should first call the super class modify_model method to do the basic stuff.
+   Your code should turn your reference configuration into a stand along configuration running
+     in self.model_dir.
+   You should also modify the configuration so that:
+   a) just before model starts running insert:
+       self.set_status_script self.config_path RUNNING
+    This could be run every time a model starts running which could be multiple times. This case has not be tested.
+   b) Insert  in the configuration after the model has finished all its simulations:
+        self.set_status_script self.config_path SUCCEEDED
+    c) Optionally insert in the config where errors are detected:
+        self.set_status_script self.config_path FAILED
+
+2) Implement your own version of submit_cmd so it returns the command to submit the model to your Q system,
+
+3) Define your parameters.
+ Hopefully they can be described by a 'namelist  -- file, group name & variable name.
+ See support/namelist_var.py.
+ See namelist_var.py for guidance on existing types of 'namelists' and guidance for adding new ones.
+
+ Easy is parameters whose values directly set one or more 'namelist variables' to that value.
+ For this the recommended approach is to create a csv file with the parameter names and namelist values.
+ For examples See the csv files  in parameter_config.
+ After the model class has been defined then do :
+     ModelClass.update_from_file(path_to_config_file)
+ where path_to_config_file is a pathlib.Path of the parameter configuration file.
+
+ More tricky you might have a 'hyper' parameter which modifies multiple namelist variable,
+ sets a namelist variable to an error, or modifies the model in some other way.
+ To do this you need to write a function and register the function using ModelBaseClass.register_param
+ Your methods should take a single value or None. If None the method should return a scaler which is the current value of
+ the parameter (as set in the configuration files) this is 'inverse'. If a value is passed  the function should
+ either return a list of namelist,value tuples OR silently set the values itself and return None. See HadCM3 for an extensive set of methods for possible examples.
+
+4) Write a study configuration file. This is a json file that describes the study. You will need to define
+  many elements in the run_info dict. See existing cases in configurations to see what is needed.
+  Note you can include various things in this configuration file.
+
+Do write tests for your new Model testing your new and modified methods.
+
 """
 from __future__ import annotations
 
@@ -19,7 +64,7 @@ import xarray
 import json
 from model_base import journal
 from ModelBaseClass import ModelBaseClass, register_param
-from namelist_var import namelist_var
+from namelist_var import NamelistVar,GroupConfig,type_allowed_fortran
 from engine import abstractEngine
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
@@ -54,6 +99,7 @@ class Model(ModelBaseClass, journal):
     simulated_obs: typing.Optional[pd.Series]
     _post_process_input: typing.Optional[str]
     _post_process_output: typing.Optional[str]
+    configs: GroupConfig
 
     """
     Abstract model class. Any class that inherits from this will have name lookup.
@@ -76,19 +122,19 @@ class Model(ModelBaseClass, journal):
         engine -- submission engine.
         pp_jid -- post-processing job id. This gets released when model status changes to SUCCEEDS
         model_jids -- list of model job ids.
+        configs - cache of configuration files (namelists or equivalent)
         
         Private attributes:
           _post_process_input -- name of input file for post-procesing
           _post_process_output -- name of output file for post-processing
         Note that update_history and store_output (see Journal for doc for those) set up private attributes.
     """
-    # TODO -- remove references to namelists and replace with more general thing. Specific models do namelists!
     post_proccess_json = "post_process.json"  # where post-process info gets written
     status_info = dict(CREATED=None,
                        INSTANTIATED=["CREATED"],  # Instantiate a model requires it to have been created
                        SUBMITTED=['INSTANTIATED', 'PERTURBED', 'CONTINUE'],
                        # Submitting needs it to have been instantiated, perturbed or to be continued.
-                       RUNNING=["SUBMITTED"],  # running needed it should have been submitted
+                       RUNNING=["SUBMITTED"],  # running the model should have been submitted
                        FAILED=["RUNNING", "SUBMITTED"],  # Failed means it should have been running or SUBMITTED
                        PERTURBED=["FAILED"],  # Allowed to perturb a model after it failed.
                        CONTINUE=["FAILED", "PERTURBED"],
@@ -100,21 +146,25 @@ class Model(ModelBaseClass, journal):
     allowed_status = set(status_info.keys())
 
     @classmethod
-    def from_dict(cls, dct: dict):
+    def load_model(cls, model_path: pathlib.Path):
         """
-        Initializes using name and reference values in dct (popping them out so they don't get added twice)
-        Then copies keys to attributes in obj
-        but only those that  exist after initialization.
-        This is really a factory method
-        :param dct: dict containing information needed by class_name.from_dict()
-        :return: initialized object
+        Load a configuration
+        :param model_path:  where the configuration is stored
+          config_path will be set to model_path
+          model_dir will be set to model_path.parent.
+          warnings given if these are changes.
+        :return: loaded model
         """
-        # TODO -- optionally (?) read from post_process_file -- which is an update.
-        # OR do as a seperate method,
-        dct2 = cls.convert_pure_paths(dct)
-        obj = cls(name=dct2.pop('name'), reference=dct2.pop('reference'))  # create an default instance
-        obj.fill_attrs(dct2)
-        return obj
+        model = super().load(model_path)  # Using json "magic". See generic_json for what actually happens.
+
+        if not model.config_path.samefile(model_path):
+            my_logger.warning(f"Model {model} model_path changed to {model_path}")
+            model.config_path = model_path  # Replace config_path with where we actually loaded it from.
+
+        if not model.model_dir.samefile(model_path.parent):
+            my_logger.warning(f"Model {model} model_dir changed to {model_path.parent} ")
+            model.model_dir = model_path.parent # update directory with where we actually loaded it from.
+        return model
 
     # methods now.
     def __init__(self,
@@ -213,7 +263,7 @@ class Model(ModelBaseClass, journal):
             parameters = {}
         else:
             parameters = copy.deepcopy(parameters)
-        # TODO check that parameters exist in lookup.
+
         self.parameters = parameters
         self.parameters_no_key = {}  # parameters that do not generate key and augment/modify parameters.
 
@@ -239,6 +289,7 @@ class Model(ModelBaseClass, journal):
             self.update_history("CREATING model")
             # and simulated obs.
         self.simulated_obs = None
+        self.configs = GroupConfig(root_dir=self.model_dir) # grouped configs for writing out generic namelists
 
     def set_post_process(self, post_process: typing.Optional[dict] = None):
 
@@ -258,7 +309,7 @@ class Model(ModelBaseClass, journal):
             output_file -- name of output file for post-processing. If None will be sim_obs.json
                 This is where simulated observations go (which are then read in).
                 Will be stored in self._post_process_output
-        post_process will be deepcopyed to self.post_process with script, interp, input_file, output_file removed
+        post_process will be deep-copyed to self.post_process with script, interp, input_file, output_file removed
         self.post_process_cmd_script will hold the command to run the post-processing.
         :return: None
         """
@@ -294,9 +345,22 @@ class Model(ModelBaseClass, journal):
         self.post_process_cmd_script = pp_cmd  # assumed to be running in model_dir
         self.post_process = pp  #
 
-    def compare_objects(self, other):
+    def __eq__(self, other,vars_to_ignore:typing.Optional[typing.List[str]] = None):
         """
         Compare two objects and identify their differences by comparing their attributes.
+        :param other: The other object to compare against.
+        :param vars_to_ignore: List of variables to ignore in the comparison. Will always have configs appended
+        :return: Set of differing attributes between the objects.
+        """
+        if vars_to_ignore is None:
+            vars_to_ignore = []
+        vars_to_ignore.append('configs')
+        result = super().__eq__(other,vars_to_ignore=vars_to_ignore)
+        return result
+
+    def compare_objects(self, other):
+        """
+        Compare two Model objects and identify their differences by comparing their attributes.
         Based on __eq__ method. With rewriting by chatGPT
         :param other: The other object to compare against.
         :return: Set of differing attributes between the objects.
@@ -351,55 +415,45 @@ class Model(ModelBaseClass, journal):
 
         return self.dump(self.config_path)  # call the  *dump* method.
 
-    def gen_params(self, parameters: typing.Optional[dict] = None) -> typing.Iterable:
+    # Code to deal with parameters.
+    def read_params(self, parameters: str | typing.List[str] | None, fail: bool = True) -> dict:
         """
-        Get iterable  of namelist/vars  to set.
-        :param parameters: If None use self.parameters augmented by self.parameters_no_key
-        Calls self.param_info.gen_parameters to actually work out what namelists and values are to be set,
-        then verifies  have iterable of namelist,value pairs.
-        For some models you may want to override this method to deal with
-          other ways of setting parameters.
-           This implementation deals with namelists and functions that return None,
-        :return: an iterable of  namelist, value pairs
-        Example: model.gen_param_set()
+        Read parameter values from self.model_dir
+        :param parameters: list of parameters OR parameter to read. If None all known parameters will be read.
+        :param fail. If true fail if namelist file is not found.
+        :return: dict of parameter/value tuples
         """
+        result = dict()
+        if isinstance(parameters, str):
+            parameters = [parameters]  # make it a list.
         if parameters is None:
-            parameters = copy.deepcopy(self.parameters)
-            parameters.update(self.parameters_no_key)  # augment/update from parameters_no_key
-        else:
-            self.update_history(f"Setting parameters using parameters {parameters} rather than self.parameters")
+            parameters = self.param_info.known_parameters()  # get all parameters
 
-        param_set_info = self.param_info.gen_parameters(self, **parameters)
-        # expecting a list of namelist/something, value pairs
-        for (nl, value) in param_set_info:
-            if not isinstance(nl, namelist_var):  # can only deal with namelists
-                raise NotImplementedError(f"Implement code for {type(nl)}  or override gen_params")
-        return param_set_info  # checked we have only namelists.
+        for parameter in set(parameters):  # set means we iterate over unique parameters
+            try:
+                result[parameter] = self.read_param(parameter)
+            except (KeyError, FileNotFoundError):
+                if fail:
+                    raise
+                my_logger.warning(f"Parameter {parameter} not found in {self.name}")
+                result[parameter] = None
 
-    def set_params(self, parameters: typing.Optional[dict] = None):
+        return result
 
+
+    def gen_parameters(self, **kwargs) -> list[tuple[NamelistVar, type_allowed_fortran]]:
         """
-        Set parameters by patching namelist. 
-        Override if you want more than namelists.
-         If self.fake is True then no parameters are set.
-        :param self: Model instance
-        :param parameters -- dict(or None) of parameters to use.
-        :return: Nothing
+        Generate parameter settings.
+        :param kwargs: parameter/values
+        :return:list of things to be actually set. That actually should be done by the model
         """
-        if self.fake:
-            return # nothing to be done if faking.
-        nl = self.gen_params(parameters=parameters)
-        namelist_var.nl_modify(nl, dirpath=self.model_dir)  # patch the namelists.
 
-    def changed_nl(self) -> dict:
-        """
-        Return namelists that have been changed. Note does not actually change anything about the model.
-        :return: set of namelists indexed by file.
-        """
-        nl = self.gen_params()
-        modNL = namelist_var.modify_namelists(nl, dirpath=self.model_dir, update=True, clean=True)  # purge the cache
-        return modNL
+        stuff_to_set = []
+        for parameter, value in kwargs.items():
+            stuff_to_set.extend(self.param(parameter, value))
 
+        return stuff_to_set  # this is a list of (variable_set_info, value)
+    ## end of parameter related methods
     def create_model(self):
         """
         Create a new model by copying reference. If self.fake is True then no copy is done.
@@ -410,6 +464,12 @@ class Model(ModelBaseClass, journal):
         self.model_dir.mkdir(parents=True, exist_ok=True)  # create the directory if needed.
         my_logger.info(f"Created {self.model_dir}")
         if not self.fake:
+            # empty the directory (if we are creating)
+            for file in self.model_dir.iterdir():
+                if file.is_dir():
+                    shutil.rmtree(file)
+                else:
+                    file.unlink()
             shutil.copytree(self.reference, self.model_dir, symlinks=True, dirs_exist_ok=True)  # copy from reference.
 
     def set_status(self, new_status: type_status, check_existing: bool = True) -> None:
@@ -481,7 +541,7 @@ class Model(ModelBaseClass, journal):
         """
         Submit a model and its post-processing.
         Post-processing gets submitted first but held.
-        Model gets cmd to release_job post-processing included before it gets submiteded.
+        Model gets cmd to release_job post-processing included before it gets submitted.
 
         :param fake_function -- if provided, no submission will be done.
           Instead, this function will be used to generate fake obs.
@@ -571,6 +631,9 @@ class Model(ModelBaseClass, journal):
         if CONTINUE runs on  [self.continue_script]
         output should go to model_dir/'model_output' which will be created if it does not exist.
         """
+        # TODO -- As Model should never be directly instantiated then
+        #  consider moving this into simple_model and just having very generic version for Model case.
+        # Then indiviudal model classes can run the generic code first and then do their own thing.
         if self.status in ['INSTANTIATED', 'PERTURBED']:
             script = self.submit_script
         elif self.status == 'CONTINUE':
@@ -633,31 +696,7 @@ class Model(ModelBaseClass, journal):
         """
         self.set_status('FAILED')
 
-    def perturb(self, parameters: typing.Optional[dict] = None):
-        """
-        Set status to PERTURBED. Will need to be continued or submitted which requires submission information.
-        :param parameters: dict of parameters & values to use to generate random perturbation.
-        This will update parameters_no_key so key generation is unaffected and
-          increase perturb_count by 1 so algorithm can adjust if multiple perturbations done,
-        :return:None
 
-        This likely needs overwriting for specific models as parameters will be set.
-        For implementation in actual model class have something like:
-        def perturb(self):
-
-            parameters=dict(rand_init=random())
-            super().perturb(parameters)
-        """
-        if parameters is None:
-            parameters = {}
-            my_logger.debug("Setting perturb parameters to empty dict")
-
-        self.parameters_no_key = copy.deepcopy(parameters)  # set parameters_no_key to the perturbed parameters
-        self.set_params()  # set parameter values
-        self.update_history(f'Perturbed using {parameters}')  # so at least we can find out what was done
-        self.perturb_count += 1
-        self.set_status('PERTURBED')
-        my_logger.debug(f" parameters_no_key is now {self.parameters_no_key}")
 
     def continue_simulation(self):
         """
@@ -781,30 +820,6 @@ class Model(ModelBaseClass, journal):
 
         return obs  # return the obs.
 
-    def read_params(self, parameters: str | typing.List[str] | None, fail: bool = True) -> dict:
-        """
-        Read parameter values from self.model_dir
-        :param parameters: list of parameters OR parameter to read. If None all known parameters will be read.
-        :param fail. If true fail if namelist file is not found.
-        :return: dict of parameter/value tuples
-        """
-        result = dict()
-        if isinstance(parameters, str):
-            parameters = [parameters]  # make it a list.
-        if parameters is None:
-            parameters = self.param_info.known_parameters()  # get all parameters
-
-        for parameter in set(parameters):  # set means we iterate over unique parameters
-            try:
-                result[parameter] = self.param_info.read_param(self, parameter) # TODO make this a *model* method.
-            except (KeyError, FileNotFoundError):
-                if fail:
-                    raise
-                my_logger.warning(f"Parameter {parameter} not found in {self.name}")
-                result[parameter] = None
-
-        return result
-
     def is_instantiable(self) -> bool:
         """
         Return True if model is instantiable -- which means its status is CREATED
@@ -923,15 +938,6 @@ class Model(ModelBaseClass, journal):
         my_logger.warning(f"Nothing set for {ensMember}. Override in your own model")
         return None
 
-    def to_dict(self):
-        """
-        Convert model to dict. Ready for saving to json
-        :return: dict
-        """
-        dct = super().to_dict()
-        for key in ['config_path', 'model_dir', 'reference']:  # vars to make into purePaths
-            dct[key] = pathlib.PurePath(dct[key])
-        return dct
 
     def copy(self, direct: pathlib.Path,
              extra_files: typing.Optional[typing.List[pathlib.Path | str]] = None,
@@ -957,8 +963,8 @@ class Model(ModelBaseClass, journal):
         dirs_to_make = {direct} | \
                        {(direct / p).parent for p in extra_files} | \
                        {(direct / p).parent for p in link_paths}  # unique set of directories needed
-        for dir in dirs_to_make:
-            dir.mkdir(exist_ok=True, parents=True)  # make any needed directories.
+        for direct in dirs_to_make:
+            direct.mkdir(exist_ok=True, parents=True)  # make any needed directories.
             my_logger.debug(f"Created {dir}")
 
         cp_model = copy.deepcopy(self)
@@ -979,7 +985,7 @@ class Model(ModelBaseClass, journal):
         for p in link_paths:
             path = self.model_dir / p
             new_path = direct / p
-            path.link_to(new_path)
+            path.hardlink_to(new_path)
             msg = f"Linked {new_path} to {path}"
             my_logger.debug(msg)
             cp_model.update_history(msg)
@@ -1007,7 +1013,7 @@ class Model(ModelBaseClass, journal):
 
         Example:
         with tarfile.open(archive_file, "w") as archive:
-            model.archive(rootDir=pathlib.Path("my_root_dir")
+            model.archive(archive, rootDir=pathlib.Path("my_root_dir")
         """
         if extra_files is None:
             extra_files = []
@@ -1043,5 +1049,187 @@ class Model(ModelBaseClass, journal):
         sim_obs = self.process(update=True)
         return sim_obs
 
+    def to_dict(self) -> dict:
+        """
+        Convert a Model to a dict dropping configs from the result and converting paths to PurePaths.
+        Most of the work is done by calling the super class to_dict method.
+        :return:
+        """
+        dct = super().to_dict()
+        for key in ['config_path', 'model_dir', 'reference']:  # vars to make into purePaths
+            dct[key] = pathlib.PurePath(dct[key])
+        # and drop the configs as only relevant when reading/writing configs and is dynamically generated
+        dct.pop('configs')
+        return dct
+
+    @classmethod
+    def from_dict(cls, dct: dict) -> Model:
+        """
+        Convert a dict representing the Model to a Model object.
+        :param dct: dict to be converted to a model
+        :return:a tempModel instance.
+        """
+        dct.pop('configs',None) # if got configs drop it.
+        dct2 = cls.convert_pure_paths(dct)
+        obj = cls(name=dct2.pop('name'), reference=dct2.pop('reference'))  # create a default instance
+        obj.fill_attrs(dct2)
+        return obj
+
+
+    def read_nl_value(self,nl_var:NamelistVar) -> type_allowed_fortran:
+        """
+        Read value from namelist.
+        :param nl_var: namelist variable to read
+        :return: value obtained by reading the namelist.
+        """
+        value = self.configs.read_value(nl_var)
+        return value
+
+
+    def gen_params(self,
+                   parameters: typing.Optional[dict] = None) -> dict[NamelistVar:type_allowed_fortran]:
+        """
+        Compute dict of namelists/values that will be used to set the parameters.
+        :param parameters: If None use self.parameters augmented by self.parameters_no_key.
+        :return: An iterable of  namelist, value pairs.
+        Example: nl_values= model.gen_params()
+        """
+        if parameters is None:
+            parameters = copy.deepcopy(self.parameters)
+            parameters.update(self.parameters_no_key)  # augment/update from parameters_no_key
+        else:
+            self.update_history(f"Setting parameters using parameters {parameters} rather than self.parameters")
+        param_set_info = []
+        for parameter, value in parameters.items():
+            param_set_info.extend(self.param(parameter, value))
+        result = dict()
+        for (nl, value) in param_set_info:
+            if nl in result:
+                raise ValueError(f"Duplicate namelist {nl} in param_set_info")
+            result[nl] = value
+
+        return result
+
+    def set_params(self,
+                   parameters: typing.Optional[dict] = None,
+                   backup:bool = True):
+
+        """
+        Set parameters
+         If self.fake is True then no parameters are set.
+        :param self: Model instance
+        :param parameters -- dict(or None) of parameters to use.
+        :param backup -- if True backup the current parameters.
+        :return: Nothing
+        """
+        if self.fake:
+            return  # nothing to be done if faking.
+        nl = self.gen_params(parameters=parameters)  # get the namelist/value stuff
+        self.configs.write_values(nl,backup=backup,create=True)  # and write them all out. Creating new namelist info if needed.
+
+    def read_param(self, parameter: str) -> type_allowed_fortran:
+        """
+        Read parameter value from model instance.
+        :param parameter: parameter wanted
+        :return: value. Depends on what is in the model...
+        """
+        # get the namelist info.
+        try:
+            stuff = self.param_info.param_constructors[parameter][0]  # just want the first element of the list.
+        except KeyError:
+            raise KeyError(f"Parameter {parameter} not found.\n Allowed parameters are: " +
+                           " ".join(list(self.param_info.param_constructors.keys())))
+
+        if callable(stuff):  # is it a callable? If so run it in inverse mode.
+            result = stuff(self, None)
+            my_logger.debug(f"Called {stuff.__qualname__} with inverse and got {result} ")
+        else:
+            result = self.read_nl_value(stuff)
+            my_logger.debug(f"Read data from {stuff}")
+
+        return result
+
+    def param(self, parameter: str,
+              value: type_allowed_fortran) -> list[tuple[NamelistVar, type_allowed_fortran]]:
+        """
+        Return parameter information for a specific value as namelist/value tuple. Later functions will actually set them
+        :param parameter: parameter name
+        :param value: value to be set and passed to method
+        :return:
+        """
+        try:
+            stuff = self.param_info.param_constructors[parameter]  # will fail if parameter does not exist.
+        except KeyError:
+            raise KeyError(f"Parameter {parameter} not found.\n Allowed parameters are: " +
+                           " ".join(list(self.param_info.param_constructors.keys())))
+        if not isinstance(stuff, list):
+            raise ValueError(f"Parameter {parameter} did not return list but returned {stuff}")
+        result = []
+        for s in stuff:
+            if callable(s):  # function.
+                err_msg = f"Parameter {parameter} with {value} and method {s}  returned odd output. Should  either be: " \
+                          f"None, a tuple (NamelistVar,value) or list of such tuples "
+                r = s(self, value)  # run the function
+                my_logger.debug(f"Parameter {parameter} called {s.__qualname__} with {value} and returned {r}")
+                # check output.
+                if r is None:  # function did something but returned nothing.
+                    continue
+                elif isinstance(r, tuple) and (len(r) == 2) and isinstance(r[0],
+                                                                           NamelistVar):  # returned a 2-element tuple
+                    result.append(r)
+                elif isinstance(r, list):  # list -- check each element.
+                    for el in r:
+                        if not (isinstance(el, tuple) and (len(el) == 2) and isinstance(el[0], NamelistVar)):
+                            raise ValueError(err_msg)
+                        result.append(el)
+                else:  # something else  so raise an error!
+                    raise ValueError(err_msg)
+
+            else:  # Singleton so append result with tuple (s, value).
+                if not isinstance(s, NamelistVar):
+                    raise ValueError(f"Parameter {parameter} returned {s} which is not a NamelistVar")
+                result.append((s, value))
+                my_logger.debug(f"Parameter {parameter} set {s} to {value}")
+
+        return result
+
+    def perturb(self, parameters: typing.Optional[dict] = None):
+        """
+        Set status to PERTURBED. Will need to be continued or submitted which requires submission information.
+        :param parameters: dict of parameters & values to use to generate random perturbation.
+        This will update parameters_no_key so key generation is unaffected and
+          increase perturb_count by 1 so algorithm can adjust if multiple perturbations done,
+        Note any namelist files modified will *not* be backed up.
+        :return:None
+
+        This likely needs overwriting for specific models as parameters will be set.
+        For implementation in actual model class have something like:
+        def perturb(self):
+
+            parameters=dict(rand_init=random())
+            super().perturb(parameters)
+        """
+        if parameters is None:
+            parameters = {}
+            my_logger.debug("Setting perturb parameters to empty dict")
+
+        self.parameters_no_key = copy.deepcopy(parameters)  # set parameters_no_key to the perturbed parameters
+        self.set_params(backup=False)  # set parameter values but with no backup done.
+        self.update_history(f'Perturbed using {parameters}')  # so at least we can find out what was done
+        self.perturb_count += 1
+        self.set_status('PERTURBED')
+        my_logger.debug(f" parameters_no_key is now {self.parameters_no_key}")
+
+    @classmethod
+    def update_from_file(cls, filepath: pathlib.Path, duplicate=True):
+        """
+        Update class info on known parameters from CSV file
+         Calls param_info.update_from_file(filepath) to actually do it!
+         See documentation for that
+        :param filepath: path to csv file
+        :param duplicate -- allow duplicates.
+        :return:
+        """
+        cls.param_info.update_from_file(filepath, duplicate=duplicate)
 
 Model.register_class(Model)  # register ourselves!

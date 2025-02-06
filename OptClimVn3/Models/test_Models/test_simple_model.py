@@ -10,7 +10,7 @@ import SubmitStudy
 import tempfile
 import pathlib
 import engine
-from Models import *
+from simple_model import simple_model
 import StudyConfig
 import shutil
 import re
@@ -127,7 +127,7 @@ class Test_simple_model(unittest.TestCase):
         m.dump_model()
         m2 = m.load_model(m.config_path)
         m2 == m
-        self.assertEqual(m,m2)
+        self.assertEqual(m.to_dict(),m2.to_dict())
 
     def test_run_simple_model(self):
         """ Actually test running the model works."""

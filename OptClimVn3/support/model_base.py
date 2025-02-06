@@ -133,7 +133,6 @@ class journal:
             {"=" * 60}
             STDERR 
             { e.stderr}"""
-            # TODO try again if this fails...
             my_logger.warning(str)
             raise
         except FileNotFoundError as e:  # cmd not found
@@ -216,7 +215,6 @@ class model_base:
                 pass
         return result
 
-    # TODO -- find a more elegant way of providing this functionality.
     @classmethod
     def from_dict(cls, dct: dict):
         """
@@ -312,20 +310,27 @@ class model_base:
 
         return cfg
 
-    def __eq__(self, other):
+    def __eq__(self, other,vars_to_ignore:typing.Optional[typing.List[str]]=None):
         """
         Equality! and print delta
         :param other: other object
         :return: True if equal
         """
+        if self is other:
+            return True
         if type(other) != type(self):
             print(f"Types differ = {type(self), type(other)}")
             return False
+
+        if vars_to_ignore is None:
+            vars_to_ignore = []
 
         # iterate over the vars of the two objects.
         for (k, v), (k2, v2) in zip(vars(self).items(), vars(other).items()):
             if k != k2:  # names differ. Should not happen.
                 raise ValueError("Something wrong")
+            if k in vars_to_ignore: # ignore this variable
+                continue
             if type(v) != type(v2):  # types differ so different
                 print(f"Types for {k} differ")
                 return False  # types differ -- return False

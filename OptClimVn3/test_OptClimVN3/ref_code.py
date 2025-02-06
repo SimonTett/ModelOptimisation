@@ -185,7 +185,7 @@ def doGaussNewton_ref(param_value, param_range, UM_value, obs, cov, scalings, ol
     #     Through out code use the following is used:
     #    n - no. parameters # change to nParam
     #    m - no. observables # change to nObs
-    # TODO:  replace has_key(x) throughout with x in dict
+
 
     # get constants from JSON's directory:
 
