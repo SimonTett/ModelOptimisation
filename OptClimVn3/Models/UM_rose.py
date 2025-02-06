@@ -46,10 +46,13 @@ class UM_rose(Model):
         """
         UM rose specific version of modify model,
         Needs to:
-        1) Modify directories so that running in a  sensible place wih output going there.
-           use self.model_dir to get sensible place
-        1a) Modify the rose config so that it no longer copies to archer2 the rose info.
-         (as we already have it)
+        1) Modify directories so that running in a sensible place wih output going there.
+           use self.model_dir to get directory.
+        1a) It may be necessary to modify the rose config so that it no longer copies to archer2 the rose info.
+         (as we already have it).
+        1c Add information from self.run_info to the rose config. These will include, if present:
+            runTime -- time (in seconds) for model, runCode -- job code/account to run suite with.
+            There may be other specific information needed
         2) Put in the cylc config just before model starts running (which could be multiple times):
             self.set_status_script self.config_path RUNNING
         3) Add to the cylc config after the model has finished
