@@ -2251,29 +2251,37 @@ class OptClimConfigVn3(OptClimConfigVn2):
         """
         Store/return solution to DFOLS run.
         :param solution: solution (from DFOLS) which if not None will be converted to
-           something that can be converted to json
+           something that can be converted to json.
+           In a while remove the old_gen path.
         :return: solution
         """
         from dfols.solver import OptimResults
         import dfols
+        old_gen = dfols.__version__ < '1.5.4'
         if solution is not None:
             # convert the solution to something jsonable.
-            conversion = generic_json.dumps(vars(solution))  # use generic_json to convert.
+            if old_gen:
+                conversion = generic_json.dumps(vars(solution))  # use generic_json to convert.
+            else:
+                conversion = solution.to_dict(replace_nan=True)
             self.setv('DFOLS_SOLUTION', conversion)
 
         soln = self.getv('DFOLS_SOLUTION', None)
         if soln is None:  # not got anything so return None.
             return soln
         dct = generic_json.loads(soln)  # now have a dict.
-        if dfols.__version__ >= '1.5.1':
+        if not old_gen:
+            soln = OptimResults.from_dict(dct) # not 100% convinced this would allow new dfols to read old dfols.
+        elif dfols.__version__ >= '1.5.1':
             nargs = 11
         else:
             nargs = 9
-        soln = OptimResults(*range(0, nargs))  # create empty OptimResults object
-        for k, v in dct.items():  # fill in the instances
-            if not hasattr(soln, k):
-                my_logger.warning(f"Would like to set attr {k} in soln but does not exist")
-            setattr(soln, k, v)  # regardless will set the attribute.
+        if old_gen:
+            soln = OptimResults(*range(0, nargs))  # create empty OptimResults object.
+            for k, v in dct.items():  # fill in the instances
+                if not hasattr(soln, k):
+                    my_logger.warning(f"Would like to set attr {k} in soln but does not exist")
+                setattr(soln, k, v)  # regardless will set the attribute.
 
         return soln
 
@@ -2650,7 +2658,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
                     try:
                         cov[k] = self.readCovariances(fname, obsNames=obsNames, trace=trace, dirRewrite=dirRewrite)
                         cov[k + "File"] = fname  # store the filename
-                        if cov[k] is not None:  # got some thing to further process
+                        if cov[k] is not None:  # got something to further process
                             if covInfo.get(k + "Diagonalise", False):  # want to diagonalise the covariance
                                 # minor pain is that np.diag returns a numpy array so we have to remake the DataFrame
                                 cov[k] = pd.DataFrame(np.diag(np.diag(cov[k])), index=obsNames, columns=obsNames,
@@ -2699,16 +2707,18 @@ class OptClimConfigVn3(OptClimConfigVn2):
         cov = copy.deepcopy(self.getv(matrix_key))  # copy from stored covariances.
         # Need a deep copy as cov is a dict pointing to datarrays. As the dataarrays get modified then
         # that would modify the underlying cached values.
-
         # apply constraint.
         if useConstraint:
             # want to have constraint wrapped in to covariance matrices. Rather arbitrary for all but
             # Total!
             consValue = 2.0 * self.optimise()['mu']
             consName = self.constraintName()
+
             for k, v in zip(keys, (consValue, consValue / 100., consValue)):
                 # Include the constraint value. Rather arbitrary choice for internal variability
                 if k in cov:
+                    if consName in cov[k].index:  # raise error  when have constraint and value in covariances
+                        raise ValueError(f'Constraint {consName} already in {k}')
                     cov[k].loc[consName, :] = 0.0
                     cov[k].loc[:, consName] = 0.0
                     cov[k].loc[consName, consName] = v

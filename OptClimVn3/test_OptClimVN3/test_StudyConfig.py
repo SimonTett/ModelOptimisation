@@ -142,6 +142,12 @@ class testStudyConfig(unittest.TestCase):
         for k, scale in zip(covKeys, [1.0, 0.1, 0.9]):
             self.assertTrue(cov[k].equals(c * scale), msg=f"{k} does not match")
 
+        # and test that having constraint value in covariance matrix causes an error,
+        cov = self.config.readCovariances(self.config.getv('study', {}).get('covariance')['CovObsErr'])
+        cov.loc[consName, consName] = 1.0
+        with self.assertRaises(ValueError):
+            self.config.Covariances(CovObsErr=cov)
+
     def test_readCovariances(self):
         """
         Test that readCovariances fails when obs are bad. (and any other tests that seem reasonable)
