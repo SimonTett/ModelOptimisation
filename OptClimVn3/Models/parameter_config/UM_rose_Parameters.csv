@@ -4,7 +4,8 @@ TWO_D_FSD_FACTOR,um_rose,app/um/rose-app.conf,namelist:run_radiation,two_d_fsd_f
 ENT_FAC_DP,um_rose,app/um/rose-app.conf,namelist:run_convection,ent_fac_dp,1.13,,
 AI,um_rose,app/um/rose-app.conf,namelist:run_precip,ai,2.57e-2,,
 START_TIME,um_rose,rose-suite.conf,jinja2:suite.rc,EXPT_BASIS
-RUNLEN,um_rose,rose-suite.conf,jinja2:suite.rc,EXPT_RUNLEN,,,
+RUN_TARGET,um_rose,rose-suite.conf,jinja2:suite.rc,EXPT_RUNLEN,,,
 RESUB_TIME,um_rose,rose-suite.conf,jinja2:suite.rc,EXPT_RESUB,,,
-run_code,um_rose,rose-suite.conf,jinja2:suite.rc,ARCHER2_GROUP,,,
-username,um_rose,rose-suite.conf,jinja2:suite.rc,ARCHER2_USERNAME,,,
+runCode,um_rose,rose-suite.conf,jinja2:suite.rc,ARCHER2_GROUP,,,
+runUser,um_rose,rose-suite.conf,jinja2:suite.rc,ARCHER2_USERNAME,,,
+runTime,um_rose,rose-suite.conf,jinja2:suite.rc,MAIN_CLOCK,,,
