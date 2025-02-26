@@ -93,7 +93,7 @@ class TestModelBaseClass(unittest.TestCase):
         # import two models and check they are OK.
         model_base_class.register_class(name='Model.Model')
         model_base_class.register_class(name='HadCM3.HadCM3')
-        self.assertEqual(['Model.Model','HadCM3.HadCM3'], model_base_class.known_models())
+        self.assertEqual(['Model.Model','tempModel','HadCM3.HadCM3'], model_base_class.known_models())
 
 
 
