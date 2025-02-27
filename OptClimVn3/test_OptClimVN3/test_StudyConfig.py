@@ -16,9 +16,13 @@ import pandas.testing as pdtest
 import xarray
 import copy
 
+from dfols import OptimResults
+
 import StudyConfig
 from genericLib import expand, setup_env
 setup_env()
+
+
 
 
 class testStudyConfig(unittest.TestCase):
@@ -107,6 +111,11 @@ class testStudyConfig(unittest.TestCase):
         test Covariances method.
         :return:
         """
+        covariance_cache = self.config.getv("_covariance_matrices")
+        for k in ['CovTotal', 'CovIntVar', 'CovObsErr']:
+            if 'netflux_global' in covariance_cache[k].index:
+                breakpoint()
+        cov_file = self.config.expand('$OPTCLIMTOP/covariance/cov_obserr_20.csv')
         config = self.config
         cov = config.Covariances()  # example case has constraint on.
         consValue = 2.0 * config.optimise()['mu']
@@ -122,31 +131,54 @@ class testStudyConfig(unittest.TestCase):
         # test that cached values are as expected.
         cov_cache = self.config.getv("_covariance_matrices")
         cov_nocons = config.Covariances(constraint=False)
+        covariance_cache = self.config.getv("_covariance_matrices")
+        for k in ['CovTotal', 'CovIntVar', 'CovObsErr']:
+            if 'netflux_global' in covariance_cache[k].index:
+                breakpoint()
         for k in covKeys:
             self.assertTrue(cov_nocons[k].equals(cov_cache[k]), msg=f'Cached cov {k}  differs')
         for k, v in zip(covKeys, [consValue, consValue / 100., consValue]):  # keys and expected value
             expect_slice[-1] = v
             np.testing.assert_array_equal(cov[k].loc[:, consName].values, expect_slice, 'Values wrong -- t2a')
             np.testing.assert_array_equal(cov[k].loc[consName, :].values, expect_slice, 'Values wrong -- t2b')
-
+        covariance_cache = self.config.getv("_covariance_matrices")
+        for k in ['CovTotal', 'CovIntVar', 'CovObsErr']:
+            if 'netflux_global' in covariance_cache[k].index:
+                breakpoint()
         # and without constraint
         cov = config.Covariances(constraint=False)  # force constraint off.
+        covariance_cache = self.config.getv("_covariance_matrices")
+        for k in ['CovTotal', 'CovIntVar', 'CovObsErr']:
+            if 'netflux_global' in covariance_cache[k].index:
+                breakpoint()
         for k in covKeys:
             self.assertEqual(cov[k].shape, (nobs - 1, nobs - 1), msg='Shape wrong without constraint')
 
         # and test we can overwrite.
-        obsNames = config.obsNames()
+        obsNames = config.obsNames(add_constraint=False) # keep the constraint out.
         c = pd.DataFrame(np.identity(len(obsNames)) * 2, index=obsNames, columns=obsNames)
         cov = config.Covariances(constraint=False, CovTotal=c, CovIntVar=c * 0.1, CovObsErr=c * 0.9)
-
+        covariance_cache = self.config.getv("_covariance_matrices")
+        for k in ['CovTotal', 'CovIntVar', 'CovObsErr']:
+            if 'netflux_global' in covariance_cache[k].index:
+                breakpoint()
         for k, scale in zip(covKeys, [1.0, 0.1, 0.9]):
             self.assertTrue(cov[k].equals(c * scale), msg=f"{k} does not match")
 
         # and test that having constraint value in covariance matrix causes an error,
-        cov = self.config.readCovariances(self.config.getv('study', {}).get('covariance')['CovObsErr'])
+        # and test that not having constraint value in covariance matrix is OK!
+        cov = self.config.readCovariances(cov_file)
+        self.config.Covariances(CovObsErr=cov)
+        cov = self.config.readCovariances(cov_file)
         cov.loc[consName, consName] = 1.0
         with self.assertRaises(ValueError):
             self.config.Covariances(CovObsErr=cov)
+        covariance_cache = self.config.getv("_covariance_matrices")
+        for k in ['CovTotal', 'CovIntVar', 'CovObsErr']:
+            if 'netflux_global' in covariance_cache[k].index:
+                breakpoint()
+
+
 
     def test_readCovariances(self):
         """
@@ -832,17 +864,25 @@ class testStudyConfig(unittest.TestCase):
         from dfols.solver import OptimResults
         import dfols
         import numpy as np
-
-        if dfols.__version__ >= '1.5.1': # dfols at version 1.5.1 added two args to OptimResults
-            no_vars =11
-            args = [indx * 12 + 0.1 for indx in range(0, no_vars)]
-            args[-1] = np.int32(args[-1])
-        else:
-            no_vars = 9
-            args = [indx * 12 + 0.1 for indx in range(0, no_vars)]
-        test_soln = OptimResults(*args)
         df = pd.DataFrame(np.ones((3, 3)) * 1.111, index=['a', 'b', 'c'], columns=['x', 'y', 'z'])
-        test_soln.diagnostic_info = df
+        if dfols.__version__ < '1.5.4':
+            raise ValueError('Use DFOLS 1.5.4+')
+        dct = dict(
+            x= 0.1,
+            resid =1.2,
+            obj = 2.,
+            jacobian = 3.,
+            nf =4,
+            nx = 5,
+            nruns = 6,
+            flag = 1,
+            msg = 'some text',
+            xmin_eval_num = 4,
+            jacmin_eval_nums =  4,
+            diagnostic_info = df.to_dict(),
+        )
+        test_soln = OptimResults.from_dict(dct)
+
         self.config.dfols_solution(solution=test_soln)
         new_soln = self.config.dfols_solution()  # get the new soln
         # test for equality!

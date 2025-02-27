@@ -6,7 +6,7 @@ import typing  # TODO add type hints to all functions/methods.
 import numpy as np
 
 from ModelBaseClass import register_param
-from temp_model import tempModel # note this seems to be quite important. Import Model from Model means the registration does not happen..
+from Model import Model # note this seems to be quite important. Import Model from Model means the registration does not happen..
 from namelist_var import NamelistVar
 import pathlib
 import datetime
@@ -77,7 +77,7 @@ def IDLinterpol(inyold, inxold, xnew):
 import math
 
 
-class HadCM3(tempModel):
+class HadCM3(Model):
     """
     HadCM3 class.
       Not much different from Model except defines  a bunch of parameters and functions used to modify namelists.

@@ -8,8 +8,10 @@
     "baseRunID": "d1",
     "baseRunID_comment": "base for runID. .",
     "run_info": {
+        "runModelTime": null,
+        "runModelTime_comment": "Wall-clock time for Model as ISO time period for run. If null then use what is set in configuration",
         "runTime": null,
-        "runTime_comment": "Wall-clock time as ISO time period for run. If null then use what is set in configuration",
+        "runTime_comment": "Wall-clock time for post-processing (in seconds). If null use default value -- set in code.",
         "runUser": null,
         "runUser_comment": "User to run job as. If null then use what is set in configuration",
         "runCode": "n02",

@@ -18,12 +18,12 @@ from ModelBaseClass import register_param
 import pathlib
 import copy
 from namelist_var import NamelistVar, type_allowed_fortran,GroupConfig
-from temp_model import tempModel
+from Model import Model
 
 
 namelist_var = functools.partial(NamelistVar, type_name='json_nl')  # make it easier to create NamelistVar
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
-class simple_model_pars_json(tempModel):
+class simple_model_pars_json(Model):
     #StudyconfigPath:pathlib.Path
     # simple model.. Need to have its own  version of submit_cmd, modify_model, perturb
     # all other methods are as Model.

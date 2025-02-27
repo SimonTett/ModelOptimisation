@@ -2255,28 +2255,38 @@ class OptClimConfigVn3(OptClimConfigVn2):
            In a while remove the old_gen path.
         :return: solution
         """
-        from dfols.solver import OptimResults
         import dfols
+        from dfols.solver import OptimResults
+
         old_gen = dfols.__version__ < '1.5.4'
         if solution is not None:
             # convert the solution to something jsonable.
             if old_gen:
-                conversion = generic_json.dumps(vars(solution))  # use generic_json to convert.
+                dct = vars(solution)
+                conversion = generic_json.dumps(dct)  # use generic_json to convert.
+                my_logger.warning(f'Using old version of dfols = {dfols.__version__}. Update to more version >= 1.5.4')
             else:
                 conversion = solution.to_dict(replace_nan=True)
+            conversion.update(dict(dfols_version=dfols.__version__))  # store version
+
             self.setv('DFOLS_SOLUTION', conversion)
 
-        soln = self.getv('DFOLS_SOLUTION', None)
-        if soln is None:  # not got anything so return None.
-            return soln
-        dct = generic_json.loads(soln)  # now have a dict.
+        dct = self.getv('DFOLS_SOLUTION', None).copy() # need to copy the values so we can modify them.
+        if dct is None:  # not got anything so return None.
+            return dct
+        dfols_version = dct.pop('dfols_version', '1.5.1')# get the version, If nothing specificed it was old config. Assume 1.5.1
+
+
+        old_gen = dfols_version < '1.5.4'
         if not old_gen:
-            soln = OptimResults.from_dict(dct) # not 100% convinced this would allow new dfols to read old dfols.
-        elif dfols.__version__ >= '1.5.1':
-            nargs = 11
+            soln = OptimResults.from_dict(dct)
         else:
-            nargs = 9
-        if old_gen:
+            my_logger.warning(f'DF-OLS solution generated using old version of dfols = {dfols_version}. Conversion may be incorrect')
+            dct = generic_json.loads(dct)  # now have a dict.
+            if dfols_version >= '1.5.1':
+                nargs = 11
+            else:
+                nargs = 9
             soln = OptimResults(*range(0, nargs))  # create empty OptimResults object.
             for k, v in dct.items():  # fill in the instances
                 if not hasattr(soln, k):
@@ -2296,13 +2306,18 @@ class OptClimConfigVn3(OptClimConfigVn2):
 
     def run_info(self) -> dict:
         """
-        :return run_info dict
+        :return run_info dict. Will set default values if following None or not present:
+          runUser -- set to user
+        These values will modify the underlying config.
         """
 
-        run_info = self.getv("run_info")
-        if run_info is None:  # if it is None set it to an empty dict.
-            self.setv("run_info", {})
-            run_info = self.getv("run_info")
+        run_info = self.getv("run_info",{})
+
+        # values that should exist and so need a default set. Only case is runUser
+        # This will modify the configuration when it gets written out.
+        if run_info.get('runUser') is None:
+            run_info['runUser'] = os.getlogin()
+            my_logger.info(f"runUser not set in run_info. Setting to {run_info['runUser']}")
 
         return run_info
 
@@ -2643,8 +2658,8 @@ class OptClimConfigVn3(OptClimConfigVn2):
         if constraint is None:
             useConstraint = self.constraint()  # work out if we have a constraint or not.
 
-        if obsNames is None: obsNames = self.obsNames(
-            add_constraint=False)  # don't want constraint here. Included later
+        if obsNames is None:
+            obsNames = self.obsNames(add_constraint=False)  # don't want constraint here. Included later
         cov = {}  # empty dict to return things in
         covInfo = self.getv('study', {}).get('covariance', {})
         # extract the covariance matrix and optionally diagonalise it.
@@ -2691,18 +2706,14 @@ class OptClimConfigVn3(OptClimConfigVn2):
 
         # set up values from values passed in  overwriting values if necessary
         cov = self.getv(matrix_key)
-        if CovTotal is not None:
-            my_logger.debug("Setting covTotal")
-            cov['CovTotal'] = CovTotal
-            cov['CovTotal' + 'File'] = 'Overwritten '
-        if CovIntVar is not None:
-            my_logger.debug("Setting covIntVar")
-            cov['CovIntVar'] = CovIntVar
-            cov['CovIntVar' + 'File'] = 'Overwritten '
-        if CovObsErr is not None:
-            my_logger.debug("Setting covObsErr")
-            cov['CovObsErr'] = CovObsErr
-            cov['CovObsErr' + 'File'] = 'Overwritten '
+        set_obsNames = set(obsNames)
+        for key,UpdatedCov in zip(['CovTotal', 'CovIntVar', 'CovObsErr'], [CovTotal, CovIntVar, CovObsErr]):
+            if UpdatedCov is not None:
+                my_logger.debug(f"Setting key")
+                if (set_obsNames != set(UpdatedCov.index)) or (set_obsNames != set(UpdatedCov.columns)):
+                    raise ValueError(f"Observations in {key} do not match expected {obsNames}")
+                cov[key] = UpdatedCov
+                cov['key' + 'File'] = 'Overwritten '
 
         cov = copy.deepcopy(self.getv(matrix_key))  # copy from stored covariances.
         # Need a deep copy as cov is a dict pointing to datarrays. As the dataarrays get modified then
@@ -2733,6 +2744,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
                 if k in cov and cov[k] is not None:
                     cov[k] = cov[k] * cov_scale
                     my_logger.debug(f"Scaling {k}")
+
 
         return cov
 

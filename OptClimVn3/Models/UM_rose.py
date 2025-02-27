@@ -1,6 +1,7 @@
 # Class to support Unified Model running in Rose.
 # Is going to drive a fairly extensive refactoring of param_info.
 import logging
+import os
 import typing
 
 
@@ -14,18 +15,25 @@ my_logger = logging.getLogger(f"OPTCLIM.{__name__}") # have this anywhere you wa
 class UM_rose(Model):
     """
     Class to support the Unified model running in ROSE.
-    Complication is that this class will need to run a rose job on another super-computer
+    The Complication is that this class will need to run a rose job on another super-computer
 
 
     """
 
     def __init__(self, *args, **kwargs):
         """
-        Init the UM_rose instance. Calls the super-class. May need to set some variables.
+        Init the UM_rose instance. Calls the super-class init method.
+        if run_info['runUser'] is not set, it will be set to the current user id on the current machine.
         :param args: positional args. Passed through to super-class
         :param kwargs: kwargs -- passed through to super-class
         """
         super().__init__(*args, **kwargs)  #
+        # modify parameters_no_key to include runModelTime, runUser and runCode if set.
+        # Those parameters do not contribute towards the unique key used to identify the model.
+
+        for key in ['runModelTime','runUser','runCode']:
+            if self.run_info.get(key) is not None: # (Get None if either null in the original  json config or not present)
+                self.parameters_no_key[key] = self.run_info[key]
         # switch off fixed scripts. Will change submit_cmd instead.
         self.submit_script = None
         self.continue_script = None # probably don't need this for now. There if have an error.

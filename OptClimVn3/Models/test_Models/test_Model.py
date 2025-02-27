@@ -212,7 +212,7 @@ class ModelTestCase(unittest.TestCase):
                             _post_process_output='sim_obs.json',
                             post_process_cmd_script=cmd, fake=False, simulated_obs=None,
                             perturb_count=0, parameters_no_key={}, config_path=self.testDir / "test_model.mcfg",
-                            status='CREATED', _history=model._history, engine=None, pp_jid=None, run_info={},
+                            status='CREATED', _history=model._history, engine=engine.abstractEngine.create_engine('SLURM'), pp_jid=None, run_info={},
                             model_jids=[],
                             submission_count=0, continue_script=pathlib.Path('continue.sh'),
                             submit_script=pathlib.Path('submit.sh'), submitted_jid=None,

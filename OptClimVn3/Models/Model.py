@@ -117,7 +117,7 @@ class Model(ModelBaseClass, journal):
         fake -- If True model is faked.
         perturb_count -- no of times perturbation has been done.
         parameters -- dict of parameters/values. Used to generate key and set values.
-        parameters_no_key -- dict of parameters/values. Overrides parameters to set values.
+        parameters_no_key -- dict of parameters/values. Overrides parameters to set values and do form part of the key
         set_status_script -- path to script that sets_status. Your model will need to call this.
         engine -- submission engine.
         pp_jid -- post-processing job id. This gets released when model status changes to SUCCEEDS
@@ -207,8 +207,9 @@ class Model(ModelBaseClass, journal):
           This should be constructed in the  setup using the StudyConfig.
         :param run_info -- A dict containing information for submission of the model and post-processing.
            other keys are:
-            runTime the time (seconds) for job
-            runCode  the code to use to run the job.
+            runTime -- the time (seconds) for job
+            runCode  -- the code to use to run the job.
+            runUser -- the UserId to run the job with.
         :param fake -- if True then model is faked. No submission will be done.
         :param study -- a study. This is there in case model wants to interrogate it at init time.
         It is recommended that study **not** be stored as an attribute.
@@ -267,11 +268,16 @@ class Model(ModelBaseClass, journal):
         self.parameters = parameters
         self.parameters_no_key = {}  # parameters that do not generate key and augment/modify parameters.
 
-        # "system" stuff. Things to do with actually submitting  a model and the post-processing.
-        self.run_info = {}  # make it an empty dict.
-        self.engine = engine  # make it None and then overwrite based on run_info
+        # "system" stuff. Things to do with actually submitting a model and the post-processing. Those are all in runInfo
+        self.run_info = {}  # make runInfo an empty dict.
         if run_info is not None:
             self.run_info = copy.deepcopy(run_info)  # copy the run_info into Model.
+
+        if engine is None: # no submission engine provided. So create one. Default will be SLURM.
+            engine = abstractEngine.create_engine(engine_name=self.run_info.get('submit_engine','SLURM'),
+                                                  ssh_node=self.run_info.get('ssh_node'))  # default engine.
+            my_logger.info(f'Set abstract Engine to {engine}')
+        self.engine = engine  # submission engine.
         self.model_jids = []  # list of all model job ids running came across.
         self.pp_jid = None  # post-processing job id
         self.submitted_jid = None  # job id of last submitted model submitted.
@@ -1213,7 +1219,7 @@ class Model(ModelBaseClass, journal):
             parameters = {}
             my_logger.debug("Setting perturb parameters to empty dict")
 
-        self.parameters_no_key = copy.deepcopy(parameters)  # set parameters_no_key to the perturbed parameters
+        self.parameters_no_key.update(copy.deepcopy(parameters))  # set parameters_no_key to the perturbed parameters
         self.set_params(backup=False)  # set parameter values but with no backup done.
         self.update_history(f'Perturbed using {parameters}')  # so at least we can find out what was done
         self.perturb_count += 1
