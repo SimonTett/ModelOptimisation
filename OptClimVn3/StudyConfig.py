@@ -12,8 +12,6 @@ Provides classes and methods suitable for manipulating study configurations.  In
     TODO: Consider major re-factorisation of studyConfig -- it has been accreting functionality in an unplanned way.
      Perhaps splitting into core and derived values might be the way to go.
 
-    # TODO: modify pd.read_json calls to wrap data in StringIO
-    #  see https://github.com/pandas-dev/pandas/issues/52271
 
 
 """
@@ -27,6 +25,7 @@ import logging
 import os
 import pathlib
 import re
+import getpass
 
 import dfols
 
@@ -2258,35 +2257,34 @@ class OptClimConfigVn3(OptClimConfigVn2):
         import dfols
         from dfols.solver import OptimResults
 
-        old_gen = dfols.__version__ < '1.5.4'
         if solution is not None:
             # convert the solution to something jsonable.
-            if old_gen:
-                dct = vars(solution)
-                conversion = generic_json.dumps(dct)  # use generic_json to convert.
-                my_logger.warning(f'Using old version of dfols = {dfols.__version__}. Update to more version >= 1.5.4')
-            else:
+            if dfols.__version__ >= '1.5.4': # use the dict conversion.
                 conversion = solution.to_dict(replace_nan=True)
-            conversion.update(dict(dfols_version=dfols.__version__))  # store version
+                conversion.update(dict(dfols_version=dfols.__version__))  # store version
+            else:
+                dct = vars(solution)
+                dct.update(dict(dfols_version=dfols.__version__))  # store version
+                conversion = generic_json.dumps(dct)  # use generic_json to convert.
+                my_logger.warning(f'Using old version of dfols = {dfols.__version__} to serialise soln. Update to more version >= 1.5.4')
+
 
             self.setv('DFOLS_SOLUTION', conversion)
 
-        dct = self.getv('DFOLS_SOLUTION', None).copy() # need to copy the values so we can modify them.
+        dct = self.getv('DFOLS_SOLUTION', None).copy() # make sure we do not change the underlying stuff
         if dct is None:  # not got anything so return None.
             return dct
+
+        if isinstance(dct,str):
+            dct = generic_json.loads(dct) # convert from a string to a dict
+            
         dfols_version = dct.pop('dfols_version', '1.5.1')# get the version, If nothing specificed it was old config. Assume 1.5.1
 
-
-        old_gen = dfols_version < '1.5.4'
-        if not old_gen:
+        if dfols_version >= '1.5.4':
             soln = OptimResults.from_dict(dct)
         else:
             my_logger.warning(f'DF-OLS solution generated using old version of dfols = {dfols_version}. Conversion may be incorrect')
-            dct = generic_json.loads(dct)  # now have a dict.
-            if dfols_version >= '1.5.1':
-                nargs = 11
-            else:
-                nargs = 9
+            nargs =11 # use latest version so 11 args.
             soln = OptimResults(*range(0, nargs))  # create empty OptimResults object.
             for k, v in dct.items():  # fill in the instances
                 if not hasattr(soln, k):
@@ -2316,7 +2314,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
         # values that should exist and so need a default set. Only case is runUser
         # This will modify the configuration when it gets written out.
         if run_info.get('runUser') is None:
-            run_info['runUser'] = os.getlogin()
+            run_info['runUser'] = getpass.getuser()
             my_logger.info(f"runUser not set in run_info. Setting to {run_info['runUser']}")
 
         return run_info

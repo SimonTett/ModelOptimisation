@@ -16,7 +16,7 @@ import pandas.testing as pdtest
 import xarray
 import copy
 
-from dfols import OptimResults
+from dfols.solver import OptimResults
 
 import StudyConfig
 from genericLib import expand, setup_env
@@ -866,9 +866,10 @@ class testStudyConfig(unittest.TestCase):
         import numpy as np
         df = pd.DataFrame(np.ones((3, 3)) * 1.111, index=['a', 'b', 'c'], columns=['x', 'y', 'z'])
         if dfols.__version__ < '1.5.4':
-            raise ValueError('Use DFOLS 1.5.4+')
+            print('Use DFOLS 1.5.4+ and no tests ran for test_dfols_soln')
+            return # exit further testing
         dct = dict(
-            x= 0.1,
+            x= [0.1,0.2],
             resid =1.2,
             obj = 2.,
             jacobian = 3.,
@@ -888,9 +889,15 @@ class testStudyConfig(unittest.TestCase):
         # test for equality!
         for (kn, vn), (k, v) in zip(vars(new_soln).items(), vars(test_soln).items()):
             self.assertEqual(kn, k)
-            self.assertEqual(type(vn), type(v))
+            self.assertEqual(type(vn), type(v),msg=f'Types differ for key {k}')
+
             if isinstance(vn, pd.DataFrame):
                 pdtest.assert_frame_equal(vn, v)
+            elif isinstance(vn, np.ndarray):
+                nptest.assert_array_equal(vn,v,err_msg=f'Arrays differ for key {k}')
+            else:
+                self.assertEqual(vn,v,msg=f'Values differ for key {k}')
+            
 
     def test_init(self):
         # test init works --  in particular that INCLUDE works as expected.
@@ -928,7 +935,7 @@ class testStudyConfig(unittest.TestCase):
         cols = ['one', 'two', 'three']
         df = pd.DataFrame(data=np.diag([1, 1e-9, 3]), index=cols, columns=cols)
         dct = self.config.cov2dict(df)
-        self.assertAlmostEquals(dct['scale'], 1e9, delta=0.1)
+        self.assertAlmostEqual(dct['scale'], 1e9, delta=0.1)
         self.assertIsInstance(dct['dataframe'], dict)
 
     def test_dict2cov(self):
