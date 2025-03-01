@@ -420,6 +420,19 @@ class testStudyConfig(unittest.TestCase):
         got = self.config.obsNames()  # got will include the constraint name here
         newNames.append(self.config.constraintName())
         self.assertEqual(got, newNames)  # we should get the names back
+        # check failures fail!
+        # duplicates
+        dup_names =  ['obs1', 'obs2', 'obs3', 'obs1']
+        with self.assertRaises(ValueError):
+            got = self.config.obsNames(obsNames=dup_names)
+        # and with constrain name in (and add_constraint True which it is by default)
+        names = ['obs1', 'obs2', 'obs3', self.config.constraintName()]
+        with self.assertRaises(ValueError):
+            got = self.config.obsNames(obsNames=names) # should fail
+        got = self.config.obsNames(add_constraint=False)  # now with constraint off -- should work
+        self.assertEqual(got, names, msg='Failed to set obsNames with constraint off')
+
+
 
     def test_paramNames(self):
         """
@@ -993,6 +1006,21 @@ class testStudyConfig(unittest.TestCase):
         self.assertFalse(self.config.check_params(), msg='check_params should have failed')
         self.config.paramNames(paramNames=pnames)  # reset it.
         self.assertTrue(self.config.check(), msg='check should have passed')
+
+    def test_strip_comment(self):
+        """ test that strip_comment works as expected"""
+        # test that strip_comment works as expected
+        # test cases -- list & dict. With both containing sub values
+        test_list=['Fred','Fred_comment',dict(harry=dict(harry='fred',harry_comment='fred_comment'))]
+        expect_list = ['Fred',dict(harry=dict(harry='fred'))]
+        test_dict = dict(fred='fred',fred_comment='fred_comment',harry=['harry','harry_comment'])
+        expect_dict = dict(fred='fred',harry=['harry'])
+        got = self.config.strip_comment(test_list)
+        self.assertEqual(got,expect_list,msg='strip_comment failed for list')
+        got = self.config.strip_comment(test_dict)
+        self.assertEqual(got,expect_dict,msg='strip_comment failed for dict')
+
+
 
 
 

@@ -2416,25 +2416,43 @@ class OptClimConfigVn3(OptClimConfigVn2):
         # no default -- up to calling application to decide what to do..
         return mx
 
-    def strip_comment(self, dct: dict) -> dict:
-        """
-        Recursively remove all keys ending in _comment from a dct. 
-        :param: dct -- dict to have all _comment keys removed. 
-        Defined by self.comment_end
-        :return dct with all keys ending with _comment removed.
-        """
-        result_dct = {}
-        for key, value in dct.items():
-            if isinstance(value, dict):  # a dict -- call strip_comment
-                my_logger.debug(f"Copying {key} as dict")
-                result_dct[key] = self.strip_comment(value)
-            elif isinstance(key, str) and key.endswith(self.comment_end):
-                my_logger.debug(f"Ignoring {key}")
-            else:
-                my_logger.debug(f"Copying {key}")
-                result_dct[key] = value  # just take the value across.
 
-        return result_dct
+
+    def strip_comment(self, dct_lst: dict | list) -> dict|list:
+        """
+        Recursively remove all keys ending in _comment from a dct or values ending in _comment from a list.
+        Only lists or dicts need to be supported as this is what is returned from the json config file.
+        :param: dct_list -- dict or list to have all  keys/values removed that end with self.comment_end (_comment)
+        :return dct or list with all keys or values  ending with self.comment_end removed.
+        """
+
+
+        if isinstance(dct_lst, list):
+            result = [] # dealing with a list so return value is a list
+            for value in dct_lst:
+                if isinstance(value, (list,dict)):  # a dict or list-- call strip_comment
+                    my_logger.debug(f"Striping _comment from list/dict")
+                    result.append(self.strip_comment(value))
+                elif isinstance(value, str) and value.endswith(self.comment_end):
+                    my_logger.debug(f"Ignoring {value}")
+                else:
+                    my_logger.debug(f"Appending {value}")
+                    result.append(value)
+        elif isinstance(dct_lst, dict):
+            result = {}
+            for key, value in dct_lst.items():
+                if isinstance(value, (dict,list)):  # a dict or list -- call strip_comment
+                    my_logger.debug(f"Copying {key} as dict")
+                    result[key] = self.strip_comment(value)
+                elif isinstance(key, str) and key.endswith(self.comment_end):
+                    my_logger.debug(f"Ignoring {key}")
+                else:
+                    my_logger.debug(f"Copying {key}")
+                    result[key] = value  # just take the value across.
+        else:
+            raise ValueError(f"Expected dict or list got {type(dct_lst)}")
+
+        return result
 
     def logging_config(self, cfg: typing.Optional[dict] = None) -> typing.Optional[dict]:
         """
@@ -2818,3 +2836,39 @@ class OptClimConfigVn3(OptClimConfigVn2):
         if not OK:
             raise ValueError("Configuration has problems")
         return OK
+
+    def obsNames(self,
+                 obsNames:typing.Optional[list[str]]=None,
+                 add_constraint:bool=True,
+                 strip_comments:bool=True):
+        """
+
+        :param obsNames  If not None set obsNames to values
+        :param  add_constraint -- if True add the constraint name to the list of obs
+        :param strip_comments -- if True then remove any comments from obsNames using strip_comment
+        :return: a list  of observation names from the configuration files
+        """
+        if obsNames is None:
+            obs = self.getv('study', {}).get('ObsList', [])[:]  # return a copy of the array.
+
+        else:
+            self.getv('study', {})['ObsList'] = list(obsNames)[:]  # need to copy not have a reference.
+            obs = obsNames[:]
+
+        if strip_comments:
+            obs = self.strip_comment(obs)  # remove any comments in obs.
+
+        if add_constraint and self.constraint():  # adding constraint and its defined.
+            cons_name = self.constraintName()
+            if cons_name  in obs:
+                raise ValueError(f'Constrain {cons_name} already in obsNames')
+            obs.append(cons_name)
+
+        # check for duplicates
+        dup_obs = set([ob for ob in obs if obs.count(ob) > 1])
+
+        if len(dup_obs) > 0:
+            msg = "Have duplicate observations for :" + " ".join(dup_obs)
+            raise ValueError(msg)
+
+        return obs
