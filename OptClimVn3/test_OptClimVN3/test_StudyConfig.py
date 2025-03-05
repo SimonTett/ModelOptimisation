@@ -112,9 +112,6 @@ class testStudyConfig(unittest.TestCase):
         :return:
         """
         covariance_cache = self.config.getv("_covariance_matrices")
-        for k in ['CovTotal', 'CovIntVar', 'CovObsErr']:
-            if 'netflux_global' in covariance_cache[k].index:
-                breakpoint()
         cov_file = self.config.expand('$OPTCLIMTOP/covariance/cov_obserr_20.csv')
         config = self.config
         cov = config.Covariances()  # example case has constraint on.
@@ -132,9 +129,6 @@ class testStudyConfig(unittest.TestCase):
         cov_cache = self.config.getv("_covariance_matrices")
         cov_nocons = config.Covariances(constraint=False)
         covariance_cache = self.config.getv("_covariance_matrices")
-        for k in ['CovTotal', 'CovIntVar', 'CovObsErr']:
-            if 'netflux_global' in covariance_cache[k].index:
-                breakpoint()
         for k in covKeys:
             self.assertTrue(cov_nocons[k].equals(cov_cache[k]), msg=f'Cached cov {k}  differs')
         for k, v in zip(covKeys, [consValue, consValue / 100., consValue]):  # keys and expected value
@@ -142,15 +136,9 @@ class testStudyConfig(unittest.TestCase):
             np.testing.assert_array_equal(cov[k].loc[:, consName].values, expect_slice, 'Values wrong -- t2a')
             np.testing.assert_array_equal(cov[k].loc[consName, :].values, expect_slice, 'Values wrong -- t2b')
         covariance_cache = self.config.getv("_covariance_matrices")
-        for k in ['CovTotal', 'CovIntVar', 'CovObsErr']:
-            if 'netflux_global' in covariance_cache[k].index:
-                breakpoint()
         # and without constraint
         cov = config.Covariances(constraint=False)  # force constraint off.
         covariance_cache = self.config.getv("_covariance_matrices")
-        for k in ['CovTotal', 'CovIntVar', 'CovObsErr']:
-            if 'netflux_global' in covariance_cache[k].index:
-                breakpoint()
         for k in covKeys:
             self.assertEqual(cov[k].shape, (nobs - 1, nobs - 1), msg='Shape wrong without constraint')
 
@@ -159,9 +147,6 @@ class testStudyConfig(unittest.TestCase):
         c = pd.DataFrame(np.identity(len(obsNames)) * 2, index=obsNames, columns=obsNames)
         cov = config.Covariances(constraint=False, CovTotal=c, CovIntVar=c * 0.1, CovObsErr=c * 0.9)
         covariance_cache = self.config.getv("_covariance_matrices")
-        for k in ['CovTotal', 'CovIntVar', 'CovObsErr']:
-            if 'netflux_global' in covariance_cache[k].index:
-                breakpoint()
         for k, scale in zip(covKeys, [1.0, 0.1, 0.9]):
             self.assertTrue(cov[k].equals(c * scale), msg=f"{k} does not match")
 
@@ -174,9 +159,6 @@ class testStudyConfig(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.config.Covariances(CovObsErr=cov)
         covariance_cache = self.config.getv("_covariance_matrices")
-        for k in ['CovTotal', 'CovIntVar', 'CovObsErr']:
-            if 'netflux_global' in covariance_cache[k].index:
-                breakpoint()
 
 
 
