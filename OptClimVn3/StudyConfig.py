@@ -706,13 +706,18 @@ class OptClimConfig(dictFile):
         return cov
 
     def transMatrix(self, scale:bool=False, verbose:bool=False,
-                    minEvalue:float=1e-6, dataFrame:bool=True,inverse:bool = False):
+                    minEvalue:float=1e-6,
+                    dataFrame:bool=True,
+                    inverse:bool = False,
+                    warn_scale:float = 1e-1):
         """
         Return matrix that projects data onto eigenvectors of total covariance matrix
         :param scale: (Default False) Scale covariance.
         :param verbose: (default False) Be verbose.
+        :param inverse: return the inverse of the transformation matrix
         :param dataFrame: wrap result up as a dataframe
         :param minEvalue: evalues less than minEvalue * max(eigenvalues) are removed. Meaning a non-square transMatrix
+        :param warn_scale: If the min/max evalue (after truncation) is less than warn_scale a warning is issued.
         :return: Transformation matrix that makes Total covariance matrix I.
         """
 
@@ -736,6 +741,9 @@ class OptClimConfig(dictFile):
             #(np.diag(evalue[indx] ** (-0.5)).dot(evect[:, indx].T))  # what we need to do to transform to
         if not dataFrame:
             transMatrix = transMatrix.values
+        ev_range = evalue.min()/evalue.max()
+        if ev_range < warn_scale:
+            my_logger.warning(f"Eigenvalues range is {ev_range} which is less than {warn_scale} -- can lead to over focus on small errors")
         return transMatrix
 
     def steps(self, steps=None, paramNames=None):
