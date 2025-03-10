@@ -665,6 +665,12 @@ class testStudyConfig(unittest.TestCase):
             nptest.assert_allclose(got2, expect, atol=atol, rtol=rtol,
                                    err_msg=f' Scale {scale} transform@inverse not giving I')
 
+            # test that warning gets generated if min/max < 0.1
+            with self.assertLogs(level='WARNING') as log:
+                # Call the function that should log a warning
+                trans = self.config.transMatrix(scale=True)
+            self.assertIn('WARNING:OPTCLIM.StudyConfig:Eigenvalues range is', log.output[0])
+
     def test_DFOLS_userParams(self):
         """
         test DFOLS_userParams.
