@@ -117,6 +117,31 @@ class test_um_rose(unittest.TestCase):
             self.assertEqual(v,self.model.read_param(p))
 
 
+    def test_run_time(self):
+        """
+        Test run time works
+        :return:
+        """
+
+        # test that run time works
+        from namelist_var import NamelistVar
+        expect_nl = NamelistVar('um_rose', filepath=pathlib.Path('rose-suite.conf'),
+                                namelist='jinja2:suite.rc', nl_var='MAIN_CLOCK', default=0)
+        for time,time_str in zip(
+            [60*60.,'PT16M40S'],
+            ['PT1H','PT16M40S']
+        ):
+            expected = [(expect_nl,time_str)]
+            got = self.model.run_time(time)
+            self.assertEqual(expected,got,msg=f'Expected {expected} got {got}')
+        self.model.instantiate()
+        got = self.model.run_time(None)
+        self.assertEqual(got,self.model.read_nl_value(expect_nl))
+
+        #raise NotImplementedError('Need to test that the run time is set in the config file')
+
+
+
 
 
 if __name__ == '__main__':

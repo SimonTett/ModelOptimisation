@@ -65,7 +65,7 @@ You might be able to extend this if you need something more complex.
     def __repr__(self):
         """ Representation -- the name and the cpts"""
         r = self.type_name
-        r += f"-{self.filepath}: {self.namelist}&{self.nl_var}"
+        r += f":{self.filepath}: {self.namelist}&{self.nl_var}"
         if self.default is not None:
             r += f" default:{self.default}"
         if self.name is not None:
@@ -330,7 +330,7 @@ class JSON_Config(BaseConfig):
         return config
 
     def write(self, path: typing.Optional[pathlib.Path]=None,
-              backup: bool = True):
+              backup: bool = True) -> pathlib.Path:
         """
         Write out the config (which is a dict) to a file.
         :param path: where to write namelist info as a JSON file. if not specified will be
@@ -392,17 +392,43 @@ class FortranNamelistConfig(BaseConfig):
     Inherits from base_config_namelist. No __init__ is provided as base class is fine!
 
     """
-    # Control how namelist is output. Default values as call variables. Modify them if you want to change how
-    # writing is done.
-    end_comma = True
-    uppercase = True
+    # Control how namelist is output. Modify them if you want to change how
+    # writing is done. see f90nml namelist.Namelist and f90nml.parser.Parser for allowed properties.
+    write_properties = dict(
+        end_comma = True,
+        uppercase = True
+    ) # properties to set when writing out the config.
+    read_properties = dict(
+
+    ) # properties to set when reading in the config.
+
+
+    def __init__(self,   root_dir: pathlib.Path = pathlib.Path.cwd(),
+                 rel_filepath: pathlib.Path = None,
+                 allow_missing:bool = False):
+        """
+        Fortran namelist specific init. Needed as want to dsetup a parser depending on read properties.
+        :param root_dir:
+        :param rel_filepath:
+        :param allow_missing:
+        """
+        parser = f90nml.parser.Parser()
+        for attr, value in self.read_properties.items():
+            if isinstance(getattr(parser.__class__, attr), property):
+                setattr(parser, attr, value)
+        self.parser = parser
+        super().__init__(root_dir,rel_filepath,allow_missing=allow_missing)
+
+
     def read(self,allow_missing:bool = False) -> f90nml.namelist.Namelist:
         """
         Read in namelist config.
         """
         filepath = self.filepath()
+        ## code to allow property setting
+
         try:
-            config = f90nml.read(filepath)
+            config = self.parser.read(filepath)
         except FileNotFoundError:
             if allow_missing:
                 my_logger.warning(f'File {filepath} does not exist. Making empty config')
@@ -415,7 +441,7 @@ class FortranNamelistConfig(BaseConfig):
 
     def write(self,
               path: typing.Optional[pathlib.Path] = None,
-              backup: bool = True):
+              backup: bool = True) -> pathlib.Path:
         """
         Write out the namelists to the file.
         :param path -- path to write namelist to.
@@ -425,10 +451,17 @@ class FortranNamelistConfig(BaseConfig):
         path = super().write(path, backup=backup) # call the superclass write method.
         config_to_write = copy.copy(self.config)  # make a copy so we can modify it.
         # Modify parameters of the config to control how it is written.
-        config_to_write.end_comma = self.end_comma
-        config_to_write.uppercase = self.uppercase
+        # different fortran configs may need different parameters.
+        # for example GAMIL needs column_width to be 5000. I suspect the UM likes 80!  
+
+        for attr,value in self.write_properties.items():
+            if isinstance(getattr(config_to_write.__class__,attr),property):
+                setattr(config_to_write,attr,value)
+
         config_to_write.write(path, force=True)  # force overwriting of file.
         my_logger.info(f'Wrote fortran namelist config to {path}')
+
+        return path
 
     def read_value(self,
                    namelist: NamelistVar,
@@ -474,6 +507,21 @@ class FortranNamelistConfig(BaseConfig):
         self.config[namelist.namelist][namelist.nl_var] = value  # set the value
         self.modified_values[namelist] = True # modified this namelist!
         my_logger.debug(f"Setting {namelist} to {value}")
+
+@register_class_info('gamil3_nl')
+class GAMIL3Config(FortranNamelistConfig):
+    """
+    Class to handle GAMIL namelist files. Just changes write_properties.
+    Inherits from FortranNamelistConfig. No __init__ is provided as base class is fine!
+    """
+    # Control how namelist is output. Modify them if you want to change how
+    # writing is done. see f90nml namelist.Namelist (write_properties) and f90nml.parser.Parser (read_properties) for allowed properties.
+    write_properties = dict(
+        end_comma = True,
+        uppercase = True,
+        column_width = 5000
+    )
+    read_properties = dict() # use default f90nml read properties.
 
 @register_class_info('um_rose')
 class UMroseNamelistConfig(BaseConfig):
