@@ -4,10 +4,14 @@ import logging
 import os
 import typing
 
+from scipy.constants import value
+
+import genericLib
 
 from ModelBaseClass import register_param # Used to allow functions. Currently none defined.
 from Model import Model
 import pathlib
+from namelist_var import NamelistVar
 
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}") # have this anywhere you want logging
@@ -84,6 +88,26 @@ class UM_rose(Model):
         cmd = self.expand('$OPTCLIMTOP/OptClimVn3/scripts/UM_rose/SUBMIT_to_puma.sh')
         cmd = [cmd,self.model_dir,remote_machine]
         return cmd
+
+    @register_param('runModelTime')
+    def run_time(self,runTime:typing.Union[str,int,float,None]) -> \
+            typing.Union[list[tuple[NamelistVar,str]],str]:
+        """
+        Set the run time for the model. This is in seconds or as an ISO duration string.
+        UM wants it as a ISO duration string. This function will convert to that if needed.
+        :param runTime: The run time in seconds or as an iso duration.
+        :return: list((nl,value)) or just the value read in from the config.
+        """
+        nl = NamelistVar('um_rose',filepath=pathlib.Path('rose-suite.conf'),
+                         namelist='jinja2:suite.rc',nl_var='MAIN_CLOCK',default=0)
+        if runTime is None:
+            return self.read_nl_value(nl)
+        if isinstance(runTime,str):
+            check = genericLib.parse_isoduration(runTime) # make sure it parses
+            val = runTime
+        else:
+            val = genericLib.seconds_to_isoduration(runTime)
+        return [(nl,val)]
 
 
 

@@ -19,6 +19,7 @@ import pandas as pd
 import logging
 import logging.config
 import copy
+import sys
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 
@@ -152,6 +153,40 @@ def fake_fn(config: "OptClimConfigVn3", params: dict) -> pd.Series:
     result += tgt
     return result
 
+def seconds_to_isoduration(seconds: int|float) -> str:
+    """
+    Convert seconds to ISO-8601 duration.
+    :param seconds: Seconds (int or float).
+    :return: Iso-duration string (and zeros will be ignored)
+    If seconds is -ve then a value error is raised. This may not be necessary but -ve seconds needs a different
+    processing and - duration.
+    Uses https://github.com/pydantic/pydantic/blob/3704eccce4661455acdda1cdcf716bd4b3382e08/pydantic/deprecated/json.py#L135-L140
+    """
+
+    if seconds < 0:
+        raise ValueError("Seconds must be positive")
+    minutes, seconds = divmod(seconds, 60)
+    minutes = int(minutes) # convert minutes to an int
+    hours, minutes = divmod(minutes, 60)
+    days, hours = divmod(hours, 24)
+    result = 'P'
+    for value,prd,format in zip([days, hours, minutes, seconds],['D','H','M','S'],
+                                ['d','d',f'd',f'2.3f']):
+        if prd == 'H':
+            result += 'T'
+        if value > 0:
+            result += f'{value:{format}}{prd}'
+        elif prd == 'S' and result == 'PT': # if no time then add 0S
+            result += '0S'
+        else:
+            pass
+
+    # remove trailing T (when Hr, min & secs are all zero)
+    if result[-1] == 'T':
+        result = result[:-1]
+
+    return result
+
 def parse_isoduration( s: str | typing.List) -> typing.List|str:
     """ Parse a str ISO-8601 Duration: https://en.wikipedia.org/wiki/ISO_8601#Durations
       OR convert a 6 element list (y m, d, h m s) into a ISO duration.
@@ -162,7 +197,7 @@ def parse_isoduration( s: str | typing.List) -> typing.List|str:
     :return: 6 element list [YYYY,MM,DD,HH,mm,SS.ss] which is suitable for the UM namelists
     """
 
-    def get_isosplit(s, split):
+    def get_isosplit(s:str, split):
         if split in s:
             n, s = s.split(split, 1)
         else:
@@ -176,8 +211,10 @@ def parse_isoduration( s: str | typing.List) -> typing.List|str:
         s = s.split('P', 1)[-1]  # Remove prefix
 
         split = s.split('T')
-        if len(split) == 1:
+        if (len(split) == 1 and 'Y' in split[0]) or 'T' not in s:
             sYMD, sHMS = split[0], ''
+        elif len(split) == 1 :
+            sYMD, sHMS = '', split[0]
         else:
             sYMD, sHMS = split  # pull them out
 
