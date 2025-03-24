@@ -2835,7 +2835,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
 
         return len(bad) == 0
 
-    def check(self):
+    def check(self) -> bool:
         """
         Check configuration is consistent. Raise ValueError if not
         :return: True if OK, False if not
