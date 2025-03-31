@@ -92,10 +92,14 @@
         [[[ {{EXPT_RESUB}} ]]]
             graph = atmos_main => {{ RESUB_GRAPH }}
 
+        [[[ {{EXPT_RESUB}} ]]]
+            graph = housekeeping[-{{EXPT_RESUB}}] => atmos_main 
+
         {% if TASK_ARCH_WALL %}
         [[[ R1//^+{{EXPT_RUNLEN}}-{{EXPT_RESUB}} ]]]
             graph = atmos_main => rose_arch_wallclock => housekeeping
         {% endif %}
+
 
 {# Include tests graph if required #}
 {% if TASK_TESTS %}
@@ -273,8 +277,8 @@
 
 [visualization]
     initial cycle point = {{EXPT_BASIS}}
-    final cycle point = +{{EXPT_RESUB}}
-    default node attributes = style=filled, color=black, fillcolor=khaki
+    final cycle point = +{{EXPT_RUNLEN}}
+    default node attributes = style=filled, color=black, fillcolor=slategray
     [[node attributes]]
         RECONFIGURE = fillcolor=green
         ATMOS = fillcolor=dodgerblue

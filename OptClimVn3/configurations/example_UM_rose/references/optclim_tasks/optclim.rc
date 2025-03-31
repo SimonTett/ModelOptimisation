@@ -1,0 +1,34 @@
+[scheduling]
+    [[ dependencies ]]
+        {# Set OptClim Pre-Processing to start before the first atmos_main run #}
+        [[[ R1 ]]]
+            graph = optclim_pre => atmos_main
+
+        {# Set OptClim Post-Processing to start after the last cycle #}
+        [[[ R1//^+{{EXPT_RUNLEN}}-{{EXPT_RESUB}} ]]]
+            graph = housekeeping => optclim_post 
+
+        {# Run optclim_um_fail if atmos_main fails; remove optclim_um_fail if it succeeds #}
+        [[[ {{EXPT_RESUB}} ]]]
+            graph = """
+		atmos_main:fail => optclim_um_fail
+		atmos_main => !optclim_um_fail
+            """
+
+[runtime]
+    [[optclim_pre]]
+        inherit = RUN_MAIN, EXTRACT_RESOURCE
+    [[optclim_post]]
+        inherit = RUN_MAIN, EXTRACT_RESOURCE
+    [[optclim_um_fail]]
+        inherit = RUN_MAIN, EXTRACT_RESOURCE
+
+
+[visualization]
+    [[node attributes]]
+        optclim_pre = fillcolor=seagreen3
+        optclim_post = fillcolor=seagreen3
+        optclim_um_fail = fillcolor=seagreen3
+
+
+
