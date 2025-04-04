@@ -103,6 +103,26 @@ class test_um_rose(unittest.TestCase):
 
         self.assertEqual(model.to_dict(),self.model.to_dict())
 
+        ## Check that suite.rc was updated correctly
+        with open(model.model_dir / 'suite.rc', 'r') as suite_file:
+            last_line = suite_file.readlines()[-1]
+            self.assertEqual(last_line.strip(), "%include optclim.rc")
+
+        ## Check that all the required files were copied over
+        suite_files = list(model.model_dir.rglob('*'))
+        required_files = [
+            'optclim.rc',
+            'app/optclim_post/rose-app.conf',
+            'app/optclim_post/bin/optclim_post.sh',
+            'app/optclim_pre/rose-app.conf',
+            'app/optclim_pre/bin/optclim_pre.sh',
+            'app/optclim_um_fail/rose-app.conf',
+            'app/optclim_um_fail/bin/optclim_um_fail.sh',
+        ]
+        for filename in required_files:
+            self.assertIn(model.model_dir / filename, suite_files)
+
+
     def test_set_params(self ):
         """
         test set_params method

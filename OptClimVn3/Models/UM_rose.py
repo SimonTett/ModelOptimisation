@@ -3,6 +3,7 @@
 import logging
 import os
 import typing
+import shutil
 
 from scipy.constants import value
 
@@ -75,6 +76,18 @@ class UM_rose(Model):
         """
         super().modify_model()  # call the base class method.
         # now do the specific stuff...
+        self.update_suite_rc()
+        self.copy_suite_apps()
+
+    def update_suite_rc(self):
+        """Update the cylc/rose suite.rc to include OptClim tasks"""
+        with open(self.model_dir / 'suite.rc', 'a') as suite_rc:
+            suite_rc.write('\n\n%include optclim.rc\n')
+
+    def copy_suite_apps(self):
+        """Copy OptClim specific apps from the reference directory to the model directory"""
+        optclim_tasks_root = self.expand('$OPTCLIMTOP/OptClimVn3/configurations/example_UM_rose/references/optclim_tasks')
+        shutil.copytree(optclim_tasks_root, self.model_dir, dirs_exist_ok=True)
 
     def submit_cmd(self) -> typing.List[str]:
         """"
