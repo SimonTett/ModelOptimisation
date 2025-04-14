@@ -82,7 +82,7 @@ class UM_rose(Model):
     def update_suite_rc(self):
         """Update the cylc/rose suite.rc to include OptClim tasks"""
         with open(self.model_dir / 'suite.rc', 'a') as suite_rc:
-            suite_rc.write('\n\n%include optclim.rc\n')
+            suite_rc.write('\n\n%include optclim.jinja.rc\n%include optclim.rc\n')
 
     def copy_suite_apps(self):
         """Copy OptClim specific apps from the reference directory to the model directory"""
