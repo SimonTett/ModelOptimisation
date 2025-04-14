@@ -112,12 +112,8 @@ class test_um_rose(unittest.TestCase):
         suite_files = list(model.model_dir.rglob('*'))
         required_files = [
             'optclim.rc',
-            'app/optclim_post/rose-app.conf',
-            'app/optclim_post/bin/optclim_post.sh',
-            'app/optclim_pre/rose-app.conf',
-            'app/optclim_pre/bin/optclim_pre.sh',
-            'app/optclim_um_fail/rose-app.conf',
-            'app/optclim_um_fail/bin/optclim_um_fail.sh',
+            'optclim.jinja.rc',
+            'bin/optclim_task.sh',
         ]
         for filename in required_files:
             self.assertIn(model.model_dir / filename, suite_files)

@@ -1,0 +1,38 @@
+[scheduling]
+  [[ dependencies ]]
+        {# Set OptClim Pre-Processing to start before the first atmos_main run #}
+        [[[ R1 ]]]
+            graph = optclim_pre => atmos_main
+
+        {# Set OptClim Post-Processing to start after the last cycle #}
+        [[[ R1//^+{{EXPT_RUNLEN}}-{{EXPT_RESUB}} ]]]
+            graph = housekeeping => optclim_post 
+
+        {# Run optclim_um_fail if atmos_main fails; remove optclim_um_fail if it succeeds #}
+        [[[ {{EXPT_RESUB}} ]]]
+            graph = """
+		atmos_main:fail => optclim_um_fail
+		atmos_main => !optclim_um_fail
+            """
+
+[runtime]
+    [[OPTCLIM_HPC]]
+        [[[directives]]]
+	        --ntasks=1
+            --export=none
+            --chdir=/work/n02/n02/{{ARCHER2_USERNAME}}
+	        --partition=serial
+	        --qos=serial
+            --account={{ARCHER2_GROUP}}
+        [[[job]]]
+            batch system = slurm
+            execution time limit = PT5M
+        [[[environment]]]
+            ROSE_TASK_N_JOBS = 1
+        [[[remote]]]
+            host = $(rose host-select archer2)
+{% if HPC_USER is defined %}
+            owner = {{ARCHER2_USERNAME}}
+{% endif %}
+
+
