@@ -148,8 +148,8 @@ class test_um_rose(unittest.TestCase):
         test set_params method
         :return:
         """
-        # copy the ref dir into the model_dir
-        shutil.copytree(self.refDir,self.model.model_dir,dirs_exist_ok=True)
+        # copy the ref dir into the suite_dir
+        shutil.copytree(self.refDir,self.model.suite_dir,dirs_exist_ok=True)
         params = dict(AI=1e-2,DP_CORR_STRAT=500.0,TWO_D_FSD_FACTOR=2,ENT_FAC_DP= 1.0)
         self.model.set_params(parameters=params)
         # test values
