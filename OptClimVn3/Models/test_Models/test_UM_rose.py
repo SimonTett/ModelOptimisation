@@ -133,9 +133,14 @@ class test_um_rose(unittest.TestCase):
             "suite.rc",# coz we change it by adding two include files.
             "site/archer2.rc" # coz we change it by changing any --chdir=/work/n02/n02/{{ARCHER2_USERNAME}}
             ]])
-
-
+        # check have what we expect.
         self.assertEqual(bak_files, expected_bak_files)
+        # check that tar file generated
+        tar_file = self.model.model_dir / 'rose_suite.tar.gz'
+        self.assertTrue(tar_file.exists())
+        # check that the tar file has at least 1K byte in it
+        self.assertGreater(tar_file.stat().st_size, 1000)
+
 
 
     def test_set_params(self ):

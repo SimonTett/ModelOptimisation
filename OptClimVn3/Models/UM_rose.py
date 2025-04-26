@@ -270,7 +270,7 @@ class UM_rose(Model):
     def instantiate(self,fake:bool = False) -> None:
         """
         Instantiate the model. This is a UM_rose specific version of instantiate.
-        It will tar/gzip the suite_dir and copy it to the model_dir.
+        It will call the superclass method and then tar/gzip the suite_dir and copy it to the model_dir.
         :param fake: if True then don't run the model. Default is False.
         :return:nothing.
         """
@@ -281,6 +281,7 @@ class UM_rose(Model):
         tar_file.unlink(missing_ok=True) # remove any old tar file.
         with tarfile.open(tar_file, "w:gz") as tar:
             tar.add(self.suite_dir, arcname=self.suite_dir.name)
+        my_logger.debug(f'Created tar file {tar_file} from {self.suite_dir}')
 
 
     def submit_cmd(self) -> typing.List[str]:
