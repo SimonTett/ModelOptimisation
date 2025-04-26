@@ -460,3 +460,62 @@ def setup_env():
     else:
         my_logger.debug(f"OPTCLIMTOP already set to {os.environ['OPTCLIMTOP']}")
     return
+
+def backup_file(path: pathlib.Path,
+                ext: str = '.bak',
+                create: typing.Optional[typing.Literal['copy', 'move']] = None, ) -> typing.Optional[pathlib.Path]:
+    """
+    Create a backup file with the given extension.
+    :param path: Path to the original file.
+    :param ext: Extension for the backup file. Default '.bak'
+    :param create: If  copy -- create backup by copying the file, if move -- create backup by moving the file.
+    If backup file exists then no backup file is created.
+    If None then no backup file is created.
+    :return: Path to the backup file or None if no backup is created.
+    """
+    # check input file exits. If not raise an error
+    if not path.exists():
+        raise FileNotFoundError(f"File {path} does not exist.")
+    backup_path = path.with_suffix(path.suffix + ext)
+    if create is not None:  # create backup
+        if backup_path.exists():
+            my_logger.warning(f'Backup file {backup_path} already exists. Not creating')
+            return None
+        # create the backup file
+        try:
+            if create == 'move':
+                backup_path.parent.mkdir(parents=True, exist_ok=True)
+                path.rename(backup_path)  # move the file to backup path
+            elif create == 'copy':
+                backup_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy(path, backup_path)
+            else:
+                raise ValueError(f'Create {create} not known.')
+            my_logger.debug(f'Backup file created: {backup_path}')
+        except OSError as e:
+            my_logger.error(f'Error creating backup file: {e}')
+
+    return backup_path
+
+def likely_text_file(file_path: pathlib.Path,
+                 sample_size: int = 1024,
+                 encoding: str = 'ascii') -> bool:
+    """
+    Guess if a file is likely a text file by checking if its sample_size bytes can be
+      decoded to only printable or space chars.
+    co-pilot generated.
+    :param file_path: Path to the file.
+    :param sample_size: Number of bytes to read for analysis.
+    :param encoding: Encoding to use for decoding the file.
+    :return: True if the file is likely a text file, False otherwise.
+    """
+    try:
+        with open(file_path, 'rb') as file:
+            sample = file.read(sample_size)
+        # Try decoding the sample
+        decoded_sample = sample.decode(encoding)
+        # Check if all characters in the decoded sample are printable or space
+        return all(char.isprintable() or char.isspace() for char in decoded_sample)
+    except (UnicodeDecodeError, Exception):
+        # If decoding fails or the file cannot be read, assume it's not a text file
+        return False

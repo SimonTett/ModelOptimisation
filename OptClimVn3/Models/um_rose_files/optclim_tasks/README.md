@@ -17,7 +17,7 @@ the following line needs to be appended to `suite.rc`:
 
 ## Example
 
-These tasks are added to [u-db898](../u-db898), where
+These tasks are added to [u-db898](../../../configurations/example_UM_rose/references/u-db898), where
 the simulation duration and resubmit duration is controlled by  `EXPT_RUNLEN` and `EXPT_RESUB`
 defined in `rose-suite.conf`.
 The following values will run the UM for 21 days in 3 steps:

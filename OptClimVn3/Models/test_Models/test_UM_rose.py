@@ -40,12 +40,12 @@ class test_um_rose(unittest.TestCase):
         post_process = dict(script='$OPTCLIMTOP/OptClimVn3/scripts/comp_obs.py', output_file='obs.json')
         self.post_process = post_process
         self.model = UM_rose(name='testM', reference=refDir,
-                            model_dir=testDir, post_process=post_process,
+                            model_dir=testDir, suite_dir=testDir/'suite',post_process=post_process,
                             parameters=parameters)
         self.config_path = self.model.config_path
 
         shutil.copy(simObsDir / '01_GN' / 'h0101' / 'observables.nc',
-                    testDir / 'obs.nc')  # copy over a netcdf file of observations.
+                    self.model.model_dir / 'obs.nc')  # copy over a netcdf file of observations.
 
     def tearDown(self):
         """
@@ -74,7 +74,7 @@ class test_um_rose(unittest.TestCase):
         Test that read_value works
         :return:
         """
-        shutil.copytree(self.refDir,self.model.model_dir,dirs_exist_ok=True)
+        shutil.copytree(self.refDir,self.model.suite_dir,dirs_exist_ok=True)
         val=self.model.read_param('AI')
         self.assertEqual(val,2.5700e-02)
 
@@ -96,6 +96,8 @@ class test_um_rose(unittest.TestCase):
 
         params_got = self.model.read_params(list(p))
         self.assertEqual(params_got,self.parameters)
+        # check that MODEL_DIRECT is set correctly.
+        self.assertEqual(str(self.model.model_dir),self.model.read_param('MODEL_DIRECT'))
 
         self.assertEqual(self.model.status,'INSTANTIATED')
         model = self.model.load_model(self.model.config_path)
@@ -104,7 +106,7 @@ class test_um_rose(unittest.TestCase):
         self.assertEqual(model.to_dict(),self.model.to_dict())
 
         ## Check that suite.rc was updated correctly
-        with open(model.model_dir / 'suite.rc', 'r') as suite_file:
+        with open(model.suite_dir / 'suite.rc', 'r') as suite_file:
             last_line = suite_file.readlines()[-1]
             self.assertEqual(last_line.strip(), "%include optclim.rc")
 
@@ -116,7 +118,24 @@ class test_um_rose(unittest.TestCase):
             'bin/optclim_task.sh',
         ]
         for filename in required_files:
-            self.assertIn(model.model_dir / filename, suite_files)
+            self.assertIn(model.suite_dir / filename, suite_files)
+        # find all the .bak files in suite_dir
+        bak_files = set(model.suite_dir.rglob('*.bak'))
+        # expect the following backup files
+        expected_bak_files = set([model.suite_dir/(f+'.bak') for f in [
+            "app/install_ancil/opt/rose-app-aeroclim.conf", # contains ROSE_DATA
+            "app/install_ancil/opt/rose-app-aeroclim_chem.conf", # contains ROSE_DATA
+            "app/install_ancil/rose-app.conf",# contains ROSE_DATA
+            "app/install_cold/opt/rose-app-norecon.conf", # contains ROSE_DATA
+            "app/install_cold/rose-app.conf", # contains ROSE_DATA
+            "app/um/rose-app.conf", # coz we change variables.
+            "rose-suite.conf", # coz we modify variables in here too.
+            "suite.rc",# coz we change it by adding two include files.
+            "site/archer2.rc" # coz we change it by changing any --chdir=/work/n02/n02/{{ARCHER2_USERNAME}}
+            ]])
+
+
+        self.assertEqual(bak_files, expected_bak_files)
 
 
     def test_set_params(self ):
@@ -154,7 +173,57 @@ class test_um_rose(unittest.TestCase):
         got = self.model.run_time(None)
         self.assertEqual(got,self.model.read_nl_value(expect_nl))
 
-        #raise NotImplementedError('Need to test that the run time is set in the config file')
+    def test_replace_file(self):
+        # Test replace_file works
+        file = self.model.model_dir / 'stuff.text'
+        with open(file, 'w') as f:
+            f.write("""
+            This is a test file.
+            It should be replaced.
+            [file:$ROOT_DIR/rose-suite.conf]
+            some more text
+            and even more text
+            """)
+        result = self.model.replace_file(file,match='^NO MATCH$',replacement='fred')
+        # nothing should have changed so should be None
+        self.assertIsNone(result)
+        # now test a match
+        new_file,matches = self.model.replace_file(file,match='^.*rose-suite.conf.*$',
+                                                   replacement='fred',backup_ext='.bak')
+        self.assertEqual(new_file, file)
+        self.assertEqual(matches,1)
+        # should have a backup file
+        backup=genericLib.backup_file(file,ext='.bak')
+        self.assertTrue(backup.exists())
+
+
+    def test_change_rose_dir(self):
+        # Test change_rose_dir works
+        testdir = self.model.model_dir / 'testing'
+        testdir.mkdir(parents=True, exist_ok=True)
+        file1 = testdir / 'stuff.text'
+        with file1.open('w') as f:
+            f.write("""
+This is a test file.
+It should be replaced.
+[file:$ROSE_DATA/rose-suite.conf]
+some more text
+and even more text
+  [file:$ROSE_DATA/rose-suite2.conf]
+   a bit more text
+[file:$ROSE_DATA/etc/ancil/qrclim.biog]
+some values
+                    """)
+        file2 = testdir / 'stuff2.text'
+        with file2.open('w') as f:
+            f.write("""
+This is a test file.
+[!!file:$ROSE_DATA/rose-suite.conf]
+some more text
+and even more text
+                    """)
+        changed_files = self.model.change_rose_dir(testdir)
+        self.assertEqual({file1:3},changed_files)
 
 
 

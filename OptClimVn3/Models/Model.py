@@ -77,9 +77,9 @@ type_status = typing.Literal['CREATED', 'INSTANTIATED', 'SUBMITTED',
 class Model(ModelBaseClass, journal):
     # type definitions for attributes.
     name: str
-    config_path: [pathlib.Path | pathlib.PurePath]
-    reference: [pathlib.Path | pathlib.PurePath]
-    model_dir: [pathlib.Path | pathlib.PurePath]
+    config_path: typing.Union[pathlib.Path, pathlib.PurePath]
+    reference:typing.Union[pathlib.Path, pathlib.PurePath]
+    model_dir: typing.Union[pathlib.Path, pathlib.PurePath]
     post_process: dict
     post_process_cmd_script: typing.Optional[list[str]]
     fake: bool
@@ -92,9 +92,9 @@ class Model(ModelBaseClass, journal):
     pp_jid: typing.Optional[str]
     model_jids: list[str]
     submitted_jid: typing.Optional[str]
-    submit_script: [pathlib.Path | pathlib.PurePath]
-    continue_script: [pathlib.Path | pathlib.PurePath]
-    set_status_script: [pathlib.Path | pathlib.PurePath]
+    submit_script: typing.Union[pathlib.Path ,pathlib.PurePath]
+    continue_script: typing.Union[pathlib.Path, pathlib.PurePath]
+    set_status_script: typing.Union[pathlib.Path, pathlib.PurePath]
     status: type_status
     simulated_obs: typing.Optional[pd.Series]
     _post_process_input: typing.Optional[str]
@@ -460,24 +460,31 @@ class Model(ModelBaseClass, journal):
 
         return stuff_to_set  # this is a list of (variable_set_info, value)
     ## end of parameter related methods
-    def create_model(self):
+    def create_model(self,
+                     direct:typing.Optional[pathlib.Path] = None,
+                     copy_ref:bool=True):
         """
         Create a new model by copying reference. If self.fake is True then no copy is done.
          Overwrite (and call superclass) for your own model.
+         :param direct: path to directory to create. If None then self.model_dir will be used.
+         :param copy_ref: If True copy reference directory to dir
         For example if you want to modify your reference model.
         :return:nothing.
         """
-        self.model_dir.mkdir(parents=True, exist_ok=True)  # create the directory if needed.
-        my_logger.info(f"Created {self.model_dir}")
+        if direct is None:
+            direct = self.model_dir
+        direct.mkdir(parents=True, exist_ok=True)  # create the directory if needed.
+        my_logger.info(f"Created {direct}")
         if not self.fake:
             # empty the directory (if we are creating)
-            for file in self.model_dir.iterdir():
+            for file in direct.iterdir():
                 if file.is_dir():
                     shutil.rmtree(file)
                 else:
                     file.unlink()
-            shutil.copytree(self.reference, self.model_dir, symlinks=True, dirs_exist_ok=True)  # copy from reference.
-
+            if copy_ref:
+                shutil.copytree(str(self.reference), str(direct), symlinks=True, dirs_exist_ok=True)  # copy from reference.
+                my_logger.info(f"Copied {self.reference} to {direct}")
     def set_status(self, new_status: type_status, check_existing: bool = True) -> None:
         """
         Set the status of Model.
@@ -529,7 +536,7 @@ class Model(ModelBaseClass, journal):
 
     def modify_model(self):
         """
-        Modify model. This does nothing and is designed to be overwritten in classes that inherit from it.
+        Modify model. modify model. This method is minimal; call from your own cloass
         Those should call this first as it checks that set_status_script exists and updates history
         If self.fake is True then only history is updated.
         :return: None

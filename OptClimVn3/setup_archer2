@@ -1,0 +1,10 @@
+# setup env for OptCLIMVn3 on Archer2
+# Run with . ./setup_archer2
+# change OPTCLIMTOP for your system
+export OPTCLIMTOP=/home/tetts/software/ModelOptimisation
+# load necessary modules
+source $OPTCLIMTOP/opt_venv/bin/activate # activate environment
+VN3=$OPTCLIMTOP/OptClimVn3
+export PYTHONPATH=$VN3:$VN3/Models:$VN3/support:$PYTHONPATH
+export PATH=$VN3/scripts:$PATH
+
