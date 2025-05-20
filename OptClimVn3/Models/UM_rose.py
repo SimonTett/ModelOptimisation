@@ -321,9 +321,6 @@ class UM_rose(Model):
 
         return True
 
-
-
-        return True
     def submit_cmd(self) -> typing.List[str]:
         """"
         Generate the submission command. Over rides the super-class version.
