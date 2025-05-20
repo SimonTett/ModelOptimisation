@@ -524,6 +524,7 @@ class Model(ModelBaseClass, journal):
         self.create_model()  # create model
         self.modify_model()  # do any modifications to model needed before setting params.
         self.set_params()  # set the params
+        self.check() # check the model is ok. Very model dependent.
         # set permissions to rxw,rx,rx for submit and continue script.
         if not fake:
             for file in [self.submit_script, self.continue_script]:
@@ -536,17 +537,28 @@ class Model(ModelBaseClass, journal):
 
     def modify_model(self):
         """
-        Modify model. modify model. This method is minimal; call from your own cloass
-        Those should call this first as it checks that set_status_script exists and updates history
-        If self.fake is True then only history is updated.
+        Modify model.This method is minimal; call from your own clqss
+        Those should call this first as it  updates history
+
         :return: None
         """
-        if (not self.fake) and (not self.set_status_script.exists()):
-            raise ValueError(f"Need {self.set_status_script} does not exists")
 
         self.update_history(f"modifying model")
 
         return None
+
+    def check(self) -> bool:
+        """
+        Check the model is ok. You should call this and then do your own stuff in your class method
+        This method checks that set_status_script exists and raises an error if not.
+        Will raise ValueError if the model is not ok.
+        :return: True if model is ok.
+        """
+        self.update_history("Checking model")
+        if (not self.fake) and (not self.set_status_script.exists()):
+            raise ValueError(f"Need {self.set_status_script} does not exists")
+
+        return True
 
     def submit_model(self,
                      fake_function: typing.Optional[typing.Callable[[dict], pd.Series]] = None,

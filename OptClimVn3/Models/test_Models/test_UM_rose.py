@@ -230,6 +230,36 @@ and even more text
         changed_files = self.model.change_rose_dir(testdir)
         self.assertEqual({file1:3},changed_files)
 
+    def test_check(self):
+        """
+        Test check method
+        :return:
+        """
+        # copy the ref dir into the suite_dir
+        shutil.copytree(self.refDir,self.model.suite_dir,dirs_exist_ok=True)
+        # test that check works.
+        ok=self.model.check()
+        self.assertTrue(ok)
+        # now modify parameters so that check should fail.
+        self.model.set_params(dict(RESUB_TIME='P1M1D'))
+        with self.assertRaises(ValueError) as cm:
+            self.model.check()
+        shutil.rmtree(self.model.suite_dir, onerror=genericLib.errorRemoveReadonly)
+
+        shutil.copytree(self.refDir, self.model.suite_dir, dirs_exist_ok=True)
+        self.model.set_params(dict(RESUB_TIME='P1M',RUN_TARGET='P1Y3M1D'))
+        with self.assertRaises(ValueError) as cm:
+            self.model.check()
+        shutil.rmtree(self.model.suite_dir, onerror=genericLib.errorRemoveReadonly)
+
+        shutil.copytree(self.refDir, self.model.suite_dir, dirs_exist_ok=True)
+        self.model.set_params(dict(RUN_TARGET='P1TY3M1D')) # malformed time
+        with self.assertRaises(ValueError) as cm:
+            self.model.check()
+
+
+
+
 
 
 
