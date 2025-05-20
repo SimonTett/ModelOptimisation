@@ -169,6 +169,9 @@
     {% if SITE in DBLE_FCMUM %}
     [[fcm_make_um]]
         inherit = RUN_MAIN, EXTRACT_RESOURCE, UMBUILD
+	## allow use of pre-build code,
+	[[[environment]]] 
+            PREBUILD = /home/n02/n02/tetts/cylc-run/u-db898/share/fcm_make_um   
     [[fcm_make2_um]]
         inherit = RUN_MAIN, UMBUILD_RESOURCE, UMBUILD
     {% else %}

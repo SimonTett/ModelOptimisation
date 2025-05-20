@@ -42,6 +42,7 @@ class test_um_rose(unittest.TestCase):
         self.model = UM_rose(name='testM', reference=refDir,
                             model_dir=testDir, suite_dir=testDir/'suite',post_process=post_process,
                             parameters=parameters)
+        # work dir is not being set up...
         self.config_path = self.model.config_path
 
         shutil.copy(simObsDir / '01_GN' / 'h0101' / 'observables.nc',

@@ -14,7 +14,7 @@ import tarfile
 import typing
 import shutil
 import platform
-
+import subprocess
 import genericLib
 
 from ModelBaseClass import register_param # Used to allow functions. Currently none defined.
@@ -33,30 +33,39 @@ class UM_rose(Model):
     will need to refactor/generalise this code.
 
     This class adds suite_dir to the class attributes. This is where the suite info gets written.
-    If not set then will be generated from the model_dir and process id as:
-    self.puma_dir/f'{self.model_dir.parent.name}_{self.model_dir.name}_{os.getpid()}
+    If not set then will be generated from the name and process id as:
+    self.puma_dir/f'{self.name}_{os.getpid()}
+    Class also adds model_data_dir to the object attributes. This is where data should be written by model.
+      If None then when running() ran self.model_dir will be set to $ROSE_SUITE_DIR/$DATAM
 
     The initialisation uses the following values from run_info. :
-    For the following three variables values of None mean the suite is not modified.
-        - runModelTime -- time as iso duration for model to run for.
-        - runUser -- user name to run the suite as.
-        - runCode -- job code/account to run suite with.
+    For the following variables values of None mean the suite is not modified.
+        - runModelTime:str -- time as iso duration for model to run for.
+        - runUser:str -- user name to run the suite as.
+        - runCode:str -- job code/account to run suite with.
+        - prebuild:str -- path to prebuild. Means much faster compilation
+        - use_scratch:bool -- If True then use scratch space for work and share. 
+                           Files here are deleted after 28 days, 
+         
 
-    - runEnvSetup -- path to the environment setup script.
+    - runEnvSetup:str -- path to the environment setup script.
        If None (or not set) will be set to  $OPTCLIMTOP/OptClimVn3/setup_archer2
 
     MODEL_DIRECT (a variable available to the suite) will be set to self.model_dir
+    MODEL_CONFIG will be set to self.cache_path
 
 
     """
     suite_dir: typing.Optional[pathlib.Path] # path for suite dir.
-
-    if 'archer2' not in platform.node().lower():
+    model_data_dir: typing.Optional[pathlib.Path] # path for model_data_dir.
+    # test if we are on Archer by calling hostname -A and that stdout contains archer2.ac.uk
+    stat = subprocess.run(['hostname','-A'],capture_output=True,text=True)
+    if not ((stat.returncode == 0) and 'archer2.ac.uk' in stat.stdout):
         my_logger.warning('Not running on archer2. This code will need re-writing to work on other platforms')
     # Get the user ID
     user_id = os.environ.get('USER') or os.environ.get('USERNAME')
 
-    puma_dir = pathlib.Path('/work/n02/n02-puma') / user_id  # puma2 root path on archer2.
+    puma_dir = pathlib.Path('/home/n02/n02-puma') / user_id/'rose_optclim'  # puma2 root path on archer2.
     def __init__(self, *args, **kwargs):
         """
         Init the UM_rose instance. Calls the super-class init method.
@@ -65,14 +74,21 @@ class UM_rose(Model):
            if kwargs contains suite_dir that value will be used to set suite_die
         """
         suite_dir = kwargs.pop("suite_dir",None)
+        model_data_dir=kwargs.pop('model_data_dir',None)
+        if model_data_dir is not None:
+            self.model_data_dir=pathlib.Path(model_data_dir)
+        else:
+            self.model_data_dir=None
         super().__init__(*args, **kwargs)  #
         # deal with suite_dir -- where suite info gets written. Different from model_dir which is where
         # models are ran. This different from other models so far.
 
         if suite_dir is None:
-            if self.model_dir is not None:
+            if self.name is not None:
                 # Work out suite_dir which is where suite info gets written.
-                suite_dir = self.puma_dir/f'{self.model_dir.parent.name}_{self.model_dir.name}_{os.getpid()}'
+                # suite dir name is name_PID -- should be unique enough..
+                # problem is that cylc uses a very flat space...
+                suite_dir = self.puma_dir/f'{self.name}_{os.getpid()}'
             else:
                 suite_dir = None
         else:
@@ -80,6 +96,8 @@ class UM_rose(Model):
 
         self.suite_dir = suite_dir #
         self.configs = GroupConfig(root_dir=self.suite_dir)  # grouped configs for writing out generic namelists
+
+
         # this overwrites the std one (which reads/writes from `self.model_dir) to use suite_dir
         # modify parameters_no_key to include runModelTime, runUser and runCode if set.
         # Those parameters do not contribute towards the unique key used to identify the model.
@@ -101,6 +119,15 @@ class UM_rose(Model):
         # set up var MODEL_DIRECT to point to the model dir.
         if self.model_dir is not None:
             self.parameters_no_key['MODEL_DIRECT'] =str(self.model_dir)
+            my_logger.debug(f"Set MODEL_DIRECT to {str(self.model_dir)}")
+        # set up MODEL_CONFIG to point to the configuration.
+        if self.config_path is not None:
+            self.parameters_no_key['MODEL_CONFIG'] =str(self.config_path)
+            my_logger.debug(f"Set MODEL_CONFIG to {str(self.config_path)}")
+
+        if self.run_info.get('prebuild'):
+            self.parameters_no_key['PREBUILD']=self.run_info.get('prebuild')
+        
 
         # switch off fixed scripts. Will change submit_cmd instead.
         self.submit_script = None
@@ -181,6 +208,7 @@ class UM_rose(Model):
         :return dict indexed by file path and number of changes made.
         """
         #TODO -- might need to replace other ROSE_DATA references. Suchk it and see!
+        raise NotImplementedErrror("Code no longer needed")
         match = r"(.*)\[file:\$ROSE_DATA/(.*?)\](.*)"
         replacement = r"\1[file:\2]\3"
 
@@ -226,15 +254,15 @@ class UM_rose(Model):
         self.copy_suite_apps() # copy the optclim specific apps to the suite dir.
         self.update_suite_rc() # update the suite.rc file
         # change file:$ROSE_DATA in all text files.
-        changed_files = self.change_rose_dir(self.suite_dir)
+        ##changed_files = self.change_rose_dir(self.suite_dir)
         # modify archer2.rc.
-        files = [pathlib.Path(self.suite_dir) / 'site/archer2.rc'] # list of files to modify.
-        with fileinput.input(files,inplace=True,backup='.bak') as f:
-            for line in f:
-                if re.match(r'^\s*--chdir\s*=\s*/work/n02/n02/{{ARCHER2_USERNAME}}\s*$', line):
-                    print('--chdir = {{MODEL_DIRECT}}', end='')
-                else:
-                    print(line, end='')
+        ##files = [pathlib.Path(self.suite_dir) / 'site/archer2.rc'] # list of files to modify.
+        ##with fileinput.input(files,inplace=True,backup='.bak') as f:
+        ##    for line in f:
+        ##        if re.match(r'^\s*--chdir\s*=\s*/work/n02/n02/{{ARCHER2_USERNAME}}\s*$', line):
+        ##            print('--chdir = {{MODEL_DIRECT}}')
+        ##        else:
+        ##            print(line, end='')
 
 
         # other things needed to do:
@@ -253,13 +281,28 @@ class UM_rose(Model):
 
     def update_suite_rc(self):
         """
-        Update the cylc/rose suite.rc to include OptClim tasks
-        and modify all suite files to remove file:$ROSE_DATA references.
+        Update the cylc/rose suite.rc to include OptClim tasks.
+        If use_scratch set then update rose_suite.conf to use scratch space.
         """
         suite_file = self.suite_dir / 'suite.rc'
         genericLib.backup_file(suite_file,ext='.bak',create='copy')  # make a backup of the suite.rc file.
         with suite_file.open('a') as suite_rc:
-            suite_rc.write('\n\n%include optclim.jinja.rc\n%include optclim.rc\n')
+            suite_rc.write('\n\n%include optclim.rc\n')
+
+        if self.run_info.get('use_scratch',False):
+            # can modify rose-suite.conf elsewhere so back this up with a different name.
+            with fileinput.input(self.suite_dir/'rose-suite.conf',inplace=True,backup='.bak_update') as f:
+                for line in f:
+                    if f.isfirstline(): # first line
+                        print('## Scratch space being used')
+                        print(r'root-dir{share}=ln*=/mnt/lustre/a2fs-nvme/work/n02/n02/$USER')
+                        print(r'root-dir{work}=ln*=/mnt/lustre/a2fs-nvme/work/n02/n02/$USER')
+                        
+                    print(line,end='')
+
+                # New lines first. Could be generalised but 
+            my_logger.debug('Using scratch space for share and work space')
+        
 
 
     def copy_suite_apps(self):
@@ -317,7 +360,67 @@ class UM_rose(Model):
             val = genericLib.seconds_to_isoduration(runTime)
         return [(nl,val)]
 
+    def running(self) -> typing.Optional[str]:
+        """
+        UM_model version of running. No jid possible for UM as slurm handling all of that.
+        Will try and set up model_data_dir if not set.
+    
+        """
+        self.set_status('RUNNING')
+        if self.model_data_dir is None:
+            base_dir = os.environ.get('ROSE_SUITE_DIR')
+            if base_dir is not None:
+                base_dir=pathlib.Path(base_dir)/os.environ['DATAM']
+                self.model_data_dir=base_dir
+                my_logger.debug(f'Set model_data_dir to {self.model_data_dir}')
+        
+        return 'NOJOBID'
+    def succeeded(self):
+        """
+        UM_ROSE specific version of succeeded. 
+         If ROSE_SUITE_DIR is defined then 
+             Copies pp, netcdf and last dump files  in Model_dir
+        then calls superclass suceeded. 
+        Copying as files might be on other file systems and hard links across 
+       file systems do not work.
+        """
+        file_patterns=['*.p*.pp','*.p*.nc']
+        suite_dir = os.environ.get('ROSE_SUITE_DIR')
+        if suite_dir is not None:
+            suite_dir = pathlib.Path(suite_dir)
+            hist_dir = suite_dir/'share/data/History_Data'
+            if not (hist_dir.exists() and hist_dir.is_dir()):
+                raise FileNotFoundError(f'hist_dir {hist_dir} does not exist or is not a dir')
+            my_logger.debug(f"ROSE_SUITE_DIR set and is {suite_dir}")
+            # iterate over patterns
+            for fpattern in file_patterns:
+                files_to_copy = list(hist_dir.glob(fpattern))
+                for file in files_to_copy:
+                    if file.is_file():
+                        new_file = self.model_dir/(file.name)
+                        my_logger.debug(f'Copying {file} to {new_file}')
+                        shutil.copy2(file,new_file)
+                    else:
+                        my_logger.debug(f'{file} is not a file. Not copying')
+            # now handle dumps. 
+            dump_files=[f for f in sorted(list(hist_dir.glob('*.d*_00'))) if f.is_file()]
+            # sorted list on files (not dirs or anything not a file
+            # UM file names do sort alphanumerically so last file is most recent..
+            # note if this method gets run more than once you will have more than dump file... 
+            if dump_files: # got any dump_files??
+                file = dump_files[-1]
+                new_file = self.model_dir/(file.name)
+                my_logger.debug(f'Copying{file} to  {new_file}')
+                shutil.copy2(file,new_file)
 
+        super().succeeded() # call the superclass method
+            
+            
+            
+                    
+                    
+        
+        
 
 pth = pathlib.Path(__file__).parent /'parameter_config/UM_rose_Parameters.csv'
 UM_rose.update_from_file(pth, duplicate=True)

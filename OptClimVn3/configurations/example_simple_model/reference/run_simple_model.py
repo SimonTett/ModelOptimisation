@@ -1,4 +1,4 @@
-#!/bin/env python
+#!/usr//bin/env python
 # test simple model code. Reads in config file and parameter set then generates fake fields of obs based on this.
 # The obs are set to go with a simple post-process script that just copies them. Submit with qsub.
 # The challenge is how to get information on where the StudyConfig file is.

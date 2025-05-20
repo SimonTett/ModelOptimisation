@@ -485,7 +485,10 @@ class Model(ModelBaseClass, journal):
             if copy_ref:
                 shutil.copytree(str(self.reference), str(direct), symlinks=True, dirs_exist_ok=True)  # copy from reference.
                 my_logger.info(f"Copied {self.reference} to {direct}")
-    def set_status(self, new_status: type_status, check_existing: bool = True) -> None:
+
+    def set_status(self, new_status: type_status,
+                   check_existing: bool = True,
+                   check_allowed: bool = True) -> None:
         """
         Set the status of Model.
         Checks that new status is allowed and consistent with current status
@@ -495,10 +498,12 @@ class Model(ModelBaseClass, journal):
         :param check_existing: Check current status is as expected.
         """
 
-        if new_status not in self.allowed_status:
-            raise ValueError(f"Status {new_status} should be one of " + " ".join(self.allowed_status))
-        if new_status == 'CREATED':
-            raise ValueError(f"Do not set status to CREATED")
+        if check_allowed: # only check
+            if new_status not in self.allowed_status:
+                raise ValueError(f"Status {new_status} should be one of " + " ".join(self.allowed_status))
+            if new_status == 'CREATED':
+                raise ValueError(f"Do not set status to CREATED")
+        
         expected_status = self.status_info[new_status]
         if check_existing and (self.status not in expected_status):
             raise ValueError(

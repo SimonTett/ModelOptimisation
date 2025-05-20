@@ -142,10 +142,7 @@ class Test_simple_model_pars_json(unittest.TestCase):
         model.set_status("SUBMITTED") # make state submittable.
         cmd = ["./"+str(model.submit_script),str(model.StudyConfig_path)]
         if platform.system() == 'Windows':
-            #cmd = [sys.executable,f'{model.submit_script}',f'{model.StudyConfig_path}']
             cmd.insert(0,sys.executable)
-        #else:
-            #cmd = ["./"+str(model.submit_script),str(model.StudyConfig_path)]
 
         # fake env so ID can be found.
         vars = ['JOB_ID','SLURM_JOB_ID']

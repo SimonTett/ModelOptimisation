@@ -1,10 +1,12 @@
 """
 Provide generic functions for job submission, job release_job, killing a job and extracting a jobid
 Provides implementations for SGE, SLURM & SLURM_SYSU (Slum as configured at sun yet-sen university, China).
- You might find your version of SGE or SLURM has subtle changes to extract the job-id. If so extend the relevant class and modify setup_engine.
+ You might find your version of SGE or SLURM has subtle changes to extract the job-id. If so extend the relevant class and modify setup_engine. Broadly this is for submitting small single core jobs.  
+It could work for running a model but it is likely that the model you want to run will already be setup on 
+your computer. 
 """
 
-from __future__ import annotations
+##from __future__ import annotations
 
 import logging
 import os
@@ -28,7 +30,7 @@ class abstractEngine(model_base, journal):
 
     @classmethod
     def create_engine(cls, engine_name: allowed_eng = 'SGE',
-                      ssh_node: typing.Optional[str] = None) -> abstractEngine:
+                      ssh_node: typing.Optional[str] = None) -> "abstractEngine":
         """
         Create an engine (used by submission system)
         :param engine_name: name of engine wanted.
@@ -38,16 +40,9 @@ class abstractEngine(model_base, journal):
         known_engines = dict(SGE=sge_engine, SLURM=slurm_engine,
                              SLURM_SYSU=slurm_sysu_engine )  # known engines
         return known_engines[engine_name](ssh_node=ssh_node)
-        # if engine_name == 'SGE':
-        #     return sge_engine(ssh_node=ssh_node)
-        # elif engine_name == 'SLURM':
-        #     return slurm_engine(ssh_node=ssh_node)
-        # elif engine_name == 'SLURM_SYSU':
-        #     return slurm_sysu_engine(ssh_node=ssh_node)
-        # else:
-        #     raise ValueError(f"Do not know what to do with engine_name = {engine_name}")
+
     @classmethod
-    def guess_engine(cls,ssh_node:typing.Optional[str] = None) -> typing.Optional[abstractEngine]:
+    def guess_engine(cls,ssh_node:typing.Optional[str] = None) -> typing.Optional["abstractEngine"]:
 
         # work out what engine we can use which is platform dependant...Use this be seeing if job_status works
         engine_name = None
@@ -117,6 +112,7 @@ class abstractEngine(model_base, journal):
                    outdir: typing.Optional[pathlib.Path] = None,
                    rundir: typing.Optional[pathlib.Path] = None,
                    run_code: typing.Optional[str] = None,
+                   run_queue: typing.Optional[str] = None,
                    hold: typing.List[str] | str | bool = False,
                    time: int = 1800,
                    mem: int = 4000,
@@ -134,6 +130,7 @@ class abstractEngine(model_base, journal):
         :param rundir: Directory where job will run.
            If None will run in current working dir when command is run.
         :param run_code: If provided, code to use to run the job.
+        :param run_queue: If provided, the queue to run the job. 
         :param hold: If provided as a string or list of strings,
         this (these) jobids will need to successfully run before cmd is ran.
           If provided as a bool then job will held if hold_jid is True.
@@ -200,11 +197,13 @@ class sge_engine(abstractEngine):
                    outdir: typing.Optional[pathlib.Path] = None,
                    rundir: typing.Optional[pathlib.Path] = None,
                    run_code: typing.Optional[str] = None,
+                   run_queue: typing.Optional[str] = None,
                    hold: typing.List[str] | str | bool = False,
                    time: int = 1800,
                    mem: int = 4000,
                    n_cores: int = 1,
-                   n_tasks: typing.Optional[int] = None
+                   n_tasks: typing.Optional[int] = None,
+                   extra_args: list = []
                    ):
         """
         Function to submit to SGE
@@ -215,11 +214,13 @@ class sge_engine(abstractEngine):
         :param outdir: Directory where output will be put. If None will be set to cwd/output.
         :param rundir: Directory where job will be ran. If None will run in current working dir when command is run.
         :param run_code: If provided, code to use to run the job
+        :param run_queue: If provided, queue to run the job in
         :param hold: If provided as a string or list of strings,
         this (these) jobids will need to successfully run before cmd is ran.
           If provided as a bool then job will held if hold_jid is True. If False no hold will be done
         :param n_cores: No of cores to use.
         :param n_tasks: If not None the size of the task array to be ran.
+        :param extra_args: List of extra args which are passed direct to qsub.
         :return: the command to be submitted.
         """
 
@@ -227,17 +228,19 @@ class sge_engine(abstractEngine):
             outdir = pathlib.Path.cwd() / 'output'
             my_logger.debug(f"Set outdir to {outdir}")
 
-        submit_cmd = ['qsub', '-l', f'h_vmem={mem}M', '-l', f'h_rt={time}',
-                      '-V',
-                      "-e", str(outdir) + "/", "-o", str(outdir) + "/",
-                      '-N', name]
-        # -l h_vmem={mem}M: Request mem Mbytes of virtual memory per job
-        # -l h_rt={time}: Request a maximum run time of time seconds per job
-        # -V: Pass the environment variables to the job
-        # -N name: name of job
+        submit_cmd = ['qsub',
+                      '-l', f'h_vmem={mem}M', # memory in MB
+                      '-l', f'h_rt={time}', # time in seconds
+                      '-V', # pass env vars in
+                      "-e", str(outdir) + "/", # outdir for stderr
+                      "-o", str(outdir) + "/", # outdir for stderr
+                      '-N', name # name of job
+                      ]
 
         if run_code is not None:
             submit_cmd += ['-A', run_code]
+        if run_queue is not None:
+            raise NotImplementedError("Implement run_queue for SGE engine")
 
         if rundir is None:
             submit_cmd += ['-cwd']  # run in current working dir
@@ -254,6 +257,8 @@ class sge_engine(abstractEngine):
             submit_cmd += ['-pe ', f'mpi {n_cores}']  # ask for mpi env.
         if n_tasks is not None:  # want to run a task array
             submit_cmd += ['-t', f'1:{n_tasks}']
+        if extra_args: # got some extra args
+            submit_cmd += extra_args
         submit_cmd += cmd
         submit_cmd = self.connect_fn(submit_cmd, rundir=rundir)
         return submit_cmd
@@ -337,6 +342,12 @@ class sge_engine(abstractEngine):
         return id
 
 
+## for ARCHER2 must  provide:
+# partition (queue) for example --partition=serial
+# qos indicator for example --qos=serial
+# account for example --account=n02-terrafirma
+
+
 class slurm_engine(abstractEngine):
     """
     Engine for SLURM
@@ -347,15 +358,18 @@ class slurm_engine(abstractEngine):
     _kill_cmd:str = 'scancel'
     _queue_cmd:str = 'squeue'
 
+    _submit_extra:list =  [] # any extra args to add to the submission.
     def submit_cmd(self, cmd: typing.List, name: str,
                    outdir: typing.Optional[pathlib.Path] = None,
                    rundir: typing.Optional[pathlib.Path] = None,
                    run_code: typing.Optional[str] = None,
+                   run_queue: typing.Optional[str] = None,
                    hold: typing.List[str] | str | bool = False,
                    time: int = 1800,
                    mem: int = 4000,
                    n_cores: int = 1,
-                   n_tasks: typing.Optional[int] = None):
+                   n_tasks: typing.Optional[int] = None,
+                   extra_args=[]):
         """
         Function to submit command to SLURM
 
@@ -363,7 +377,8 @@ class slurm_engine(abstractEngine):
         :param name: name of job
         :param outdir: Directory where output will be put. If None then will be cwd/output
         :param rundir: Directory where job will be ran. If None will run in current working dir when command ran.
-        :param run_code: If provided, code to use to run the job
+        :param run_code: If provided, code to use to run the job. 
+        :param run_queue: If provided, partion (queue)  to use to run the job. 
         :param hold: If provided as a string, this jobid will need to successfully run before cmd is ran.
           If a list (of jobid's) then all jobs will need to be run
           If provided as a bool then job will held if hold_jid is True. If False no hold will be done
@@ -371,22 +386,29 @@ class slurm_engine(abstractEngine):
         :param time: Time (in seconds) needed by job,
         :param n_cores: No of cores to be requested
         :param n_tasks: If not not None the number of array tasks to run.
+         all other 
+        :param extra_args: Extra args which should be interpreted by the submission cmd (normally sbatch)
         :return: the command to be submitted.
         """
         if outdir is None:
             outdir = pathlib.Path.cwd() / 'output'
             my_logger.debug(f"Set outdir to {outdir}")
         #TODO: Decide what to do about mem, mincpus, time. Perhaps have them as optional arguments and add them in...
-        submit_cmd = [self._submit_cmd,'-n',f'1', #f'--mem={mem}', f'--mincpus={n_cores}', f'--time={time}',
-                      '--output', f'{outdir}/%x_%A_%a.out', '--error', f'{outdir}/%x_%A_%a.err',
-                      '-J', name] #liangwj
-        # --mem={mem}: Request mem mbytes  of memory per job
-        # --mincpus={n_cores}: Request at least n_cores CPU per job
-        # --time={time}: Request a maximum run time of time  minutes per job
-        # -J name: Name of the job
+        submit_cmd = [self._submit_cmd,
+                      f'--mem={mem}', # memory in Mybtes
+                      f'--cpus-per-task={n_cores}', # cpus wanted per task.
+                      f'--time=0:00:{time}', # Time in seconds to run for
+                      '--output', f'{outdir}/%x_%A_%a.out', # where std out goes
+                      '--error', f'{outdir}/%x_%A_%a.err', # where std error goes
+                      '-J', name, # name of the job
+                      '--ntasks=1', # use 1 task. 
+                      ] #liangwj
+        # add on others.
         if run_code is not None:
             submit_cmd += ['-A', run_code]
-        if rundir is not None:  # by default Slrum runs in cwd.
+        if run_queue is not None:
+            submit_cmd += [f'--partition={run_queue}']
+        if rundir is not None:  # by default SLURM runs in cwd.
             submit_cmd += ['-D', str(rundir)]  # should be abs path.
         if isinstance(hold, bool) and hold:  # got a held and it is True. Just hold the job
             submit_cmd += ['-H']  # Hold it
@@ -397,6 +419,8 @@ class slurm_engine(abstractEngine):
             submit_cmd += [f"--dependency=afterok:" + ":".join(hold)]  #liangwj
         if n_tasks is not None:
             submit_cmd += ['-a', f'1-{n_tasks}']  # -a =  task array
+        if extra_args: # got some extra args add them in
+            submit_cmd += extra_args
         submit_cmd += cmd
 
         submit_cmd = self.connect_fn(submit_cmd, rundir=rundir)
@@ -404,7 +428,7 @@ class slurm_engine(abstractEngine):
 
     def release_job(self, jobid: str) -> typing.List:
         """
-        SLURM cmd to release_job a job
+        SLURM cmd to release a job
         :param jobid: The jobid of the job to be released
         :return: a list of things that can be ran!
         """
