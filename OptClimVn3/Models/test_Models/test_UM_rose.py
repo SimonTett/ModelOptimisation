@@ -115,7 +115,6 @@ class test_um_rose(unittest.TestCase):
         suite_files = list(model.model_dir.rglob('*'))
         required_files = [
             'optclim.rc',
-            'optclim.jinja.rc',
             'bin/optclim_task.sh',
         ]
         for filename in required_files:
@@ -124,15 +123,9 @@ class test_um_rose(unittest.TestCase):
         bak_files = set(model.suite_dir.rglob('*.bak'))
         # expect the following backup files
         expected_bak_files = set([model.suite_dir/(f+'.bak') for f in [
-            "app/install_ancil/opt/rose-app-aeroclim.conf", # contains ROSE_DATA
-            "app/install_ancil/opt/rose-app-aeroclim_chem.conf", # contains ROSE_DATA
-            "app/install_ancil/rose-app.conf",# contains ROSE_DATA
-            "app/install_cold/opt/rose-app-norecon.conf", # contains ROSE_DATA
-            "app/install_cold/rose-app.conf", # contains ROSE_DATA
             "app/um/rose-app.conf", # coz we change variables.
             "rose-suite.conf", # coz we modify variables in here too.
-            "suite.rc",# coz we change it by adding two include files.
-            "site/archer2.rc" # coz we change it by changing any --chdir=/work/n02/n02/{{ARCHER2_USERNAME}}
+            "suite.rc",# coz we change it by adding an include oprclim.rc
             ]])
         # check have what we expect.
         self.assertEqual(bak_files, expected_bak_files)
@@ -203,8 +196,8 @@ class test_um_rose(unittest.TestCase):
         self.assertTrue(backup.exists())
 
 
-    def test_change_rose_dir(self):
-        # Test change_rose_dir works
+    def notest_change_rose_dir(self):
+        # Test change_rose_dir works. No longer required. Code left for now.
         testdir = self.model.model_dir / 'testing'
         testdir.mkdir(parents=True, exist_ok=True)
         file1 = testdir / 'stuff.text'
@@ -230,6 +223,36 @@ and even more text
                     """)
         changed_files = self.model.change_rose_dir(testdir)
         self.assertEqual({file1:3},changed_files)
+
+    def test_check(self):
+        """
+        Test check method
+        :return:
+        """
+        # copy the ref dir into the suite_dir
+        shutil.copytree(self.refDir,self.model.suite_dir,dirs_exist_ok=True)
+        # test that check works.
+        ok=self.model.check()
+        self.assertTrue(ok)
+        # now modify parameters so that check should fail.
+        self.model.set_params(dict(RESUB_TIME='P1M1D'))
+        with self.assertRaises(ValueError) as cm:
+            self.model.check()
+        shutil.rmtree(self.model.suite_dir, onerror=genericLib.errorRemoveReadonly)
+
+        shutil.copytree(self.refDir, self.model.suite_dir, dirs_exist_ok=True)
+        self.model.set_params(dict(RESUB_TIME='P1M',RUN_TARGET='P1Y3M1D'))
+        with self.assertRaises(ValueError) as cm:
+            self.model.check()
+        shutil.rmtree(self.model.suite_dir, onerror=genericLib.errorRemoveReadonly)
+
+        shutil.copytree(self.refDir, self.model.suite_dir, dirs_exist_ok=True)
+        self.model.set_params(dict(RUN_TARGET='P1TY3M1D')) # malformed time
+        with self.assertRaises(ValueError) as cm:
+            self.model.check()
+
+
+
 
 
 

@@ -14,7 +14,12 @@ import tarfile
 import typing
 import shutil
 import platform
+
 import subprocess
+
+import metomi.isodatetime.exceptions
+import metomi.isodatetime.parsers as parse
+
 import genericLib
 
 from ModelBaseClass import register_param # Used to allow functions. Currently none defined.
@@ -208,7 +213,7 @@ class UM_rose(Model):
         :return dict indexed by file path and number of changes made.
         """
         #TODO -- might need to replace other ROSE_DATA references. Suchk it and see!
-        raise NotImplementedErrror("Code no longer needed")
+        raise NotImplementedError("Code no longer needed")
         match = r"(.*)\[file:\$ROSE_DATA/(.*?)\](.*)"
         replacement = r"\1[file:\2]\3"
 
@@ -326,6 +331,40 @@ class UM_rose(Model):
             tar.add(self.suite_dir, arcname=self.suite_dir.name)
         my_logger.debug(f'Created tar file {tar_file} from {self.suite_dir}')
 
+    def check(self) -> bool:
+
+        """
+        Check the model. This is a UM_rose specific version of check.
+        Calls the superclass method and then do the following checks:
+          1) Check that START_TIME, RUN_TARGET and RESUB_TIME are compatible. 
+             RUN_TARGET is an integer multiple of RESUB_TIME. Complication is if RESUB_TIME is in months...
+        Will raise ValueError if any of the checks fail.
+        :return: True if the model is valid, False otherwise.
+        """
+        if not super().check():
+            return False # failed so return False.
+        ## UM_rose specific checks.
+        # 1) Check that START_TIME, RUN_TARGET and RESUB_TIME are compatible.
+        # TODO -- have read method for UM_ROSE configs that handles iso times and durations
+        # By converting them to Time Points and Durations we are also checking that
+        # strings are valid.
+        try:
+            start_time = parse.TimePointParser().parse(self.read_param('START_TIME'))
+            run_target = parse.DurationParser().parse(self.read_param('RUN_TARGET'))
+            resub_time = parse.DurationParser().parse(self.read_param('RESUB_TIME'))
+        except metomi.isodatetime.exceptions.ISO8601SyntaxError as err: # catch any parsing errors.
+            raise ValueError(f'Problem parsing one of START_TIME, RUN_TARGET or RESUB_TIME. {err}')
+        # iterate from start_time  to start_time + run_target.
+        # Doing this because months are not the same (second) duration throughout the year...
+        end_time = start_time + run_target
+        time= start_time
+        while time < end_time:
+            time += resub_time
+        # Now time should be start_time + run_target
+        if time != end_time:
+            raise ValueError(f'RUN_TARGET {run_target} and RESUB_TIME {resub_time} are not compatible')
+
+        return True
 
     def submit_cmd(self) -> typing.List[str]:
         """"

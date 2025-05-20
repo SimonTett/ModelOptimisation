@@ -569,7 +569,8 @@ class UMroseNamelistConfig(BaseConfig):
         """
         filepath = self.filepath()
         try:
-            config = metomi.rose.config.load(str(filepath))
+            with filepath.open('rt') as fp:
+                config = metomi.rose.config.load(fp)
         except FileNotFoundError:
             if allow_missing:
                 my_logger.warning(f'File {filepath} does not exist. Making empty config')

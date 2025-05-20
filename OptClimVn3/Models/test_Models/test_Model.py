@@ -21,7 +21,7 @@ import engine
 import genericLib
 import generic_json
 from namelist_var import NamelistVar
-from myModel import myModel
+from test_Models.myModel import myModel # needed when testing in linux..
 
 genericLib.setup_env()
 
@@ -535,7 +535,7 @@ class ModelTestCase(unittest.TestCase):
         v = model.read_params('VF1')
         v['VF1'] *= (1 + 1e-7)  # small perturb
         model.perturb(v)
-        self.assertEqual(len(model._history), 5)
+        self.assertEqual(len(model._history), 6)  # should be 6 entries. # 6 history entries.
         # expect 5 bits of history. Created, Modified,Instantiated, perturbed using and setting status
         p = model.read_params('VF1')
         self.assertEqual(p, v)
@@ -647,8 +647,8 @@ class ModelTestCase(unittest.TestCase):
                 # need to run a bunch of tests here.
                 # having got to here should have simulated_obs be post_process['fake_obs']
                 pdtest.assert_series_equal(model.simulated_obs, pd.Series(post_process['fake_obs']).rename(model.name))
-                # should have 7 history entries.
-                self.assertEqual(len(model._history), 7)
+                # should have 8 history entries.
+                self.assertEqual(len(model._history), 8)
                 # four    outputs -- from  model submission, post_process submission, post-process release_job and
                 # running post-processing.
                 self.assertEqual(len(model._output), 4)
@@ -678,8 +678,8 @@ class ModelTestCase(unittest.TestCase):
                 with open(model.model_dir / model._post_process_output, 'w') as fp:
                     generic_json.dump(fake_obs, fp)
                 model.process()  # and do the post-processing
-                # should have 13 history entries.
-                self.assertEqual(len(model._history), 13)
+                # should have 14 history entries.
+                self.assertEqual(len(model._history), 14)
                 # five  outputs -- 1 model, one continue and one postprocess submission, one post-process release_job and running
                 # post-process script.
                 self.assertEqual(len(model._output), 5)
@@ -902,6 +902,17 @@ class ModelTestCase(unittest.TestCase):
             self.model.param('BAD',0.5)
 
         self.assertEqual(self.model.param('NONE',0.5),[])
+
+    def test_check(self):
+        # test check method works.
+
+        self.model.check()
+        self.assertEqual(len(self.model._history), 2) # create + check
+        # set up model.set_status_script to something wrong.
+        self.model.set_status_script=pathlib.Path('not_a_script.py')
+        with self.assertRaises(ValueError) as cm:
+            self.model.check()
+
 
 
 if __name__ == '__main__':
