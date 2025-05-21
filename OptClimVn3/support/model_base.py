@@ -238,15 +238,18 @@ class model_base:
 
         result = dict()
         right_pure_path_type = type(pathlib.PurePath())  # (will give Windows/Posix as appropriate)
-        for key, var in dct.items():
-            if isinstance(var, pathlib.PurePath):  # something path like
-                if cls._convert_path2pure and isinstance(var,pathlib.Path): # convert path to (local) purePath
-                    var = pathlib.PurePath(var) # purify path.
-                var = cls.translate_path(var)
+        for key, value in dct.items():
+            if isinstance(value, pathlib.PurePath):  # something path like
+                if cls._convert_path2pure and isinstance(value,pathlib.Path): # convert path to (local) purePath
+                    value = pathlib.PurePath(value) # purify path.
+                value = cls.translate_path(value)
+                if not pathlib.Path(value).exists():
+                    my_logger.warning(f"{value} does not exist. Keeping as purePath")
+                
                 # path is of correct type (after conversion) and exists -- make it a path!
-                if (type(var) == right_pure_path_type) and (pathlib.Path(var).exists()):
-                    var = pathlib.Path(var)
-            result[key] = var  # just store in in the result.
+                if (type(value) == right_pure_path_type) and (pathlib.Path(value).exists()):
+                    value = pathlib.Path(value)
+            result[key] = value  # just store in in the result.
         return result
 
     def fill_attrs(self, dct: dict, convert_pure_paths: bool = False):

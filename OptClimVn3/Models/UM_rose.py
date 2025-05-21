@@ -5,7 +5,14 @@
 # 1) It uses a suite_dir which is where the config info gets written. On archer2 ths should be in
 # /home/n02/n02-puma/<username>/
 # 2) Various changes to the suite are handled by setting variables in the suite.
-# 3) The functionality to supper OptClim requires two include files to be added to the suite.rc file.
+# 3) The functionality to suport OptClim requires an include files to be added to the suite.rc file.
+
+# TODO - figure out what to do if the model fails. Coz often might fix in
+#   cylc gui. But then model status won't get updated.
+# But point of continue option is to automatically fix and run...
+# So continue should run the right rose command. There is a restart option in the rose submit stuff.
+# perhaps add an option to manually fix the status??? But then user would need to do that manually anyhow as job will fail when it gets told to move to suceeded..  Or fix that with a warning..
+# Write tests for running and succeeded. 
 import fileinput
 import logging
 import os
@@ -135,6 +142,11 @@ class UM_rose(Model):
         
 
         # switch off fixed scripts. Will change submit_cmd instead.
+        # NO will stick to existing approach.
+        # Something like
+        # ssh -Y puma2 'export PATH=$PATH:/home/n02/n02/fcm/metomi/bin; rose suite-run  --new --no-gcontrol -v -v -C ~/rose_optclim/case002_47642'
+        # should work. But fails when tries to submit to archer2.
+        # probably need some help from helpdesk or mike.
         self.submit_script = None
         self.continue_script = None # probably don't need this for now. There if have an error.
         # I think ROSE handles that kind of stuff so just need to resubmit the config on puma.
@@ -258,31 +270,6 @@ class UM_rose(Model):
         # now do the specific stuff...
         self.copy_suite_apps() # copy the optclim specific apps to the suite dir.
         self.update_suite_rc() # update the suite.rc file
-        # change file:$ROSE_DATA in all text files.
-        ##changed_files = self.change_rose_dir(self.suite_dir)
-        # modify archer2.rc.
-        ##files = [pathlib.Path(self.suite_dir) / 'site/archer2.rc'] # list of files to modify.
-        ##with fileinput.input(files,inplace=True,backup='.bak') as f:
-        ##    for line in f:
-        ##        if re.match(r'^\s*--chdir\s*=\s*/work/n02/n02/{{ARCHER2_USERNAME}}\s*$', line):
-        ##            print('--chdir = {{MODEL_DIRECT}}')
-        ##        else:
-        ##            print(line, end='')
-
-
-        # other things needed to do:
-        # 1) Modify acher2,rc so that chdir goes to self.model_dir. in HPC.
-        # Best done by defining OPTCLIM_MODEL_DIR as a variable in  rose_suite.conf.
-        # Q can I overload this in the optclim jenga file that Dave de K wrote??? 
-        # 1a) Remove all ROSE_DATA references as chdir self.model_dir does it.
-        #  What about the multiple UM tasks that get run. Think they inherit.
-        # But will need to look at all conf files and replace file:$ROSE_DATA/ with file:
-        # 2) And in optclim.jinja.rc
-        # 3) Probably best to define ARCHER_WORK_DIR and use that
-        # 4) Wrote suite to separate dir NOT to work space which is where model stuff goes.
-        # 5) So add a suite_dir to UM_rose init. For now will be hardwired for archer2/puma2.
-        # 6) But want study name as will flatten it.  Will use last two bits of path to do that.
-        # 7) dir will get unique name from process id
 
     def update_suite_rc(self):
         """
@@ -401,39 +388,38 @@ class UM_rose(Model):
 
     def running(self) -> typing.Optional[str]:
         """
-        UM_model version of running. No jid possible for UM as slurm handling all of that.
+        UM_model version of running. No jid possible for UM as cylc handling all of that.
         Will try and set up model_data_dir if not set.
     
         """
-        self.set_status('RUNNING')
+        breakpoint()
         if self.model_data_dir is None:
-            base_dir = os.environ.get('ROSE_SUITE_DIR')
+            base_dir = os.environ.get('ROSE_DATA')
             if base_dir is not None:
                 base_dir=pathlib.Path(base_dir)/os.environ['DATAM']
                 self.model_data_dir=base_dir
                 my_logger.debug(f'Set model_data_dir to {self.model_data_dir}')
         
+        self.set_status('RUNNING') # update status and save to disk
+
         return 'NOJOBID'
     def succeeded(self):
         """
         UM_ROSE specific version of succeeded. 
-         If ROSE_SUITE_DIR is defined then 
-             Copies pp, netcdf and last dump files  in Model_dir
+         If self.model_data_dir is defined
+             Copies pp, netcdf and last dump files  in this dir to model_dir
         then calls superclass suceeded. 
         Copying as files might be on other file systems and hard links across 
        file systems do not work.
         """
         file_patterns=['*.p*.pp','*.p*.nc']
-        suite_dir = os.environ.get('ROSE_SUITE_DIR')
-        if suite_dir is not None:
-            suite_dir = pathlib.Path(suite_dir)
-            hist_dir = suite_dir/'share/data/History_Data'
-            if not (hist_dir.exists() and hist_dir.is_dir()):
-                raise FileNotFoundError(f'hist_dir {hist_dir} does not exist or is not a dir')
-            my_logger.debug(f"ROSE_SUITE_DIR set and is {suite_dir}")
+        if self.model_data_dir is not None:
+            if not (self.model_data_dir.exists() and self.model_data_dir.is_dir()):
+                raise FileNotFoundError(f'self.model_data_dir {self.model_data_dir} does not exist or is not a dir')
+            my_logger.debug(f"model_data_dir set and is {self.model_data_dir}")
             # iterate over patterns
             for fpattern in file_patterns:
-                files_to_copy = list(hist_dir.glob(fpattern))
+                files_to_copy = list(self.model_data_dir.glob(fpattern))
                 for file in files_to_copy:
                     if file.is_file():
                         new_file = self.model_dir/(file.name)
@@ -442,7 +428,7 @@ class UM_rose(Model):
                     else:
                         my_logger.debug(f'{file} is not a file. Not copying')
             # now handle dumps. 
-            dump_files=[f for f in sorted(list(hist_dir.glob('*.d*_00'))) if f.is_file()]
+            dump_files=[f for f in sorted(list(self.model_data_dir.glob('*.d*_00'))) if f.is_file()]
             # sorted list on files (not dirs or anything not a file
             # UM file names do sort alphanumerically so last file is most recent..
             # note if this method gets run more than once you will have more than dump file... 

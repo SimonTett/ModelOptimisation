@@ -47,7 +47,7 @@
         script = "optclim_task.sh -v -v {{MODEL_CONFIG}} SUCCEEDED"
 	[[[job]]]
 	  ## need more time for optclim_post as could be copying lots of files
-	  execution_time_limit = PT15M
+	  execution time limit = PT15M
     [[optclim_um_fail]]
         inherit = OPTCLIM_HPC
         script = "optclim_task.sh -v -v {{MODEL_CONFIG}} FAILED"
