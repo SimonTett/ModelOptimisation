@@ -2,17 +2,31 @@
 #This version is rather specialised for archer2.
 # If running on other platforms then will need to refactor/generalise this code.
 # It has some fairly large difference from Model
-# 1) It uses a suite_dir which is where the config info gets written. On archer2 ths should be in
-# /home/n02/n02-puma/<username>/
-# 2) Various changes to the suite are handled by setting variables in the suite.
-# 3) The functionality to suport OptClim requires an include files to be added to the suite.rc file.
+# 1) It uses suite_dir which is where the config info gets written. On archer2 ths should be in
+# /home/n02/n02-puma/<username>/ Default is /home/n02/n02-puma/<username>/rose_optclim/name_PID
+# 2) model_work_dir should be where the model actualy puts its data.
+#     if model_data_dir is not set then this is set to $ROSE_DATA/$DATAM in running() is ROSE_DATA is set in the env.
+# Data will copied from this directory to model_dir/'History_Data'  in succeeded().
+#
+# 3) optclim.rc to be added to the suite.rc file. which done by copying file and including it in suite.rc
+#
+# 4) Various new variables are added:
+#    - MODEL_CONFIG -- set to the config file. (Used in optclim.rc)
+#    - PREBUILD -- set to the prebuild file if present.
+#    - runEnvSetup -- set to the environment setup script. Default is $OPTCLIMTOP/OptClimVn3/setup_archer2
+#    - runUser -- set to the user name to run the suite as.
+#    - runCode -- set to the job code/account to run suite with.
+#    - runModelTime -- set to the time as iso duration for model to run for.
+#    - OPTCLIM_ARGS -- set to the arguments to pass to optclim scripts which get passed to set_status_script.
+
+
 
 # TODO - figure out what to do if the model fails. Coz often might fix in
 #   cylc gui. But then model status won't get updated.
 # But point of continue option is to automatically fix and run...
 # So continue should run the right rose command. There is a restart option in the rose submit stuff.
 # perhaps add an option to manually fix the status??? But then user would need to do that manually anyhow as job will fail when it gets told to move to suceeded..  Or fix that with a warning..
-# Write tests for running and succeeded. 
+
 import fileinput
 import logging
 import os
@@ -56,16 +70,15 @@ class UM_rose(Model):
         - runUser:str -- user name to run the suite as.
         - runCode:str -- job code/account to run suite with.
         - prebuild:str -- path to prebuild. Means much faster compilation
-        - use_scratch:bool -- If True then use scratch space for work and share. 
-                           Files here are deleted after 28 days, 
-         
 
+    - use_scratch:bool -- If True then use scratch space for work and share.
+                           Files here are deleted after 28 days,
+    - OPTCLIM_ARGS :str -- arguments to pass to optclim scripts which get passed to set_status_script. Default ''
     - runEnvSetup:str -- path to the environment setup script.
        If None (or not set) will be set to  $OPTCLIMTOP/OptClimVn3/setup_archer2
 
-    MODEL_DIRECT (a variable available to the suite) will be set to self.model_dir
-    MODEL_CONFIG will be set to self.cache_path
 
+    MODEL_CONFIG will be set to self.cache_path
 
     """
     suite_dir: typing.Optional[pathlib.Path] # path for suite dir.
@@ -109,37 +122,26 @@ class UM_rose(Model):
         self.suite_dir = suite_dir #
         self.configs = GroupConfig(root_dir=self.suite_dir)  # grouped configs for writing out generic namelists
 
-
-        # this overwrites the std one (which reads/writes from `self.model_dir) to use suite_dir
-        # modify parameters_no_key to include runModelTime, runUser and runCode if set.
+        # modify parameters_no_key to include runModelTime, runUser, runCode, OPTCLIM_ARGS, runEnvSetup if set.
         # Those parameters do not contribute towards the unique key used to identify the model.
         if self.run_info is not None: # need to test for None as reloading of config gives us None.
-            for key in ['runModelTime','runUser','runCode']:
+            for key in ['runModelTime','runUser','runCode','OPTCLIM_ARGS','runEnvSetup','prebuild']:
                 if self.run_info.get(key) is not None: # (Get None if either null in the original  json config or not present)
                     self.parameters_no_key[key] = self.run_info[key]
-            # Make python env available to optclim jobs and added to parameters_no_key
-            runEnvSetup = self.run_info.get('runEnvSetup',None)
-            if runEnvSetup is None:
-                runEnvSetup = '$OPTCLIMTOP/OptClimVn3/setup_archer2'
-            # expand any vars and ~
-            runEnvSetup=genericLib.expand(runEnvSetup)
-            # check it actually exists.
+            # Deal with runEnvSetup
+            runEnvSetup = genericLib.expand(self.parameters_no_key.get('runEnvSetup',
+                                                                       '$OPTCLIMTOP/OptClimVn3/setup_archer2'))
+            # check runEnvSetup actually exists.
             if not pathlib.Path(runEnvSetup).is_file():
                 raise ValueError(f'runEnvSetup {runEnvSetup} does not exist.')
-            self.parameters_no_key['runEnvSetup'] = str(runEnvSetup)
+            self.parameters_no_key['runEnvSetup'] = str(runEnvSetup) # need to convert to string.
+            # deal with OPTCLIM_ARGS
+            self.parameters_no_key['OPTCLIM_ARGS'] = self.parameters_no_key.get('OPTCLIM_ARGS','')
 
-        # set up var MODEL_DIRECT to point to the model dir.
-        if self.model_dir is not None:
-            self.parameters_no_key['MODEL_DIRECT'] =str(self.model_dir)
-            my_logger.debug(f"Set MODEL_DIRECT to {str(self.model_dir)}")
         # set up MODEL_CONFIG to point to the configuration.
         if self.config_path is not None:
             self.parameters_no_key['MODEL_CONFIG'] =str(self.config_path)
             my_logger.debug(f"Set MODEL_CONFIG to {str(self.config_path)}")
-
-        if self.run_info.get('prebuild'):
-            self.parameters_no_key['PREBUILD']=self.run_info.get('prebuild')
-        
 
         # switch off fixed scripts. Will change submit_cmd instead.
         # NO will stick to existing approach.
@@ -392,7 +394,7 @@ class UM_rose(Model):
         Will try and set up model_data_dir if not set.
     
         """
-        breakpoint()
+
         if self.model_data_dir is None:
             base_dir = os.environ.get('ROSE_DATA')
             if base_dir is not None:
@@ -403,42 +405,47 @@ class UM_rose(Model):
         self.set_status('RUNNING') # update status and save to disk
 
         return 'NOJOBID'
+
     def succeeded(self):
         """
         UM_ROSE specific version of succeeded. 
          If self.model_data_dir is defined
-             Copies pp, netcdf and last dump files  in this dir to model_dir
-        then calls superclass suceeded. 
-        Copying as files might be on other file systems and hard links across 
-       file systems do not work.
+             Copies pp, netcdf and last dump files  in this dir to model_dir/'History_Data'
+        then calls superclass succeeded.
+        Copying as files might be on other file systems and hard links across file systems do not work.
         """
-        file_patterns=['*.p*.pp','*.p*.nc']
-        if self.model_data_dir is not None:
-            if not (self.model_data_dir.exists() and self.model_data_dir.is_dir()):
-                raise FileNotFoundError(f'self.model_data_dir {self.model_data_dir} does not exist or is not a dir')
-            my_logger.debug(f"model_data_dir set and is {self.model_data_dir}")
-            # iterate over patterns
-            for fpattern in file_patterns:
-                files_to_copy = list(self.model_data_dir.glob(fpattern))
-                for file in files_to_copy:
-                    if file.is_file():
-                        new_file = self.model_dir/(file.name)
-                        my_logger.debug(f'Copying {file} to {new_file}')
-                        shutil.copy2(file,new_file)
-                    else:
-                        my_logger.debug(f'{file} is not a file. Not copying')
-            # now handle dumps. 
-            dump_files=[f for f in sorted(list(self.model_data_dir.glob('*.d*_00'))) if f.is_file()]
-            # sorted list on files (not dirs or anything not a file
-            # UM file names do sort alphanumerically so last file is most recent..
-            # note if this method gets run more than once you will have more than dump file... 
-            if dump_files: # got any dump_files??
-                file = dump_files[-1]
-                new_file = self.model_dir/(file.name)
-                my_logger.debug(f'Copying{file} to  {new_file}')
-                shutil.copy2(file,new_file)
 
-        super().succeeded() # call the superclass method
+        data_dir = self.model_dir/'History_Data' # where model data will be copied too
+        if self.model_data_dir is None: # not set trigger an error
+            raise ValueError('model_data_dir not set. Something probably went wrong in running() method')
+
+        if not (self.model_data_dir.exists() and self.model_data_dir.is_dir()):
+            raise FileNotFoundError(f'self.model_data_dir {self.model_data_dir} does not exist or is not a dir')
+        my_logger.debug(f"model_data_dir set and is {self.model_data_dir}")
+        # create data dir if it does not exist.
+        data_dir.mkdir(parents=True, exist_ok=True)
+
+        # ready to go now.
+        file_patterns=['*.pp','*.nc'] # file patterns to copy.
+        # iterate over patterns to find list of files to copy.
+        files_to_copy= []
+        for fpattern in file_patterns:
+            files = [file for file in self.model_data_dir.glob(fpattern) if file.is_file()]
+            files_to_copy += files
+        # deal with dumps
+        # UM file names do sort alphanumerically so last file is most recent..
+        # note if this method gets run more than once you will have more than dump file...
+        dump_files=[f for f in self.model_data_dir.glob('*.d*_00') if f.is_file()]
+        files_to_copy.append(dump_files[-1]) # last dump file.
+
+       # now copy the files to the data_dir.
+        for file in files_to_copy:
+            new_file = data_dir/file.name
+            my_logger.debug(f'Copying {file} to {new_file}')
+            shutil.copy2(file,new_file)
+
+        super().succeeded() # call the superclass method.
+        # Must occur after copying files otherwise data may not be accessible for the post-processing job.
             
             
             

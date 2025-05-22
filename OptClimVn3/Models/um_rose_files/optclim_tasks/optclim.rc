@@ -19,18 +19,17 @@
     [[OPTCLIM_HPC]]
         [[[directives]]]
 	        --ntasks=1
-                --export=none
+            --export=none
 	        --partition=serial
 	        --qos=serial
-                --account={{ARCHER2_GROUP}}
+            --account={{ARCHER2_GROUP}}
         [[[job]]]
             batch system = slurm
             execution time limit = PT5M
         [[[environment]]]
             ROSE_TASK_N_JOBS = 1
             PY_ENV_SETUP = {{PY_ENV_SETUP}}
-	    MODEL_DIRECT = {{MODEL_DIRECT}}
-	    DATAM = {{DATAM}}
+	        DATAM = {{DATAM}}
         [[[remote]]]
             host = $(rose host-select archer2)
 {% if HPC_USER is defined %}
@@ -41,16 +40,16 @@
 [runtime]
     [[optclim_pre]]
         inherit = OPTCLIM_HPC
-        script = "optclim_task.sh -v -v {{MODEL_CONFIG}} RUNNING"
+        script = "optclim_task.sh {{OPTCLIM_ARGS}} {{MODEL_CONFIG}} RUNNING"
     [[optclim_post]]
         inherit = OPTCLIM_HPC
-        script = "optclim_task.sh -v -v {{MODEL_CONFIG}} SUCCEEDED"
-	[[[job]]]
-	  ## need more time for optclim_post as could be copying lots of files
-	  execution time limit = PT15M
+        script = "optclim_task.sh {{OPTCLIM_ARGS}} {{MODEL_CONFIG}} SUCCEEDED"
+        [[[job]]]
+          ## need more time for optclim_post as could be copying lots of files
+          execution time limit = PT15M
     [[optclim_um_fail]]
         inherit = OPTCLIM_HPC
-        script = "optclim_task.sh -v -v {{MODEL_CONFIG}} FAILED"
+        script = "optclim_task.sh {{OPTCLIM_ARGS}} {{MODEL_CONFIG}} FAILED"
 
 [visualization]
     [[node attributes]]

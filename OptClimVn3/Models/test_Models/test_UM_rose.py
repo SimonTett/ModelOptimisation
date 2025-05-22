@@ -97,8 +97,7 @@ class test_um_rose(unittest.TestCase):
 
         params_got = self.model.read_params(list(p))
         self.assertEqual(params_got,self.parameters)
-        # check that MODEL_DIRECT is set correctly.
-        self.assertEqual(str(self.model.model_dir),self.model.read_param('MODEL_DIRECT'))
+
 
         self.assertEqual(self.model.status,'INSTANTIATED')
         model = self.model.load_model(self.model.config_path)
@@ -254,15 +253,65 @@ and even more text
 
 
 
-    def test_running():
+    def test_running(self):
         # test for UM_rose running version.
+        # Does the following tests:
+        # 1) Test that model_data_dir is set to the correct directory based on the environment variable ROSE_DATA and DATAM
+        # 2) Test that model_data_dir is unmodified if not None
+        # 3) Test that model_data_dir is not changed if ROSE_DATA is not in the environment
+
         # set up environment
+        model = self.model
+        model.instantiate()
+        model.set_status('SUBMITTED')
         os.environ['ROSE_DATA'] = str(self.model.model_dir/'data')
         os.environ['DATAM']='History_Data'
         model_data_dir=pathlib.Path(os.environ['ROSE_DATA'])/os.environ['DATAM']
-        model_data_dir.mkdir(exist_ok=True,make_parents=True)
-        model.set_status('RUNNING') # shoudl fail..
+        model_data_dir.mkdir(exist_ok=True,parents=True) # create the directory if it doesn't exist.
+        model.running() #
         self.assertEqual(model_data_dir,model.model_data_dir)
+        # set model.model_data_dir to model_dir. Should not be modified,
+        model.model_data_dir = model.model_dir
+        model.set_status('SUBMITTED',check_existing=False)
+        model.running()
+        # check that model_data_dir is set to model_dir
+        self.assertEqual(self.model.model_data_dir,self.model.model_dir)
+        # remove ROSE_DATA from the environment and set self.model.model_data_dir to None
+        del os.environ['ROSE_DATA']
+        model.model_data_dir = None
+        # test that running works.
+        model.set_status('SUBMITTED',check_existing=False)
+        model.running()
+        self.assertIsNone(self.model.model_data_dir) # model_data_dir should be None
+
+    def test_succeeded(self):
+        # test that succeeded works.
+        # Will check that files are successfully copied from model_data_dir to model_dir/History_Data
+        model = self.model
+        model.model_data_dir = self.model.model_dir/'test_data'
+        model.model_data_dir.mkdir(exist_ok=True,parents=True) # create the directory if it doesn't exist.
+        model.set_status('RUNNING',check_existing=False)
+        files = ['file1.pp', 'file2.pp','file1.nc','file2.nc']
+        dumps = ['file.d1_00','file.d2_00','file.d3_00']
+        expected = files + dumps[-1:]
+        # create the files in the model_data_dir
+        for file in files+dumps:
+            with open(model.model_data_dir / file, 'wt') as f:
+                f.write(f'test file {file}')
+
+        model.succeeded()
+        # check that the files are copied to model_dir/'History_Data'
+        got_files = list((model.model_dir/'History_Data').glob('*'))
+        got_files = set([f.name for f in got_files])
+        self.assertEqual(got_files, set(expected))
+
+
+
+        pass
+
+
+
+
         
 
 

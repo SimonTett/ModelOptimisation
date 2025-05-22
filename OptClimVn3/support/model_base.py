@@ -25,14 +25,14 @@ class journal:
         Times are such a pain!
         :return: utcnow datetime.datetime
         """
-        return datetime.datetime.utcnow()
+        return datetime.datetime.now(datetime.timezone.utc)
 
     def update_history(self, message: typing.Optional[str]):
         """
         Update the _history directory. Key will be self.now()
         If self._history does not exist, then it will be created.
         Routine updates existing values so that multiple updates in a short time will preserve _history.
-        Short time defined as less than precision of str(now))
+        Short time defined as less than precision of str(now)
         :param message:message text to be stored.
         If message is None then  self._history will be created and the control returns
         :return:
@@ -48,6 +48,8 @@ class journal:
         h += [message]  # add on the message
         self._history[dtkey] = h  # store it back again.
         my_logger.debug(f"Updated history at {dtkey} ")
+        # TODO consider having a separate entry for the time and storing history as a list of named tuples
+        # so then _history would be a list of named tuples with time and message.
 
     def last_history_key(self) -> typing.Optional[str]:
         """
@@ -113,7 +115,7 @@ class journal:
         """
         Run a command using subprocess.check_output and record output.
         :param cmd: command to run. Any shell variables ($VARNAME) in the cmd will be expanded at the time of running.
-        :**kwargs -- kwargs to be passed to subprocess.check_output. Will update defaults which is just text=True and stderr=subprocess.DEVNULL 
+        **kwargs -- kwargs to be passed to subprocess.check_output. Will update defaults which is just text=True and stderr=subprocess.DEVNULL
         :return: output from running command
         """
         args = dict(text=True, stderr=subprocess.DEVNULL)  #
@@ -147,11 +149,6 @@ class journal:
         return output
 
 
-def to_path(self) -> pathlib.Path:
-    """
-    Convert flexi_path to path
-    :return: if possible a path representation of path.
-    """
 
 
 class model_base:

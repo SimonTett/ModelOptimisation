@@ -906,6 +906,7 @@ class ModelTestCase(unittest.TestCase):
     def test_check(self):
         # test check method works.
 
+        time.sleep(0.001)   # sleep for a millisecond so that get two history entries. (and not on at the same time)
         self.model.check()
         self.assertEqual(len(self.model._history), 2) # create + check
         # set up model.set_status_script to something wrong.
