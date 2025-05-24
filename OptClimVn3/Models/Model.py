@@ -281,7 +281,8 @@ class Model(ModelBaseClass, journal):
         self.model_jids = []  # list of all model job ids running came across.
         self.pp_jid = None  # post-processing job id
         self.submitted_jid = None  # job id of last submitted model submitted.
-        # setup submit and continue script
+        # setup submit and continue script. Create them as pure paths (here) as we do not expect
+        # to actually create this class of Model for real use.
         self.submit_script = pathlib.PurePath("submit.sh")
         self.continue_script = pathlib.PurePath("continue.sh")
         # setup path to where script that sets status is.
@@ -555,13 +556,17 @@ class Model(ModelBaseClass, journal):
     def check(self) -> bool:
         """
         Check the model is ok. You should call this and then do your own stuff in your class method
-        This method checks that set_status_script exists and raises an error if not.
+        This method checks:
+           set_status_script, submit_script and continue_script is a file
+
         Will raise ValueError if the model is not ok.
         :return: True if model is ok.
         """
         self.update_history("Checking model")
-        if (not self.fake) and (not self.set_status_script.exists()):
-            raise ValueError(f"Need {self.set_status_script} does not exists")
+        if not self.fake:
+            if not self.set_status_script.is_file():
+                raise ValueError(f"Need {self.set_status_script} is not a file")
+
 
         return True
 
@@ -652,7 +657,7 @@ class Model(ModelBaseClass, journal):
         self.submission_count += 1  # increase time.
         self.set_status(status)
 
-        return pp_jid  # return the submission  jid
+        return pp_jid  # return the submission  post processing jid
 
     def submit_cmd(self) -> typing.List[str]:
         """"

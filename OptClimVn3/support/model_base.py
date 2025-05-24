@@ -129,7 +129,7 @@ class journal:
             my_logger.debug(f"Running {' '.join(cmd_to_run)}")
             output = subprocess.check_output(cmd_to_run, **args)  # run cmd
         except subprocess.CalledProcessError as e:
-            str=f"""cmd_report failed.
+            str=f"""{cmd_report} failed.
             STDOUT 
             {e.output}
             {"=" * 60}

@@ -223,13 +223,30 @@ and even more text
         changed_files = self.model.change_rose_dir(testdir)
         self.assertEqual({file1:3},changed_files)
 
+    def reinit(self):
+        """
+        Utility method to Reinitialise the model by copying the reference directory to the suite_dir
+        and adding the submit and continue scripts.
+        :return:
+        """
+        shutil.rmtree(self.model.suite_dir, onerror=genericLib.errorRemoveReadonly)
+        shutil.copytree(self.refDir,self.model.suite_dir,dirs_exist_ok=True)
+        # create the submit and continue scripts
+        for file in [self.model.submit_script, self.model.continue_script]:
+
+            with file.open('wt') as f:
+                f.write('A script')
+
     def test_check(self):
         """
         Test check method
         :return:
         """
-        # copy the ref dir into the suite_dir
-        shutil.copytree(self.refDir,self.model.suite_dir,dirs_exist_ok=True)
+
+
+        self.reinit()
+
+
         # test that check works.
         ok=self.model.check()
         self.assertTrue(ok)
@@ -237,18 +254,21 @@ and even more text
         self.model.set_params(dict(RESUB_TIME='P1M1D'))
         with self.assertRaises(ValueError) as cm:
             self.model.check()
-        shutil.rmtree(self.model.suite_dir, onerror=genericLib.errorRemoveReadonly)
-
-        shutil.copytree(self.refDir, self.model.suite_dir, dirs_exist_ok=True)
+        self.reinit()
         self.model.set_params(dict(RESUB_TIME='P1M',RUN_TARGET='P1Y3M1D'))
         with self.assertRaises(ValueError) as cm:
             self.model.check()
-        shutil.rmtree(self.model.suite_dir, onerror=genericLib.errorRemoveReadonly)
-
-        shutil.copytree(self.refDir, self.model.suite_dir, dirs_exist_ok=True)
+        self.reinit()
         self.model.set_params(dict(RUN_TARGET='P1TY3M1D')) # malformed time
         with self.assertRaises(ValueError) as cm:
             self.model.check()
+
+        self.reinit()
+        self.model.set_params(dict(RUN_TARGET='P1Y3M'))  # Ok time!
+        self.model.submit_script.unlink() # remove the submit script
+        with self.assertRaises(FileNotFoundError) as cm:
+            self.model.check()
+
 
 
 
@@ -300,8 +320,8 @@ and even more text
                 f.write(f'test file {file}')
 
         model.succeeded()
-        # check that the files are copied to model_dir/'History_Data'
-        got_files = list((model.model_dir/'History_Data').glob('*'))
+        # check that the files are copied to model_dir/'share/data/History_Data'
+        got_files = list((model.model_dir/'share/data/History_Data').glob('*'))
         got_files = set([f.name for f in got_files])
         self.assertEqual(got_files, set(expected))
 

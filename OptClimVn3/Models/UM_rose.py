@@ -1,31 +1,11 @@
 # Class to support Unified Model running in Rose.
 #This version is rather specialised for archer2.
 # If running on other platforms then will need to refactor/generalise this code.
-# It has some fairly large difference from Model
-# 1) It uses suite_dir which is where the config info gets written. On archer2 ths should be in
-# /home/n02/n02-puma/<username>/ Default is /home/n02/n02-puma/<username>/rose_optclim/name_PID
-# 2) model_work_dir should be where the model actualy puts its data.
-#     if model_data_dir is not set then this is set to $ROSE_DATA/$DATAM in running() is ROSE_DATA is set in the env.
-# Data will copied from this directory to model_dir/'History_Data'  in succeeded().
-#
-# 3) optclim.rc to be added to the suite.rc file. which done by copying file and including it in suite.rc
-#
-# 4) Various new variables are added:
-#    - MODEL_CONFIG -- set to the config file. (Used in optclim.rc)
-#    - PREBUILD -- set to the prebuild file if present.
-#    - runEnvSetup -- set to the environment setup script. Default is $OPTCLIMTOP/OptClimVn3/setup_archer2
-#    - runUser -- set to the user name to run the suite as.
-#    - runCode -- set to the job code/account to run suite with.
-#    - runModelTime -- set to the time as iso duration for model to run for.
-#    - OPTCLIM_ARGS -- set to the arguments to pass to optclim scripts which get passed to set_status_script.
-
-
+# It has some fairly large difference from Model. See class doc
 
 # TODO - figure out what to do if the model fails. Coz often might fix in
 #   cylc gui. But then model status won't get updated.
 # But point of continue option is to automatically fix and run...
-# So continue should run the right rose command. There is a restart option in the rose submit stuff.
-# perhaps add an option to manually fix the status??? But then user would need to do that manually anyhow as job will fail when it gets told to move to suceeded..  Or fix that with a warning..
 
 import fileinput
 import logging
@@ -34,16 +14,12 @@ import re
 import tarfile
 import typing
 import shutil
-import platform
-
 import subprocess
-
 import metomi.isodatetime.exceptions
 import metomi.isodatetime.parsers as parse
-
 import genericLib
 
-from ModelBaseClass import register_param # Used to allow functions. Currently none defined.
+from ModelBaseClass import register_param #
 from Model import Model
 import pathlib
 from namelist_var import NamelistVar, GroupConfig
@@ -54,49 +30,58 @@ my_logger = logging.getLogger(f"OPTCLIM.{__name__}") # have this anywhere you wa
 class UM_rose(Model):
     """
     Class to support the Unified model running in ROSE.
-    The Complication is that this the UM uses cylc which requires submitting a jon to puma2.
+    The complication is that this the UM uses cylc which requires submitting a jon to puma2.
     This version is rather specialised for archer2. If want to run on another platform then
-    will need to refactor/generalise this code.
+    will need to refactor/generalise this code. Main changes come from including optclim.rc in suite.rc
 
     This class adds suite_dir to the class attributes. This is where the suite info gets written.
     If not set then will be generated from the name and process id as:
     self.puma_dir/f'{self.name}_{os.getpid()}
     Class also adds model_data_dir to the object attributes. This is where data should be written by model.
-      If None then when running() ran self.model_dir will be set to $ROSE_SUITE_DIR/$DATAM
+      If None then when running() ran self.model_dir will be set to $ROSE_DATA/$DATAM if $ROSE_DATA defined
+      Data is copied from this directory (if not None) to model_dir/'share/data/History_Data'  in succeeded().
 
-    The initialisation uses the following values from run_info. :
+    Initialisation uses the following values from run_info which become variables -- see UM_rose_Parameters.csv. :
     For the following variables values of None mean the suite is not modified.
         - runModelTime:str -- time as iso duration for model to run for.
-        - runUser:str -- user name to run the suite as.
+        - runUser:str -- username to run the suite as.
         - runCode:str -- job code/account to run suite with.
         - prebuild:str -- path to prebuild. Means much faster compilation
 
     - use_scratch:bool -- If True then use scratch space for work and share.
                            Files here are deleted after 28 days,
     - OPTCLIM_ARGS :str -- arguments to pass to optclim scripts which get passed to set_status_script. Default ''
+    - OPTCLIM_SET_STATUS_SCRIPT -- path to script which sets the status. (Uses self.set_status_script)
     - runEnvSetup:str -- path to the environment setup script.
        If None (or not set) will be set to  $OPTCLIMTOP/OptClimVn3/setup_archer2
-
-
-    MODEL_CONFIG will be set to self.cache_path
+    - MODEL_CONFIG will be set to self.cache_path
 
     """
+    # additional attributes to the model class.
     suite_dir: typing.Optional[pathlib.Path] # path for suite dir.
     model_data_dir: typing.Optional[pathlib.Path] # path for model_data_dir.
+
     # test if we are on Archer by calling hostname -A and that stdout contains archer2.ac.uk
     stat = subprocess.run(['hostname','-A'],capture_output=True,text=True)
     if not ((stat.returncode == 0) and 'archer2.ac.uk' in stat.stdout):
         my_logger.warning('Not running on archer2. This code will need re-writing to work on other platforms')
+        # probably overkill. Only for instantiate
     # Get the user ID
     user_id = os.environ.get('USER') or os.environ.get('USERNAME')
-
-    puma_dir = pathlib.Path('/home/n02/n02-puma') / user_id/'rose_optclim'  # puma2 root path on archer2.
+    base_path = f'{user_id}/rose_optclim' # which gives us path where files are stored.
+    puma_dir = pathlib.Path('/home/n02/n02-puma') /base_path  # puma2 root path on archer2.
     def __init__(self, *args, **kwargs):
         """
         Init the UM_rose instance. Calls the super-class init method.
         :param args: positional args. Passed through to super-class
         :param kwargs: kwargs -- passed through to super-class.
-           if kwargs contains suite_dir that value will be used to set suite_die
+           if kwargs contains suite_dir that value will be used to set suite_dir.
+           If suite_dir is not None then the configurations will point to that directory
+           if kwargs contains model_data_dir that will be used to set model_data_dir
+       Sets up the following no_key variables:
+       runModelTime, runUser, runCode,OPTCLIM_ARGS,runEnvSetup,prebuild from run_info
+       Sets up MODEL_CONFIG and OPTCLIM_SET_STATUS_SCRIPT
+       and sets submit and continue scripts to be in suite_dir.
         """
         suite_dir = kwargs.pop("suite_dir",None)
         model_data_dir=kwargs.pop('model_data_dir',None)
@@ -104,18 +89,17 @@ class UM_rose(Model):
             self.model_data_dir=pathlib.Path(model_data_dir)
         else:
             self.model_data_dir=None
-        super().__init__(*args, **kwargs)  #
+        super().__init__(*args, **kwargs)  # call the super-class init method.
+
         # deal with suite_dir -- where suite info gets written. Different from model_dir which is where
         # models are ran. This different from other models so far.
-
         if suite_dir is None:
             if self.name is not None:
                 # Work out suite_dir which is where suite info gets written.
                 # suite dir name is name_PID -- should be unique enough..
                 # problem is that cylc uses a very flat space...
                 suite_dir = self.puma_dir/f'{self.name}_{os.getpid()}'
-            else:
-                suite_dir = None
+
         else:
             suite_dir = pathlib.Path(suite_dir)
 
@@ -135,26 +119,21 @@ class UM_rose(Model):
             if not pathlib.Path(runEnvSetup).is_file():
                 raise ValueError(f'runEnvSetup {runEnvSetup} does not exist.')
             self.parameters_no_key['runEnvSetup'] = str(runEnvSetup) # need to convert to string.
-            # deal with OPTCLIM_ARGS
+            # deal with OPTCLIM_ARGS -- giving it a default value of ''
             self.parameters_no_key['OPTCLIM_ARGS'] = self.parameters_no_key.get('OPTCLIM_ARGS','')
 
         # set up MODEL_CONFIG to point to the configuration.
         if self.config_path is not None:
             self.parameters_no_key['MODEL_CONFIG'] =str(self.config_path)
             my_logger.debug(f"Set MODEL_CONFIG to {str(self.config_path)}")
+        # set up OPTCLIM_SET_STATUS_SCRIPT
+        if self.set_status_script is not None:
+            self.parameters_no_key['OPTCLIM_SET_STATUS_SCRIPT'] = str(self.set_status_script)
 
-        # switch off fixed scripts. Will change submit_cmd instead.
-        # NO will stick to existing approach.
-        # Something like
-        # ssh -Y puma2 'export PATH=$PATH:/home/n02/n02/fcm/metomi/bin; rose suite-run  --new --no-gcontrol -v -v -C ~/rose_optclim/case002_47642'
-        # should work. But fails when tries to submit to archer2.
-        # probably need some help from helpdesk or mike.
-        self.submit_script = None
-        self.continue_script = None # probably don't need this for now. There if have an error.
-        # I think ROSE handles that kind of stuff so just need to resubmit the config on puma.
-        # Alternatively (if easier) modify the super class submit method
-
-
+       # set up submit and continue script. These need to be on puma2 so putting them in the suite_dir
+        if suite_dir is not None:
+            self.submit_script = self.suite_dir/'submit_script.sh' # script to run on puma2 to submit the job.
+            self.continue_script = self.suite_dir/'continue_script.sh' # probably don't need this for now. There if have an error.
 
 
     def create_model(self,
@@ -165,13 +144,12 @@ class UM_rose(Model):
         Create the model. This is a rose specific version of create model. It will copy the reference config
          to **self.suite_dir** and create model_dir using super().create_model.
         :param direct: directory to create the model in.
-          Provided for compatibility with other models but if not None an error will be raised.
+
         :param copy_ref: If True then copy the reference directory to the suite_dir.
         :return:nothing.
         """
-        if direct is not None:
-            raise ValueError(f'direct = {direct} is not None in UM_rose specific version of create_model')
-        super().create_model(copy_ref=False) # create model dir
+
+        super().create_model(direct,copy_ref=False) # create model dir
         super().create_model(direct=self.suite_dir,copy_ref=copy_ref) # create the suite
 
 
@@ -249,6 +227,35 @@ class UM_rose(Model):
         my_logger.debug(f'Changed {modified_files}')
         return modified_files
 
+
+    def _create_script(self,script: pathlib.Path,
+                       script_type: typing.Literal['submit', 'continue'] = 'continue',
+                       args: typing.Optional[str] = None) -> None:
+        """
+        Create a script to run on puma2.
+        :param script: path to the script to create.
+        :param script_type: type of script. 'submit' or 'continue'.
+        :param args: any arguments to pass to the script.
+        :return: nothing.
+        """
+        # might need to create directory
+        script.parent.mkdir(parents=True, exist_ok=True)
+        script.unlink(missing_ok=True)  # unlink it if it exists.
+        with script.open('wt') as f:
+            f.write('#!/bin/bash --login\n')
+            cmd = ['rose', 'suite-run']
+            if script_type == 'submit':
+                cmd.append('--new')
+            elif script_type == 'continue':
+                cmd.append('--restart ')
+            else:
+                raise ValueError(f'Unknown script_type {script_type}')
+            cmd.append('--no-gcontrol')
+            if args:
+                cmd.append(args)
+            cmd.append(f'-C {self._puma_path(self.suite_dir)}')  # path to the suite dir.
+            f.write(' '.join(cmd) + '\n')
+
     def modify_model(self):
         """
         UM rose specific version of modify model,
@@ -272,6 +279,14 @@ class UM_rose(Model):
         # now do the specific stuff...
         self.copy_suite_apps() # copy the optclim specific apps to the suite dir.
         self.update_suite_rc() # update the suite.rc file
+        # generate the two script files.
+        # need to generate submit_cmd and continue_cmd
+        # done here as super class instantiate cleans directory before doing anything else and then checks.
+        # so need to call this in modify_model
+        args = self.parameters_no_key.get('OPTCLIM_ARGS')
+        self._create_script(self.submit_script,script_type='submit',args=args)
+        self._create_script(self.continue_script,script_type='continue',args=args)
+
 
     def update_suite_rc(self):
         """
@@ -293,11 +308,7 @@ class UM_rose(Model):
                         print(r'root-dir{work}=ln*=/mnt/lustre/a2fs-nvme/work/n02/n02/$USER')
                         
                     print(line,end='')
-
-                # New lines first. Could be generalised but 
             my_logger.debug('Using scratch space for share and work space')
-        
-
 
     def copy_suite_apps(self):
         """Copy OptClim specific apps from the reference directory to the model directory"""
@@ -307,19 +318,27 @@ class UM_rose(Model):
     def instantiate(self,fake:bool = False) -> None:
         """
         Instantiate the model. This is a UM_rose specific version of instantiate.
-        It will call the superclass method and then tar/gzip the suite_dir and copy it to the model_dir.
-        :param fake: if True then don't run the model. Default is False.
+        First it will create the submit and continue scripts to run on puma2.
+         then call  superclass method and then tar/gzip the suite_dir and copy it to the model_dir.
+        :param fake: passed to the super class method.
         :return:nothing.
         """
-        super().instantiate(fake=fake) # call super class method.
-        # now do the UM_rose specific stuff.
-        # For now that is tar up the suite_dir and copy to model_dir.
-        tar_file = self.model_dir/'rose_suite.tar.gz'
-        tar_file.unlink(missing_ok=True) # remove any old tar file.
-        with tarfile.open(tar_file, "w:gz") as tar:
-            tar.add(self.suite_dir, arcname=self.suite_dir.name)
-        my_logger.debug(f'Created tar file {tar_file} from {self.suite_dir}')
 
+
+        # end of _create_script
+
+        super().instantiate(fake=fake) # call super class method.
+        # tar up the suite_dir and copy to model_dir.
+        tar_file = self.model_dir/'rose_suite.tar.gz'
+        try:
+            tar_file.unlink(missing_ok=True)  # remove any old tar file.
+            with tarfile.open(tar_file, "w:gz") as tar:
+                tar.add(self.suite_dir, arcname=self.suite_dir.name)
+            my_logger.debug(f'Created tar file {tar_file} from {self.suite_dir}')
+        except Exception as e:
+            my_logger.error(f"Failed to create tar file: {e}")
+            raise
+        
     def check(self) -> bool:
 
         """
@@ -327,14 +346,15 @@ class UM_rose(Model):
         Calls the superclass method and then do the following checks:
           1) Check that START_TIME, RUN_TARGET and RESUB_TIME are compatible. 
              RUN_TARGET is an integer multiple of RESUB_TIME. Complication is if RESUB_TIME is in months...
-        Will raise ValueError if any of the checks fail.
+        Will raise ValueError if any of these fail.
+        2) Check that the submit and continue scripts are files.
+           if not will raise FileNotFoundError.
         :return: True if the model is valid, False otherwise.
         """
         if not super().check():
             return False # failed so return False.
         ## UM_rose specific checks.
         # 1) Check that START_TIME, RUN_TARGET and RESUB_TIME are compatible.
-        # TODO -- have read method for UM_ROSE configs that handles iso times and durations
         # By converting them to Time Points and Durations we are also checking that
         # strings are valid.
         try:
@@ -352,46 +372,59 @@ class UM_rose(Model):
         # Now time should be start_time + run_target
         if time != end_time:
             raise ValueError(f'RUN_TARGET {run_target} and RESUB_TIME {resub_time} are not compatible')
+        # 2)  check the submit and continue scripts exist
+        for script in [self.submit_script, self.continue_script]:
+            if not (script is None or script.is_file()):
+                raise FileNotFoundError(f"{script} is not a file.")
 
         return True
-
+    @staticmethod
+    def _puma_path(path:pathlib.Path) -> pathlib.PurePath:
+        """
+        Convert an archer2 path to a path on puma2 -- very specific to archer2/puma2.
+        :param path: path to convert. Must begin with /home/n02/n02-puma which will be converted to /home/n02/n02
+        If not then the path will be unmodified and retuned as a purePath.
+        :return: puma path as a purePath.
+        """
+        if not isinstance(path, pathlib.Path):
+            raise ValueError(f'path {path} is not a pathlib.Path')
+        cpts = path.parts
+        if not cpts[0:4] != ('/','home','n02','n02-puma'):
+            my_logger.warning(f'path {path} does not start with /home/n02/n02-puma')
+            return pathlib.PurePath(path)
+        result = cpts[0:3] +tuple(['n02']) + cpts[4:] # replace n02-puma with n02
+        result = pathlib.PurePath(*result) # convert to a pure path.
+        return result
     def submit_cmd(self) -> typing.List[str]:
         """"
-        Generate the submission command. Over rides the super-class version.
+        Generate the submission command. Overrides the super-class version.
+        Will generate the  script to run on puma2 to submit the job.
         """
         # check status sensible for submitting run,
         if self.status not in ['INSTANTIATED', 'PERTURBED','CONTINUE']:
             raise ValueError(f"Status {self.status} not expected ")
-        remote_machine = self.run_info.get('remote_machine','')
-        # remote machine where rose runs.
-        cmd = self.expand('$OPTCLIMTOP/OptClimVn3/scripts/UM_rose/SUBMIT_to_puma.sh')
-        cmd = [cmd,self.model_dir,remote_machine]
-        return cmd
+        if self.status in ['INSTANTIATED', 'PERTURBED']: # start again.
+            script = self.submit_script
 
-    @register_param('runModelTime')
-    def run_time(self,runTime:typing.Union[str,int,float,None]) -> \
-            typing.Union[list[tuple[NamelistVar,str]],str]:
-        """
-        Set the run time for the model. This is in seconds or as an ISO duration string.
-        UM wants it as a ISO duration string. This function will convert to that if needed.
-        :param runTime: The run time in seconds or as an iso duration.
-        :return: list((nl,value)) or just the value read in from the config.
-        """
-        nl = NamelistVar('um_rose',filepath=pathlib.Path('rose-suite.conf'),
-                         namelist='jinja2:suite.rc',nl_var='MAIN_CLOCK',default=0)
-        if runTime is None:
-            return self.read_nl_value(nl)
-        if isinstance(runTime,str):
-            check = genericLib.parse_isoduration(runTime) # make sure it parses
-            val = runTime
+        elif self.status == 'CONTINUE':
+            script = self.continue_script
+            raise NotImplementedError('Continue not implemented yet')
         else:
-            val = genericLib.seconds_to_isoduration(runTime)
-        return [(nl,val)]
+            raise ValueError(f"Status {self.status} not expected ")
+
+
+        cmd = ['ssh','puma2',self._puma_path(script)] # script to submit
+        # Could make puma2 more generic -- so specified through run_info.
+        #  But no point at the moment as only running on archer2/puma2.
+        # and I suspect that changes will need to be different on other platforms.
+        # Where hopefully one can just run rose/cylc on the local machine.
+        return cmd
 
     def running(self) -> typing.Optional[str]:
         """
         UM_model version of running. No jid possible for UM as cylc handling all of that.
         Will try and set up model_data_dir if not set.
+        Note does not call superclass method...
     
         """
 
@@ -410,12 +443,12 @@ class UM_rose(Model):
         """
         UM_ROSE specific version of succeeded. 
          If self.model_data_dir is defined
-             Copies pp, netcdf and last dump files  in this dir to model_dir/'History_Data'
+             Copies pp, netcdf and last dump files  in this dir to model_dir/'share/data/History_Data'
         then calls superclass succeeded.
         Copying as files might be on other file systems and hard links across file systems do not work.
         """
 
-        data_dir = self.model_dir/'History_Data' # where model data will be copied too
+        data_dir = self.model_dir/'share/data/History_Data' # where model data will be copied too
         if self.model_data_dir is None: # not set trigger an error
             raise ValueError('model_data_dir not set. Something probably went wrong in running() method')
 
@@ -447,12 +480,28 @@ class UM_rose(Model):
         super().succeeded() # call the superclass method.
         # Must occur after copying files otherwise data may not be accessible for the post-processing job.
             
-            
-            
-                    
-                    
-        
-        
+    ## methods that handle 'complex' model parameters.
 
+    @register_param('runModelTime')
+    def run_time(self,runTime:typing.Union[str,int,float,None]) -> \
+            typing.Union[list[tuple[NamelistVar,str]],str]:
+        """
+        Set the run time for the model. This is in seconds or as an ISO duration string.
+        UM wants it as a ISO duration string. This function will convert to that if needed.
+        :param runTime: The run time in seconds or as an iso duration.
+        :return: list((nl,value)) or just the value read in from the config.
+        """
+        nl = NamelistVar('um_rose',filepath=pathlib.Path('rose-suite.conf'),
+                         namelist='jinja2:suite.rc',nl_var='MAIN_CLOCK',default=0)
+        if runTime is None:
+            return self.read_nl_value(nl)
+        if isinstance(runTime,str):
+            check = parse.DurationParser().parse(runTime) # make sure it parses
+            val = runTime
+        else:
+            val = genericLib.seconds_to_isoduration(runTime) # can't see any way to use metomi.isodatetime to do this.
+        return [(nl,val)]
+## of class definition.
+# add in simple variables.
 pth = pathlib.Path(__file__).parent /'parameter_config/UM_rose_Parameters.csv'
 UM_rose.update_from_file(pth, duplicate=True)

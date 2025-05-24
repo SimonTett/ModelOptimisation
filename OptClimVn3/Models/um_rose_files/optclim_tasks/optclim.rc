@@ -40,16 +40,16 @@
 [runtime]
     [[optclim_pre]]
         inherit = OPTCLIM_HPC
-        script = "optclim_task.sh {{OPTCLIM_ARGS}} {{MODEL_CONFIG}} RUNNING"
+        script = "optclim_task.sh {{OPTCLIM_SET_STATUS_SCRIPT}} {{OPTCLIM_ARGS}} {{MODEL_CONFIG}} RUNNING"
     [[optclim_post]]
         inherit = OPTCLIM_HPC
-        script = "optclim_task.sh {{OPTCLIM_ARGS}} {{MODEL_CONFIG}} SUCCEEDED"
+        script = "optclim_task.sh {{OPTCLIM_SET_STATUS_SCRIPT}} {{OPTCLIM_ARGS}} {{MODEL_CONFIG}} SUCCEEDED"
         [[[job]]]
           ## need more time for optclim_post as could be copying lots of files
           execution time limit = PT15M
     [[optclim_um_fail]]
         inherit = OPTCLIM_HPC
-        script = "optclim_task.sh {{OPTCLIM_ARGS}} {{MODEL_CONFIG}} FAILED"
+        script = "optclim_task.sh {{OPTCLIM_SET_STATUS_SCRIPT}}  {{OPTCLIM_ARGS}} {{MODEL_CONFIG}} FAILED"
 
 [visualization]
     [[node attributes]]
