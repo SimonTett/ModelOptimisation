@@ -1,0 +1,283 @@
+{
+    "_comment": "File auto-generated from HadGEM3 parameters spreadsheet. Version 0.1 of 2025-06-16",
+    "number_params_comment": "This file has 29 parameters.",
+    "sourceurl_comment": "Source URL for HadGEM3 parameters: https://github.com/qump-project/qump-hadgem3/blob/master/data/GA7Parameters_fakedata.csv",
+    "defaultParams": {
+        "comment": "Default parameters for UKESM1.1. These are the parameters that are used if not specified in the configuration file.",
+        "u10_max_coare": 22.0,
+        "u10_max_coarenamelist_comment": "jules_sea_seaice",
+        "rho_snow_fresh": 109.0,
+        "rho_snow_freshnamelist_comment": "jules_snow",
+        "orog_drag_param": 0.15,
+        "orog_drag_param_comment": "Orographic form drag coefficient",
+        "orog_drag_paramnamelist_comment": "jules_surface",
+        "dec_thres_cloud": 0.1,
+        "dec_thres_cloud_comment": "Decoupling threshold for cloudy Bls",
+        "dec_thres_cloudnamelist_comment": "run_bl",
+        "zhloc_depth_fac": 0.4,
+        "zhloc_depth_fac_comment": "Threshold fraction of the cloud layer depth",
+        "zhloc_depth_facnamelist_comment": "run_bl",
+        "dbsdtbs_turb_0": 0.00015,
+        "dbsdtbs_turb_0_comment": "Cloud erosion",
+        "dbsdtbs_turb_0namelist_comment": "run_cloud",
+        "forced_cu_fac": 0.5,
+        "forced_cu_facnamelist_comment": "run_cloud",
+        "ice_width": 0.02,
+        "ice_width_comment": "Ice width",
+        "ice_widthnamelist_comment": "run_cloud",
+        "amdet_fac": 3.0,
+        "amdet_fac_comment": "Deep mixing detrainment",
+        "amdet_facnamelist_comment": "run_convection",
+        "cca_md_knob": 0.1,
+        "cca_md_knob_comment": "CCA scaling (mid)",
+        "cca_md_knobnamelist_comment": "run_convection",
+        "cca_sh_knob": 0.5,
+        "cca_sh_knob_comment": "CCA scaling (shallow)",
+        "cca_sh_knobnamelist_comment": "run_convection",
+        "ent_fac_dp": 1.13,
+        "ent_fac_dp_comment": "Amplitude of deep entrainment",
+        "ent_fac_dpnamelist_comment": "run_convection",
+        "ent_fac_md": 0.9,
+        "ent_fac_md_comment": "Amplitude of mid entrainment",
+        "ent_fac_mdnamelist_comment": "run_convection",
+        "mparwtr": 0.0015,
+        "mparwtr_comment": "Maximum condensate",
+        "mparwtrnamelist_comment": "run_convection",
+        "qlmin": 0.0003,
+        "qlmin_comment": "Min critical cloud condensate",
+        "qlminnamelist_comment": "run_convection",
+        "r_det": 0.8,
+        "r_det_comment": "Adaptive detrainment",
+        "r_detnamelist_comment": "run_convection",
+        "fbcd": 4.0,
+        "fbcd_comment": "Flow blocking drag coefficient",
+        "fbcdnamelist_comment": "run_gwd",
+        "gsharp": 0.5,
+        "gsharp_comment": "Mountain wave amplitude constant",
+        "gsharpnamelist_comment": "run_gwd",
+        "gwd_frc": 4.0,
+        "gwd_frc_comment": "Critical Froude number",
+        "gwd_frcnamelist_comment": "run_gwd",
+        "gwd_fsat": 0.25,
+        "gwd_fsat_comment": "Inverse critical Froude number for wave saturation",
+        "gwd_fsatnamelist_comment": "run_gwd",
+        "nsigma": 2.5,
+        "nsigma_comment": "Scales sub-grid orography st dev",
+        "nsigmanamelist_comment": "run_gwd",
+        "ai": 0.0257,
+        "ai_comment": "Aggregate mass scaling",
+        "ainamelist_comment": "run_precip",
+        "ar": 1.0,
+        "ar_comment": "Aspect ratio of ice crystal",
+        "arnamelist_comment": "run_precip",
+        "c_r_correl": 0.9,
+        "c_r_correlnamelist_comment": "run_precip",
+        "mp_dz_scal": 2.0,
+        "mp_dz_scal_comment": "Mixed-phase turbulent production of supercooled liquid water",
+        "mp_dz_scalnamelist_comment": "run_precip",
+        "x1r": 0.22,
+        "x1r_comment": "Rain PSD shape",
+        "x1rnamelist_comment": "run_precip",
+        "dp_corr_strat": 10000.0,
+        "dp_corr_strat_comment": "Decorrelation scale pressure",
+        "dp_corr_stratnamelist_comment": "run_radiation",
+        "two_d_fsd_factor": 1.5,
+        "two_d_fsd_factor_comment": "Fractional Standard Deviation",
+        "two_d_fsd_factornamelist_comment": "run_radiation",
+        "biom_aer_ems_scaling": 2.0,
+        "biom_aer_ems_scaling_comment": "BC/OC mass emission flux from biomass burning sources",
+        "biom_aer_ems_scalingnamelist_comment": "run_ukca",
+        "fn_params_comment": "11 function params of which 7 produce lists",
+        "dz0v_dh_io": 0.05,
+        "dz0v_dh_io_fn_comment": "fn_list_dz0v_dh_io",
+        "f0_io": 0.875,
+        "f0_io_fn_comment": "fn_list_f0_io",
+        "nl0_io": 0.04,
+        "nl0_io_fn_comment": "fn_list_nl0_io",
+        "rootd_ft_io": 3.0,
+        "rootd_ft_io_fn_comment": "fn_list_rootd_ft_io",
+        "tupp_io": 36.0,
+        "tupp_io_fn_comment": "fn_list_tupp_io",
+        "cca_dp_knob": 0.1,
+        "cca_dp_knob_fn_comment": "cca_md2dp_knob",
+        "cca_dp_knob_comment": "CCA scaling (deep)",
+        "a_ent_1_rp": 0.23,
+        "a_ent_1_rp_fn_comment": "fn_list_a_ent_1_rp",
+        "a_ent_1_rp_comment": "Entrainment parameter A1",
+        "g0_rp": 10.0,
+        "g0_rp_fn_comment": "fn_list_g0_rp",
+        "g0_rp_comment": "Flux profile parameter",
+        "g1_rp": 0.85,
+        "g1_rp_fn_comment": "a_ent_1_to_g1",
+        "g1_rp_comment": "Cloud-top diffusion",
+        "lambda_min_rp": 40.0,
+        "lambda_min_rp_fn_comment": "par_mezcla2lambda_lower",
+        "lambda_min_rp_comment": "Minimum mixing length",
+        "ricrit_rp": 1.0,
+        "ricrit_rp_fn_comment": "g0toRicrit",
+        "ricrit_rp_comment": "Critical Richardson number"
+    },
+    "minmax": {
+        "comment": "Defines the minimum and maximum ranges for UKESM parameters. Must be defined for ALL parameters",
+        "u10_max_coare": [
+            14.0,
+            24.0
+        ],
+        "rho_snow_fresh": [
+            70.0,
+            130.0
+        ],
+        "orog_drag_param": [
+            0.0,
+            1.0
+        ],
+        "dec_thres_cloud": [
+            0.01,
+            1.0
+        ],
+        "zhloc_depth_fac": [
+            0.0,
+            1.0
+        ],
+        "dbsdtbs_turb_0": [
+            0.0,
+            0.001
+        ],
+        "forced_cu_fac": [
+            0.0,
+            1.0
+        ],
+        "ice_width": [
+            0.001,
+            1.0
+        ],
+        "amdet_fac": [
+            0.0,
+            15.0
+        ],
+        "cca_md_knob": [
+            0.0,
+            1.0
+        ],
+        "cca_sh_knob": [
+            0.0,
+            1.0
+        ],
+        "ent_fac_dp": [
+            0.0,
+            4.0
+        ],
+        "ent_fac_md": [
+            0.0,
+            3.0
+        ],
+        "mparwtr": [
+            0.001,
+            0.002
+        ],
+        "qlmin": [
+            5e-05,
+            0.0005
+        ],
+        "r_det": [
+            0.3,
+            0.99
+        ],
+        "fbcd": [
+            0.0,
+            10.0
+        ],
+        "gsharp": [
+            0.0,
+            2.0
+        ],
+        "gwd_frc": [
+            0.5,
+            10.0
+        ],
+        "gwd_fsat": [
+            0.1,
+            2.0
+        ],
+        "nsigma": [
+            1.0,
+            6.5
+        ],
+        "ai": [
+            0.0061,
+            0.0555
+        ],
+        "ar": [
+            0.0,
+            1.0
+        ],
+        "c_r_correl": [
+            0.0,
+            1.0
+        ],
+        "mp_dz_scal": [
+            0.0,
+            4.0
+        ],
+        "x1r": [
+            0.07,
+            0.52
+        ],
+        "dp_corr_strat": [
+            2500.0,
+            40000.0
+        ],
+        "two_d_fsd_factor": [
+            1.0,
+            2.0
+        ],
+        "biom_aer_ems_scaling": [
+            0.25,
+            4.0
+        ],
+        "dz0v_dh_io": [
+            0.0,
+            0.16
+        ],
+        "f0_io": [
+            0.65,
+            0.972
+        ],
+        "nl0_io": [
+            0.0,
+            0.12
+        ],
+        "rootd_ft_io": [
+            0.0,
+            8.0
+        ],
+        "tupp_io": [
+            25.0,
+            41.0
+        ],
+        "cca_dp_knob": [
+            0.0,
+            1.0
+        ],
+        "a_ent_1_rp": [
+            0.0,
+            0.5
+        ],
+        "g0_rp": [
+            2.5,
+            50.0
+        ],
+        "g1_rp": [
+            0.0,
+            2.0
+        ],
+        "lambda_min_rp": [
+            0.0,
+            120.0
+        ],
+        "ricrit_rp": [
+            0.2,
+            4.0
+        ]
+    }
+}

@@ -631,6 +631,11 @@ class UMroseNamelistConfig(BaseConfig):
                 raise KeyError(f'Failed to find {namelist} in {self.filepath()}')
             my_logger.debug(f'Failed to find {namelist} in {self.filepath()}')
             value = namelist.default # return the default value
+        elif value.state.startswith('!'):  # if it is a comment then raise error.
+            if raise_error:
+                raise ValueError(f'Found comment {value} for {namelist} in {self.filepath()}')
+            my_logger.debug(f'Found comment {value} for {namelist} in {self.filepath()}')
+            value = namelist.default
         else:
             # need to parse this string to convert to value. This is a bit of a pain.
             value = self.parse_value(value.value) # convert it to numeric value.

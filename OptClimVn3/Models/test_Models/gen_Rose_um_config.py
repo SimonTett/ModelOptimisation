@@ -13,20 +13,36 @@ except FileNotFoundError:
 
 #reference = pathlib.Path(genericLib.expand('$OPTCLIMTOP/OptClimVn3/configurations/example_UM_rose/references/u-db898')) # ROSE config
 reference = pathlib.Path(genericLib.expand('/home/n02/n02-puma/tetts/roses/u-db898')) # ROSE config
-post_process = dict(script='$OPTCLIMTOP/OptClimVn3/scripts/comp_obs.py', output_file='obs.json')
+pp_dir = '/work/n02/shared/tetts/OptClim/st2024/post_process/'
+post_process = dict(script=pp_dir+'comp_sim_obs_UKESM1_1.py',
+                    output_file='observations.json',
+                    mask_file=pp_dir+'landfrac_N96.nc',
+                    mask_file_comment="Path for landfrac file.",
+                    mask_fraction=0.5,
+                    mask_fraction_comment="Critical Fraction. Specify if mask  is a land/sea fraction. Values >= are land < sea. Set to null if mask is a t/f mask",
+                    start_time="2011-01-01",
+                    start_time_comment="Start time as ISO std string. ",
+                    end_time="2011-12-31",
+                    end_time_comment="End time as str of ISO std string",
+                    file_pattern='*a.pm*.pp',
+                    file_pattern_comment="File pattern to match for post-processing. Use * as wildcard. ",
+                    )
 
-parameters = dict( DP_CORR_STRAT=500.0,TWO_D_FSD_FACTOR=2,
-                   ENT_FAC_DP= 1.0, AI=3e-2,RUN_TARGET='P2M')
+parameters = dict( dp_corr_strat=500.0,two_d_fsd_factor=2,
+                   ent_fac_dp= 1.0, ai=3e-2,RUN_TARGET='P2M')
 
 run_info=dict(
-    prebuild='/home/n02/n02/tetts/cylc-run/u-db898/share/fcm_make_um', # use prebuild from ref model
+    prebuild=True, # use prebuild from ref model
     use_scratch=True # use scratch space. Means models get cleaned up after 28 days. 
 )
-model = UM_rose(name=name, reference=reference,
-                            model_dir=model_dir, post_process=post_process,
-                            parameters=parameters,
+model = UM_rose(name=name,
+                reference=reference,
+                model_dir=model_dir,
+                post_process=post_process,
+                parameters=parameters,
                 run_info=run_info)
 model.instantiate()
-model.set_status('SUBMITTED') # set status to submit.  But go and submit by hand. Once generally happy. Do this automatically....
+model.submit_model() # should submit post-process and model.
+#model.set_status('SUBMITTED') # set status to submit.  But go and submit by hand. Once generally happy. Do this automatically....
 pth = pathlib.Path('~')/model.suite_dir.relative_to(UM_rose.puma_dir.parent)
-print(f'Submit case on puma with rose suite-run  -v -v -C {pth}')
+#print(f'Submit case on puma with rose suite-run  -v -v -C {pth}')

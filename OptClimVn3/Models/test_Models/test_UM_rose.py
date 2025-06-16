@@ -1,7 +1,9 @@
 import os
 import unittest
+from unittest.mock import patch, MagicMock
 
 import metomi.rose.config
+from aiofiles.ospath import samefile
 from scipy.constants import value
 
 from UM_rose import UM_rose
@@ -23,8 +25,8 @@ class test_um_rose(unittest.TestCase):
         :return:
         """
         parameters = dict(
-            DP_CORR_STRAT=500.0,TWO_D_FSD_FACTOR=2,
-            ENT_FAC_DP= 1.0, AI=3e-2
+            dp_corr_strat=500.0,two_d_fsd_factor=2,
+            ent_fac_dp= 1.0, ai=3e-2
                           )
         self.parameters = copy.deepcopy(parameters)
 
@@ -76,7 +78,7 @@ class test_um_rose(unittest.TestCase):
         :return:
         """
         shutil.copytree(self.refDir,self.model.suite_dir,dirs_exist_ok=True)
-        val=self.model.read_param('AI')
+        val=self.model.read_param('ai')
         self.assertEqual(val,2.5700e-02)
 
     def test_instantiate(self):
@@ -143,7 +145,7 @@ class test_um_rose(unittest.TestCase):
         """
         # copy the ref dir into the suite_dir
         shutil.copytree(self.refDir,self.model.suite_dir,dirs_exist_ok=True)
-        params = dict(AI=1e-2,DP_CORR_STRAT=500.0,TWO_D_FSD_FACTOR=2,ENT_FAC_DP= 1.0)
+        params = dict(ai=1e-2,dp_corr_strat=500.0,two_d_fsd_factor=2,ent_fac_dp= 1.0)
         self.model.set_params(parameters=params)
         # test values
         for p,v in params.items():
@@ -325,9 +327,45 @@ and even more text
         got_files = set([f.name for f in got_files])
         self.assertEqual(got_files, set(expected))
 
+    def test_init(self):
+        # test the init method
+        reference = pathlib.Path('/home/n02/n02-puma/tetts/roses/u-db898')
+        expected_prebuild = pathlib.Path(f'/work/n02/n02/tetts/cylc-run/u-db898/share/fcm_make_um')
+        post_process = dict(script='$OPTCLIMTOP/OptClimVn3/scripts/comp_obs.py', output_file='obs.json')
+
+        parameters = dict(DP_CORR_STRAT=500.0, TWO_D_FSD_FACTOR=2,
+                          ENT_FAC_DP=1.0, AI=3e-2, RUN_TARGET='P2M')
+
+        run_info = dict(
+            prebuild=True,  # guess the prebuild file
+            use_scratch=True  # use scratch space. Means models get cleaned up after 28 days.
+        )
+        with patch.multiple(pathlib.Path, is_dir=MagicMock(return_value=True),
+                            is_absolute=MagicMock(return_value=True),
+                            samefile=MagicMock(return_value=False),):
+
+            model = UM_rose(name='fred', reference=reference,
+                            model_dir=self.testDir, post_process=post_process,
+                            parameters=parameters,
+                            run_info=run_info)
+            self.assertEqual(model.parameters_no_key['prebuild'], str(expected_prebuild))
+    def test__guess_prebuild(self):
+        # check __guess_prebuild works
+        model = self.model
+        model.reference=pathlib.Path('/home/n02/n02-puma/tetts/roses/u-db898')
+        expected_path = pathlib.Path(f'/work/n02/n02/tetts/cylc-run/u-db898/share/fcm_make_um')
+        with patch.multiple(pathlib.Path,is_dir=MagicMock(return_value=True),
+                            is_absolute=MagicMock(return_value=True)):
+            result = model._guess_prebuild()
+            self.assertEqual(result,expected_path)
+
+        with patch.multiple(pathlib.Path,is_dir=MagicMock(return_value=False),
+                            is_absolute=MagicMock(return_value=True)):
+            result = model._guess_prebuild()
+            self.assertEqual(result,pathlib.PurePath(expected_path))
 
 
-        pass
+
 
 
 
