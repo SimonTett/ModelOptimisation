@@ -121,7 +121,7 @@ class UM_rose(Model):
             # deal with prebuild set to True -- where we guess the path.
             if self.parameters_no_key.get('prebuild') is True:
                 prebuild_path = self._guess_prebuild()
-                if isinstance(prebuild_path, pathlib.Path):
+                if prebuild_path is not None:
                     self.parameters_no_key['prebuild'] = str(prebuild_path)
                 else:
                     self.parameters_no_key.pop('prebuild') # remove it as True won't work!
@@ -154,7 +154,7 @@ class UM_rose(Model):
             self.parameters_no_key['OPTCLIM_SET_STATUS_SCRIPT'] = str(self.set_status_script)
             my_logger.debug(f'Set OPTCLIM_SET_STATUS_SCRIPT to {str(self.set_status_script)}')
        # set up submit and continue script. These need to be on puma2 so putting them in the suite_dir
-        if suite_dir is not None:
+        if self.suite_dir is not None:
             self.submit_script = self.suite_dir/'submit_script.sh' # script to run on puma2 to submit the job.
             self.continue_script = self.suite_dir/'continue_script.sh' # probably don't need this for now. There if have an error.
 
@@ -247,30 +247,33 @@ class UM_rose(Model):
         return modified_files
 
     # utility fns. Private for now
-    def _guess_prebuild(self) -> typing.Union[pathlib.PurePath,pathlib.Path]:
+    def _guess_prebuild(self) -> typing.Optional[pathlib.PurePath]:
         """
         Guess the prebuild dict. Will only work on archer2/puma
         :param self:
-        :return: Path -- successfully guessed prebuild dct. (path is a dir)
-                 PurePath -- guess did not work.
+        :return: PurePath -- successfully guessed prebuild dct. (path is a dir) 
+                 None -- guess did not work.
         """
+        # ARCHER2
 
         # get the name from the reference and assume userid the same as this
         ref_suite_name = self.reference.name
         # work out user and id.
-        # ARCHER2
         # work out user id in reference if it is an abs path.
         user_id = self.user_id
         if self.reference.is_absolute():
             # work out user-id from  path
             user_id = self.reference.parts[4]
-        prebuild = pathlib.Path('/work/n02/n02/') / f'{user_id}/cylc-run/{ref_suite_name}/share/fcm_make_um'
-        if prebuild.is_dir():  # dct  a dir which exists.
-            my_logger.warning(f'Guessed prebuild to be {prebuild}')
+        prebuild = pathlib.Path('/home/n02/n02-puma/') / f'{user_id}/cylc-run/{ref_suite_name}/share/fcm_make_um'
+        if (prebuild/'extract').is_dir():  # dct  a dir which exists and had an extract.
+            my_logger.warning(f'Guessed prebuild on Archer2 to be {prebuild}')
         else:
-            my_logger.warning(f'Prebuild {prebuild} is not a directory')
-            prebuild = pathlib.PurePath(prebuild) # make it a purePath as it does not actually exist..
+            my_logger.warning(f'Prebuild: {prebuild/"extract"} is not a directory')
+            return None
+        # but actually need path on puma2. Sigh!
+        prebuild = self._puma_path(prebuild) # get the puma path -- which is what is needed!
         return prebuild
+
 
     def _create_script(self,
                        script_type: typing.Literal['submit', 'continue'] ,
@@ -423,7 +426,7 @@ class UM_rose(Model):
             raise ValueError(f'path {path} is not a pathlib.Path')
         cpts = path.parts
         # ARCHER2
-        if not cpts[0:4] != ('/','home','n02','n02-puma'):
+        if cpts[0:4] != ('/','home','n02','n02-puma'):
             my_logger.warning(f'path {path} does not start with /home/n02/n02-puma')
             return pathlib.PurePath(path)
         result = cpts[0:3] +tuple(['n02']) + cpts[4:] # replace n02-puma with n02
@@ -480,6 +483,8 @@ class UM_rose(Model):
         # UM file names do sort alphanumerically so last file is most recent..
         # note if this method gets run more than once you will have more than dump file...
         dump_files=[f for f in self.model_data_dir.glob('*.d*_00') if f.is_file()]
+        # and sort them!
+        dump_files = sorted(dump_files)
         files_to_copy.append(dump_files[-1]) # last dump file.
 
        # now copy the files to the data_dir.

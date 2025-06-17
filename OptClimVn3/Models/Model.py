@@ -166,6 +166,7 @@ class Model(ModelBaseClass, journal):
             model.model_dir = model_path.parent # update directory with where we actually loaded it from.
         return model
 
+
     # methods now.
     def __init__(self,
                  name: str,
@@ -570,6 +571,39 @@ class Model(ModelBaseClass, journal):
 
         return True
 
+    def submit_post_process(self) -> str:
+        """
+        Submit post-processing job. Will be submitted held. Later processing will release the job. 
+        """
+
+        pp_cmd = [str(self.set_status_script), str(self.config_path), 'PROCESSED']
+        # post-process cmd. Which gets submitted now and the job id recorded.
+        run_time = self.post_process.get('runTime', 1800)  # get the runTime.
+        run_code = self.post_process.get('runCode', self.run_info.get('runCode'))
+        # and the run_code -- default is value in run_info but use value from post_process if we have it.
+        run_queue = self.post_process.get('runQueue')
+        extra_args = self.post_process.get('runExtraArgs',[])
+        outputDir = self.model_dir / 'PP_output'  # post-processing output goes in Model Dir
+        outputDir.mkdir(exist_ok=True, parents=True)
+        my_logger.debug(f"Created {outputDir}")
+        pp_cmd = self.engine.submit_cmd(pp_cmd, f"PP_{self.name}",
+                                        outdir=outputDir,
+                                        hold=True,
+                                        time=run_time,
+                                        rundir=self.model_dir,
+                                        run_code=run_code,
+                                        run_queue=run_queue,
+                                        extra_args=extra_args)  # generate the submit cmd.
+        # note the post-processing is submitted "held".It needs to be released once the model
+        # has actually finished. That could require multiple simulations. So we don't hold it on the model
+        # and instead will explicitly release it when status gets set to SUCCEEDED
+        output = self.run_cmd(pp_cmd)  # submit the post-processing job.
+        my_logger.debug(f"post-processing run {pp_cmd} and got {output}")
+        pp_jid = self.engine.job_id(output)  # extract the job-ID.
+        return pp_jid
+
+        
+
     def submit_model(self,
                      fake_function: typing.Optional[typing.Callable[[dict], pd.Series]] = None,
                      ) -> typing.Optional[str]:
@@ -621,29 +655,11 @@ class Model(ModelBaseClass, journal):
             # But check have a pp_jid and fail if not
             if self.pp_jid is None:
                 raise ValueError(f"self.pp_jid is None. Should be set to a job id of a post-processing job")
+            pp_jid = None
         else:  # starting so generate and submit a post processing job.
             if self.pp_jid is not None:  # self.pp_jid should be None. Fail if not!
                 raise ValueError(f"Have pp_jid {self.pp_jid} should be None")
-            pp_cmd = [str(self.set_status_script), str(self.config_path), 'PROCESSED']
-            # post-process cmd. Which gets submitted now and the job id recorded.
-            run_time = self.post_process.get('runTime', 1800)  # get the runTime.
-            run_code = self.post_process.get('runCode', self.run_info.get('runCode'))
-            # and the run_code -- default is value in run_info but use value from post_process if we have it.
-            outputDir = self.model_dir / 'PP_output'  # post-processing output goes in Model Dir
-            outputDir.mkdir(exist_ok=True, parents=True)
-            my_logger.debug(f"Created {outputDir}")
-            pp_cmd = self.engine.submit_cmd(pp_cmd, f"PP_{self.name}",
-                                            outdir=outputDir,
-                                            hold=True,
-                                            time=run_time,
-                                            rundir=self.model_dir,
-                                            run_code=run_code)  # generate the submit cmd.
-            # note the post-processing is submitted "held".It needs to be released once the model
-            # has actually finished. That could require multiple simulations. So we don't hold it on the model
-            # and instead will explicitly release it when status gets set to SUCCEEDED
-            output = self.run_cmd(pp_cmd)  # submit the post-processing job.
-            my_logger.debug(f"post-processing run {pp_cmd} and got {output}")
-            pp_jid = self.engine.job_id(output)  # extract the job-ID.
+            pp_jid = self.submit_post_process()
             self.pp_jid = pp_jid
 
         # Done submitting (if needed) a post-processing job. Now submit the model!
@@ -657,7 +673,7 @@ class Model(ModelBaseClass, journal):
         self.submission_count += 1  # increase time.
         self.set_status(status)
 
-        return pp_jid  # return the submission  post processing jid
+        return pp_jid  # return the submission  post processing jid (Which will be None if continuing)
 
     def submit_cmd(self) -> typing.List[str]:
         """"
@@ -799,7 +815,7 @@ class Model(ModelBaseClass, journal):
         my_logger.debug(f"Dumping post_process to {input_file}")
         output = dict(postProcess=self.post_process)  # wrap post process in dict
         with open(input_file, 'w') as fp:
-            json.dump(output, fp)
+            json.dump(output, fp,indent=2)
         # dump the post-processing dict for the post-processing to  pick up.
 
         post_process_output = self.model_dir / self._post_process_output
@@ -1266,5 +1282,12 @@ class Model(ModelBaseClass, journal):
         :return:
         """
         cls.param_info.update_from_file(filepath, duplicate=duplicate)
+
+    def reload(self):
+        """
+        Reload model in place..
+        """
+        new_model_dict = vars(self.load(self.config_path))
+        self.fill_attrs(new_model_dict)
 
 Model.register_class(Model)  # register ourselves!

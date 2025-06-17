@@ -358,7 +358,6 @@ class slurm_engine(abstractEngine):
     _kill_cmd:str = 'scancel'
     _queue_cmd:str = 'squeue'
 
-    _submit_extra:list =  [] # any extra args to add to the submission.
     def submit_cmd(self, cmd: typing.List, name: str,
                    outdir: typing.Optional[pathlib.Path] = None,
                    rundir: typing.Optional[pathlib.Path] = None,
@@ -369,7 +368,7 @@ class slurm_engine(abstractEngine):
                    mem: int = 4000,
                    n_cores: int = 1,
                    n_tasks: typing.Optional[int] = None,
-                   extra_args=[]):
+                   extra_args:list=[]):
         """
         Function to submit command to SLURM
 
@@ -401,8 +400,10 @@ class slurm_engine(abstractEngine):
                       '--output', f'{outdir}/%x_%A_%a.out', # where std out goes
                       '--error', f'{outdir}/%x_%A_%a.err', # where std error goes
                       '-J', name, # name of the job
-                      '--ntasks=1', # use 1 task. 
-                      ] #liangwj
+                      '--ntasks=1', # use 1 task.
+                      '--export=ALL',
+                      # export current env. Should not be needed as default but seems to be needed on Archer2.
+                      ] 
         # add on others.
         if run_code is not None:
             submit_cmd += ['-A', run_code]
@@ -522,3 +523,4 @@ class slurm_sysu_engine(slurm_engine):
     _submit_cmd:str = 'yhbatch'
     _control_cmd:str = 'yhcontrol'
     _kill_cmd:str = 'yhcancel'
+

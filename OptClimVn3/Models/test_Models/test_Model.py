@@ -914,6 +914,19 @@ class ModelTestCase(unittest.TestCase):
         with self.assertRaises(ValueError) as cm:
             self.model.check()
 
+    def test_reload(self):
+        # test reload works.
+        model = self.model
+        model.instantiate() # instantiate the model.
+        cpy_model = copy.deepcopy(model) # copy the model
+        # change the status in memory
+        model.status='NO WAY'
+        model.reload()
+        model == cpy_model 
+        self.assertEqual(model,cpy_model) # should be the same
+        
+        
+
 
 
 if __name__ == '__main__':

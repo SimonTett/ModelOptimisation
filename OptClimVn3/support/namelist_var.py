@@ -631,7 +631,7 @@ class UMroseNamelistConfig(BaseConfig):
                 raise KeyError(f'Failed to find {namelist} in {self.filepath()}')
             my_logger.debug(f'Failed to find {namelist} in {self.filepath()}')
             value = namelist.default # return the default value
-        elif value.state.startswith('!'):  # if it is a comment then raise error.
+        elif value.state != self.config.STATE_NORMAL:  # if it is a comment then raise error.
             if raise_error:
                 raise ValueError(f'Found comment {value} for {namelist} in {self.filepath()}')
             my_logger.debug(f'Found comment {value} for {namelist} in {self.filepath()}')
@@ -653,17 +653,21 @@ class UMroseNamelistConfig(BaseConfig):
         :param create: If True create values. if False fail if values do not exist.
         """
         self.check_ok(namelist)
+        nl=(namelist.namelist,namelist.nl_var)
         if create:
             if self.config.get([namelist.namelist]) is None:
                 self.config[namelist.namelist] = metomi.rose.config.ConfigNode()  # set up an empty namelist
         else:
             # try and read it. If var or namelist don't exist  then None will be returned
-            if self.config.get([namelist.namelist,namelist.nl_var])  is None:
+            v = self.config.get(nl)
+            if v  is None:
                 err_msg = f'Failed to find {namelist} in config read from {self.filepath()}'
                 my_logger.warning(err_msg)
                 raise KeyError # raise the error
+            elif v.state != self.config.STATE_NORMAL : # not normal status. Log a warning message.
+                my_logger.warning(f'{nl} status={v.status} not Normal. Will be set to normal.')
 
-        self.config.set((namelist.namelist,namelist.nl_var), self.to_fortran(value))  # set the value -- convert to string
+        self.config.set(keys=nl, value=self.to_fortran(value),state=self.config.STATE_NORMAL)  # set the value -- convert to string. State set to normal.
         self.modified_values[namelist] = True  # modified this namelist!
         my_logger.debug(f"Setting {namelist} to {value}")
 

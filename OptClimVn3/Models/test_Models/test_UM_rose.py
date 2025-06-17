@@ -330,11 +330,11 @@ and even more text
     def test_init(self):
         # test the init method
         reference = pathlib.Path('/home/n02/n02-puma/tetts/roses/u-db898')
-        expected_prebuild = pathlib.Path(f'/work/n02/n02/tetts/cylc-run/u-db898/share/fcm_make_um')
+        expected_prebuild = pathlib.PurePath(f'/home/n02/n02/tetts/cylc-run/u-db898/share/fcm_make_um')
         post_process = dict(script='$OPTCLIMTOP/OptClimVn3/scripts/comp_obs.py', output_file='obs.json')
 
-        parameters = dict(DP_CORR_STRAT=500.0, TWO_D_FSD_FACTOR=2,
-                          ENT_FAC_DP=1.0, AI=3e-2, RUN_TARGET='P2M')
+        parameters = dict(dp_corr_strat=500.0, two_d_fsd_factor=2,
+                          ent_fac_dp=1.0, ai=3e-2, RUN_TARGET='P2M')
 
         run_info = dict(
             prebuild=True,  # guess the prebuild file
@@ -353,7 +353,7 @@ and even more text
         # check __guess_prebuild works
         model = self.model
         model.reference=pathlib.Path('/home/n02/n02-puma/tetts/roses/u-db898')
-        expected_path = pathlib.Path(f'/work/n02/n02/tetts/cylc-run/u-db898/share/fcm_make_um')
+        expected_path = pathlib.Path(f'/home/n02/n02/tetts/cylc-run/u-db898/share/fcm_make_um') # path on puma
         with patch.multiple(pathlib.Path,is_dir=MagicMock(return_value=True),
                             is_absolute=MagicMock(return_value=True)):
             result = model._guess_prebuild()
@@ -362,7 +362,7 @@ and even more text
         with patch.multiple(pathlib.Path,is_dir=MagicMock(return_value=False),
                             is_absolute=MagicMock(return_value=True)):
             result = model._guess_prebuild()
-            self.assertEqual(result,pathlib.PurePath(expected_path))
+            self.assertIsNone(result)
 
 
 
