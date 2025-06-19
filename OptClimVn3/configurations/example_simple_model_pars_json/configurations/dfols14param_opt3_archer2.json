@@ -10,7 +10,7 @@
     "run_info": {
         "runTime": 120,
         "runTime_comment": "Time in seconds for run. Should be enough for simple_model",
-        "runCode": "n02-TERAFIRMA",
+        "runCode": "n02-TERRAFIRMA",
         "runCode_comment": "Project code to run job with.",
         "submit_engine": null,
         "submit_engine_comment": "Name of engine to submit runs to. See engine.py for allowed values.  Use null if want this guessed. ",
