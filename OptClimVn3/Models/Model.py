@@ -62,6 +62,8 @@ import pandas as pd
 import xarray
 
 import json
+
+import genericLib
 from model_base import journal
 from ModelBaseClass import ModelBaseClass, register_param
 from namelist_var import NamelistVar,GroupConfig,type_allowed_fortran
@@ -578,22 +580,15 @@ class Model(ModelBaseClass, journal):
 
         pp_cmd = [str(self.set_status_script), str(self.config_path), 'PROCESSED']
         # post-process cmd. Which gets submitted now and the job id recorded.
-        run_time = self.post_process.get('runTime', 1800)  # get the runTime.
-        run_code = self.post_process.get('runCode', self.run_info.get('runCode'))
-        # and the run_code -- default is value in run_info but use value from post_process if we have it.
-        run_queue = self.post_process.get('runQueue')
-        extra_args = self.post_process.get('runExtraArgs',[])
+        job_params = self.engine.extract_job_submission_params(self.run_info,default_values=dict(runTime=1800)) # extract stuff needed to submit the job.
         outputDir = self.model_dir / 'PP_output'  # post-processing output goes in Model Dir
         outputDir.mkdir(exist_ok=True, parents=True)
         my_logger.debug(f"Created {outputDir}")
         pp_cmd = self.engine.submit_cmd(pp_cmd, f"PP_{self.name}",
                                         outdir=outputDir,
                                         hold=True,
-                                        time=run_time,
                                         rundir=self.model_dir,
-                                        run_code=run_code,
-                                        run_queue=run_queue,
-                                        extra_args=extra_args)  # generate the submit cmd.
+                                        **job_params)  # generate the submit cmd.
         # note the post-processing is submitted "held".It needs to be released once the model
         # has actually finished. That could require multiple simulations. So we don't hold it on the model
         # and instead will explicitly release it when status gets set to SUCCEEDED
@@ -602,7 +597,7 @@ class Model(ModelBaseClass, journal):
         pp_jid = self.engine.job_id(output)  # extract the job-ID.
         return pp_jid
 
-        
+
 
     def submit_model(self,
                      fake_function: typing.Optional[typing.Callable[[dict], pd.Series]] = None,

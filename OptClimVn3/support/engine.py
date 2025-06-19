@@ -18,6 +18,7 @@ from subprocess import CalledProcessError
 
 from model_base import model_base, journal  # so can save things. The default to_dict, from_dict should work.
 
+
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 
 
@@ -104,6 +105,25 @@ class abstractEngine(model_base, journal):
             print(f"ssh_nodes differ {self.ssh_node} != {other.ssh_node}")
 
         return True
+    @classmethod
+    def extract_job_submission_params(cls,run_info: dict,
+                                      default_values=None) -> dict:
+        """
+        Extract job submission parameters from the run_info dictionary.
+        Implemented as class method to allow class specific setting of defaults and overwriting.
+           This version does not use that!
+        :param run_info: Dictionary containing run information.
+        :param default_values: Dictionary of default values to use if not found in run_info. Only non null values will be used.
+        :return: Dictionary with extracted job submission parameters.
+        """
+        if default_values is None:
+            default_values = dict(runTime=1800)
+        time = run_info.get('runTime',default_values.get('runTime'))  # get the runTime.
+        run_code = run_info.get('runCode',default_values.get('runCode'))
+        run_queue = run_info.get('runQueue',default_values.get('runQueue'))
+        extra_args = run_info.get('runExtraArgs',default_values.get('runExtraArgs'))  # extra args to pass to submission command
+        job_params = dict(time=time, run_code=run_code, run_queue=run_queue, extra_args=extra_args)
+        return job_params
 
     @abstractmethod
     def submit_cmd(self,
@@ -117,7 +137,8 @@ class abstractEngine(model_base, journal):
                    time: int = 1800,
                    mem: int = 4000,
                    n_cores: int = 1,
-                   n_tasks: typing.Optional[int] = None
+                   n_tasks: typing.Optional[int] = None,
+                   extra_args: typing.Optional[list[str]] = None
                    ) -> typing.List[str]:
         """
         Submit function.
@@ -137,6 +158,7 @@ class abstractEngine(model_base, journal):
           If False no hold will be done
         :param n_cores: No of cores to use.
         :param n_tasks: no of tasks to run. Will submit an array job.
+        :param extra_args -- any system specific extra args which should be passed to the submission command.
         :return: the command to be submitted.
         """
         pass
@@ -203,7 +225,7 @@ class sge_engine(abstractEngine):
                    mem: int = 4000,
                    n_cores: int = 1,
                    n_tasks: typing.Optional[int] = None,
-                   extra_args: list = []
+                   extra_args: typing.Optional[list[str]] = None,
                    ):
         """
         Function to submit to SGE
@@ -257,7 +279,7 @@ class sge_engine(abstractEngine):
             submit_cmd += ['-pe ', f'mpi {n_cores}']  # ask for mpi env.
         if n_tasks is not None:  # want to run a task array
             submit_cmd += ['-t', f'1:{n_tasks}']
-        if extra_args: # got some extra args
+        if extra_args is not None: # got some extra args
             submit_cmd += extra_args
         submit_cmd += cmd
         submit_cmd = self.connect_fn(submit_cmd, rundir=rundir)
@@ -368,7 +390,7 @@ class slurm_engine(abstractEngine):
                    mem: int = 4000,
                    n_cores: int = 1,
                    n_tasks: typing.Optional[int] = None,
-                   extra_args:list=[]):
+                   extra_args:typing.Optional[list[str]]=None):
         """
         Function to submit command to SLURM
 
@@ -420,7 +442,7 @@ class slurm_engine(abstractEngine):
             submit_cmd += [f"--dependency=afterok:" + ":".join(hold)]  #liangwj
         if n_tasks is not None:
             submit_cmd += ['-a', f'1-{n_tasks}']  # -a =  task array
-        if extra_args: # got some extra args add them in
+        if extra_args is not None: # got some extra args add them in
             submit_cmd += extra_args
         submit_cmd += cmd
 

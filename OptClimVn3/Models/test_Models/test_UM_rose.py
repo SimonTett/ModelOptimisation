@@ -353,7 +353,7 @@ and even more text
         # check __guess_prebuild works
         model = self.model
         model.reference=pathlib.Path('/home/n02/n02-puma/tetts/roses/u-db898')
-        expected_path = pathlib.Path(f'/home/n02/n02/tetts/cylc-run/u-db898/share/fcm_make_um') # path on puma
+        expected_path = pathlib.PurePath(f'/home/n02/n02/tetts/cylc-run/u-db898/share/fcm_make_um') # path on puma
         with patch.multiple(pathlib.Path,is_dir=MagicMock(return_value=True),
                             is_absolute=MagicMock(return_value=True)):
             result = model._guess_prebuild()

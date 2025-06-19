@@ -27,10 +27,7 @@ post_process = dict(
     end_time_comment="End time as str of ISO std string",
     file_pattern='*a.pm*.pp',
     file_pattern_comment="File pattern to match for post-processing. Use * as wildcard. ",
-    runQueue='serial',
-    runQueue_comment='Q to run the pp job in',
-    runExtraArgs=['--qos=serial'],
-    runExtraArgs_comment='List of extra args for submission. For archer2 need to specifiy qos for pp job',
+
 )
 
 parameters = dict( dp_corr_strat=500.0,two_d_fsd_factor=2,
@@ -42,7 +39,11 @@ run_info=dict(
     prebuild=True, # use prebuild from ref model
     prebuild_comment='If True guess from ref model. If string use as path to prebuild. Path should be on puma2',
     use_scratch=True,
-    use_scratch_comment='use scratch space on Archer2. Means models get cleaned up after 28 days.'
+    use_scratch_comment='use scratch space on Archer2. Means models get cleaned up after 28 days.',
+    runQueue='serial',
+    runQueue_comment='Q to run the pp job in',
+    runExtraArgs=['--qos=serial'],
+    runExtraArgs_comment='List of extra args for submission. For archer2 need to specifiy qos for pp job',
 )
 model = UM_rose(name=name,
                 reference=reference,

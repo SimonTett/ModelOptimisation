@@ -426,7 +426,7 @@ class UM_rose(Model):
             raise ValueError(f'path {path} is not a pathlib.Path')
         cpts = path.parts
         # ARCHER2
-        if cpts[0:4] != ('/','home','n02','n02-puma'):
+        if cpts[1:4] != ('home','n02','n02-puma'): # ignoring root so works on windows...
             my_logger.warning(f'path {path} does not start with /home/n02/n02-puma')
             return pathlib.PurePath(path)
         result = cpts[0:3] +tuple(['n02']) + cpts[4:] # replace n02-puma with n02

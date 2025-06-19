@@ -687,13 +687,14 @@ class SubmitStudy(Study, model_base, journal):
 
         if (self.next_iter_cmd is not None) and (len(pp_jids) > 0):
             # submit the next job in the iteration if have one and submitted post-processing.
-            run_info = config.run_info()
-            runCode = config.runCode()  # NB with current implementation this is the same as run_info.get('runCode')
+            run_info = config.run_info() # get out the run_info
+            submit_params = self.engine.extract_job_submission_params(run_info) # and extract the submission parameters
             iter_count = np.max(list(self.iter_keys.values()))  # iteration we are at.
             next_job_name = f"{configName}_{iter_count}"
-            run_next_submit = self.engine.submit_cmd(self.next_iter_cmd, next_job_name, outdir=output_dir,
-                                                     run_code=runCode,
-                                                     hold=pp_jids)
+            run_next_submit = self.engine.submit_cmd(self.next_iter_cmd, next_job_name,
+                                                     outdir=output_dir,
+                                                     hold=pp_jids,
+                                                     **submit_params)
             output = self.run_cmd(run_next_submit)
             my_logger.info(f"Next iteration cmd is {run_next_submit} with output:{output}")
             jid = self.engine.job_id(output)  # extract the actual job id.
