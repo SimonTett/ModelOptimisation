@@ -381,6 +381,291 @@ class MyTestCase(unittest.TestCase):
 
 
 
+    """
+    AI PROMPT/Spec:
+    Write unit tests for the `process` method of the `SubmitStudy` class.
+    Tests should use unittest for testing. 
+      In setup it should create a SubmitStudy object with a model_index and do the following to set up self.submit:
+        self.tmpDir = tempfile.TemporaryDirectory()
+        testDir = pathlib.Path(self.tmpDir.name)
+        optclim3 = Model.expand('$OPTCLIMTOP/OptClimVn3/')
+        refDir = optclim3/'configurations/example_Model'
+        cpth = refDir/"configurations/dfols14param_opt3.json"
+        refDir = refDir/'reference'
+        config = StudyConfig.readConfig(cpth)
+        config.baseRunID('ZZ')
+
+        self.submit = SubmitStudy.SubmitStudy(config, model_name='Model', rootDir=testDir,next_iter_cmd=['run myself'])
+    It should add five models (submit.create_model does that)
+    Three of those should have status set to 'SUCCEEDED',  one set to 'PROCESSED', and another set to 'RUNNING'. 
+    All should have pp_jid set to an arbitrary 6 digit string.
+    These will require directly modifying the models which live in submit.model_index.
+
+    
+    It should mock:
+         Model.pp_job_status -- see test descriptions for what this should return.
+         Model.process to run Model.set_status and then return a nonsense string. 
+           Note that set_status can fail and the mock should just let that happen if it does.
+        submit.dump_config to not do anything.
+    
+    mocks likely need to be done before models are created. But say if not so.
+    Tests should do the following:
+    1) Post-processing not running    
+       mocked pp_job_status returns 'notFound' for all models. 
+       returns a list of models that were processed. 
+          They should be the first three models and have status changed from 'SUCCEEDED' to 'PROCESSED'.
+       the Model.process method was called 3 times.
+       dump_config was called once.
+
+    2) Post-processing running
+       mocked pp_job_status returns 'Running' for all models.
+       Model.process method was not called
+       A empty list  should be returned.
+       dump_config was not called.
+    3) Mixed case
+       1 of the Model.job_status returns 'Running', the rest return 'notFound'
+       Model.process was called twice.
+       returns 2 models that were processed (the two that returned 'NotFound') with status changed to 'PROCESSED'.
+       dump_config was called once.
+    4) One of the Model.pp_job_status returns None. Rest job_status returns 'Running'
+       Model.process was called once
+       returns a list with the model that had no pp_jid.
+       dump_config was called once.
+
+    """
+
+class test_Process(unittest.TestCase):
+    def setUp(self):
+        def process_side_effect(self,*args, **kwargs):
+            # Set status to PROCESSED if possible
+
+            self.set_status('PROCESSED')
+            return "nonsense"
+
+        def pp_job_status_side_effect(self, *args, **kwargs):
+            # Return value of pp_job_status or 'notFound' if pp_job_status is not set
+            status = getattr(self, 'pp_jid_status', 'notFound')
+            return status
+        # Patch Model.pp_job_status and Model.process before model creation
+        self.pp_job_status_patcher = unittest.mock.patch.object(Model, 'pp_job_status',autospec=True,side_effect=pp_job_status_side_effect)
+        self.dump_config_patcher = unittest.mock.patch.object(SubmitStudy.SubmitStudy, 'dump_config',autospec=True,)
+        self.process_patcher = unittest.mock.patch.object(Model, 'process', autospec=True,side_effect=process_side_effect)
+
+        self.mock_pp_job_status = self.pp_job_status_patcher.start()
+        self.mock_dump_config = self.dump_config_patcher.start()
+        self.mock_process = self.process_patcher.start()
+
+
+        self.tmpDir = tempfile.TemporaryDirectory()
+        testDir = pathlib.Path(self.tmpDir.name)
+        optclim3 = Model.expand('$OPTCLIMTOP/OptClimVn3/')
+        refDir = optclim3 / 'configurations/example_Model'
+        cpth = refDir / "configurations/dfols14param_opt3.json"
+        config = StudyConfig.readConfig(cpth)
+        config.baseRunID('ZZ')
+
+        self.submit = SubmitStudy.SubmitStudy(config, model_name='Model', rootDir=testDir,
+                                              next_iter_cmd=['run myseld'])
+
+        # Add 5 models to the submit object
+        self.models=[] # 'copy' of models in submit.model_index
+        for i in range(5):
+            params = dict(indx=i, VF1=2.0 + i * 0.1, CT=1e-4 + i * 1e-5)
+            self.models.append(self.submit.create_model(params))
+
+
+        # Set statuses and pp_jid
+        for i, model in enumerate(self.models):
+            if i < 3:
+                model.status='SUCCEEDED'
+            elif i == 3:
+                model.status='PROCESSED'
+            else:
+                model.status='RUNNING'
+            model.pp_jid = f'{100000 + i}'
+
+    def tearDown(self):
+        self.pp_job_status_patcher.stop()
+        self.process_patcher.stop()
+        self.dump_config_patcher.stop()
+        self.tmpDir.cleanup()
+
+
+    def test_post_processing_not_running(self):
+        # All pp_job_status return 'notFound'
+        #self.mock_pp_job_status.return_value = 'notFound'
+
+        self.mock_dump_config.reset_mock()
+        self.mock_process.reset_mock()
+        expected_status = ['PROCESSED'] * 3
+        processed=self.submit.process()
+        self.assertEqual([p.status for p in processed],expected_status)  # Get statuses of processed models
+
+        self.assertEqual(self.mock_process.call_count, 3)
+        self.mock_dump_config.assert_called_once()
+
+    def test_post_processing_running(self):
+        # All pp_job_status return 'Running'
+        for model in self.models:
+            model.pp_jid_status = 'Running'
+        self.mock_process.reset_mock()
+        self.mock_dump_config.reset_mock()
+
+        processed = self.submit.process()
+        self.assertEqual(processed, [])
+        self.assertEqual(self.mock_process.call_count, 0)
+        self.mock_dump_config.assert_not_called()
+
+    def test_mixed_case(self):
+        # First model returns 'Running', rest 'motFound'
+        self.models[0].pp_jid_status = 'Running'
+
+        self.mock_dump_config.reset_mock()
+        expected_status = ['PROCESSED'] * 2
+
+
+
+        processed = self.submit.process()
+        # Only models 1 and 2 should be processed
+        self.assertEqual([p.status for p in processed], expected_status)
+        self.assertEqual(self.mock_process.call_count, 2)
+        self.mock_dump_config.assert_called_once()
+
+    def test_one_pp_job_status_none(self):
+        # First model returns None, rest 'Running'
+
+        self.models[0].pp_jid_status = None
+        for model in self.models[1:]:
+            model.pp_jid_status = 'Running'
+        self.mock_dump_config.reset_mock()
+        expected = ['PROCESSED']
+        processed = self.submit.process()
+        self.assertEqual([p.status for p in processed], expected)
+        self.assertEqual(self.mock_process.call_count, 1)
+        self.mock_dump_config.assert_called_once()
+
+
+"""
+AI Prompt/Spec:
+Write unit tests for the `kill` method of the `SubmitStudy` class. Use unittest for testing.
+mocks needed to  avoid subprocess.check_output calls and use of slurm/sge for testing.
+SubmitStudy.resub_status.  Should return value of SubmitStudy.resub_job_status if set otherwise 'notFound'.
+SubmitStudy.run_cmd should return 'nonsense' string.
+Model.kill -- should return [Model.pp_jid, Model.model_jids[-1]] Model.kill() will be tested in the Model tests.
+All mocks should use autospec=True.
+
+Setup should create a SubmitStudy object with a model_index and do the following to set up self.submit use part of the setUp from test_process. 
+
+Following tests should be done:
+1) Run submit.kill() with resub_status set to None -- should return a 10 element list from the model.pp_jid and model.model_jids[-1] values. model.kill should be called 5 times.
+2) Set  submit.resub_status to 'Running' -- should return an 11 element list from the model.pp_jid and model.model_jids[-1] values + submit.resub_jids[-1]. model.kill should be called 5 times.
+3) Make model.kill() return an empty list.  And run test#2 should get a 1 element list with the resub_jids[-1] value. model.kill should be called 5 times.
+"""
+
+
+def model_kill(self, *args, **kwargs):
+    # Return pp_jid and last model_jid
+    result = []
+    if self.pp_jid is not None:
+        result.append(self.pp_jid)
+    if self.model_jids:
+        result.append(self.model_jids[-1])
+    return result
+
+
+def resub_status_side_effect(self, *args, **kwargs):
+    # Return value of pp_job_status or 'notFound' if pp_job_status is not set
+    status = getattr(self, 'resub_job_status', 'notFound')
+    return status
+
+@unittest.mock.patch.object(SubmitStudy.SubmitStudy, 'run_cmd', autospec=True, return_value='nonsense')
+@unittest.mock.patch.object(SubmitStudy.SubmitStudy, 'resub_status', autospec=True,side_effect=resub_status_side_effect)
+@unittest.mock.patch.object(Model, 'kill', autospec=True,side_effect=model_kill)
+class test_KILL(unittest.TestCase):
+    def setUp(self):
+
+        # Patch Model.pp_job_status and Model.process before model creation
+        #self.resub_status_patcher = unittest.mock.patch.object(SubmitStudy.SubmitStudy, 'resub_status',autospec=True)
+
+
+
+
+        self.tmpDir = tempfile.TemporaryDirectory()
+        testDir = pathlib.Path(self.tmpDir.name)
+        optclim3 = Model.expand('$OPTCLIMTOP/OptClimVn3/')
+        refDir = optclim3 / 'configurations/example_Model'
+        cpth = refDir / "configurations/dfols14param_opt3.json"
+        config = StudyConfig.readConfig(cpth)
+        config.baseRunID('ZZ')
+
+        self.submit = SubmitStudy.SubmitStudy(config, model_name='Model', rootDir=testDir,
+                                              next_iter_cmd=['run myseld'])
+
+        # Add 5 models to the submit object
+        self.models=[] # 'copy' of models in submit.model_index
+        for i in range(5):
+            params = dict(indx=i, VF1=2.0 + i * 0.1, CT=1e-4 + i * 1e-5)
+            self.models.append(self.submit.create_model(params))
+
+
+        # Set statuses and pp_jid
+        for i, model in enumerate(self.models):
+            if i < 3:
+                model.status='SUCCEEDED'
+            elif i == 3:
+                model.status='PROCESSED'
+            else:
+                model.status='RUNNING'
+            model.pp_jid = f'{100000 + i}'
+            model.model_jids = [f'{200000 + i}']
+
+        self.submit.next_iter_jids=['99999']
+
+    def tearDown(self):
+
+        self.tmpDir.cleanup()
+
+
+    def test_kill_no_resub_status(self,mock_model_kill, mock_resub_status,mock_run_cmd):
+        # No resub_status set, should return 10 elements from model.pp_jid and model.model_jids[-1]
+
+
+        result = self.submit.kill()
+        expected_jids=[]
+        for model in self.models:
+            expected_jids.append(model.pp_jid)
+            expected_jids.append(model.model_jids[-1])
+
+
+        self.assertEqual(result, expected_jids)
+        self.assertEqual(mock_model_kill.call_count, 5)
+        self.assertEqual(mock_run_cmd.call_count, 0)
+
+    def test_kill_with_resub_status(self,mock_model_kill, mock_resub_status,mock_run_cmd):
+        # Set resub_status to 'Running', should return 11 elements from model.pp_jid, model.model_jids[-1] and submit.resub_jids[-1]
+        self.submit.resub_job_status = 'Running'
+
+
+        result = self.submit.kill()
+        expected_jids=[]
+        for model in self.models:
+            expected_jids.append(model.pp_jid)
+            expected_jids.append(model.model_jids[-1])
+        expected_jids.append(self.submit.next_iter_jids[-1])
+        self.assertEqual(result, expected_jids)
+        self.assertEqual(mock_model_kill.call_count, 5)
+        self.assertEqual(mock_run_cmd.call_count, 1)
+
+    def test_kill_with_empty_model_kill(self, mock_model_kill, mock_resub_status, mock_run_cmd):
+        # Make model.kill() return an empty list for all models
+        mock_model_kill.side_effect = lambda self, *a, **k: []
+        self.submit.resub_job_status = 'Running'
+
+        result = self.submit.kill()
+        expected_jids = [self.submit.next_iter_jids[-1]]
+        self.assertEqual(result, expected_jids)
+        self.assertEqual(mock_model_kill.call_count, 5)
+        self.assertEqual(mock_run_cmd.call_count, 1)
 
 if __name__ == '__main__':
     unittest.main()

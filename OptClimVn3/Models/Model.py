@@ -108,7 +108,7 @@ class Model(ModelBaseClass, journal):
     Also provides top-level methods and class methods.
     Model.load_model() will load a model from disk. An object of the appropriate class will be returned as long as that
     class inherits from Model.
-    As it inherits from history it has methods to update history,output and run commands.
+    As it inherits from journal  it has methods to update history,output and run commands.
     public attributes: (Be careful if you  change them)
         model_dir -- directory where model information is stored
         reference --  where the reference configuration came from.
@@ -125,6 +125,8 @@ class Model(ModelBaseClass, journal):
         pp_jid -- post-processing job id. This gets released when model status changes to SUCCEEDS
         model_jids -- list of model job ids.
         configs - cache of configuration files (namelists or equivalent)
+        pertub_count -- no of times model has been perturbed.
+        submission_count -- no of times model has been submitted.
         
         Private attributes:
           _post_process_input -- name of input file for post-procesing
@@ -136,7 +138,7 @@ class Model(ModelBaseClass, journal):
                        INSTANTIATED=["CREATED"],  # Instantiate a model requires it to have been created
                        SUBMITTED=['INSTANTIATED', 'PERTURBED', 'CONTINUE'],
                        # Submitting needs it to have been instantiated, perturbed or to be continued.
-                       RUNNING=["SUBMITTED"],  # running the model should have been submitted
+                       RUNNING=["SUBMITTED","RUNNING"],  # running the model should have been submitted or already been running
                        FAILED=["RUNNING", "SUBMITTED"],  # Failed means it should have been running or SUBMITTED
                        PERTURBED=["FAILED"],  # Allowed to perturb a model after it failed.
                        CONTINUE=["FAILED", "PERTURBED"],
@@ -257,6 +259,7 @@ class Model(ModelBaseClass, journal):
         self.fake = fake  # did we fake the model? Changed later.
         self.perturb_count = 0  # how many times have we perturbed the model?
         self.submission_count = 0  # how mamy times have we submitted the model?
+
 
         # history and output
         self.update_history(None)  # init history.
@@ -500,6 +503,7 @@ class Model(ModelBaseClass, journal):
         See self.status_info for allowed status names and what is expected.
         :param new_status: new status for model
         :param check_existing: Check current status is as expected.
+        :param check_allowed: Check that new status is allowed.
         """
 
         if check_allowed: # only check
@@ -621,6 +625,7 @@ class Model(ModelBaseClass, journal):
         """
         status: type_status = 'SUBMITTED'
         pp_jid = None  # unless we do something will have no pp job.
+
         # deal with fake_function.
         if self.fake and fake_function is  None:
             raise ValueError(f"Fake model {self.name} and fake_function not provided. Not allowed")
@@ -700,7 +705,7 @@ class Model(ModelBaseClass, journal):
 
     def running(self) -> typing.Optional[str]:
         """
-        Set status to running, store current job id & increment run_count
+        Set status to running, store current job id
         :return: current job id
         """
         if not self.fake:  # faking so no job id.
@@ -711,6 +716,7 @@ class Model(ModelBaseClass, journal):
             my_jid = None
 
         self.model_jids.append(my_jid)
+
         self.set_status('RUNNING')
         return my_jid
 
@@ -783,7 +789,7 @@ class Model(ModelBaseClass, journal):
         return output
 
     def process(self, update: bool = False,
-                ):
+                ) -> typing.Optional[str]:
         """
         Run the post-processing, store output and set status to PROCESSED.
         "Contract" for a post-processing script
@@ -803,7 +809,7 @@ class Model(ModelBaseClass, journal):
 
         if self.fake:  # faking?
             my_logger.debug("Faking")
-            self.set_status(status)  # just update the status which saves the stea..
+            self.set_status(status)  # just update the status which saves the state
             return
 
         input_file = self.model_dir / self._post_process_input  # generate json file to hold post process info
@@ -824,7 +830,7 @@ class Model(ModelBaseClass, journal):
 
         my_logger.debug(f"Sim obs are {self.simulated_obs}")
         self.set_status(status)  #  update the status (and dump state to disk)
-        return result
+        return result # Should this actually return the simulated observations??
 
     def read_simulated_obs(self, post_process_file: pathlib.Path):
         """
@@ -909,6 +915,13 @@ class Model(ModelBaseClass, journal):
         """
         return self.status in ['SUBMITTED']
 
+    def is_succeeded(self) -> bool:
+        """
+        Return True if model is succeeded.
+        :return: True if model status is SUCCEEDED
+        """
+        return self.status in ['SUCCEEDED']
+
     def is_processed(self) -> bool:
         """
         Return True if model is processed.
@@ -924,23 +937,8 @@ class Model(ModelBaseClass, journal):
         :return: None
         """
         if not self.fake: # not faking
-            if len(self.model_jids) > 0:  # got some models to kill
-                curr_model_id = self.model_jids[-1]
-                status = self.engine.job_status(curr_model_id)
-                if status not in ['notFound']:
-                    cmd = self.engine.kill_job(curr_model_id)
-                    self.run_cmd(cmd)
-                    my_logger.debug(f"Killed model job id:{curr_model_id}")
-                else:
-                    my_logger.debug(f"Job {curr_model_id} not found.")
+            self.kill()
 
-            if self.pp_jid is not None:  # got a post-processing job.
-                status = self.engine.job_status(self.pp_jid)
-                if status not in ['notFound']:
-                    cmd = self.engine.kill_job(self.pp_jid)
-                    self.run_cmd(cmd)
-                    my_logger.debug(f"Killed post-processing job id:{self.pp_jid}")
-                self.pp_jid = None  # killed it so should be no post processing job
 
         shutil.rmtree(self.model_dir, ignore_errors=True)
         my_logger.info(f"Deleted everything in {self.model_dir}")
@@ -1284,5 +1282,56 @@ class Model(ModelBaseClass, journal):
         """
         new_model_dict = vars(self.load(self.config_path))
         self.fill_attrs(new_model_dict)
+
+    def kill(self,kill_model:bool=True) -> list[str]:
+        """
+        Kill model related processes
+        :param kill_model: If True kill the model job and post-processing job. If False just the post-processing job.
+        :return: list of killed job ids. Though submission of models might have things that are not jobids.
+        """
+        jobs_killed = []  # list of killed jobs
+        if kill_model and len(self.model_jids) > 0:  # got some models to kill
+            curr_model_id = self.model_jids[-1]
+            status = self.model_job_status()
+            if status not in ['notFound',None]:
+                cmd = self.engine.kill_job(curr_model_id)
+                self.run_cmd(cmd)
+                my_logger.debug(f"Killed model job id:{curr_model_id}")
+                self.update_history(f'Killed model job id:{curr_model_id}')  # update history
+                jobs_killed.append(curr_model_id)
+            else:
+                my_logger.debug(f"Job {curr_model_id} not found.")
+        status = self.pp_job_status()
+        if status not in ['notFound',None]:  # got a post-processing job.
+            cmd = self.engine.kill_job(self.pp_jid)
+            self.run_cmd(cmd)
+            my_logger.debug(f"Killed post-processing job id:{self.pp_jid}")
+            self.update_history(f'Killed post-processing job id:{self.pp_jid}')  # update history
+            jobs_killed.append(self.pp_jid)
+        else:
+            my_logger.debug(f"No post-processing job to kill. pp_jid is {self.pp_jid} and status is {status}")
+        return jobs_killed
+
+    def pp_job_status(self) ->typing.Optional[str]:
+        """
+        Get the status of the post-processing job. Really done so can mock this for testing!
+        :return: status of the post-processing job. None if pp_jid is None
+        """
+        if self.pp_jid is None:
+            return None
+        else:
+            return self.engine.job_status(self.pp_jid) # return the job status
+
+    def model_job_status(self) -> typing.Optional[str]:
+        """
+        Get the status of the model job. Really done so can mock this for testing!
+        :return: status of the model job. None if no model job submitted.
+        Probably will be overwritten in subclasses to return the status of the currently running model job.
+        """
+        if self.model_jids: # got some model jid's. Return status of last one
+            return self.engine.job_status(self.model_jids[-1])
+        else:
+            return None
+
 
 Model.register_class(Model)  # register ourselves!

@@ -205,18 +205,18 @@ class ModelTestCase(unittest.TestCase):
         model = myModel('test_model', self.refDir, post_process=self.post_process,
                       model_dir=self.testDir, parameters=pardict)
         cmd = [model.expand(self.post_process['script']), 'input.json', self.post_process['output_file']]
-        expected_dct = dict(name='test_model', reference=self.refDir,
-                            model_dir=self.testDir, parameters=pardict,
+        expected_dct = dict(name='test_model', reference=pathlib.PurePath(self.refDir),
+                            model_dir=pathlib.PurePath(self.testDir), parameters=pardict,
                             post_process={}, _output={},
                             _post_process_input='input.json',
                             _post_process_output='sim_obs.json',
                             post_process_cmd_script=cmd, fake=False, simulated_obs=None,
-                            perturb_count=0, parameters_no_key={}, config_path=self.testDir / "test_model.mcfg",
-                            status='CREATED', _history=model._history, engine=engine.abstractEngine.create_engine('SLURM'), pp_jid=None, run_info={},
+                            perturb_count=0, parameters_no_key={}, config_path=pathlib.PurePath(self.testDir / "test_model.mcfg"),
+                            status='CREATED', _history=model._history, engine=model.engine, pp_jid=None, run_info={},
                             model_jids=[],
-                            submission_count=0, continue_script=pathlib.Path('continue.sh'),
-                            submit_script=pathlib.Path('submit.sh'), submitted_jid=None,
-                            set_status_script=self.model.expand("$OPTCLIMTOP/OptClimVn3/scripts/set_model_status.py"))
+                            submission_count=0, continue_script=pathlib.PurePath('continue.sh'),
+                            submit_script=pathlib.PurePath('submit.sh'), submitted_jid=None,
+                            set_status_script=pathlib.PurePath(self.model.expand("$OPTCLIMTOP/OptClimVn3/scripts/set_model_status.py")))
 
         dct = model.to_dict()
         self.assertEqual(expected_dct, dct)
@@ -924,7 +924,58 @@ class ModelTestCase(unittest.TestCase):
         model.reload()
         model == cpy_model 
         self.assertEqual(model,cpy_model) # should be the same
-        
+
+    """
+    AI Prompt/Spec for test_kill.  Will need to mock run_cmd model_check_status and pp_check_status.
+    create a model with pp_jid and model_jids setup. 
+    Should do the following tests:
+    1) Test that model.kill() works when model is in 'RUNNING' state mocking model_check_status and pp_check_status to return 'Running' and 'Queuing' respectively. Returns [model_jids[-1],pp_jid, ] run_cmd called twice 
+    2) Test that model.kill() works when model is in 'SUBMITTED' state mocking model_check_status and pp_check_status to return 'Queuing' and 'Queuing' respectively. Returns [model_jids[-1],pp_jid, ]run_cmd called twice
+    3) Test that model.kill() works when model is in 'PROCESSED' state mocking model_check_status and pp_check_status to return 'notFound' and 'notFound' respectively. Returns empty list  run_cmd not called
+    4) Test that model.kill() works when model is in 'SUCCEEDED' state mocking model_check_status and pp_check_status to return 'notFound and 'Queuing' respectively. Returns [pp_jid] run_cmd called once
+    """
+
+    def test_kill(self):
+        model = self.model
+        model.pp_jid = 'pp123'
+        model.model_jids = ['jid1', 'jid2']
+        last_jid = model.model_jids[-1]
+
+        # 1) RUNNING: model_job_status='Running', pp_job_status='Queuing'
+        model.status = 'RUNNING'
+        with unittest.mock.patch.object(model, 'model_job_status', return_value='Running'), \
+                unittest.mock.patch.object(model, 'pp_job_status', return_value='Queuing'), \
+                unittest.mock.patch.object(model, 'run_cmd', return_value='Run a cmd') as mock_run_cmd:
+            killed = model.kill()
+            self.assertEqual(killed, [last_jid, model.pp_jid])
+            self.assertEqual(mock_run_cmd.call_count, 2)
+
+        # 2) SUBMITTED: model_job_status='Queuing', pp_job_status='Queuing'
+        model.status = 'SUBMITTED'
+        with unittest.mock.patch.object(model, 'model_job_status', return_value='Queuing'), \
+                unittest.mock.patch.object(model, 'pp_job_status', return_value='Queuing'), \
+                unittest.mock.patch.object(model, 'run_cmd', return_value='Run a cmd') as mock_run_cmd:
+            killed = model.kill()
+            self.assertEqual(killed, [last_jid, model.pp_jid])
+            self.assertEqual(mock_run_cmd.call_count, 2)
+
+        # 3) PROCESSED: model_job_status='notFound', pp_job_status='notFound'
+        model.status = 'PROCESSED'
+        with unittest.mock.patch.object(model, 'model_job_status', return_value='notFound'), \
+                unittest.mock.patch.object(model, 'pp_job_status', return_value='notFound'), \
+                unittest.mock.patch.object(model, 'run_cmd', return_value='Run a cmd') as mock_run_cmd:
+            killed = model.kill()
+            self.assertEqual(killed, [])
+            self.assertEqual(mock_run_cmd.call_count, 0)
+
+        # 4) SUCCEEDED: model_job_status='notFound', pp_job_status='Queuing'
+        model.status = 'SUCCEEDED'
+        with unittest.mock.patch.object(model, 'model_job_status', return_value='notFound'), \
+                unittest.mock.patch.object(model, 'pp_job_status', return_value='Queuing'), \
+                unittest.mock.patch.object(model, 'run_cmd', return_value='Run a cmd') as mock_run_cmd:
+            killed = model.kill()
+            self.assertEqual(killed, [model.pp_jid])
+            self.assertEqual(mock_run_cmd.call_count, 1)
         
 
 

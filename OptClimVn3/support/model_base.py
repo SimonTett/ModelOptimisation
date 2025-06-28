@@ -111,7 +111,7 @@ class journal:
                 print(f"Command {' '.join(str_cmd)} stored at {key} returned {dct['result']}")
         return
 
-    def run_cmd(self, cmd: list, **kwargs):
+    def run_cmd(self, cmd: list, **kwargs) -> str:
         """
         Run a command using subprocess.check_output and record output.
         :param cmd: command to run. Any shell variables ($VARNAME) in the cmd will be expanded at the time of running.

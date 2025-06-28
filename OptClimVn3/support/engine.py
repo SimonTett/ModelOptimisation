@@ -322,7 +322,7 @@ class sge_engine(abstractEngine):
         Will raise FileNotFoundError (windows) or subprocess.CalledProcessError (linux) if the command is not found.
         :param job_id: job id for status to be checked.
         :param full_output If True will return (raw) full output
-        :return: One of 'Running','Held','Error','Suspended','Queuing',"Failed"
+        :return: One of 'Running','Held','Error','Suspended','Queuing',"Failed" or full output
         """
         cmd = ['qstat',f'-j {job_id}']
         cmd = self.connect_fn(cmd)  #
@@ -486,7 +486,7 @@ class slurm_engine(abstractEngine):
         :param job_id: job id for status to be checked.
         :param full_output If True will return (raw) full output
         Will raise FileNotFoundError (windows) or subprocess.CalledProcessError (linux) if the command is not found.
-        :return: One of 'Running','Held','Error','Suspended','Queuing',"Failed","NotFound"
+        :return: One of 'Running','Held','Error','Suspended','Queuing',"Failed","NotFound" or full output
         """
 
         cmd = [self._queue_cmd, f"--job={job_id}", '--long']  # get the output in long form for specified job.
