@@ -516,6 +516,14 @@ class UM_rose(Model):
         # Where hopefully one can just run rose/cylc on the local machine.
         return cmd
 
+    # TODO (when needed). Add a delete method to kill the suite and delete the suite_dir
+    # Cmd for killing the suite is cylc stop --now SUITE_NAME but needs to run on puma2.
+    # Can remove the suite dir on archer2/local machine.
+    # Outline of delete method:
+    #  Kill running suite: cylc stop --now self.suite_dir.name
+    #  Remove the suite dir: shutil.rmtree(self.suite_dir)
+    # run the super-class delete method to remove the model_dir.
+
     ## methods that handle 'complex' model parameters.
     @register_param('runModelTime')
     def run_time(self,runTime:typing.Union[str,int,float,None]) -> \
@@ -540,6 +548,12 @@ class UM_rose(Model):
 # add in core optclim variables.
 pth = pathlib.Path(__file__).parent /'parameter_config/UM_rose_Parameters.csv'
 UM_rose.update_from_file(pth, duplicate=True)
-# and then all the simple parameters
+class UKESM1_1(UM_rose):
+    """
+    Class to support UKESM1_1 model running in ROSE.
+    This is a subclass of UM_rose and adds the UKESM1_1 specific parameters.
+    """
+# add in the UKESM1_1 specific parameters.
+# Note that this will overwrite any parameters in UM_rose
 pth = pathlib.Path(__file__).parent /'parameter_config/UM_rose_UKESM1_1.csv'
-UM_rose.update_from_file(pth,duplicate=False)
+UKESM1_1.update_from_file(pth,duplicate=False)

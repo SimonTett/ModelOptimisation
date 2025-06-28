@@ -6,7 +6,7 @@ import metomi.rose.config
 from aiofiles.ospath import samefile
 from scipy.constants import value
 
-from UM_rose import UM_rose
+from UM_rose import UM_rose,UKESM1_1
 import copy
 import tempfile
 import pathlib
@@ -41,7 +41,7 @@ class test_um_rose(unittest.TestCase):
         filepath =os.environ['OPTCLIMTOP']+'/OptClimVn3/configurations/example_UM_rose/references/u-db898/OptClimVn3/configurations/example_UM_rose/references/u-db898'
         post_process = dict(script='$OPTCLIMTOP/OptClimVn3/scripts/comp_obs.py', output_file='obs.json')
         self.post_process = post_process
-        self.model = UM_rose(name='testM', reference=refDir,
+        self.model = UKESM1_1(name='testM', reference=refDir,
                             model_dir=testDir, suite_dir=testDir/'suite',post_process=post_process,
                             parameters=parameters)
 
