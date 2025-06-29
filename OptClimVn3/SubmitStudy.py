@@ -111,13 +111,14 @@ class SubmitStudy(Study, model_base, journal):
             refDir = self.expand(str(config.referenceConfig()))
         self.refDir = refDir
 
-        if model_name is not None:  # This is fixed. Even if configuation changed the model_name is fixed.
+        if model_name is not None:  # This is fixed. Even if configuration changed the model_name is fixed.
             self.model_name = model_name
         else:
             self.model_name = config.model_name()
 
         self.module_name = None
         # see if we have model_name in the list of known models. If we don't then try and load from module
+        # TODO: make this more robust so that it can handle models that are not in the list of known models and uses syntax Module.class
         if self.model_name not in Model.known_models():
             self.module_name = config.module_name(model_name=self.model_name)
             my_logger.info(f"Loading {self.module_name}")
@@ -286,6 +287,7 @@ class SubmitStudy(Study, model_base, journal):
         Load a SubmitStudy (or anything that inherits from it) from a file.
         The object will have its config_path replaced by config_path passed in.
         :param config_path: path to configuration to load
+        :param error -- how to handle errors when loading. See generic_json.load for details.
         :param Study: If True return a Study object. These are read-only (unless you modify by hand the attributes)
         :return: object
         """
@@ -294,7 +296,7 @@ class SubmitStudy(Study, model_base, journal):
 
         obj:SubmitStudy = cls.load(config_path,check_types=[SubmitStudy],error=error)
 
-        #TODO -- consider removing these as archive handles the rewritting needed to make work.
+        #TODO -- consider removing these statements below as archive handles the rewriting needed to make work.
         # Instead trigger an error???
         if (not isinstance(obj.config_path,pathlib.PurePath) and
                 obj.config_path.exists() and not config_path.samefile(obj.config_path)):
