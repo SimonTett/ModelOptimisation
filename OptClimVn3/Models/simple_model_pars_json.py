@@ -148,23 +148,24 @@ class simple_model_pars_json(Model):
         Generate the submission command.
         If status is INSTANTIATED or PERTURBED then submit to the Q run_simple_model.py
         """
-        runTime = self.run_info.get('runTime', 30)  # default is 30 seconds.
-        runCode = self.run_info.get('runCode')
+        submit_params = self.engine.extract_job_submission_params(self.run_info,
+                                                                  default_values=dict(runTime=30)) # 30 seconds for running
+
+
         if self.status in ['INSTANTIATED', 'PERTURBED']:
             script = self.submit_script
         elif self.status == 'CONTINUE':
             script = self.continue_script
         else:
             raise ValueError(f"Status {self.status} not expected ")
-        # just use the submit.
         outdir = self.model_dir / 'model_output'
         outdir.mkdir(parents=True, exist_ok=True)
         my_logger.debug(f"Created {outdir}")
         cmd = self.engine.submit_cmd([self.model_dir/script, str(self.StudyConfig_path)],
                                      f"{self.name}{len(self.model_jids):05d}",
                                      outdir,
-                                     run_code=runCode, time=runTime,
-                                     rundir=self.model_dir)
+                                     rundir=self.model_dir,
+                                     **submit_params)
 
         return cmd
 

@@ -25,14 +25,14 @@ class journal:
         Times are such a pain!
         :return: utcnow datetime.datetime
         """
-        return datetime.datetime.utcnow()
+        return datetime.datetime.now(datetime.timezone.utc)
 
     def update_history(self, message: typing.Optional[str]):
         """
         Update the _history directory. Key will be self.now()
         If self._history does not exist, then it will be created.
         Routine updates existing values so that multiple updates in a short time will preserve _history.
-        Short time defined as less than precision of str(now))
+        Short time defined as less than precision of str(now)
         :param message:message text to be stored.
         If message is None then  self._history will be created and the control returns
         :return:
@@ -48,6 +48,8 @@ class journal:
         h += [message]  # add on the message
         self._history[dtkey] = h  # store it back again.
         my_logger.debug(f"Updated history at {dtkey} ")
+        # TODO consider having a separate entry for the time and storing history as a list of named tuples
+        # so then _history would be a list of named tuples with time and message.
 
     def last_history_key(self) -> typing.Optional[str]:
         """
@@ -109,11 +111,11 @@ class journal:
                 print(f"Command {' '.join(str_cmd)} stored at {key} returned {dct['result']}")
         return
 
-    def run_cmd(self, cmd: list, **kwargs):
+    def run_cmd(self, cmd: list, **kwargs) -> str:
         """
         Run a command using subprocess.check_output and record output.
         :param cmd: command to run. Any shell variables ($VARNAME) in the cmd will be expanded at the time of running.
-        :**kwargs -- kwargs to be passed to subprocess.check_output. Will update defaults which is just text=True and stderr=subprocess.DEVNULL 
+        **kwargs -- kwargs to be passed to subprocess.check_output. Will update defaults which is just text=True and stderr=subprocess.DEVNULL
         :return: output from running command
         """
         args = dict(text=True, stderr=subprocess.DEVNULL)  #
@@ -127,7 +129,7 @@ class journal:
             my_logger.debug(f"Running {' '.join(cmd_to_run)}")
             output = subprocess.check_output(cmd_to_run, **args)  # run cmd
         except subprocess.CalledProcessError as e:
-            str=f"""cmd_report failed.
+            str=f"""{cmd_report} failed.
             STDOUT 
             {e.output}
             {"=" * 60}
@@ -147,11 +149,6 @@ class journal:
         return output
 
 
-def to_path(self) -> pathlib.Path:
-    """
-    Convert flexi_path to path
-    :return: if possible a path representation of path.
-    """
 
 
 class model_base:
@@ -238,15 +235,18 @@ class model_base:
 
         result = dict()
         right_pure_path_type = type(pathlib.PurePath())  # (will give Windows/Posix as appropriate)
-        for key, var in dct.items():
-            if isinstance(var, pathlib.PurePath):  # something path like
-                if cls._convert_path2pure and isinstance(var,pathlib.Path): # convert path to (local) purePath
-                    var = pathlib.PurePath(var) # purify path.
-                var = cls.translate_path(var)
+        for key, value in dct.items():
+            if isinstance(value, pathlib.PurePath):  # something path like
+                if cls._convert_path2pure and isinstance(value,pathlib.Path): # convert path to (local) purePath
+                    value = pathlib.PurePath(value) # purify path.
+                value = cls.translate_path(value)
+                if not pathlib.Path(value).exists():
+                    my_logger.warning(f"{value} does not exist. Keeping as purePath")
+                
                 # path is of correct type (after conversion) and exists -- make it a path!
-                if (type(var) == right_pure_path_type) and (pathlib.Path(var).exists()):
-                    var = pathlib.Path(var)
-            result[key] = var  # just store in in the result.
+                if (type(value) == right_pure_path_type) and (pathlib.Path(value).exists()):
+                    value = pathlib.Path(value)
+            result[key] = value  # just store in in the result.
         return result
 
     def fill_attrs(self, dct: dict, convert_pure_paths: bool = False):

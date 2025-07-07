@@ -19,7 +19,7 @@ from model_base import model_base
 from Model  import Model # root class for all models.
 from StudyConfig import OptClimConfigVn3
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
-
+#TOMAYBEDO: Consider removing keeping the config. Instead, just parse bits of it that we need and store them in the Study.
 
 class Study:
     # class attribute type information.
@@ -47,7 +47,8 @@ class Study:
         :param config: Configuration information.
         :param name: Name of the study. If None name of config is used.
         :param rootDir : Root dir where, by default, config file will be created and
-            where model configurations will be searched for.
+            where model configurations will be searched for. Will be converted to an absolute path if not already by
+            prepending the current working directory.
           If None will be current dir/config.name().
         :param models : Lst of models.
         """
@@ -65,6 +66,11 @@ class Study:
             self.rootDir = pathlib.Path.cwd() / self.name  # default path
         else:
             self.rootDir = rootDir
+        # make sure rootDir is an absolute path rather than relative.
+        if not self.rootDir.is_absolute():
+            self.rootDir = pathlib.Path.cwd() / self.rootDir
+
+
 
 
         self.model_index = dict()
@@ -178,7 +184,7 @@ class Study:
         files = direct.glob("**/" + pattern)
         self.read_model_configs(files)
 
-    def read_model_configs(self, path_list: iter):
+    def read_model_configs(self, path_list: list[pathlib.Path]):
         """
         Read model configurations from path_list and store them in self.model_index
           key will be generated from the model parameters and value will be the model.
@@ -275,7 +281,9 @@ class Study:
         tMat = self.config.transMatrix(scale=scale,
                                        dataFrame=True)  # which puts us into space where totalError is Identity matrix.
         nObs = len(obs.columns)
-        resid = (obs - self.config.targets(scale=scale)) @ tMat.T
+        target = self.config.targets(scale=scale)  # get targets
+        obs = obs.reindex(columns=target.index)  # reindex obs to match targets.
+        resid = (obs - target) @ tMat.T
         cost = np.sqrt(
             (resid ** 2).sum(1).astype(float) / nObs)  # TODO -- make nObs the number of indep matrices -- len(resid)
         cost = pd.Series(cost, index=obs.index).rename('cost ' + self.name)

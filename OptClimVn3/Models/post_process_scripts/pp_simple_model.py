@@ -1,4 +1,4 @@
-#!/bin/env python
+#!/usr/bin/env python
 """
 Simple post-processing for simple_model.
 Copies the input to output with no changes.
