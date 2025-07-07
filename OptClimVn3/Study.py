@@ -241,7 +241,8 @@ class Study:
 
         return paramsDF
 
-    def obs(self, scale: bool = True, normalize: bool = False) -> pd.DataFrame | None:
+    def obs(self, scale: bool = True, normalize: bool = False,
+            obsNames:typing.Optional[list[str]]=None) -> pd.DataFrame | None:
         """
         Extract the Obs used in the *individual* simulations. If simulation has no observations then it is ignored.
         :param scale If True data will be scaled.
@@ -254,12 +255,16 @@ class Study:
         if len(obs) == 0:  # empty list
             return None
         obsDF = pd.DataFrame(obs)
+        if obsNames is None:
+            obsNames = obsDF.columns.values
+        else:
+            obsDF=obsDF.reindex(columns=obsNames)
 
         if scale:  # scale ?
-            obsDF *= self.config.scales(obsNames=obsDF.columns)
+            obsDF *= self.config.scales(obsNames=obsNames)
 
         if normalize:  # normalize
-            tgt = self.config.targets(scale=scale, obsNames=obsDF.columns)
+            tgt = self.config.targets(scale=scale, obsNames=obsNames)
             obsDF -= tgt  # difference from tgt.
             cov = self.config.Covariances(scale=scale)  # get covariances.
             errCov = cov['CovTotal']  # just want the total
@@ -269,13 +274,14 @@ class Study:
 
         return obsDF
 
-    def cost(self, scale: bool = True) -> pd.Series | None:
+    def cost(self, scale: bool = True,
+             obsNames:typing.Optional[list[str]]=None) -> pd.Series | None:
         """
         compute cost from data.
         :param: scale -- scale data.
         :return pandas series of costs.
         """
-        obs = self.obs(scale=scale)  # get obs
+        obs = self.obs(scale=scale,obsNames=obsNames)  # get obs
         if obs is None:  # no data
             return None
         tMat = self.config.transMatrix(scale=scale,
@@ -396,7 +402,9 @@ class Study:
         """
         # get a bunch of annoying messages from matplotlib so turn them off...
         logging.getLogger('matplotlib.font_manager').disabled = True
-        cost = self.cost()
+        obsNames = self.config.obsNames()
+
+        cost = self.cost(obsNames=obsNames)
         if (cost is None) or (len(cost) == 0):
             return  # nothing to plot
         fig, ax = plt.subplots(3, 1, num=figName, figsize=[8.3, 11.7], sharex='col', clear=True)
@@ -430,7 +438,7 @@ class Study:
             a = paramAx.axvline(minp, linestyle='dashed', linewidth=2, color='gray')
 
             # plot norm obs
-            obs = self.obs(scale=True, normalize=True)
+            obs = self.obs(scale=True, normalize=True,obsNames=obsNames)
             X = np.arange(-0.5, obs.shape[1])
             Y = np.arange(-0.5, obs.shape[0])
             cmO = obsAx.pcolormesh(Y, X, obs.T.values, vmin=-4, vmax=4, cmap=cmap)
