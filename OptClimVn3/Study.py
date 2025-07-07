@@ -460,6 +460,13 @@ class Study:
             fig.savefig(str(monitorFile))  # save the figure
         return fig, (costAx, paramAx, obsAx)
 
+    def reload(self):
+        """
+        reload in place the study.
+        """
+        new_study_dict=vars(self.load(self.config_path))
+        self.fill_attrs(new_study_dict)
+
     # end of Study
 
 
