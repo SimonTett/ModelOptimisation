@@ -66,8 +66,12 @@ parser.add_argument("--readonly", action='store_true', help="read data but do no
 parser.add_argument("-t", "--test", action='store_true',
                     help='If set run fake function rather than submitting models.')
 parser.add_argument("--update_config", action='store_true',
-                    help="If set update *existing* configuration from configuration given.")
+                    help="If set update *existing* configuration from configuration given. Be careful when doing this.")
 parser.add_argument("-m", "--monitor", action='store_true', help='Producing monitoring plot after running')
+parser.add_argument('--kill',action='store_true',help='Kill all jobs in the study. ')
+parser.add_argument('--process',action='store_true',help='Process all models that are SUCCEEDED and have no jobs. ')
+parser.add_argument('--model_pattern',type=str,default=None,
+                    help='glob pattern relative to the rootDir to load models when config is generated for first time. A good choice is "*/*.mcfg". Not tested. ')
 
 fail_help_str = """Behaviour for models that failed. Choices are:
                 fail (default), 
@@ -170,6 +174,13 @@ if config_path.exists():  # config file exists. Read it in.
         # use with care
         my_logger.warning("Updated configuration. Your configuration might not be consistent.")
 
+    if args.kill:
+        my_logger.info(f"Killing all jobs in {rSUBMIT}")
+        rSUBMIT.kill()
+    if args.process:
+        my_logger.info(f"Processing all models in {rSUBMIT} that are SUCCEEDED and have no jobs.")
+        rSUBMIT.process()
+
     if delete:  # delete the config
         result = input(f">>>Going to delete existing configs in {rootDir}<<<. OK ? (yes if so): ") 
         if result.lower() in ['yes']:
@@ -186,11 +197,17 @@ if config_path.exists():  # config file exists. Read it in.
 
 if rSUBMIT is None:  # no configuration exists. So create it.
     # We can get here either because config_path does not exist or we deleted the config.
-    args_not_for_restart = ['--delete','--purge','--update','--update_config']
+    args_not_for_restart = ['--delete','--purge','--update','--update_config','--kill','--process','--model_pattern']
     # Arguments to be removed from the restart cmd
     restartCMD = [arg for arg in sys.argv if arg not in args_not_for_restart]  # generate restart cmd.
     my_logger.info(f"restartCMD is {restartCMD}")
     rSUBMIT = runSubmit.runSubmit(configData, rootDir=rootDir, config_path=config_path,next_iter_cmd=restartCMD)
+    if args.model_pattern is not None: # we have a model pattern to load models from.
+        my_logger.warning(f"Loading models from {args.model_pattern} in {config_path.parent}. Not yet tested")
+        files = list(config_path.parent.glob(args.model_pattern))
+        rSUBMIT.read_model_configs(files)
+        my_logger.info(f"Loaded models in {files} ")
+        raise NotImplementedError('Need to deal with gen_name which could be inconsistent here.' )
     my_logger.debug(f"Created new runSubmit {rSUBMIT}")
 
 

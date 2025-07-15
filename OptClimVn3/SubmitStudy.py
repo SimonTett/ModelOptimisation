@@ -182,6 +182,8 @@ class SubmitStudy(Study, model_base, journal):
     def create_model(self, params: dict, dump: bool = True) -> typing.Optional[Model]:
         """
         Create a model, update list of created models and index of models.
+        name is generated using self.gen_name() and will be checked to see if it already exists.
+        If it does then a new name will be generated (and so on).
 
         :param   params: dictionary of parameters to create the model.
          The following parameters are special and handled differently:
@@ -194,8 +196,13 @@ class SubmitStudy(Study, model_base, journal):
         :param dump: If True dump  self (using self.dump_config method)
         :return: Model created (or model that already exists). Returns None if would make more than max_model_sims
         """
-
-        name = self.gen_name()
+        existing_names = [model.name for model in self.model_index.values() ] # list of existing model names
+        while True: # loop until we find a name that does not exist.
+            name = self.gen_name()
+            if name not in existing_names:
+                break
+            else:
+                my_logger.debug(f"Name {name} already exists. Generating new name")
         model_dir = self.rootDir / name
         if model_dir.exists():
             raise ValueError(f"model_dir {model_dir} already exists")
@@ -585,13 +592,13 @@ class SubmitStudy(Study, model_base, journal):
         # initialisation
 
         base = self.config.baseRunID()  # get the baserun
-        maxDigits = self.config.maxDigits()  # get the maximum length of string for model.
+        max_digits = self.config.maxDigits()  # get the maximum length of string for model.
         chars = string.digits + string.ascii_lowercase  # windows does not case distinguish. Silly windows.
         radix = len(chars)
         # increment counter or restart
         if (reset is True) or (self.name_values is None):  # reset the counter
-            self.name_values = [0] * maxDigits
-        elif (maxDigits > 0):  # increase the values if we have digits.
+            self.name_values = [0] * max_digits
+        elif (max_digits > 0):  # increase the values if we have digits.
             self.name_values[0] += 1
             for indx in range(0, len(self.name_values)):
                 if self.name_values[indx] >= radix:
@@ -611,7 +618,7 @@ class SubmitStudy(Study, model_base, journal):
 
         # give a warning if run out of names
 
-        if (maxDigits > 0) & (self.name_values == [radix] * maxDigits):
+        if (max_digits > 0) & (self.name_values == [radix] * max_digits):
             my_logger.warning(f"Ran out of names name_values = {self.name_values}")
         return name  # return name
 

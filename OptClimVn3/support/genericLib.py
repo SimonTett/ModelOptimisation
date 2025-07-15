@@ -23,7 +23,7 @@ import sys
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 
-def setup_logging(level:typing.Optional[int] = None,
+def setup_logging(level:typing.Optional[typing.Union[int,str]] = None,
                   rootname:typing.Optional[str] = None,
                   log_config:typing.Optional[dict]=None):
     """

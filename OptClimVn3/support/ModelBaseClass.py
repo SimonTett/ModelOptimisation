@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import importlib
+
 
 from model_base import model_base
 from  param_info import ParamInfo
@@ -17,7 +17,7 @@ my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 
 def register_param(name: str) -> typing.Callable:
     """
-    Decorator to register a parameter.
+    Decorator/function to register a parameter.
     :param name: name of the parameter
     :return:
     """
@@ -33,6 +33,8 @@ def register_param(name: str) -> typing.Callable:
     return decorator
 
 
+
+type_param_fn = typing.Union[list[tuple['NamelistVar', typing.Union[list[float],float]]], typing.Union[float,list[float]]]
 
 class ModelBaseClass(model_base):
     # T
