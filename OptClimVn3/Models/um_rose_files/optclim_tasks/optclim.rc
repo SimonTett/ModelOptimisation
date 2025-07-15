@@ -15,7 +15,7 @@
 		atmos_main:fail => optclim_um_fail
 		atmos_main => !optclim_um_fail
             """
-  [[ queues ]] ## Limit number of jobs running at once in a suite. NO queue would, I think, limit to 3.
+  [[ queues ]] ## Limit number of jobs running at once in a suite. No queue would, I think, limit to 3 (5 for cylc 8).
         [[[ default ]]]
             limit = 2
             # limit to two jobs running at once... No obvious way of having a limit only for serial q's.

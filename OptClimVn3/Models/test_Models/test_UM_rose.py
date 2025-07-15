@@ -364,7 +364,79 @@ and even more text
             result = model._guess_prebuild()
             self.assertIsNone(result)
 
+## specific tests.
 
+# for UKESM1_params want to test that the parameter functions work.
+# Will do this by getting hold of default parameters and checking that the functions gives the values in the reference model.
+# So idea will be  to have a dict of default values indexed by parameter name. Then loop over that doing the test.
+# might be a good place to use subTest.
+# Parameters are:
+# 'tupp_io',
+#  'f0_io',
+#  'nl0_io',
+#  'rootd_ft_io',
+#  'fsmc_p0_io',
+#  'gs_nvg_io',
+#  'n_lai_exposed',
+#  'unload_rate_u',
+
+
+class TestUKESM1ParamFunctions(unittest.TestCase):
+    def setUp(self):
+
+        tmpDir = tempfile.TemporaryDirectory()
+        testDir = pathlib.Path(tmpDir.name)
+        refDir = pathlib.Path(genericLib.expand('$OPTCLIMTOP/OptClimVn3/configurations/example_UM_rose/references/u-db898'))
+        post_process = dict(script='$OPTCLIMTOP/OptClimVn3/scripts/comp_obs.py', output_file='obs.json')
+        self.tmpDir = tmpDir
+        self.testDir = testDir
+        self.refDir = refDir
+        self.model = UKESM1_1(name='testM', reference=refDir,
+                              model_dir=testDir, suite_dir=testDir/'suite', post_process=post_process)
+        self.model.instantiate()
+
+    def tearDown(self):
+        shutil.rmtree(self.testDir, onerror=genericLib.errorRemoveReadonly)
+        self.tmpDir.cleanup()
+
+    def test_UKESM1_param_functions(self):
+        """
+        Test that UKESM1 parameter functions return the expected default values.
+        """
+        default_params = {
+            'tupp_io': 43., # UKESM1_1 default value
+            'f0_io': 0.875,
+            'nl0_io': 0.046, # UKESM1_1 default value
+            'rootd_ft_io': 2.0,
+            'fsmc_p0_io': 0.0, # UKESM1_1 default value
+            'gs_nvg_io': 0.01,
+            'n_lai_exposed': 27.0, # namelist differently understood in UKESM1_1
+            'unload_rate_u': 2.31e-6,
+            'cca_md_knob': 0.1, # UKESM1_1 default value
+        }
+        default_nl_values= {
+            'tupp_io': [43,43,43,26,32,32,32,32,45,45,45,40,36],
+            'f0_io': [0.875,0.875,0.892,0.875,0.875,0.931,0.931,0.931,0.8,0.8,0.8,0.875,0.875],
+            'nl0_io': [0.046,0.046,0.046,0.033,0.033,0.073,0.073,0.073]+5*[0.06],
+            'rootd_ft_io': [2,3,2,2,1.8]+8*[0.5],
+            'fsmc_p0_io': 13*[0],
+            'gs_nvg_io': [0.00000,0.00000,1.00000e-2]+11*[1.00000e+6],
+            'n_lai_exposed': [2.0,2.0,27.0,1.0,2.0]+6*[27.0]+[6.0,6.0], # h
+            'unload_rate_u': [0.0,0.0,0.0,2.31e-06,2.31e-06]+8*[0.0],
+            'cca_md_knob': [0.1,0.1]
+        }
+        for param, expected in default_params.items():
+            with self.subTest(param=param):
+                print(f'testing {param}')
+                value = self.model.read_param(param)
+                self.assertAlmostEqual(value, expected, msg=f"{param} did not match reference value")
+                # read in the values from the namelist.
+                nl_stuff = self.model.param_info.param_constructors[param][0](self.model,0.0)  # call the function with a dummy value.
+                nl_values = [self.model.read_nl_value(nl) for nl,v in nl_stuff]
+                if len(nl_values) == 1:
+                    nl_values = nl_values[0]
+                self.assertEqual(nl_values, default_nl_values[param],
+                                 msg=f"{param} namelist values did not match reference values {default_nl_values[param]} got {nl_values}")
 
 
 

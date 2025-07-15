@@ -49,6 +49,7 @@ Do write tests for your new Model testing your new and modified methods.
 from __future__ import annotations
 
 import copy
+import functools
 import logging
 import os
 import pathlib
@@ -1236,6 +1237,40 @@ class Model(ModelBaseClass, journal):
                 my_logger.debug(f"Parameter {parameter} set {s} to {value}")
 
         return result
+
+    @classmethod
+    def register_param_with_partial(cls,
+                                    name: str,
+                                    method: typing.Callable,
+                                    *args,  # positional arguments to pass to the function,
+                                    **kwargs  # keyword arguments to pass to the function
+                                    ):
+
+        """
+        Register a parameter with a partial method in the param_info.
+        Also adds the method to the class with the given name.
+        :param name: name of the parameter to register.
+        :param method: method to register. This should be a method of the class.
+          partial will be used to wrap the method with the given args and kwargs.
+        :param args: arguments to pass to partial
+        :param kwargs:kwargs to pass to partial
+        :return: method
+        """
+
+        def make_wrapped_method(method, qualname):
+            def wrapper(self, *fargs, **fkwargs):
+                return method(self, *fargs, **fkwargs)  # call the method with the class as first argument.
+
+            wrapper.__qualname__ = qualname
+            wrapper.__name__ = qualname.split('.')[-1]
+            return wrapper
+
+        partial_method = functools.partial(method, *args, **kwargs)
+        wrapped_method = make_wrapped_method(partial_method, cls.__name__ + '.' + name)  # wrap the method.
+
+        cls.param_info.register(name, wrapped_method)
+        setattr(cls, name, wrapped_method)  # add the method to the class.
+        return wrapped_method
 
     def perturb(self, parameters: typing.Optional[dict] = None):
         """
