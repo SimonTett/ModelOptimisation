@@ -976,6 +976,15 @@ class ModelTestCase(unittest.TestCase):
             killed = model.kill()
             self.assertEqual(killed, [model.pp_jid])
             self.assertEqual(mock_run_cmd.call_count, 1)
+
+    def test_calendar(self):
+        """
+        Test that calendar works.
+        :return:
+        """
+        model = self.model
+        model.instantiate()
+        self.assertEqual(model.calendar(),'standard')
         
 
 

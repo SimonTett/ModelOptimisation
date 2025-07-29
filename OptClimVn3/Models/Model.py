@@ -1121,13 +1121,15 @@ class Model(ModelBaseClass, journal):
         return obj
 
 
-    def read_nl_value(self,nl_var:NamelistVar) -> type_allowed_fortran:
+    def read_nl_value(self,nl_var:NamelistVar,
+                      raise_error:bool = True) -> type_allowed_fortran:
         """
         Read value from namelist.
         :param nl_var: namelist variable to read
+        :param raise_error: Pass through to configs.read_value
         :return: value obtained by reading the namelist.
         """
-        value = self.configs.read_value(nl_var)
+        value = self.configs.read_value(nl_var,raise_error=raise_error)
         return value
 
 
@@ -1172,10 +1174,12 @@ class Model(ModelBaseClass, journal):
         nl = self.gen_params(parameters=parameters)  # get the namelist/value stuff
         self.configs.write_values(nl,backup=backup,create=True)  # and write them all out. Creating new namelist info if needed.
 
-    def read_param(self, parameter: str) -> type_allowed_fortran:
+    def read_param(self, parameter: str,
+                   raise_error:bool = True) -> type_allowed_fortran:
         """
         Read parameter value from model instance.
         :param parameter: parameter wanted
+        :param raise_error: passed through to read_nl_value.
         :return: value. Depends on what is in the model...
         """
         # get the namelist info.
@@ -1189,7 +1193,7 @@ class Model(ModelBaseClass, journal):
             result = stuff(self, None)
             my_logger.debug(f"Called {stuff.__qualname__} with inverse and got {result} ")
         else:
-            result = self.read_nl_value(stuff)
+            result = self.read_nl_value(stuff,raise_error=raise_error)
             my_logger.debug(f"Read data from {stuff}")
 
         return result
@@ -1367,6 +1371,13 @@ class Model(ModelBaseClass, journal):
             return self.engine.job_status(self.model_jids[-1])
         else:
             return None
+
+    def calendar(self) -> str:
+        """
+        Return cftime calendar string for this model.
+        :return: string representing the calendar for this model which will be 'standard'
+        """
+        return 'standard'
 
 
 Model.register_class(Model)  # register ourselves!
