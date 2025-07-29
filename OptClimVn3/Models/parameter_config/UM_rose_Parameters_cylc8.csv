@@ -1,7 +1,6 @@
 parameter,type,filepath,namelist,nl_var,default,name,function_name
 RUN_NAME,um_rose,rose-suite.conf,template variables,RUNID_USR,,,
 RUNID,um_rose,rose-suite.conf,template variables,RUNID,,,
-START_TIME,um_rose,rose-suite.conf,template variables,EXPT_BASIS,,,
 RUN_TARGET,um_rose,rose-suite.conf,template variables,EXPT_RUNLEN,,,
 RESUB_TIME,um_rose,rose-suite.conf,template variables,EXPT_RESUB,,,
 runCode,um_rose,rose-suite.conf,template variables,ARCHER2_GROUP,,,

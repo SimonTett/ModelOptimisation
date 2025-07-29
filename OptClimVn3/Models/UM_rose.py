@@ -3,6 +3,8 @@
 # If running on other platforms then will need to refactor/generalise this code.
 # It has some fairly large difference from Model. See class doc
 # Things marker ARCHER2 are specific to ARCHER2. Generalise if on another platform.
+# namelist info START_TIME,um_rose,rose-suite.conf,template variables,BASIS,,, (cylc 8) or
+# START_TIME,um_rose,rose-suite.conf,jinja2:suite.rc,EXPT_BASIS,,, (cylc 7)
 
 # TODO - figure out what to do if the model fails. Coz often might fix in
 #   cylc gui. But then model status won't get updated.
@@ -17,8 +19,13 @@ import tarfile
 import typing
 import shutil
 import subprocess
+import numpy as np
+
+import cftime
 import metomi.isodatetime.exceptions
 import metomi.isodatetime.parsers as parse
+import scipy.stats
+
 import genericLib
 
 from ModelBaseClass import register_param, type_param_fn  #
@@ -26,13 +33,14 @@ from Model import Model
 import pathlib
 from namelist_var import NamelistVar, GroupConfig
 
+
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")  # have this anywhere you want logging
 
 
 class UM_rose(Model):
     """
     Class to support the Unified model running in ROSE. This is for cylc7. See UM_rose_cylc8 for cylc8 version.
-    The complication is that this the UM uses cylc which requires submitting a jon to puma2.
+    The complication is that this the UM uses cylc which requires submitting a job to puma2.
     This version is rather specialised for archer2. If want to run on another platform then
     will need to refactor/generalise this code. Main changes come from including optclim.rc in suite.rc
 
@@ -369,9 +377,16 @@ class UM_rose(Model):
         if not super().check():
             return False  # failed so return False.
         ## UM_rose specific checks.
-        # 1) Check that START_TIME, RUN_TARGET and RESUB_TIME are compatible.
+        # 1) Check that START_TIME, RUN_TARGET and RESUB_TIME are compatible. Wn't work perfectly for 360 day calendar
+        # as then need to deal with 360 day calendar.
         # By converting them to Time Points and Durations we are also checking that
         # strings are valid.
+        # see what calendar is and if it is 360 day raise warning.
+        cal = self.calendar()  # get the calendar.
+        if cal != 'standard' :
+            my_logger.warning(f'''
+             model calendar is set to {cal}. This means that START_TIME, RUN_TARGET and RESUB_TIME 
+            may not be compatible with it. Please check these values. Fix code to deal with {cal} if get error''')
         try:
             start_time = parse.TimePointParser().parse(self.read_param('START_TIME'))
             run_target = parse.DurationParser().parse(self.read_param('RUN_TARGET'))
@@ -503,6 +518,7 @@ class UM_rose(Model):
     #  Kill running suite: cylc stop --now self.suite_dir.name
     #  Remove the suite dir: shutil.rmtree(self.suite_dir)
     # run the super-class delete method to remove the model_dir.
+
 
 
 ## end of class definition.
@@ -735,6 +751,213 @@ class UKESM1_params(Model):
 
     um_namelist_file = pathlib.Path('app/um/rose-app.conf')  # namelist file for UKESM1 specific parameters.
 
+    def calendar(self) -> str:
+        """
+        Function to get calendar string for model. Setting not implemented as not needed and likely has big ramifications.
+        Do it via the user interface!
+        : return: a string which should be compatable with cftime.datetime that gives the calendar used by the model.
+        """
+        nl_cal = NamelistVar('um_rose', self.um_namelist_file, 'namelist:nlstcall', 'lcal360')
+        lcal360 = self.read_nl_value(nl_cal, raise_error=False)
+        if lcal360 is None:
+            my_logger.warning('lcal360 not set. Assuming standard calendar. If running on 360 day calendar then set lcal360 to True')
+            cal = 'standard'
+        elif lcal360:
+            my_logger.debug('lcal360 set to True. Using 360 day calendar.')
+            cal = '360_day'
+        else:
+            my_logger.debug('lcal360 set to False. Using standard calendar.')
+            cal = 'standard'
+
+        return cal  # return the calendar string.
+    @register_param('START_TIME')
+    def start_time(self, value: typing.Optional[str]=None,
+                   transform: bool = True) -> type_param_fn:
+        """
+        Fn to get or set the start_time for the model. Complex as need to check 360 day calendar and if overriding basis
+        :param value: value to set START_TIME to as an ISO string. No checking is done.
+           If wrong model may likely crash...
+           If None then will return value from model.
+        :param transform: if True if read in data then will transform the value to ISO8601 string.
+        :return: ISO8601 string  or list of namelist info & values to set it to.
+
+        """
+
+        import re
+
+        def pad_iso_datetime(iso_str):
+            # thanks tochat gpt
+            # utility fn to pad a ISO datetime string to ensure it has the correct format to pass to cftime.datetime.strptime
+            # Match year, optional month, day, time, and optional fractional seconds
+            match = re.match(
+                r'^(\d{4})(?:-(\d{2}))?(?:-(\d{2}))?(?:T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?)?$',
+                iso_str
+            )
+            if not match or not match.group(1):
+                raise ValueError("ISO date string must specify a 4-digit year and be properly formatted")
+            year = match.group(1)
+            month = match.group(2) or '01'
+            day = match.group(3) or '01'
+            hour = match.group(4) or '00'
+            minute = match.group(5) or '00'
+            second = match.group(6) or '00'
+            frac = match.group(7)
+            result = f"{year}{month}{day}T{hour}{minute}{second}"
+            if frac:
+                # Ensure fractional seconds are padded to 6 digits
+                result += '.' + frac
+            return result
+
+        # Example usage:
+        # pad_iso_datetime_strict("2000-01-01T12:30:45.123456")  # OK
+        # pad_iso_datetime_strict("2000")  # OK
+        # pad_iso_datetime_strict("01-01T12:30:45")  # Raises ValueError
+
+
+        nl_override = NamelistVar('um_rose', self.um_namelist_file, 'namelist:headers','i_override_date_time')
+        override = self.read_nl_value(nl_override, raise_error=False)  # read the override value.
+        if override != 2:
+            my_logger.warning(f"Override value {override} not 2. Reading or setting it will not work as expected. ")
+        nl_start_time =  NamelistVar('um_rose', self.um_namelist_file, 'namelist:headers','new_date_time')
+        cal = self.calendar()  # get the calendar string.
+
+
+        if value is None:
+            start_time = self.read_nl_value(nl_start_time)  # read the value from the namelist.
+            if transform:
+                start_time = cftime.datetime(*start_time, calendar=cal)  # convert to datetime
+                start_time = start_time.isoformat()  # and format as ISO time string
+
+            return start_time
+
+        # convert value to a time then a list.
+        fmt = pad_iso_datetime(value)
+        time = cftime.datetime.strptime(value, format=fmt, calendar=cal)  # convert to datetime
+        time = [time.year, time.month, time.day, time.hour, time.minute, time.second]  # what the model wants
+
+        return [(nl_start_time, time),(nl_override,2)] # set the start time and override value to 2.
+    import scipy.stats
+    @register_param('cloud_ice')
+    def cloud_ice(self, start_icet_kelvin: typing.Optional[float] = None,
+                  transform: bool = True) -> type_param_fn:
+            """
+            Set the cloud_ice parameters. This is a UKESM1 specific parameter.
+            :param start_icet_kelvin: value to set. If None then read the values from the namelists.
+            :param transform: transform the read in values when value is None if transform is True. Otherwise, return raw values
+               returns two floats start_icet_kelvin and all_icet_degc_0to1/all_icet_degc when transform is True/False
+            :return: nl and values to set or just the values if None.
+
+            From: John Rostron -- 22/7/25:
+            allicetdegc is more complicated, and David is probably best to explain that one. In summary my understanding of how it's calculated is:
+             The CDF value for starticekelvin is determined (its PDF is a trapezium, with vertices at 234.15, 253.15, 267.15 and 273.15
+             This is multiplied by the value for allicetdegc0to1
+            The inverse CDF value of this is calculated, using a PDF for allicetdegc which is the same as that for starticekelvin, but with vertices shifted by -273.15.
+
+            SFBT: I think the 234.15 is an error and should be 233.15 as that is the min value allowed.
+
+            """
+            nls = [NamelistVar('um_rose', filepath=self.um_namelist_file,
+                               namelist='namelist:run_cloud', nl_var=nl_var) for nl_var in ['starticetkelvin', 'allicetdegc']]
+            trap_points = [253.15, 267.15]  # points for trapezoidal distribution in K
+            loc = 233.15  # location for trapezoidal distribution in K
+            scale = 273.15-loc # scale for trapezoidal distribution in K
+            dist_start_icet_kelvin = scipy.stats.trapezoid( *[(x-loc)/scale for x in trap_points],scale=scale,loc=loc)  # trapezoidal distribution for start_icet_kelvin
+            loc = -40
+            dist_all_icet_degc = scipy.stats.trapezoid( *[(x-273.15-loc)/scale for x in trap_points],scale=scale,loc=loc)  # trapezoidal distribution for all_icet_degc
+            # temperature in K at which cloud ice starts to form and temperature in C at which all cloud water is ice.
+
+            if start_icet_kelvin is None: # read values from the namelist.
+                start_icet_kelvin, all_icet_degc = (float(self.read_nl_value(nl)) for nl in nls)
+
+                if transform:
+                    # work out all_icet_degc from start_icet_kelvin and all_icet_degc.
+                    # see where values are in the distribution.
+                    start_ice_x = dist_start_icet_kelvin.cdf(start_icet_kelvin)
+                    all_ice_x = dist_all_icet_degc.cdf(all_icet_degc)  # convert to K for distribution.
+                    if all_ice_x > start_ice_x:
+                        raise ValueError(f'all_ice_x {all_ice_x} is greater than start_ice_x {start_ice_x}. '
+                                         f'Check the values are correct.')
+
+
+                    if np.abs(start_ice_x) < 1e-5:  # if very close to 0 then set allicetdegc to 0.
+                        all_icet_degc_0to1 = 0.0
+                    else:
+                        all_icet_degc_0to1 = all_ice_x/start_ice_x
+                    if not (all_icet_degc_0to1 >= 0.0 and all_icet_degc_0to1 <= 1.0):
+                        raise ValueError(f'allicetdegc0to1 {all_icet_degc_0to1} not in range 0 to 1')
+                    result = [start_icet_kelvin, all_icet_degc_0to1]  # return the values.
+                else:
+                    result = [start_icet_kelvin, all_icet_degc]
+                return result # return the values.
+
+            # values to set. Need to get the latent parameter allicedegc0to1 from the parameters.
+            # If we don't have it then need to run the inverse calculation to get it from ref config.
+            all_icet_degc_0to1 = self.parameters.get('all_icet_degc_0to1', None)  # default is None.
+            if all_icet_degc_0to1 is None:  # if not set then calculate it.
+                _,all_icet_degc_0to1 = self.cloud_ice( transform=True)  # call the function to get the value.
+            start_ice_x = dist_start_icet_kelvin.cdf(start_icet_kelvin)  # where in the dist are we?
+            all_ice_x = start_ice_x * all_icet_degc_0to1  # where in the dist are we for all_ice?
+            if not (0.0 <= all_icet_degc_0to1 <= 1.0):
+                raise ValueError(f'all_icet_degc_0to1 {all_icet_degc_0to1} not in range 0 to 1. '
+                                 f'Check the value is correct.')
+            all_icet_degc = dist_all_icet_degc.ppf(all_ice_x)  # get the value from the distribution.
+
+            return [(nl, v) for nl, v in zip(nls, [start_icet_kelvin, all_icet_degc])]  # return a list of tuples (NamelistVar, value) to set.
+
+
+    @register_param('aerosol_cld')
+    def aerosol_cld(self, aparam: typing.Optional[float], transform: bool = True) -> type_param_fn:
+        """
+        Set aparam and bparam. bparam depends on aparam and liu_latent.
+        :param aparam: value of param to to set. If None then read the value of aparam from the namelist.
+        :param transform: transform the readin value when value is None if transform is True. Otherwise, return raw values
+        :return: nl and values to set or just the value if None.
+        """
+        nls = [NamelistVar('um_rose', filepath=self.um_namelist_file,
+                         namelist='namelist:run_radiation', nl_var=nl_var) for nl_var in ['aparam', 'bparam']]
+
+        # get the liu_latent  value from the parameters. Default value is 0.00681.
+
+        if aparam is None:
+            aparam,bparam = (float(self.read_nl_value(nl)) for nl in nls) # read the namelist values
+            if transform:
+                # Compute liu_latent from aparam & bparam.
+                liu_latent = bparam+0.19-0.62*aparam  # inverse from linear regression -- see below.
+                result = [aparam,liu_latent] # aparam is the first element.
+            else:
+                result = [aparam, bparam]
+            return result
+        # if we have a value then set the bparam value.
+        liu_latent = self.parameters.get('liu_latent', 0.0066)  # default value is 0.0066 in UKESM1.1
+        bparam  = -0.19+0.617*aparam+liu_latent # worked out from linear regression on GA8 parameter data.
+        return [(nl,v) for nl,v in zip(nls,[aparam, bparam])]  # return a list of tuples (NamelistVar, value) to set.
+
+    @register_param('rho_snow_fresh')
+    def rho_snow(self,rho_snow_fresh: typing.Optional[float],
+                 transform: bool = True) -> type_param_fn:
+        """
+        Set rho_snow_fresh & rho_snow_et_crit parameters.  Uses rho_snow_fresh+rho_snow_et_crit_delta to set rho_snow_et_crit.
+        :param rho_snow_fresh: value of rho_snow_fresh to set. If None then read the value from the namelist.
+        :param transform: transform the readin value when value is None if transform is True. Otherwise, return raw values
+        :return: nl and values to set or values of rho_snow_fresh and rho_snow_et_crit_delta if value is None.
+        """
+        nls = [NamelistVar('um_rose', filepath=self.um_namelist_file, namelist='namelist:jules_snow', nl_var=nl_var)
+               for nl_var in ['rho_snow_fresh', 'rho_snow_et_crit']]
+
+        if rho_snow_fresh is None:  # pass None to read_nl_value ie. invert the value.
+            result:list[float] = [float(self.read_nl_value(nl)) for nl in nls]  # read the namelist values
+            if transform:
+                rho_snow_fresh= result[0]  # want the 1st element of the values.
+                rho_snow_et_crit_delta = result[1]-result[0]  # want the 2nd element of the values.
+                result = [rho_snow_fresh, rho_snow_et_crit_delta]  # return the rho_snow_fresh and rho_snow_et_crit_delta values.
+            return result
+        # if we have a value then set the rho_snow_et_crit value.
+        rho_snow_et_crit_delta = self.parameters.get('rho_snow_et_crit_delta', 41.0)
+        # default value is 150.0 - 109.0 = 41.0
+        rho_snow_et_crit = rho_snow_fresh - rho_snow_et_crit_delta  # set the rho_snow_et_crit value.
+        return [(nl,v) for nl,v in zip(nls,[rho_snow_fresh, rho_snow_et_crit])]  # return a list of tuples (NamelistVar, value) to set.
+
+
     @register_param('fsmc_p0_io')
     def fsmc_p0_io(self,
                    value: typing.Optional[float],
@@ -835,7 +1058,7 @@ class UKESM1_params(Model):
         Set the run time for the model. This is in seconds or as an ISO duration string.
         UM wants it as a ISO duration string. This function will convert to that if needed.
         :param runTime: The run time in seconds or as an iso duration.
-        :param transform -- does nothing. For compatability with other functions.
+        :param transform -- does nothing. For compatibility with other functions.
         :return: list((nl,value)) or just the value read in from the config.
         """
         nl = NamelistVar('um_rose', filepath=pathlib.Path('rose-suite.conf'),

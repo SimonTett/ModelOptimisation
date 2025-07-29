@@ -6,7 +6,7 @@ import metomi.rose.config
 from aiofiles.ospath import samefile
 from scipy.constants import value
 
-from UM_rose import UM_rose,UKESM1_1
+from UM_rose import UM_rose, UKESM1_1, UKESM1_1_c8
 import copy
 import tempfile
 import pathlib
@@ -386,14 +386,22 @@ class TestUKESM1ParamFunctions(unittest.TestCase):
 
         tmpDir = tempfile.TemporaryDirectory()
         testDir = pathlib.Path(tmpDir.name)
-        refDir = pathlib.Path(genericLib.expand('$OPTCLIMTOP/OptClimVn3/configurations/example_UM_rose/references/u-db898'))
+        refDir1 = pathlib.Path(genericLib.expand('$OPTCLIMTOP/OptClimVn3/configurations/example_UM_rose/references/u-db898'))
+        refDir2 = pathlib.Path(
+            genericLib.expand('$OPTCLIMTOP/OptClimVn3/configurations/example_UM_rose/references/u-dr157'))
         post_process = dict(script='$OPTCLIMTOP/OptClimVn3/scripts/comp_obs.py', output_file='obs.json')
         self.tmpDir = tmpDir
         self.testDir = testDir
-        self.refDir = refDir
-        self.model = UKESM1_1(name='testM', reference=refDir,
-                              model_dir=testDir, suite_dir=testDir/'suite', post_process=post_process)
-        self.model.instantiate()
+
+        testDir1= testDir / 'test1'
+        testDir2 = testDir / 'test2'
+        self.models = [UKESM1_1(name='test_c7', reference=refDir1,
+                              model_dir=testDir1, suite_dir=testDir1/'suite', post_process=post_process),
+                    UKESM1_1_c8(name='test_c8', reference=refDir2,
+                              model_dir=testDir2, suite_dir=testDir2/'suite', post_process=post_process)]
+        for model in self.models:
+            model.instantiate()
+
 
     def tearDown(self):
         shutil.rmtree(self.testDir, onerror=genericLib.errorRemoveReadonly)
@@ -413,6 +421,10 @@ class TestUKESM1ParamFunctions(unittest.TestCase):
             'n_lai_exposed': 27.0, # namelist differently understood in UKESM1_1
             'unload_rate_u': 2.31e-6,
             'cca_md_knob': 0.1, # UKESM1_1 default value
+            'aparam': [0.07, 0.0066], # UKESM1_1 default values for aparam and liu_latent. Note default value different from MO value.
+            'rho_snow_fresh': [109.0,41.], # UKESM1_1 default value
+            'cloud_ice': [263.15, 0.5]  # UKESM1_1 default value
+
         }
         default_nl_values= {
             'tupp_io': [43,43,43,26,32,32,32,32,45,45,45,40,36],
@@ -423,27 +435,48 @@ class TestUKESM1ParamFunctions(unittest.TestCase):
             'gs_nvg_io': [0.00000,0.00000,1.00000e-2]+11*[1.00000e+6],
             'n_lai_exposed': [2.0,2.0,27.0,1.0,2.0]+6*[27.0]+[6.0,6.0], # h
             'unload_rate_u': [0.0,0.0,0.0,2.31e-06,2.31e-06]+8*[0.0],
-            'cca_md_knob': [0.1,0.1]
+            'cca_md_knob': [0.1,0.1],
+            'aparam': [0.07, -0.14 ],  # UKESM1_1 default value
+            'rho_snow_fresh': [109.0, 150.],  # UKESM1_1 default value
+            'cloud_ice':[263.15,-20.0]
         }
-        for param, expected in default_params.items():
-            with self.subTest(param=param):
-                print(f'testing {param}')
-                value = self.model.read_param(param)
-                self.assertAlmostEqual(value, expected, msg=f"{param} did not match reference value")
-                # read in the values from the namelist.
-                nl_stuff = self.model.param_info.param_constructors[param][0](self.model,0.0)  # call the function with a dummy value.
-                nl_values = [self.model.read_nl_value(nl) for nl,v in nl_stuff]
-                if len(nl_values) == 1:
-                    nl_values = nl_values[0]
-                self.assertEqual(nl_values, default_nl_values[param],
-                                 msg=f"{param} namelist values did not match reference values {default_nl_values[param]} got {nl_values}")
+        # test cylc7 and cylc8 versions
+        for model in self.models:
+            for param, expected in default_params.items():
+                with self.subTest(param=param):
+                    print(f'testing {param}')
+                    value = model.read_param(param)
+                    # check the value is as expected.
+                    if isinstance(value, list):
+                        self.assertEqual(len(value), len(expected))
+                        for idx in range(0,len(value)):
+                            self.assertAlmostEqual(value[idx], expected[idx],
+                                                   msg=f"{param} at index {idx} did not match reference value")
+                    else:
+                        self.assertAlmostEqual(value, expected, msg=f"{param} did not match reference value")
+                    # read in the values from the namelist.
+                    nl_stuff = model.param_info.param_constructors[param][0](model,0.0)  # call the function with a dummy value.
+                    nl_values = [model.read_nl_value(nl) for nl,v in nl_stuff]
+                    if len(nl_values) == 1:
+                        nl_values = nl_values[0]
+                    self.assertEqual(nl_values, default_nl_values[param],
+                                     msg=f"{param} namelist values did not match reference values {default_nl_values[param]} got {nl_values}")
 
-
-
-
-
-        
-
+        # test can read the simple params and that they are the same as the inverse ones.
+        expected_values = ['2010-10-01T00:00:00','1979-01-01T00:00:00'] # this is what is exected on the read.
+        model_nl_values = [[2010,10,1,0,0,0],[1979,1,1,0,0,0] ] # and these are the namelist values.
+        for model,expected_value,nl_value in zip(self.models,expected_values,model_nl_values):
+            value = model.read_param('START_TIME')
+            self.assertEqual(value, expected_value, msg=f"{type(model)} START_TIME did not match reference value {expected_value} got {value}")
+            # read in the values using the function
+            value = model.start_time(transform=False) # raw read.
+            self.assertEqual(value, nl_value,msg=f"{type(model)} START_TIME namelist values did not match reference values {nl_value} got {value}")
+        # check calendar values
+        expected_calendars = ['standard', '360_day']  # expected calendars for UKESM1_1 and UKESM1_1_c8
+        for model, expected_calendar in zip(self.models, expected_calendars):
+            cal = model.calendar()
+            self.assertEqual(cal, expected_calendar,
+                             msg=f"{type(model)} CALENDAR did not match reference value {expected_calendar} got {cal}")
 
 
 if __name__ == '__main__':

@@ -1,7 +1,6 @@
 parameter,type,filepath,namelist,nl_var,default,name,function_name
 RUN_NAME,um_rose,rose-suite.conf,jinja2:suite.rc,RUNID_USR,,,
 RUNID,um_rose,rose-suite.conf,jinja2:suite.rc,RUNID,,,
-START_TIME,um_rose,rose-suite.conf,jinja2:suite.rc,EXPT_BASIS,,,
 RUN_TARGET,um_rose,rose-suite.conf,jinja2:suite.rc,EXPT_RUNLEN,,,
 RESUB_TIME,um_rose,rose-suite.conf,jinja2:suite.rc,EXPT_RESUB,,,
 runCode,um_rose,rose-suite.conf,jinja2:suite.rc,ARCHER2_GROUP,,,
