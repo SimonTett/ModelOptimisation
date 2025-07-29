@@ -423,7 +423,7 @@ class TestUKESM1ParamFunctions(unittest.TestCase):
             'cca_md_knob': 0.1, # UKESM1_1 default value
             'aparam': [0.07, 0.0066], # UKESM1_1 default values for aparam and liu_latent. Note default value different from MO value.
             'rho_snow_fresh': [109.0,41.], # UKESM1_1 default value
-            'cloud_ice': [263.15, 0.5]  # UKESM1_1 default value
+            'starticetkelvin': [263.15, 0.5]  # UKESM1_1 default value
 
         }
         default_nl_values= {
@@ -438,7 +438,7 @@ class TestUKESM1ParamFunctions(unittest.TestCase):
             'cca_md_knob': [0.1,0.1],
             'aparam': [0.07, -0.14 ],  # UKESM1_1 default value
             'rho_snow_fresh': [109.0, 150.],  # UKESM1_1 default value
-            'cloud_ice':[263.15,-20.0]
+            'starticetkelvin':[263.15,-20.0]
         }
         # test cylc7 and cylc8 versions
         for model in self.models:

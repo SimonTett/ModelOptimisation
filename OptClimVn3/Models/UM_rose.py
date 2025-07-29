@@ -837,7 +837,7 @@ class UKESM1_params(Model):
 
         return [(nl_start_time, time),(nl_override,2)] # set the start time and override value to 2.
     import scipy.stats
-    @register_param('cloud_ice')
+    @register_param('starticetkelvin') # using this name as this is the variable that will be passed in.
     def cloud_ice(self, start_icet_kelvin: typing.Optional[float] = None,
                   transform: bool = True) -> type_param_fn:
             """
@@ -905,7 +905,7 @@ class UKESM1_params(Model):
             return [(nl, v) for nl, v in zip(nls, [start_icet_kelvin, all_icet_degc])]  # return a list of tuples (NamelistVar, value) to set.
 
 
-    @register_param('aerosol_cld')
+    @register_param('aparam')
     def aerosol_cld(self, aparam: typing.Optional[float], transform: bool = True) -> type_param_fn:
         """
         Set aparam and bparam. bparam depends on aparam and liu_latent.

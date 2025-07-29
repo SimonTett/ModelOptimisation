@@ -237,8 +237,9 @@ rename_dict={
     'ps_bc_refrac_im':'bc_refrac_im_scaling',
     'ps_dry_depvel_acc':'dry_depvel_acc_scaling',
 
+
 }
-breakpoint()
+
 df = df.rename(index=rename_dict)  # rename the parameters to match the UKESM1.1 names.
 df_exper = df_exper.rename(columns=rename_dict)
 if not df.index.is_unique:
@@ -249,12 +250,21 @@ if not df_exper.index.is_unique:
     df_exper = df_exper.groupby(level=0).last()  # group by the index and take the last value for each experiment.
 
 # hack 3. Deal with functions that set multiple parameters. Could be worked out from the spreadsheet but for now will just specify them.
-fns_special = {'aerosol_cld':['aparam','liu_latent'],#
+fns_special = {'aparam':['aparam','liu_latent'],#
                'rho_snow_fresh':['rho_snow_fresh','rho_snow_et_crit_delta'],
-               'cloud_ice':['starticetkelvin', 'allicetdegc0to1']} # these are special functions that set multiple parameters and use latent variables.
+               'starticetkelvin':['starticetkelvin', 'allicetdegc0to1']} # these are special functions that set multiple parameters and use latent variables.
 # This dict is keyed of the param name and the value is a list of parameters that are returned by the function.
 # we drop these parameters when doing the simple parameters and run the functions to get the UKESM1.1 values.
-
+# also modify teh function name in df to match the UKESM1.1 function name.
+for fn,params in fns_special.items():
+    try:
+        # rename the function to match the UKESM1.1 name.
+        df.loc[fn,'transformFunc'] = fn  # set the transform function to the function name.
+        for param in params:
+            df.loc[param,'transformFunc'] = fn  # set the transform function to the function name.
+    except KeyError:
+        my_logger.warning(f'Function {fn} not found in dataframe. Skipping renaming.')
+        continue
 
 # remove
 ## get in the reference. Used to see if variables set.
@@ -281,8 +291,7 @@ for fn,params in fns_special.items():
     default = model.read_param(fn)  # read the default value from the model
     ukesm_values.update(dict(zip(params,default)))  # set the default value for the parameters.
     fn_params += params  # add the parameters to the list of function parameters.
-if not df.index.is_unique:
-    raise ValueError('QUMP HadGEM3 parameters are not unique. ')
+
 
 # 1) Handle dependencies
 for depend in df.dependency[df.dependency != 'nan'].unique():
@@ -297,10 +306,13 @@ for depend in df.dependency[df.dependency != 'nan'].unique():
         missing_params += params  # add the parameters to the missing parameters list.
         my_logger.warning(s)
         continue
-    series = df.loc[depend]  # get the series for the parameter
+    param = rename_dict.get(depend, depend)  # rename the parameter if it is in the rename_dict, otherwise use the original name.
+    series = df.loc[param]  # get the series for the parameter
     fn = series.transformFunc   # get the function name
     if fn.lower() == 'nan':  # if the function is nan, we don't need a function.
         fn=None
+    if param in fns_special:  # if the parameter is in the special fns dict, we need to handle it differently.
+        fn = param  # get the function name from the existing entry.
     need_fns[depend] = dict(
         functions=[fn],
         namelists=[series.namelist],
@@ -370,9 +382,10 @@ for nl_var,series in df_present.iterrows():
     if value is not None and value.state != '!!':  # if the value is not None and not commented out, we can use it.
         value = UMroseNamelistConfig.parse_value(value.value)
         if isinstance(value, list):  # need a fn to make a list
-            fn_params += [nl_var]  # add the parameter to the list of function parameters.
+
             if series.transformFunc.lower() != 'nan':  # if the transform function is not nan, we can use it.
                 raise ValueError('Have a list value but transformFunc is not nan. This should not happen.')
+            df.loc[nl_var,'transformFunc'] = f'{nl_var}'  # set the transform function to the list function.
             # see if we have it already.
             try:
                 ukesm_values[nl_var] = model.read_param(nl_var)
@@ -459,8 +472,8 @@ for param,series in df_present.iterrows():
     param_dict['defaultParams'][param] = ukesm_value
     if df.loc[param,'longName'] != 'nan':  # if the long name is not NaN, use it as the comment
         param_dict['defaultParams'][param+'_comment'] = series.loc['longName']
-    if param in fn_params:
-        param_dict['defaultParams'][param+'_function_comment'] = param  # add the function name as a comment
+    if df.loc[param,'transformFunc'] != 'nan':
+        param_dict['defaultParams'][param+'_function_comment'] = df.loc[param,'transformFunc']  # add the function name as a comment
     param_dict['defaultParams'][param+'_namelist_comment'] = series.loc['namelist']  # provide the namelist as a comment
     param_dict['minmax'][param] = series.loc[['min','max']].to_list() # set min and max
 
