@@ -1,4 +1,6 @@
 # Code to convert MO QUMP data to UKESM1.1 parameters suitable for use in OptClim.
+# it is farily hacky and fragile. Inspect values after running and test carefully.
+# Consider rewritting if more extensive use is made.
 # TODO: Deal with latent parameters that are not in the namelist but are in the QUMP data.
 #   These parameters do not change namelists but do impact variables which are in the namelist.
 # Cases are liu_latent (impacting bparam), rho_snow_et_crit_delta (impacting rho_snow_et_crit)
@@ -239,6 +241,8 @@ rename_dict={
 
 
 }
+# give cca_md_knob a function name as used!
+df.loc['cca_md_knob','transformFunc'] = 'cca_md_knob'  # set the transform function to the function name.
 
 df = df.rename(index=rename_dict)  # rename the parameters to match the UKESM1.1 names.
 df_exper = df_exper.rename(columns=rename_dict)
@@ -431,9 +435,12 @@ for param in bad_fns:
 
 print('\n================================================================')
 # round all UKESM defaults to 5 sig fig.
-ukesm_values = {param: round_sig(value, 5) for param, value in ukesm_values.items()}  # round the values to 4 significant figures.
+ukesm_values = {param: round_sig(value, 5) for param, value in ukesm_values.items()}  # round the values to  5 significant figures.
 fn_params = [p for p in fn_params if p in df_present.index]  # keep only the function parameters that are in the dataframe.
 params_simple = list(set(df_present.index.tolist())-set(fn_params))  # list of simple parameters
+
+params_simple = df_present.index[df_present.transformFunc.str.lower() == 'nan'].tolist()  # get the simple parameters that do not have a function.
+
 # and remove the ones that do not have a namelist.
 ## Make up config file. Best way is to generate a pandas dataframe
 df_params = pd.DataFrame(dict(parameter=params_simple,

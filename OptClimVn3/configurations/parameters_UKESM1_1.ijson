@@ -1,5 +1,5 @@
 {
-    "_comment": "File auto-generated from HadGEM3 parameters spreadsheet. Version 0.9 of 2025-07-29",
+    "_comment": "File auto-generated from HadGEM3 parameters spreadsheet. Version 0.9 of 2025-07-30",
     "number_params_comment": "This file has 64 parameters.",
     "sourceurl_comment": "Source URLs for HadGEM3 parameters: https://github.com/qump-project/qump-hadgem3/blob/master/data/GA7Parameters_fakedata.csv, https://github.com/qump-project/qump-hadgem3/blob/master/data/GA8Parameters.csv, https://github.com/qump-project/qump-hadgem3/blob/master/data/GA9Parameters.csv",
     "defaultParams": {
@@ -86,6 +86,7 @@
         "cca_md_knob_qump_value_comment": 0.8,
         "cca_md_knob": 0.1,
         "cca_md_knob_comment": "CCA scaling (mid)",
+        "cca_md_knob_function_comment": "cca_md_knob",
         "cca_md_knob_namelist_comment": "run_convection",
         "cca_sh_knob_qump_value_comment": 0.2,
         "cca_sh_knob": 0.5,

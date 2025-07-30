@@ -686,7 +686,24 @@ class UKESM1_params(Model):
 
 
 
+    # service function for parameters that don't do anything!
+    def no_param(self,
+                 value: typing.Optional[float] = None,
+                 transform: bool = True,
+                 param:str = 'UNKNOWN') -> typing.Optional[float]:
+        """
+        Function  for latent variable parameters. Those are used in the 'main' function
+        :param value: value to set. If None then return the value from the paramters
+        :param transform: For compatibility with other parameters. Doesn't do anything.
 
+        :return: None or value from the parameters.
+        """
+        if value is None:
+            # if value is None then read the value from the namelist.
+            value = self.parameters[param]
+            return value
+        else:
+            return None # fn does not do anything so return None.
     #  service function to scale parameters.
     def scale_param(self,
                     value: typing.Optional[float]=None,
@@ -1049,29 +1066,7 @@ class UKESM1_params(Model):
 
 
 
-    @register_param('runModelTime')
-    def run_time(self,
-                 runTime: typing.Union[str, int, float, None],
-                 transform:bool = True) -> \
-            typing.Union[list[tuple[NamelistVar, str]], str]:
-        """
-        Set the run time for the model. This is in seconds or as an ISO duration string.
-        UM wants it as a ISO duration string. This function will convert to that if needed.
-        :param runTime: The run time in seconds or as an iso duration.
-        :param transform -- does nothing. For compatibility with other functions.
-        :return: list((nl,value)) or just the value read in from the config.
-        """
-        nl = NamelistVar('um_rose', filepath=pathlib.Path('rose-suite.conf'),
-                         namelist='jinja2:suite.rc', nl_var='MAIN_CLOCK', default=0)
-        if runTime is None:
-            return self.read_nl_value(nl)
-        if isinstance(runTime, str):
-            check = parse.DurationParser().parse(runTime)  # make sure it parses
-            val = runTime
-        else:
-            val = genericLib.seconds_to_isoduration(
-                runTime)  # can't see any way to use metomi.isodatetime to do this.
-        return [(nl, val)]
+
 
 # generated fns to add in
 # First lot are JULES specific parameters which are all very similar.
@@ -1098,7 +1093,16 @@ for name,default in defaults.items():
             default=default, # default value
             nl=nl_jules(nl_var=name))
 
+# handle the latent parameters which do not directly set a parameter but are used in other functions.
+for latent_param in ['liu_latent', 'allicetdegc0to1', 'rho_snow_et_crit_delta']:
+    UKESM1_params.register_param_with_partial(
+        latent_param,  # name to register the function as.
+        UKESM1_params.no_param,  # using no_param as the base function.
+        param=latent_param  # parameter name to use.
+    )
+
 # and on functions where there are dependencies on other parameters.
+
 def cca_md2dp_knob(value: float, inverse: bool = False) -> float:
     """
     Convert cca_md_knob to cca_dp_knob. Just I!
@@ -1113,7 +1117,7 @@ namelists = [NamelistVar('um_rose', filepath=UKESM1_params.um_namelist_file, nam
                         nl_var='cca_md_knob'),
              NamelistVar('um_rose', filepath=UKESM1_params.um_namelist_file, namelist='namelist:run_convection',
                          nl_var='cca_dp_knob')]
-functions = [None, cca_md2dp_knob]
+functions = [None, None]
 transform_values = dict(zip(namelists, functions))
 
 UKESM1_params.register_param_with_partial(
@@ -1132,13 +1136,58 @@ class UKESM1_1(UM_rose_cylc7, UKESM1_params):
     Class to support UKESM1_1 model running in ROSE with cylc 7.
     This joins the UM_rose_cylc7 and UKESM1_params classes.
     """
-
+    @register_param('runModelTime')
+    def run_time(self,
+                 runTime: typing.Union[str, int, float, None],
+                 transform:bool = True) -> \
+            typing.Union[list[tuple[NamelistVar, str]], str]:
+        """
+        Set the run time for the model. This is in seconds or as an ISO duration string.
+        UM wants it as a ISO duration string. This function will convert to that if needed.
+        :param runTime: The run time in seconds or as an iso duration.
+        :param transform -- does nothing. For compatibility with other functions.
+        :return: list((nl,value)) or just the value read in from the config.
+        """
+        nl = NamelistVar('um_rose', filepath=pathlib.Path('rose-suite.conf'),
+                         namelist='jinja2:suite.rc', nl_var='MAIN_CLOCK', default=0)
+        if runTime is None:
+            return self.read_nl_value(nl)
+        if isinstance(runTime, str):
+            check = parse.DurationParser().parse(runTime)  # make sure it parses
+            val = runTime
+        else:
+            val = genericLib.seconds_to_isoduration(
+                runTime)  # can't see any way to use metomi.isodatetime to do this.
+        return [(nl, val)]
 
 class UKESM1_1_c8(UM_rose_cylc8, UKESM1_params):
     """
     Class to support UKESM1_1 model running in ROSE with cylc 8.
     This joins the UM_rose_cylc8 and UKESM1_params classes.
     """
+    @register_param('runModelTime')
+    def run_time(self,
+                 runTime: typing.Union[str, int, float, None],
+                 transform:bool = True) -> \
+            typing.Union[list[tuple[NamelistVar, str]], str]:
+        """
+        Set the run time for the model. This is in seconds or as an ISO duration string.
+        UM wants it as a ISO duration string. This function will convert to that if needed.
+        :param runTime: The run time in seconds or as an iso duration.
+        :param transform -- does nothing. For compatibility with other functions.
+        :return: list((nl,value)) or just the value read in from the config.
+        """
+        nl = NamelistVar('um_rose', filepath=pathlib.Path('rose-suite.conf'),
+                         namelist='template variables', nl_var='MAIN_CLOCK', default=0)
+        if runTime is None:
+            return self.read_nl_value(nl)
+        if isinstance(runTime, str):
+            check = parse.DurationParser().parse(runTime)  # make sure it parses
+            val = runTime
+        else:
+            val = genericLib.seconds_to_isoduration(
+                runTime)  # can't see any way to use metomi.isodatetime to do this.
+        return [(nl, val)]
 
 pth = pathlib.Path(__file__).parent / 'parameter_config/UM_rose_UKESM1_1.csv'
 UKESM1_params.update_from_file(pth)  # load up the UKESM1_1 specific parameters.
