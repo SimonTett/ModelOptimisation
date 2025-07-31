@@ -423,7 +423,7 @@ class TestUKESM1ParamFunctions(unittest.TestCase):
             'cca_md_knob': 0.1, # UKESM1_1 default value
             'aparam': [0.07, 0.0066], # UKESM1_1 default values for aparam and liu_latent. Note default value different from MO value.
             'rho_snow_fresh': [109.0,41.], # UKESM1_1 default value
-            'starticetkelvin': [263.15, 0.5]  # UKESM1_1 default value
+            'starticetkelvin': [263.15, 0.48717948717948645]  # UKESM1_1 default value
 
         }
         default_nl_values= {
@@ -455,7 +455,7 @@ class TestUKESM1ParamFunctions(unittest.TestCase):
                     else:
                         self.assertAlmostEqual(value, expected, msg=f"{param} did not match reference value")
                     # read in the values from the namelist.
-                    nl_stuff = model.param_info.param_constructors[param][0](model,0.0)  # call the function with a dummy value.
+                    nl_stuff = model.get_param_info(param)[0](model,0.0)  # call the function with a dummy value.
                     nl_values = [model.read_nl_value(nl) for nl,v in nl_stuff]
                     if len(nl_values) == 1:
                         nl_values = nl_values[0]

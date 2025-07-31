@@ -149,7 +149,7 @@ class Model(ModelBaseClass, journal):
                        PROCESSED=['SUCCEEDED'])  # Processed means it should have succeeded.
     # Q Perturbed comes in two flavours. Perturb and continue or perturb and restart. How to handle that?
     allowed_status = set(status_info.keys())
-
+    _known_parameters_cache: typing.Optional[set[str]] = None  # cache for known parameters.
     @classmethod
     def load_model(cls, model_path: pathlib.Path):
         """
@@ -305,6 +305,44 @@ class Model(ModelBaseClass, journal):
         self.simulated_obs = None
         self.configs = GroupConfig(root_dir=self.model_dir) # grouped configs for writing out generic namelists
 
+    @classmethod
+    def get_param_info(cls,parameter:str) -> list[NamelistVar|typing.Callable]:
+        """
+        Get parameter info for a parameter. Searches mro wise through object inheritence.
+        :param parameter: name of the parameter
+        :return: list of NamelistVars or functions that can be used to set the parameter.
+        """
+        # OPTIMISATION: cache the result so we do not have to search through __mro__ every time.
+        # Set this up when the class is created -- see ModelBaseClass.
+        # search through __mro__ for the parameter.
+        stuff = None
+        for bcls in cls.__mro__:
+            if hasattr(bcls, 'param_info') and parameter in bcls.param_info.param_constructors:
+                    stuff = bcls.param_info.param_constructors[parameter]
+                    my_logger.debug(f'Found parameter {parameter} in {bcls.__name__}')
+                    break # exit the loop as we have found the parameter.
+        if stuff is None:
+            raise KeyError(f"Parameter {parameter} not found.\n Allowed parameters are: " +
+                           " ".join(cls.known_parameters()))
+        elif not isinstance(stuff, list):
+            raise ValueError(f"Parameter {parameter} did not return list but returned {stuff}")
+        return stuff
+
+    @classmethod
+    def known_parameters(cls) -> set[str]:
+        """
+        Get a list of known parameters for this model. Caches the result.
+        :return: list of parameter names.
+        """
+
+        # search through __mro__ for the parameter.
+        known_params = []
+        for bcls in cls.__mro__:
+            if hasattr(bcls, 'param_info'):
+                known_params += list(bcls.param_info.known_parameters())
+
+        return set(known_params)
+
     def set_post_process(self, post_process: typing.Optional[dict] = None):
 
         """
@@ -441,7 +479,8 @@ class Model(ModelBaseClass, journal):
         if isinstance(parameters, str):
             parameters = [parameters]  # make it a list.
         if parameters is None:
-            parameters = self.param_info.known_parameters()  # get all parameters
+            # TODO make this work in __mro__ order so that we can read parameters from all classes.
+            parameters = self.known_parameters()  # get all parameters
 
         for parameter in set(parameters):  # set means we iterate over unique parameters
             try:
@@ -1183,12 +1222,7 @@ class Model(ModelBaseClass, journal):
         :return: value. Depends on what is in the model...
         """
         # get the namelist info.
-        try:
-            stuff = self.param_info.param_constructors[parameter][0]  # just want the first element of the list.
-        except KeyError:
-            raise KeyError(f"Parameter {parameter} not found.\n Allowed parameters are: " +
-                           " ".join(list(self.param_info.param_constructors.keys())))
-
+        stuff = self.get_param_info(parameter)[0]# just want the first element of the list.
         if callable(stuff):  # is it a callable? If so run it in inverse mode.
             result = stuff(self, None)
             my_logger.debug(f"Called {stuff.__qualname__} with inverse and got {result} ")
@@ -1206,13 +1240,8 @@ class Model(ModelBaseClass, journal):
         :param value: value to be set and passed to method
         :return:
         """
-        try:
-            stuff = self.param_info.param_constructors[parameter]  # will fail if parameter does not exist.
-        except KeyError:
-            raise KeyError(f"Parameter {parameter} not found.\n Allowed parameters are: " +
-                           " ".join(list(self.param_info.param_constructors.keys())))
-        if not isinstance(stuff, list):
-            raise ValueError(f"Parameter {parameter} did not return list but returned {stuff}")
+
+        stuff = self.get_param_info(parameter)
         result = []
         for s in stuff:
             if callable(s):  # function.

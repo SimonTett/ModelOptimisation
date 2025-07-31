@@ -36,7 +36,7 @@ class ParamInfo():
     """
 
     #file_info: dict[pathlib.Path,str] = dict()# holds all the file info. Indexed by filename.
-    def __init__(self):
+    def __init__(self,cls_name:typing.Optional[str] = None):
         """
         Initialise the params instance by setting param_constructors to an empty dict
         """
@@ -44,6 +44,9 @@ class ParamInfo():
         self.got_vars = set()  # set of the known variables (namelist or functions)
         self.known_functions = dict()  # known functions indexed by __qualname__
         self.file_info = dict() # where we store indexed by the relative filenames the expected type. Will be used to check things are as expected.
+        self.cls_name = cls_name  # name of the class this is for. Used in debugging and logging.
+
+
 
     def update(self, other_param_info):
         """
@@ -103,7 +106,7 @@ class ParamInfo():
             my_logger.debug(f"Parameter {parameter} uses method {fname} ")
         else:
             my_logger.debug(f"Set {parameter} to {var_to_set}")
-
+        return
 
 
     def to_DataFrame(self):
@@ -200,8 +203,7 @@ class ParamInfo():
         """
         return list(self.param_constructors.keys())
 
-    ## new code. To replace update_from_file
-    from namelist_var import NamelistVar
+
     def update_from_file(self, filepath: pathlib.Path|str, duplicate: bool = False, **kwargs):
         """
         Add parameters from file.

@@ -787,6 +787,26 @@ class UKESM1_params(Model):
             cal = 'standard'
 
         return cal  # return the calendar string.
+
+    @register_param("ensembleMember")
+    def ens_member(self,
+                   ensMember: typing.Optional[int],
+                   transform:bool = True) -> typing.Union[list[tuple[NamelistVar,int]],int]:
+        """
+        Do nothing as perturbing initial conditions is model-specific. But needed
+         for test cases.
+        :param ensMember: ensemble member. The ensemble member to set. If None then read the value from the namelist.
+        :param transform:  Does nothing and present for compatibility with other parameters.
+        :return: [(nl,int)] or ensemble member value if None.
+        """
+        nl = NamelistVar('um_rose', self.um_namelist_file, 'env', 'ENS_MEMBER')
+        inverse = (ensMember is None)
+        if inverse:
+            ensMember:int = self.read_nl_value(nl, raise_error=False)
+            return ensMember
+        # otherwise set the ensemble member.
+        return [(nl,ensMember)]
+
     @register_param('START_TIME')
     def start_time(self, value: typing.Optional[str]=None,
                    transform: bool = True) -> type_param_fn:
@@ -876,12 +896,14 @@ class UKESM1_params(Model):
             nls = [NamelistVar('um_rose', filepath=self.um_namelist_file,
                                namelist='namelist:run_cloud', nl_var=nl_var) for nl_var in ['starticetkelvin', 'allicetdegc']]
             trap_points = [253.15, 267.15]  # points for trapezoidal distribution in K
-            loc = 233.15  # location for trapezoidal distribution in K
+            loc = 234.15  # location for trapezoidal distribution in K
             scale = 273.15-loc # scale for trapezoidal distribution in K
-            dist_start_icet_kelvin = scipy.stats.trapezoid( *[(x-loc)/scale for x in trap_points],scale=scale,loc=loc)  # trapezoidal distribution for start_icet_kelvin
-            loc = -40
-            dist_all_icet_degc = scipy.stats.trapezoid( *[(x-273.15-loc)/scale for x in trap_points],scale=scale,loc=loc)  # trapezoidal distribution for all_icet_degc
-            # temperature in K at which cloud ice starts to form and temperature in C at which all cloud water is ice.
+            dist_start_icet_kelvin = scipy.stats.trapezoid( *[(x-loc)/scale for x in trap_points],scale=scale,loc=loc)
+            # trapezoidal distribution for start_icet_kelvin -- temperature in K at which cloud ice starts to form
+            dist_all_icet_degc = scipy.stats.trapezoid( *[(x-loc)/scale for x in trap_points],scale=scale,loc=loc-273.15)
+            # trapezoidal distribution for all_icet_degc --  temperature in C at which all cloud water is ice.
+            # Difference between the two distributions is that the all_icet_degc is converted from K to C.
+            # So just shift the distribution by -273.15 to get the all_icet_degc distribution.
 
             if start_icet_kelvin is None: # read values from the namelist.
                 start_icet_kelvin, all_icet_degc = (float(self.read_nl_value(nl)) for nl in nls)
@@ -909,14 +931,11 @@ class UKESM1_params(Model):
 
             # values to set. Need to get the latent parameter allicedegc0to1 from the parameters.
             # If we don't have it then need to run the inverse calculation to get it from ref config.
-            all_icet_degc_0to1 = self.parameters.get('all_icet_degc_0to1', None)  # default is None.
+            all_icet_degc_0to1 = self.parameters.get('allicetdegc0to1', None)  # default is None.
             if all_icet_degc_0to1 is None:  # if not set then calculate it.
-                _,all_icet_degc_0to1 = self.cloud_ice( transform=True)  # call the function to get the value.
+                _,all_icet_degc_0to1 = self.cloud_ice( transform=True)  # call ourselves  to get the value.
             start_ice_x = dist_start_icet_kelvin.cdf(start_icet_kelvin)  # where in the dist are we?
             all_ice_x = start_ice_x * all_icet_degc_0to1  # where in the dist are we for all_ice?
-            if not (0.0 <= all_icet_degc_0to1 <= 1.0):
-                raise ValueError(f'all_icet_degc_0to1 {all_icet_degc_0to1} not in range 0 to 1. '
-                                 f'Check the value is correct.')
             all_icet_degc = dist_all_icet_degc.ppf(all_ice_x)  # get the value from the distribution.
 
             return [(nl, v) for nl, v in zip(nls, [start_icet_kelvin, all_icet_degc])]  # return a list of tuples (NamelistVar, value) to set.

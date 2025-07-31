@@ -2,7 +2,7 @@
 import json
 import pathlib
 import genericLib
-from UM_rose import UKESM1_1_c8, my_logger  # cylc8 version
+from UM_rose import UKESM1_1_c8 # cylc8 version
 import shutil
 import tempfile
 import socket

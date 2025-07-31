@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-
+from multiprocessing.reduction import duplicate
 
 from model_base import model_base
 from  param_info import ParamInfo
@@ -55,7 +55,7 @@ class ModelBaseClass(model_base):
         Register all functions in the class
         :return: param_info to be merged into other information,
         """
-        my_param_info = ParamInfo()
+        my_param_info = ParamInfo(cls_name=cls.__name__)
         for name, member in cls.__dict__.items():
             # Loop through all members of the subclass and populate param_info
             # accordingly. These should all be functions.
@@ -73,26 +73,10 @@ class ModelBaseClass(model_base):
         # Model won't be able to use the @register_param decorator.
         super().__init_subclass__(**kwargs)
 
-        # Depending on how you want param_info to be inherited there
-        # are two options here. With this definition, subclasses won't
-        # inherit param_info from their super classes:
-        # cls.param_info = {} # Define param_info
-
-        # With this definition, all params in parent classes are duplicated
-        # in subclasses.
-
-        my_param_info = ParamInfo()
-        for bcls in reversed(cls.__bases__):  # iterate over base classes updating parameters from them.
-            parent_param_info = getattr(bcls, 'param_info', ParamInfo())
-            my_param_info.update(parent_param_info)  # update overwrites existing info for named parameters.
-            my_logger.info(f"Updated param_info from {bcls}")
-        if hasattr(cls, 'param_info'):  # Already got param_info. Update from it
-            my_param_info.update(cls.param_info)
-            my_logger.info(f"Updated param_info from {cls.param_info}")
-        my_param_info.update(cls.register_functions())
-
+        my_param_info = ParamInfo(cls_name=cls.__name__)
+        my_param_info.update(cls.register_functions())  # register functions in this class.
         cls.param_info = copy.deepcopy(my_param_info)
-        ModelBaseClass.register_class(newcls=cls)
+        ModelBaseClass.register_class(newcls=cls) # TODO consider removal and move to approach where user sets filename.class_name for model.
         # register the class for subsequent creation. This allows model_init to work.
         my_logger.info(f"Registered {cls.__name__}")
 

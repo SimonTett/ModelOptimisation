@@ -898,6 +898,7 @@ class ModelTestCase(unittest.TestCase):
 
         self.model.param_info.param_constructors['BAD'] = [bad_fn]
         self.model.param_info.param_constructors['NONE'] = [none_fn]
+        self.model._known_parameters_cache = None # force a re-read of the parameters.
         with self.assertRaises(ValueError):
             self.model.param('BAD',0.5)
 
