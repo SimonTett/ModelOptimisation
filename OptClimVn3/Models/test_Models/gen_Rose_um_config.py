@@ -1,3 +1,5 @@
+
+
 # generate a ROSE_um config.
 import json
 import pathlib
@@ -8,23 +10,25 @@ import tempfile
 import socket
 
 genericLib.setup_env() # set up default env.
-name='002case'
+name='002acase'
 hostname = socket.gethostname()
 my_logger = genericLib.setup_logging(level='INFO')
-config = 'u-dr157'
+config = 'u-dr496'
 archer= False
 if hostname.startswith('ln0'): # on archer
     archer = True
     reference = pathlib.Path(genericLib.expand(f'/home/n02/n02-puma/tetts/roses'))/config  # ROSE config
     model_dir = pathlib.Path('/work/n02/n02/tetts/test')/name
     pp_dir = '/work/n02/shared/tetts/OptClim/st2024/post_process/'
+    suite_dir= None
 else:
     my_logger.warning('Running on a non-archer host. Using temporary directory for testing.')
     archer = False
     reference = pathlib.Path(genericLib.expand('$OPTCLIMTOP/OptClimVn3/configurations/example_UM_rose/references/'))/config # ROSE config
     model_dir = tempfile.TemporaryDirectory(prefix='OptClim_test_') # use temp dir for testing.
     model_dir = pathlib.Path(model_dir.name) # use temp dir for testing.
-    pp_dir =  '/work/n02/shared/tetts/OptClim/st2024/post_process/'
+    suite_dir = model_dir/'suite',
+    pp_dir = None #  '/work/n02/shared/tetts/OptClim/st2024/post_process/'
 try:
     shutil.rmtree(model_dir)
 except FileNotFoundError:
@@ -53,6 +57,8 @@ with genericLib.expand('$OPTCLIMTOP/OptClimVn3/configurations/parameters_UKESM1_
     config  = json.load(f)
 parameters = {k:v*1.05 for k,v in config['defaultParams'].items() if not k.endswith('comment')}
 # try with all parameters with default values scaled by 5%
+# set ensembleMember to 2
+parameters.update(ensembleMember=2)
 
 
 run_info=dict(
@@ -68,10 +74,10 @@ run_info=dict(
     runExtraArgs_comment='List of extra args for submission. For archer2 need to specifiy qos for pp job',
 )
 model = UKESM1_1_c8(name=name,
-                suite_dir=model_dir/'suite',
+                    suite_dir=suite_dir,
                 reference=reference,
                 model_dir=model_dir,
-                #post_process=post_process,
+                post_process=post_process,
                 parameters=parameters,
                 run_info=run_info)
 model.instantiate()

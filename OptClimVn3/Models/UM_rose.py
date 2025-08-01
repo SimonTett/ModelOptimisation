@@ -86,6 +86,7 @@ class UM_rose(Model):
     # ARCHER2
     puma_dir = pathlib.Path('/home/n02/n02-puma') / base_path  # puma2 root path on archer2.
     suite_file_name = None
+    include_file_name = None
 
     def __init__(self, *args, **kwargs):
         """
@@ -276,7 +277,11 @@ class UM_rose(Model):
         if self.reference.is_absolute():
             # work out user-id from  path
             user_id = self.reference.parts[4]
-        prebuild = pathlib.Path('/home/n02/n02-puma/') / f'{user_id}/cylc-run/{ref_suite_name}/share/fcm_make_um'
+        # try some directories...
+        for cpt in [ref_suite_name,f'{ref_suite_name}/runN']: # check possible places. runN for cylc8 as can have run dirs...
+            prebuild = pathlib.Path('/home/n02/n02-puma/') / f'{user_id}/cylc-run/{cpt}/share/fcm_make_um'
+            if prebuild.is_dir():
+                break # exit the loop
         if (prebuild / 'extract').is_dir():  # dct  a dir which exists and had an extract.
             my_logger.warning(f'Guessed prebuild on Archer2 to be {prebuild}')
         else:
@@ -324,7 +329,13 @@ class UM_rose(Model):
         suite_file = self.suite_dir / self.suite_file_name
         genericLib.backup_file(suite_file, ext='.bak', create='copy')  # make a backup of the suite file.
         with suite_file.open('a') as suite_rc:
-            suite_rc.write('\n\n%include optclim.rc\n')
+            if self.include_file_name is None:
+                raise ValueError('Set self.include_file_name')
+            inc = self.suite_dir/self.include_file_name
+            if not inc.exists():
+                raise FileNotFoundError(f'file {inc} does not exist')
+            
+            suite_rc.write(f'\n\n%include {self.include_file_name}\n')
 
         if self.run_info.get('use_scratch', False):
             self.set_scratch()  # cylc specific method to set scratch space.
@@ -530,6 +541,7 @@ class UM_rose_cylc7(UM_rose):
 
     # cylc 7 specific methods.
     suite_file_name = 'suite.rc'  # name of the suite file for cylc7.
+    include_file_name='optclim.rc' # include file for cylc7
 
     def _create_script(self,
                        script_type: typing.Literal['submit', 'continue'],
@@ -588,6 +600,7 @@ class UM_rose_cylc8(UM_rose):
     This is a subclass of UM_rose and adds the UM_rose specific parameters.
     """
     suite_file_name = 'flow.cylc'  # name of the suite file for cylc8
+    include_file_name = 'optclim_c8.rc'
 
     # cylc 8 specific methods.
     # to use scratch space need to change site/archer2.rc in the [[HPC]] section change platform from archer2 to archer2-nvme
@@ -624,16 +637,22 @@ class UM_rose_cylc8(UM_rose):
         script.unlink(missing_ok=True)  # unlink it if it exists.
         with script.open('wt') as f:
             f.write('#!/bin/bash --login\n')
+            f.write('export CYLC_VERSION=8\n') # make sure in cycl8 
             cmd = ['cylc']
             if script_type == 'submit':
-                cmd.append('vip')
+                cmd.append('vip --no-run-name')
             elif script_type == 'continue':
-                cmd.append('play')
+                cmd.append('play') # might need a release as well.
             else:
                 raise ValueError(f'Unknown script_type {script_type}')
             if args:
                 cmd.append(args)
             cmd.append(f'{self._puma_path(self.suite_dir)}')  # path to the suite dir.
+            # cylc does not like having names starting with .,- or numbers.
+            # if it does we will modify the name by adding X
+            if re.match('$[.,\-[0-9]',self.suite_dir.name):
+                my_logger.info('Adding X to name')
+            cmd.append(f'--workflow-name=X{self.suite_dir.name}')
             f.write(' '.join(cmd) + '\n')
 
 
