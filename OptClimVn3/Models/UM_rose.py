@@ -51,7 +51,7 @@ class UM_rose(Model):
       If None then when running() ran self.model_dir will be set to $ROSE_DATA/$DATAM if $ROSE_DATA defined
       Data is copied from this directory (if not None) to model_dir/'share/data/History_Data'  in succeeded().
 
-    Initialisation uses the following values from run_info which become variables -- see UM_rose_Parameters.csv. :
+    Initialisation uses the following values from run_info which become variables -- see UM_rose_Parameters_c7.csv. :
     For the following variables values of None mean the suite is not modified.
         - runModelTime:str -- time as iso duration for model to run for.
         - runUser:str -- username to run the suite as.
@@ -302,7 +302,7 @@ class UM_rose(Model):
         super().modify_model()  # call the base class method.
         # now do the specific stuff...
         self.copy_suite_apps()  # copy the optclim specific apps to the suite dir.
-        self.update_suite_rc()  # update the suite.rc file
+        self.update_suite_rc()  # update the suite.rc/flow.cylc file
         # need to generate submit_cmd and continue_cmd
         # done here as super class instantiate cleans directory before doing anything else and then checks.
         # so need to call this in modify_model
@@ -388,7 +388,7 @@ class UM_rose(Model):
         if not super().check():
             return False  # failed so return False.
         ## UM_rose specific checks.
-        # 1) Check that START_TIME, RUN_TARGET and RESUB_TIME are compatible. Wn't work perfectly for 360 day calendar
+        # 1) Check that START_TIME, RUN_TARGET and RESUB_TIME are compatible. Won't work perfectly for 360 day calendar
         # as then need to deal with 360 day calendar.
         # By converting them to Time Points and Durations we are also checking that
         # strings are valid.
@@ -417,6 +417,12 @@ class UM_rose(Model):
         for script in [self.submit_script, self.continue_script]:
             if not (script is None or script.is_file()):
                 raise FileNotFoundError(f"{script} is not a file.")
+        # 3) Check values of archive_pp and archive_netcdf and warn if they are set to True
+        for param in ['archive_pp', 'archive_netcdf']:
+            if self.read_param(param) is True:
+                my_logger.warning(f'{param} is set to True. This will archive the files in the model_data_dir '
+                                  f'but not copy them to the model_dir/share/data/History_Data so post processing will fail'
+                                  f'If you want to copy them set {param} to False')
 
         return True
 
@@ -640,28 +646,24 @@ class UM_rose_cylc8(UM_rose):
             f.write('export CYLC_VERSION=8\n') # make sure in cycl8 
             cmd = ['cylc']
             if script_type == 'submit':
-                cmd.append('vip --no-run-name')
+                cmd += ['vip']
             elif script_type == 'continue':
                 cmd.append('play') # might need a release as well.
             else:
                 raise ValueError(f'Unknown script_type {script_type}')
+            cmd += ['--no-run-name']  # no run names
             if args:
                 cmd.append(args)
             cmd.append(f'{self._puma_path(self.suite_dir)}')  # path to the suite dir.
             # cylc does not like having names starting with .,- or numbers.
-            # if it does we will modify the name by adding X
-            if re.match('$[.,\-[0-9]',self.suite_dir.name):
+            # if names starts with this pattern we will modify the name by adding X
+            if re.match(r'$[.,\-[0-9]',self.suite_dir.name):
                 my_logger.info('Adding X to name')
-            cmd.append(f'--workflow-name=X{self.suite_dir.name}')
+                cmd.append(f'--workflow-name=X{self.suite_dir.name}')
             f.write(' '.join(cmd) + '\n')
 
 
-# add in core optclim variables.
-pth_c7 = pathlib.Path(__file__).parent / 'parameter_config/UM_rose_Parameters.csv'
-UM_rose_cylc7.update_from_file(pth_c7, duplicate=True)
 
-pth_c8 = pathlib.Path(__file__).parent / 'parameter_config/UM_rose_Parameters_cylc8.csv'
-UM_rose_cylc8.update_from_file(pth_c8, duplicate=True)
 
 
 class UKESM1_params(Model):
@@ -1227,7 +1229,17 @@ class UKESM1_1_c8(UM_rose_cylc8, UKESM1_params):
                 runTime)  # can't see any way to use metomi.isodatetime to do this.
         return [(nl, val)]
 
-pth = pathlib.Path(__file__).parent / 'parameter_config/UM_rose_UKESM1_1.csv'
+
+# add in core optclim variables.
+config_dir = pathlib.Path(__file__).parent / 'parameter_config/UM_rose_params' # directory with the config files.
+
+pth_all = config_dir/'UM_rose_Parameters.csv' # parameters for all UM_rose models.
+UM_rose.update_from_file(pth_all, duplicate=True)
+
+pth_c7 = config_dir/'UM_rose_Parameters_c7.csv'# cylc7 specific
+UM_rose_cylc7.update_from_file(pth_c7, duplicate=True)
+
+pth_c8 = config_dir/'UM_rose_Parameters_c8.csv' # cylc8 specific
+UM_rose_cylc8.update_from_file(pth_c8, duplicate=True)
+pth = config_dir/'UM_rose_UKESM1_1.csv'
 UKESM1_params.update_from_file(pth)  # load up the UKESM1_1 specific parameters.
-UKESM1_1.update_from_file(pth, duplicate=False)
-UKESM1_1_c8.update_from_file(pth, duplicate=False)

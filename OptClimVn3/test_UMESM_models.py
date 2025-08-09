@@ -1,6 +1,4 @@
-
-
-# generate a ROSE_um config.
+## test can run and that post=process works.
 import json
 import pathlib
 import genericLib
@@ -9,20 +7,21 @@ import shutil
 import tempfile
 import socket
 
-
 genericLib.setup_env() # set up default env.
-name='002acase'
+root_name='case'
 hostname = socket.gethostname()
 my_logger = genericLib.setup_logging(level='INFO')
-
+config_amip = 'u-dr496'
+config_amip_p4 = 'u-dr783'
 archer= False
 if hostname.startswith('ln0'): # on archer
-    config = 'u-dr496'
+
     archer = True
-    reference = pathlib.Path(genericLib.expand(f'/home/n02/n02-puma/tetts/roses'))/config  # ROSE config
-    model_dir = pathlib.Path('/work/n02/n02/tetts/test')/name
+    base_dir = genericLib.expand(f'/home/n02/n02-puma/tetts/roses')
+    references = [base_dir/config  for config in [config_amip,config_amip_p4]] # ROSE configs
+    model_dir_base = pathlib.Path('/work/n02/n02/tetts/test')
     pp_dir = '/work/n02/shared/tetts/OptClim/st2024/post_process/'
-    suite_dir= None
+    suite_base_dir= None
     script = pp_dir + 'comp_sim_obs_UKESM1_1.py',
     post_process = dict(
         script=script,
@@ -31,9 +30,9 @@ if hostname.startswith('ln0'): # on archer
         mask_file_comment="Path for landfrac file.",
         mask_fraction=0.5,
         mask_fraction_comment="Critical Fraction. Specify if mask  is a land/sea fraction. Values >= are land < sea. Set to null if mask is a t/f mask",
-        start_time=None,
+        start_time='2011-01',
         start_time_comment="Start time as ISO std string. ",
-        end_time="2011-12-31",
+        end_time="2011-12",
         end_time_comment="End time as str of ISO std string",
         file_pattern='*a.pm*.pp',
         file_pattern_comment="File pattern to match for post-processing. Use * as wildcard. ",
@@ -42,25 +41,22 @@ if hostname.startswith('ln0'): # on archer
 else:
     my_logger.warning('Running on a non-archer host. Using temporary directory for testing.')
     archer = False
-    config = 'u-dr157'
-    reference = pathlib.Path(genericLib.expand('$OPTCLIMTOP/OptClimVn3/configurations/example_UM_rose/references/'))/config # ROSE config
-    model_dir = tempfile.TemporaryDirectory(prefix='OptClim_test_') # use temp dir for testing.
-    model_dir = pathlib.Path(model_dir.name) # use temp dir for testing.
-    suite_dir = model_dir/'suite'
+    base_dir = genericLib.expand(f'/home/n02/n02-puma/tetts/roses')
+    references = [base_dir / config for config in [config_amip, config_amip_p4]]  # ROSE configs
+
+    model_base_dir = tempfile.TemporaryDirectory(prefix='OptClim_test_') # use temp dir for testing.
+    model_base_dir = pathlib.Path(model_base_dir.name) # use temp dir for testing.
+    suite_base_dir = model_base_dir/'suites'
     post_process = None # no post-processing for testing.
-try:
-    shutil.rmtree(model_dir)
-except FileNotFoundError:
-    pass
+
 
 with genericLib.expand('$OPTCLIMTOP/OptClimVn3/configurations/parameters_UKESM1_1.ijson').open('rt') as f:
     config  = json.load(f)
 parameters = {k:v*1.05 for k,v in config['defaultParams'].items() if not k.endswith('comment')}
 # try with all parameters with default values scaled by 5%
-# set ensembleMember to 2
-parameters.update(ensembleMember=2,archive_pp=False,archive_netcdf=False)
-
-
+# set ensembleMember to 2. Make sure archiving off and set the run target and resubmission time.
+parameters.update(ensembleMember=2,archive_pp=False,archive_netcdf=False,
+                  START_TIME='2010-09-01',RUN_TARGET='2011-12-30',RESUB_TIME='P4M')
 run_info=dict(
     run_info_comment='Information for running system. ',
     runCode='n02-TERRAFIRMA', # run with terafirma
@@ -73,34 +69,33 @@ run_info=dict(
     runExtraArgs=['--qos=serial'],
     runExtraArgs_comment='List of extra args for submission. For archer2 need to specifiy qos for pp job',
 )
-model = UKESM1_1_c8(name=name,
-                    suite_dir=suite_dir,
-                reference=reference,
-                model_dir=model_dir,
-                post_process=post_process,
-                parameters=parameters,
-                run_info=run_info)
-model.instantiate()
-## print out UM functions values in the model.
-for name,fn in model.param_info.known_functions.items():
+
+for name,ref in zip(['ctl','p4k'],references):
+    model_dir = model_dir_base/name
+    if suite_base_dir is None: # no suite_base_dir defined so suite_dir is None.
+        suite_dir = None
+    else:
+        suite_dir = suite_base_dir/name
+        try:
+            shutil.rmtree(suite_dir)
+        except FileNotFoundError:
+            pass
     try:
-        result = fn(model,0.0) # call the function with a dummy value.
-        if result is None:
-            print(f'{fn.__qualname__} returned None')
-            continue
-        nl_info  = [nl[0] for nl in result]
-        values = [model.read_nl_value(nl) for nl in nl_info]
-        if isinstance(values[0], (list, tuple)):
-            print(f'{fn.__qualname__} = {values} with  len {len(values[0])}')
-        else:
-            print(f'{fn.__qualname__} = {values}')
+        shutil.rmtree(model_dir)
+    except FileNotFoundError:
+        pass
 
+    model = UKESM1_1_c8(name=name,
+                    suite_dir=suite_dir,
+                    reference=reference,
+                    model_dir=model_dir,
+                    post_process=post_process,
+                    parameters=parameters,
+                    run_info=run_info)
+    model.instantiate()
 
-    except Exception as e:
-        my_logger.warning(f'{fn.__qualname__} failed with {e}')
-
-if archer:
-    model.submit_model() # should submit post-process and model.
-    pth = pathlib.Path('~')/model.suite_dir.relative_to(model.puma_dir.parent)
-    print(f'Submitted {pth} on puma')
-print(model.print_output())
+    if archer:
+        model.submit_model() # should submit post-process and model.
+        pth = pathlib.Path('~')/model.suite_dir.relative_to(model.puma_dir.parent)
+        print(f'Submitted {pth} on puma')
+    print(model.print_output())

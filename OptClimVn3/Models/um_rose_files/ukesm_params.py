@@ -1,15 +1,7 @@
 # Code to convert MO QUMP data to UKESM1.1 parameters suitable for use in OptClim.
-# it is farily hacky and fragile. Inspect values after running and test carefully.
-# Consider rewritting if more extensive use is made.
-# TODO: Deal with latent parameters that are not in the namelist but are in the QUMP data.
-#   These parameters do not change namelists but do impact variables which are in the namelist.
-# Cases are liu_latent (impacting bparam), rho_snow_et_crit_delta (impacting rho_snow_et_crit)
-# and allicetdegc0to1 (impacting allicetdegc). Best approach is to have a function that sets the params they impact
-# and things they depend on and reads the latent param from the parameters attribute.
-# These should not go in the simple parameters file.
-# but need default values and ranges for the ijson file.
-# They also need functions generated which use them and dummy functions for the latent parameters which do nothing.
-# I wonder if simple parameters should have some null that means do nothing??
+# it is very  hacky and fragile. Inspect values after running and test carefully.
+# Consider rewriting if more extensive use is made.
+
 import json
 import pathlib
 import typing
@@ -201,7 +193,7 @@ source_urls = ['https://github.com/qump-project/qump-hadgem3/blob/master/data/GA
                'https://github.com/qump-project/qump-hadgem3/blob/master/data/GA9Parameters.csv'
                ]
 output_param = genericLib.expand('$OPTCLIMTOP/OptClimVn3/configurations/parameters_UKESM1_1.ijson')
-simple_param_csv = genericLib.expand('$OPTCLIMTOP/OptClimVn3/Models/parameter_config/UM_rose_UKESM1_1.csv')
+simple_param_csv = genericLib.expand('$OPTCLIMTOP/OptClimVn3/Models/parameter_config/UM_rose_params/UM_rose_UKESM1_1.csv')
 #source_url = 'https://github.com/qump-project/qump-hadgem3/blob/master/data/GA7Parameters_fakedata.csv'
 
 # remove cases where variable has dependency -- those get handled by functions.
