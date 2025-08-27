@@ -1,0 +1,8 @@
+Reduced diagnosts and running as tetts
+--This line, and those below, will be ignored--
+
+M    app/postproc/rose-app.conf
+M    app/um/rose-app.conf
+M    rose-suite.conf
+M    rose-suite.info
+M    site/archer2.rc
