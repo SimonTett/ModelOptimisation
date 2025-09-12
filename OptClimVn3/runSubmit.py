@@ -15,11 +15,37 @@ import optclim_exceptions
 import warnings
 import functools
 
+"""
+TODO to have multiple models to compute a single set of observations.
+Approach will be to have a user supplied function which takes self, dict of parameters, calls make_model for each model and then combines the results.
+Writer of the function handles dependencies. Function will return pandas series  or None if nothing. For *now* all models will use the same post-processing.
+So only thing that can differ is fixed parameters or reference model. Not even model type etc.
+Type information for the function is:
+ typing.Callable[[runSubmit, dict], typing.Optional[pd.Series]]
+ 
+ Providing logical information about the parameters, observations etc to runSubmit so they can be plotted as opposed to the individual models.
+    # simulated_obs:pd.DataFrame # the simulated observations for the evaluations (which might require multiple model evaluations). Index based on names
+    # These are raw -- i.e. before scaling, transform or residual calculations done. Only present where all needed models have been run.
+    # parameters:pd.DataFrame # the parameters for the models. Indexing is the same as simulated_obs.
+    # cost -- pd.Series # the estimated cost for each model evaluation. Indexing is the same as simulated_obs. Will apply scaling and transform if provided. 
+    # other_information:pd.DataFrame # other information about the models. Indexing is the same as simulated_obs.
+    #     #         Will contain: number of ensemble members, iteration number, index within iteration.
+    # extra_params: dict[str,dict[str,dict[str,float_int_or_string]] # extra params for each model evaluation. str is the name. 
+    And the parameter dict has key  based on ensemble_member and the extra_parameters dict! 
+    # names: dict[str] -- dict of names indexed by key generated from parameters. name will be a function of iteration number & index within iteration.
+    Have fn name which takes list of parameters. Looks them all  up in names. If any missing will  compute current iteration number from max of current iteration number. 
+          If all missing increases iteration number. For those not there generates names,  adds to names, updates other_information, parameters. 
+           Returns list of names.
+    In the main bit of the call the observations and cost are updated if have values. 
+
+"""
 my_logger=logging.getLogger(f"OPTCLIM.{__name__}")
 class runSubmit(SubmitStudy):
     # Has the following additional attributes over SubmitStudy (and Study)
     trace:typing.List[str] # the trace of all model evaluations. Elements are keys into model_info
     prev_trace:typing.List[str] # the trace off all model evaluation the previous time the algorithm was run
+
+
     """
           Class   to deal with running various algorithms. (not all of which are optimization).
           It is a specialisation of SubmitStudy and is separated out to make maintenance easier.
@@ -125,7 +151,7 @@ class runSubmit(SubmitStudy):
         return model
 
     def transform_check(self,obs:pd.Series,
-                        model_name:str,
+                        model_name:str, # TODO consider removing this as only used for error messages.
                         transform: typing.Optional[pd.DataFrame] = None,
                         scale: bool = False,
                         residual: bool = False,
@@ -247,6 +273,8 @@ class runSubmit(SubmitStudy):
         empty = pd.Series(np.repeat(np.nan, nObs), index=obsNames)
         for indx in range(0, nsim):  # iterate over the simulations.
             pDict = dict(zip(paramNames, use_params[indx, :]))  # create dict with names and values.
+            # TODO -- store this in the parameters/observations at the meta model level.
+            # self.parameters[indx]=pd.Series(pDict,name=indx) # store parameters in the parameters dataframe
             ensObs = []
             for ensembleMember in range(0, nEns):
 
@@ -271,7 +299,7 @@ class runSubmit(SubmitStudy):
                 if obs is None:
                     obs = empty  # empty obs
                 else:
-                    obs= self.transform_check(obs,model_name,transform=transform,scale=scale,residual=residual)
+                    obs= self.transform_check(obs,model_name,transform=transform,scale=scale,residual=residual) # TODO move this after ensemble averaging.
                 ensObs.append(obs)
 
             # This happens both when a new model is created or an existing model used.
@@ -282,7 +310,7 @@ class runSubmit(SubmitStudy):
                 my_logger.debug("Computing ensemble average")
                 ensObs = pd.DataFrame(ensObs)
                 ensObs = [ensObs.mean(axis=0)]
-
+            #
             result.extend(ensObs.copy())  # add to list of  results. Note copying as  ensObs is changed in the loop
         # end of loop over simulations to be done.
 
