@@ -911,8 +911,7 @@ class testStudyConfig(unittest.TestCase):
             expect_log_cfg = json.load(fp)
         # check logging info is as expected
         self.assertEqual(expect_log_cfg, c.getv('logging'))
-        # and that logging_INCLUDE_comment is raw path
-        self.assertEqual(log_cfg_file, c.getv('logging_INCLUDE_comment'))
+
 
     def test_max_model_simulations(self):
         # test max_model_simulations
@@ -1007,6 +1006,51 @@ class testStudyConfig(unittest.TestCase):
         self.assertEqual(got,expect_list,msg='strip_comment failed for list')
         got = self.config.strip_comment(test_dict)
         self.assertEqual(got,expect_dict,msg='strip_comment failed for dict')
+
+class testFileDict(unittest.TestCase):
+    """
+    Test the dictFile static method
+    """
+
+    def test_process_include(self):
+        """
+        Test that process_include works
+          :return:
+        """
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # create a couple of files to include
+            dirpath = pathlib.Path(tmpdir)
+            file1 = dirpath/ 'file1.ijson'
+            file2 = dirpath/ 'file2.ijson'
+            file3 = dirpath / 'file3.ijson'
+            with file1.open('wt') as fp:
+                fp.write('{"a":1,"b":2}')
+
+            with file2.open('wt') as fp:
+                fp.write('{"c":3,"d":4}')
+            d3=['a list',1,2]
+            with file3.open('wt') as fp:
+                json.dump(d3,fp)
+            dct = dict(include1=f"INCLUDE {file1}",
+                       include2=f"INCLUDE {file2}", e=5,f=f"INCLUDE {file3}")
+            result = StudyConfig.process_include(dct)
+            expect = dict(include1=dict(a=1, b=2), include2=dict(c=3, d=4), e=5,
+                          f=d3,
+                          include1_include_path_comment=str(file1),
+                          include2_include_path_comment=str(file2),
+                          f_include_path_comment=str(file3))
+            self.assertEqual(result, expect)
+
+            # test recursive read fails.
+            with file1.open('wt') as fp:
+                fp.write(f'{{"a":1,"b":2,"file2":"INCLUDE {file2}"}}')
+            with file2.open('wt') as fp:
+                fp.write(f'{{"c":3,"d":4,"file1":"INCLUDE {file1}"}}')
+            # no change to dct so expect an error
+            with self.assertRaises(RecursionError):
+                result = StudyConfig.process_include(dct)
+
 
 
 
