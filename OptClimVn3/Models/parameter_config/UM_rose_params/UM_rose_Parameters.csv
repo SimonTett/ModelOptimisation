@@ -2,3 +2,4 @@ parameter,type,filepath,namelist,nl_var,default,name,function_name
 prebuild,um_rose,app/fcm_make_um/rose-app.conf,env,prebuild,,,
 archive_pp,um_rose,app/postproc/rose-app.conf,namelist:archiving,archive_pp,,,
 archive_netcdf,um_rose,app/postproc/rose-app.conf,namelist:archiving,archive_ncf,,,
+archer_archive_dir,um_rose,app/postproc/rose-app.conf,namelist:archer_arch,archive_root_path,,,

@@ -124,6 +124,7 @@ class test_um_rose(unittest.TestCase):
         bak_files = set(model.suite_dir.rglob('*.bak'))
         # expect the following backup files
         expected_bak_files = set([model.suite_dir/(f+'.bak') for f in [
+            "app/postproc/rose-app.conf", # We change the postproc script
             "app/um/rose-app.conf", # coz we change variables.
             "rose-suite.conf", # coz we modify variables in here too.
             "suite.rc",# coz we change it by adding an include oprclim.rc
@@ -228,13 +229,13 @@ and even more text
     def reinit(self):
         """
         Utility method to Reinitialise the model by copying the reference directory to the suite_dir
-        and adding the submit and continue scripts.
+        and adding the submit, continue & clean scripts.
         :return:
         """
         shutil.rmtree(self.model.suite_dir, onerror=genericLib.errorRemoveReadonly)
         shutil.copytree(self.refDir,self.model.suite_dir,dirs_exist_ok=True)
         # create the submit and continue scripts
-        for file in [self.model.submit_script, self.model.continue_script]:
+        for file in [self.model.submit_script, self.model.continue_script,self.model.clean_script]:
 
             with file.open('wt') as f:
                 f.write('A script')
@@ -306,8 +307,8 @@ and even more text
         model.running()
         self.assertIsNone(self.model.model_data_dir) # model_data_dir should be None
 
-    def test_succeeded(self):
-        # test that succeeded works.
+    def notest_succeeded(self):
+        # test that succeeded works. No need as using archive functionality-- code left for now.
         # Will check that files are successfully copied from model_data_dir to model_dir/History_Data
         model = self.model
         model.model_data_dir = self.model.model_dir/'test_data'

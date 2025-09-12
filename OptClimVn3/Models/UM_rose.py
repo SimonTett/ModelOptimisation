@@ -1,5 +1,5 @@
 # Class to support Unified Model running in Rose.
-#This version is rather specialised for archer2.
+# This version is rather specialised for archer2.
 # If running on other platforms then will need to refactor/generalise this code.
 # It has some fairly large difference from Model. See class doc
 # Things marker ARCHER2 are specific to ARCHER2. Generalise if on another platform.
@@ -9,6 +9,31 @@
 # TODO - figure out what to do if the model fails. Coz often might fix in
 #   cylc gui. But then model status won't get updated.
 # But point of continue option is to automatically fix and run...
+
+# User will need to do some work to get UM model running in cylc working.
+# 1) Reduce diagnostic output to minimum needed for optclim.
+# 2) Set it up to run for desired period for optimisation.
+# 3) Turn of pruning as that removes data on archer2 that is needed for post-processing.
+#  **Might** be fixed by changing archive_root_path=$ROSE_DATAC to something else in
+#    app/postproc/rose-app.conf [namelist:archer_arch]
+# 4) Have archiving on -- that puts data in archive_root_path
+# 5) have pptransfer off (it is currently unreliable) -- that will transfer data to jasmin for long term storage. (Data can be moved to tape)
+# 6) Test case works.
+
+# Possible further changes to creating  a UM_rose model
+# 1) Modify archive_root_path in app/postproc/rose-app.conf [namelist:archer_arch] to write to model_dir/output
+# 2) Modify transfer_dir in app/postproc/rose-app.conf [namelist:pptransfer] to be path/model.dir.parent.stem -- in essence keeping the study structure.
+#     But not right now as pptransfer is unreliable.
+# 3) Remove the succeed method which copies data as, in particular, step 1 will mean data is in model_dir/output.
+# Optional stuff
+# 4) Modify Model.Model so can just read an existing model config which could be modified but no automatic changes.
+#    In particular, it does not have model_dir and all the other stuff just the config.
+#      Maybe a new super class ModelConfig which takes all the config related stuff then Model inherits from that. But will need to know what the configurations are...
+# 5) Have a clean method which runs cylc clean. That could form part of the post_process step -- run after successfully running post process.
+#     have um_rose process method which calls the super class process and then runs cylc clean. Assuming that if post_process fails then get an error and not much happens!
+#     Probably a bad idea to have it run automatically. Perhaps a SubmitStudy method clean which runs clean on all models in the study. [Clean being model dependent]
+# 6) Have post-processing be included in the cylc suite. That would require modifying the submit method to not submit the post-process job as that would be part of the cylc suite.
+#  Not a wise idea as won't be able to easily release the next cycle...
 
 import fileinput
 import functools
@@ -36,10 +61,10 @@ from namelist_var import NamelistVar, GroupConfig
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")  # have this anywhere you want logging
 
-
+type_create_script = typing.Literal["submit", "continue", "clean"] # type def for various flavours of _create_script.
 class UM_rose(Model):
     """
-    Class to support the Unified model running in ROSE. This is for cylc7. See UM_rose_cylc8 for cylc8 version.
+    Class to support the Unified model running in ROSE. See specialised classes for cylc7 & cylc8 support.
     The complication is that this the UM uses cylc which requires submitting a job to puma2.
     This version is rather specialised for archer2. If want to run on another platform then
     will need to refactor/generalise this code. Main changes come from including optclim.rc in suite.rc
@@ -132,7 +157,7 @@ class UM_rose(Model):
                         key) is not None:  # (Get None if either null in the original  json config or not present)
                     self.parameters_no_key[key] = self.run_info[key]
             # deal with prebuild set to True -- where we guess the path.
-            if self.parameters_no_key.get('prebuild') is True:
+            if self.parameters_no_key.get('prebuild',False):
                 prebuild_path = self._guess_prebuild()
                 if prebuild_path is not None:
                     self.parameters_no_key['prebuild'] = str(prebuild_path)
@@ -169,12 +194,13 @@ class UM_rose(Model):
         if self.suite_dir is not None:
             self.submit_script = self.suite_dir / 'submit_script.sh'  # script to run on puma2 to submit the job.
             self.continue_script = self.suite_dir / 'continue_script.sh'  # probably don't need this for now. There if have an error.
+            self.clean_script = self.suite_dir / 'clean_script.sh'  # script to clean the suite.
 
 
     def create_model(self,
                      direct: typing.Optional[pathlib.Path] = None,
                      copy_ref: bool = True
-                     ) -> None:
+                     ) :
         """
         Create the model. This is a rose specific version of create model. It will copy the reference config
          to **self.suite_dir** and create model_dir using super().create_model.
@@ -230,13 +256,13 @@ class UM_rose(Model):
         return file, count_match
 
     @staticmethod
-    def change_rose_dir(direct: pathlib.Path) -> dict[pathlib.Path:int]:
+    def change_rose_dir(direct: pathlib.Path) -> dict[pathlib.Path,int]:
         """
-        Recursively change all values of [file:$ROSE_DATA/] to [file: in text files in input directory.
+        Recursively change all values of [file:$ROSE_DATA/] to [file: ]in text files in input directory.
         :param direct: directory to change.
         :return dict indexed by file path and number of changes made.
         """
-        #TODO -- might need to replace other ROSE_DATA references. Suchk it and see!
+        #TODO -- might need to replace other ROSE_DATA references. Suck it and see!
         raise NotImplementedError("Code no longer needed")
         match = r"(.*)\[file:\$ROSE_DATA/(.*?)\](.*)"
         replacement = r"\1[file:\2]\3"
@@ -296,7 +322,7 @@ class UM_rose(Model):
         UM rose specific version of modify model,
         Does the following (after calling the superclass method
         Copies the optclim suite apps into the suite_dir and modifies the suite_file_name
-        Also generates the submit and continue scripts,
+        Also generates  any necessary scripts and sets archer_archive_dir to model_dir/output
 
         """
         super().modify_model()  # call the base class method.
@@ -309,17 +335,23 @@ class UM_rose(Model):
         args = self.parameters_no_key.get('OPTCLIM_ARGS')
         self._create_script('submit', args=args)
         self._create_script('continue', args=args)
+        self._create_script('clean',args=args)  # create the clean script.
+        # and set archer_archive_dir to be model_dir/output as that is where we copy data to.
+        archive_dir = str(self.model_dir / 'output')
+        self.parameters_no_key['archer_archive_dir'] = archive_dir # add to parameters_no_key
+        my_logger.debug(f'Set archer_archive_dir to {archive_dir}')
+
 
     def _create_script(self,
-                       script_type: typing.Literal['submit', 'continue'],
-                       args: typing.Optional[str] = None) -> None:
+                       script_type: type_create_script,
+                       args: typing.Optional[str] = None):
         """
         Create a script to run on puma2.
         :param script_type: type of script. 'submit' or 'continue'.
         :param args: any arguments to pass to the script.
         :return: nothing.
         """
-        raise ValueError('TDo not call this version. Call the cylc7 version not this one ')
+        raise ValueError('Do not call this version. Call the cylc specific version not this one ')
 
     def update_suite_rc(self):
         """
@@ -413,16 +445,14 @@ class UM_rose(Model):
         # Now time should be start_time + run_target
         if time != end_time:
             raise ValueError(f'RUN_TARGET {run_target} and RESUB_TIME {resub_time} are not compatible')
-        # 2)  check the submit and continue scripts exist
-        for script in [self.submit_script, self.continue_script]:
+        # 2)  check the various scripts we want exist
+        for script in [self.submit_script, self.continue_script,self.clean_script]:
             if not (script is None or script.is_file()):
                 raise FileNotFoundError(f"{script} is not a file.")
         # 3) Check values of archive_pp and archive_netcdf and warn if they are set to True
         for param in ['archive_pp', 'archive_netcdf']:
-            if self.read_param(param) is True:
-                my_logger.warning(f'{param} is set to True. This will archive the files in the model_data_dir '
-                                  f'but not copy them to the model_dir/share/data/History_Data so post processing will fail'
-                                  f'If you want to copy them set {param} to False')
+            if self.read_param(param,raise_error=False) is not True:
+                my_logger.warning(f'{param} is not  True. Your data will not be copied into model_dir/output and post-processing may fail.')
 
         return True
 
@@ -463,18 +493,18 @@ class UM_rose(Model):
 
         return 'NOJOBID'
 
-    def succeeded(self):
+    def rose_succeeded(self): # renamed so not generally called. Will reinstate if needed or delete later.
         """
         UM_ROSE specific version of succeeded. 
         If self.model_data_dir is defined
-             Copies pp, netcdf and last dump files  in this dir to model_dir/'share/data/History_Data'
+             Copies pp, netcdf and last dump files  in this dir to model_dir/'output'
         If not defined raises ValueError.
         if not a dir raises FileNotFoundError.
         then calls superclass succeeded.
         Copying as files might be on other file systems and hard links across file systems do not work.
         """
 
-        data_dir = self.model_dir / 'share/data/History_Data'  # where model data will be copied too
+        data_dir = self.model_dir / 'output'  # where model data will be copied too
         if self.model_data_dir is None:  # not set trigger an error
             raise ValueError('model_data_dir not set. Something probably went wrong in running() method')
 
@@ -550,7 +580,7 @@ class UM_rose_cylc7(UM_rose):
     include_file_name='optclim.rc' # include file for cylc7
 
     def _create_script(self,
-                       script_type: typing.Literal['submit', 'continue'],
+                       script_type: type_create_script,
                        args: typing.Optional[str] = None) -> None:
         """
         Create a script to run on puma2.
@@ -563,6 +593,8 @@ class UM_rose_cylc7(UM_rose):
             script = self.submit_script
         elif script_type == 'continue':
             script = self.continue_script
+        elif script_type == 'clean':
+            script = self.clean_script
         else:
             raise ValueError(f'Unknown script type: {script_type}')
         script.parent.mkdir(parents=True, exist_ok=True)  # might need to create directory
@@ -571,12 +603,13 @@ class UM_rose_cylc7(UM_rose):
             f.write('#!/bin/bash --login\n')
             cmd = ['rose', 'suite-run']
             if script_type == 'submit':
-                cmd.append('--new')
+                cmd += ['--new','--no-gcontrol']
             elif script_type == 'continue':
-                cmd.append('--restart ')
+                cmd+= ['--restart ','--no-gcontrol']
+            elif script_type == 'clean':
+                cmd = ['rose', 'suite-clean']
             else:
-                raise ValueError(f'Unknown script_type {script_type}')
-            cmd.append('--no-gcontrol')
+                raise ValueError(f'Unknown script_type: {script_type}')
             if args:
                 cmd.append(args)
             cmd.append(f'-C {self._puma_path(self.suite_dir)}')  # path to the suite dir.
@@ -624,7 +657,7 @@ class UM_rose_cylc8(UM_rose):
                           'platform_bg = archer2-nvme-bg')
 
     def _create_script(self,
-                       script_type: typing.Literal['submit', 'continue'],
+                       script_type: type_create_script,
                        args: typing.Optional[str] = None) -> None:
         """
         Create a script to run on puma2. This is the cylc8 specific version.
@@ -637,6 +670,8 @@ class UM_rose_cylc8(UM_rose):
             script = self.submit_script
         elif script_type == 'continue':
             script = self.continue_script
+        elif script_type == 'clean':
+            script = self.clean_script
         else:
             raise ValueError(f'Unknown script type: {script_type}')
         script.parent.mkdir(parents=True, exist_ok=True)  # might need to create directory
@@ -646,17 +681,20 @@ class UM_rose_cylc8(UM_rose):
             f.write('export CYLC_VERSION=8\n') # make sure in cycl8 
             cmd = ['cylc']
             if script_type == 'submit':
-                cmd += ['vip']
+                cmd += ['vip','--no-run-name']
             elif script_type == 'continue':
-                cmd.append('play') # might need a release as well.
+                cmd += ['play','--no-run-name'] # might need a release as well.
+            elif script_type == 'clean':
+                cmd += ['clean']
             else:
                 raise ValueError(f'Unknown script_type {script_type}')
-            cmd += ['--no-run-name']  # no run names
             if args:
                 cmd.append(args)
             cmd.append(f'{self._puma_path(self.suite_dir)}')  # path to the suite dir.
             # cylc does not like having names starting with .,- or numbers.
             # if names starts with this pattern we will modify the name by adding X
+            # TODO -- if I want to clean or do anything do I need to use the modified name?
+            # in which case it needs to be stored somewhere.
             if re.match(r'$[.,\-[0-9]',self.suite_dir.name):
                 my_logger.info('Adding X to name')
                 cmd.append(f'--workflow-name=X{self.suite_dir.name}')
@@ -714,7 +752,7 @@ class UKESM1_params(Model):
                  param:str = 'UNKNOWN') -> typing.Optional[float]:
         """
         Function  for latent variable parameters. Those are used in the 'main' function
-        :param value: value to set. If None then return the value from the paramters
+        :param value: value to set. If None then return the value from the parameters
         :param transform: For compatibility with other parameters. Doesn't do anything.
 
         :return: None or value from the parameters.
@@ -793,7 +831,7 @@ class UKESM1_params(Model):
         """
         Function to get calendar string for model. Setting not implemented as not needed and likely has big ramifications.
         Do it via the user interface!
-        : return: a string which should be compatable with cftime.datetime that gives the calendar used by the model.
+        : return: a string which should be compatible with cftime.datetime that gives the calendar used by the model.
         """
         nl_cal = NamelistVar('um_rose', self.um_namelist_file, 'namelist:nlstcall', 'lcal360')
         lcal360 = self.read_nl_value(nl_cal, raise_error=False)
@@ -814,8 +852,6 @@ class UKESM1_params(Model):
                    ensMember: typing.Optional[int],
                    transform:bool = True) -> typing.Union[list[tuple[NamelistVar,int]],int]:
         """
-        Do nothing as perturbing initial conditions is model-specific. But needed
-         for test cases.
         :param ensMember: ensemble member. The ensemble member to set. If None then read the value from the namelist.
         :param transform:  Does nothing and present for compatibility with other parameters.
         :return: [(nl,int)] or ensemble member value if None.
@@ -894,7 +930,7 @@ class UKESM1_params(Model):
         time = [time.year, time.month, time.day, time.hour, time.minute, time.second]  # what the model wants
 
         return [(nl_start_time, time),(nl_override,2)] # set the start time and override value to 2.
-    import scipy.stats
+
     @register_param('starticetkelvin') # using this name as this is the variable that will be passed in.
     def cloud_ice(self, start_icet_kelvin: typing.Optional[float] = None,
                   transform: bool = True) -> type_param_fn:
@@ -943,7 +979,7 @@ class UKESM1_params(Model):
                         all_icet_degc_0to1 = 0.0
                     else:
                         all_icet_degc_0to1 = all_ice_x/start_ice_x
-                    if not (all_icet_degc_0to1 >= 0.0 and all_icet_degc_0to1 <= 1.0):
+                    if not (0.0 <= all_icet_degc_0to1 <= 1.0):
                         raise ValueError(f'allicetdegc0to1 {all_icet_degc_0to1} not in range 0 to 1')
                     result = [start_icet_kelvin, all_icet_degc_0to1]  # return the values.
                 else:
