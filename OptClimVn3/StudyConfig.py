@@ -27,9 +27,7 @@ import pathlib
 import re
 import getpass
 
-import dfols
 
-import generic_json
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -38,12 +36,47 @@ from io import StringIO
 import xarray  # TODO -- consider removing dependence on xarray
 
 __version__ = '3.0.0'
+
+import genericLib
+
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 type_fixed_param_function: typing.TypeAlias = typing.Callable[
     [dict[typing.Hashable, 'Model.Model']], typing.Optional[pd.Series]]
 
 
 # functions available to everything.
+def process_include(dct:dict,files_read:list = []) -> dict:
+    """
+    Process a dict looking for values the form "INCLUDE filename"
+       and read the file using json read and inserting the result into the directory.
+       A comment will be inserted saying what the include path was.
+    :param dct: dict of values to process
+    :param files_read: list of files read so far. Used to avoid recursive includes.
+    :return: dict with includes processed (recursively)
+    """
+    result=dict() # result dict
+    for key,value in dct.items():
+        if isinstance(value, dict):
+            result[key] = process_include(value,files_read=files_read) # recursively process dicts
+        elif isinstance(value, str) and value.startswith('INCLUDE '):
+            # process include statement. TODO -- could make this a regexp.
+            inc, path = value.split(maxsplit=1)
+            pth = genericLib.expand(path).resolve() # expand path
+            if pth in files_read:
+                raise RecursionError(f"Recursive include of {pth} in {files_read[-1]}")
+            files_read.append(pth) # resolve to get full path.
+            my_logger.debug(f"Processing include statement: {value} by reading {pth}")
+            with pth.open('rt') as fp:
+                r = json.load(fp)
+            if isinstance(r, dict):
+                r = process_include(r,files_read=files_read) # recursively process dicts
+            result[key] = r
+            result[key+'_include_path_comment'] = str(pth)
+        else:
+            result[key] = value # just copy value
+    return result
+
+
 
 def readConfig(filename, **kwargs):
     """
@@ -57,6 +90,7 @@ def readConfig(filename, **kwargs):
     if os.path.isfile(path) is False:
         raise IOError("File %s not found" % filename)
     config = dictFile(filename=path)  # read configuration using rather dumb object.
+
     config = config.to_StudyConfig(**kwargs)  # convert dictFile to appropriate StudyConfig.
     return config
 
@@ -144,6 +178,13 @@ class dictFile(dict):
             path = None
 
         self.Config = Config_dct
+        # now deal with any INCLUDES
+        # process the includes
+        if path is not None:
+            files_read=[path.resolve()]#
+        else:
+            files_read = []
+        self.Config = process_include(self.Config, files_read=files_read)
         self._filename = path
 
     def print_keys(self):
@@ -304,6 +345,9 @@ class OptClimConfig(dictFile):
 
         if add_constraint and self.constraint():  # adding constraint and its defined.
             if self.constraintName() not in obs:
+                cons_name = self.constraintName()  # get constraint name
+                if cons_name is None:
+                    raise ValueError("Constraint name not set in configuration file")
                 obs.append(self.constraintName())
 
         # check for duplicates
@@ -2017,32 +2061,13 @@ class OptClimConfigVn3(OptClimConfigVn2):
 
     def __init__(self, config: dictFile, check: bool = True):
         """
-        Process all INCLUDE stuff
+
         Call super class __init__ method and then add comment_end attribute
         set to "_comment"
 
         :param config -- configuration used to initialise
         :param check -- if True check that parameters and observations are self-consistent
         """
-        includes = dict()
-        for key, value in config.Config.items():
-            if isinstance(value, str) and value.startswith("INCLUDE "):
-                my_logger.debug(f"Include from {value}")
-                inc, pth = value.split(maxsplit=1)
-                includes[key + "_INCLUDE_comment"] = pth  # raw path so can see what done
-
-                pth = os.path.expanduser(os.path.expandvars(pth))
-                pth = pathlib.Path(pth)
-                my_logger.debug(f"Reading in {pth}")
-                if not pth.exists():
-                    raise ValueError(f"{pth} does not exist.")
-                with open(pth, 'rt') as fp:
-                    dct = json.load(fp)
-                includes[key] = dct
-        # now have a bunch of stuff in includes which we will use to update config.
-        if (len(includes) > 0):
-            my_logger.info(f"Updating the following keys: {' '.join(includes.keys())}")
-            config.Config.update(includes)
 
         super().__init__(config)  # call super class init
         self.comment_end = '_comment'  # define what a comment looks like.
@@ -2264,6 +2289,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
         """
         import dfols
         from dfols.solver import OptimResults
+        import generic_json
 
         if solution is not None:
             # convert the solution to something jsonable.
