@@ -2,29 +2,19 @@
 # This version is rather specialised for archer2.
 # If running on other platforms then will need to refactor/generalise this code.
 # It has some fairly large difference from Model. See class doc
-# Things marker ARCHER2 are specific to ARCHER2. Generalise if on another platform.
-# namelist info START_TIME,um_rose,rose-suite.conf,template variables,BASIS,,, (cylc 8) or
-# START_TIME,um_rose,rose-suite.conf,jinja2:suite.rc,EXPT_BASIS,,, (cylc 7)
-
-# TODO - figure out what to do if the model fails. Coz often might fix in
-#   cylc gui. But then model status won't get updated.
-# But point of continue option is to automatically fix and run...
+# Things marked ARCHER2 are specific to ARCHER2. Generalise if on another platform.
 
 # User will need to do some work to get UM model running in cylc working.
-# 1) Reduce diagnostic output to minimum needed for optclim.
-# 2) Set it up to run for desired period for optimisation.
+# 1) Reduce diagnostic output to minimum needed for optclim as data piles up on work dirs
+# 2) Set model up to run for desired period for optimisation.
 # 3) Turn of pruning as that removes data on archer2 that is needed for post-processing.
-#  **Might** be fixed by changing archive_root_path=$ROSE_DATAC to something else in
-#    app/postproc/rose-app.conf [namelist:archer_arch]
-# 4) Have archiving on -- that puts data in archive_root_path
-# 5) have pptransfer off (it is currently unreliable) -- that will transfer data to jasmin for long term storage. (Data can be moved to tape)
-# 6) Test case works.
+#  **Might** be fixed by changes to archive_root_path
+# 4) Have archiving on -- that puts data in archive_root_path which gets set to model_dir/output
+# 5) If archiving to JASMIN then set transfer_dir to something sensible which changes with the studies
+#    run names are unique per study but no guarantees beyond that...
+# 6) Test your case works.
 
 # Possible further changes to creating  a UM_rose model
-# 1) Modify archive_root_path in app/postproc/rose-app.conf [namelist:archer_arch] to write to model_dir/output
-# 2) Modify transfer_dir in app/postproc/rose-app.conf [namelist:pptransfer] to be path/model.dir.parent.stem -- in essence keeping the study structure.
-#     But not right now as pptransfer is unreliable.
-# 3) Remove the succeed method which copies data as, in particular, step 1 will mean data is in model_dir/output.
 # Optional stuff
 # 4) Modify Model.Model so can just read an existing model config which could be modified but no automatic changes.
 #    In particular, it does not have model_dir and all the other stuff just the config.
@@ -32,8 +22,7 @@
 # 5) Have a clean method which runs cylc clean. That could form part of the post_process step -- run after successfully running post process.
 #     have um_rose process method which calls the super class process and then runs cylc clean. Assuming that if post_process fails then get an error and not much happens!
 #     Probably a bad idea to have it run automatically. Perhaps a SubmitStudy method clean which runs clean on all models in the study. [Clean being model dependent]
-# 6) Have post-processing be included in the cylc suite. That would require modifying the submit method to not submit the post-process job as that would be part of the cylc suite.
-#  Not a wise idea as won't be able to easily release the next cycle...
+
 
 import fileinput
 import functools
@@ -93,6 +82,7 @@ class UM_rose(Model):
        If None (or not set) will be set to  $OPTCLIMTOP/OptClimVn3/setup_archer2
     - MODEL_CONFIG will be set to self.cache_path
 
+
     """
     # additional attributes to the model class.
     suite_dir: typing.Optional[pathlib.Path]  # path for suite dir.
@@ -147,14 +137,19 @@ class UM_rose(Model):
                 self.suite_dir = None
         else:
             self.suite_dir = pathlib.Path(suite_dir)
+        # when reading from a file this may fail as suite_dir will be be done so
+        # code works out self.suite_dir from name and pid.
+        # this then used here and when the actual values get copied in
+        # then the configs will point to the wrong place.
         self.configs = GroupConfig(root_dir=self.suite_dir)  # grouped configs for writing out generic namelists
 
         # modify parameters_no_key to include runModelTime, runUser, runCode, OPTCLIM_ARGS, runEnvSetup,prebuild if set.
         # Those parameters do not contribute towards the unique key used to identify the model.
         if self.run_info is not None:  # need to test for None as reloading of config gives us None.
-            for key in ['runModelTime', 'runUser', 'runCode', 'OPTCLIM_ARGS', 'runEnvSetup', 'prebuild']:
-                if self.run_info.get(
-                        key) is not None:  # (Get None if either null in the original  json config or not present)
+            for key in ['runModelTime', 'runUser', 'runCode',
+                        'OPTCLIM_ARGS', 'runEnvSetup', 'prebuild']:
+                if self.run_info.get(key) is not None:
+                    # Get None if either null in the original  json config or not present
                     self.parameters_no_key[key] = self.run_info[key]
             # deal with prebuild set to True -- where we guess the path.
             if self.parameters_no_key.get('prebuild',False):
@@ -342,6 +337,7 @@ class UM_rose(Model):
         my_logger.debug(f'Set archer_archive_dir to {archive_dir}')
 
 
+
     def _create_script(self,
                        script_type: type_create_script,
                        args: typing.Optional[str] = None):
@@ -404,6 +400,7 @@ class UM_rose(Model):
         except Exception as e:
             my_logger.error(f"Failed to create tar file: {e}")
             raise
+
 
     def check(self) -> bool:
 

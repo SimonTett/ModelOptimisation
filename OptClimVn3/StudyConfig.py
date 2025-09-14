@@ -76,7 +76,26 @@ def process_include(dct:dict,files_read:list = []) -> dict:
             result[key] = value # just copy value
     return result
 
-
+def expand_include(path:typing.Union[pathlib.Path,str],
+                   out_path:typing.Optional[typing.Union[pathlib.Path,str]]=None,**kwargs) -> dict:
+    """
+    Read a json file, expand any INCLUDE filenames found and optionally write out
+      This is to get whole configuration in one file. Really to support debugging.
+    :param path: Path to input json file. Any ~ & shell vars will be expanded
+    :param out_path: Path to output json file. If None will not write out.
+       Any ~ and shell vars will be expanded
+    All other arguments are passed onto json.dump -- recommend specifying indentation.
+    :return: dict of expanded stuff in input json_file
+    """
+    path = genericLib.expand(path) # expand
+    with path.open('rt') as fp:
+        dct = json.load(fp)
+    dct = process_include(dct,files_read=[path.resolve()])
+    if out_path is not None:
+        out_path = genericLib.expand(out_path)
+        with out_path.open('wt') as fp:
+            json.dump(dct,fp,**kwargs)
+    return dct
 
 def readConfig(filename, **kwargs):
     """
@@ -87,8 +106,8 @@ def readConfig(filename, **kwargs):
     """
     path = pathlib.Path(os.path.expandvars(filename)).expanduser()
 
-    if os.path.isfile(path) is False:
-        raise IOError("File %s not found" % filename)
+    if not path.exists():
+        raise FileNotFoundError(f"File {path} not found")
     config = dictFile(filename=path)  # read configuration using rather dumb object.
 
     config = config.to_StudyConfig(**kwargs)  # convert dictFile to appropriate StudyConfig.

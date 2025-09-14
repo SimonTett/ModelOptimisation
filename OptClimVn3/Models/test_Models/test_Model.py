@@ -210,6 +210,7 @@ class ModelTestCase(unittest.TestCase):
                             post_process={}, _output={},
                             _post_process_input='input.json',
                             _post_process_output='sim_obs.json',
+                            configs=dict(configs={},root_dir=model.model_dir),
                             post_process_cmd_script=cmd, fake=False, simulated_obs=None,
                             perturb_count=0, parameters_no_key={}, config_path=pathlib.PurePath(self.testDir / "test_model.mcfg"),
                             status='CREATED', _history=model._history, engine=model.engine, pp_jid=None, run_info={},
@@ -219,6 +220,7 @@ class ModelTestCase(unittest.TestCase):
                             set_status_script=pathlib.PurePath(self.model.expand("$OPTCLIMTOP/OptClimVn3/scripts/set_model_status.py")))
 
         dct = model.to_dict()
+
         self.assertEqual(expected_dct, dct)
 
     def test_load_dump(self):

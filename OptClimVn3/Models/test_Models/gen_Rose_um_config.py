@@ -26,16 +26,16 @@ if hostname.startswith('ln0'): # on archer
     script = pp_dir + 'comp_sim_obs_UKESM1_1.py',
     post_process = dict(
         script=script,
+        dir='output',
+        dir_comment='path relative to model_dir for post-process to look for pp files.',
         output_file='observations.json',
         mask_file=pp_dir + 'landfrac_N96.nc',
         mask_file_comment="Path for landfrac file.",
         mask_fraction=0.5,
         mask_fraction_comment="Critical Fraction. Specify if mask  is a land/sea fraction. Values >= are land < sea. Set to null if mask is a t/f mask",
-        start_time=None,
-        start_time_comment="Start time as ISO std string. ",
-        end_time="2011-12-31",
-        end_time_comment="End time as str of ISO std string",
-        file_pattern='*a.pm*.pp',
+        time_range=('2011-01', '2011-12'),
+        start_time_comment="time range as ISO std strings. ",
+        file_pattern='*a.pz*.pp',
         file_pattern_comment="File pattern to match for post-processing. Use * as wildcard. ",
 
     )

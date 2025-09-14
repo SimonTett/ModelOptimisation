@@ -46,7 +46,7 @@ To add a new model you likely need to do, at least, the following:
 Do write tests for your new Model testing your new and modified methods.
 
 """
-from __future__ import annotations
+from __future__ import annotations # TODO remove use of this.
 
 import copy
 import functools
@@ -65,6 +65,7 @@ import xarray
 import json
 
 import genericLib
+import namelist_var
 from model_base import journal
 from ModelBaseClass import ModelBaseClass, register_param
 from namelist_var import NamelistVar,GroupConfig,type_allowed_fortran
@@ -1135,15 +1136,16 @@ class Model(ModelBaseClass, journal):
 
     def to_dict(self) -> dict:
         """
-        Convert a Model to a dict dropping configs from the result and converting paths to PurePaths.
+        Convert a Model to a dict  converting paths to PurePaths.
         Most of the work is done by calling the super class to_dict method.
         :return:
         """
         dct = super().to_dict()
+
         for key in ['config_path', 'model_dir', 'reference']:  # vars to make into purePaths
             dct[key] = pathlib.PurePath(dct[key])
-        # and drop the configs as only relevant when reading/writing configs and is dynamically generated
-        dct.pop('configs')
+        # deal with configs. Might need similar for Engine
+        dct['configs'] = self.configs.to_dict()  # convert configs to a
         return dct
 
     @classmethod
@@ -1153,8 +1155,8 @@ class Model(ModelBaseClass, journal):
         :param dct: dict to be converted to a model
         :return:a tempModel instance.
         """
-        dct.pop('configs',None) # if got configs drop it.
         dct2 = cls.convert_pure_paths(dct)
+        dct2['configs'] = namelist_var.GroupConfig.from_dict(dct2['configs'])  # convert configs back to a configs object.
         obj = cls(name=dct2.pop('name'), reference=dct2.pop('reference'))  # create a default instance
         obj.fill_attrs(dct2)
         return obj

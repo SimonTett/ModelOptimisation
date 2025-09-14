@@ -67,7 +67,7 @@ class test_um_rose(unittest.TestCase):
 
         dct = self.model.to_dict()
         dct_comp = vars(self.model)
-        dct_comp.pop('configs')
+        dct_comp['configs'] = dct_comp['configs'].to_dict() # convert configs to dict for comparison
         self.assertEqual(dct_comp,dct)
 
 
@@ -104,8 +104,10 @@ class test_um_rose(unittest.TestCase):
         self.assertEqual(self.model.status,'INSTANTIATED')
         model = self.model.load_model(self.model.config_path)
 
+        load_mdct = model.to_dict()
+        my_mdct = self.model.to_dict()
+        self.assertEqual(load_mdct,my_mdct)
 
-        self.assertEqual(model.to_dict(),self.model.to_dict())
 
         ## Check that suite.rc was updated correctly
         with open(model.suite_dir / 'suite.rc', 'r') as suite_file:
@@ -136,6 +138,15 @@ class test_um_rose(unittest.TestCase):
         self.assertTrue(tar_file.exists())
         # check that the tar file has at least 1K byte in it
         self.assertGreater(tar_file.stat().st_size, 1000)
+        # check that  have the right values for archer_archive_dir and remote_archive_dir
+        # FIXME -- doesn't look like remove_archive_dir is being set at all which may because reference config does not have it
+        # turned on...
+        #raise NotImplementedError("Test needs to be fixed to look in the right place")
+        archer_archive_dir = model.read_param('archer_archive_dir')
+        self.assertEqual(archer_archive_dir,str(model.model_dir/'output'))
+        remote_archive_dir = pathlib.PurePath(model.read_param('remote_archive_dir'))
+        # if remote archiving not turned on in ref config then this will fail as remote_archive_dir will not be set.
+        self.assertEqual(remote_archive_dir.name,model.model_dir.parent.name)
 
 
 
