@@ -1,0 +1,16 @@
+DF-OLS 1.6+ has functionality to allow initialization of the algorithm.
+This might reduce   the number of initialisation evaluations. See:
+ https://numericalalgorithmsgroup.github.io/dfols/build/html/userguide.html#using-initial-evaluation-database
+
+Plan to use it as follows buildign on work done with logical params for UKESM1 (and any other model).
+
+PLan:
+Read in a runSubmit config and just extract the observations and parameters.
+Observations have transform_check applied to them --
+  note means has same params passed as passed to stdFunction. Might be worth being clever about it.
+
+ Then add the parameters and obs to the pre-defined database and
+   start with the optimal value from the runSubmit config -- this means storing the optimal value in it.
+  ALTERNATIVE just use the begin value from the configuration??
+  Wonder if we need to add algorithm specific information to runSubmit
+
