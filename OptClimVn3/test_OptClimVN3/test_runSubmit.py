@@ -99,7 +99,9 @@ class testRunSubmit(unittest.TestCase):
         3)  run case with ensembleSize = 2 and 2 param vector set. Should get 2 vectors of Nan.
             Should be 6 models to run. The four models generated here + 2 models from case 2
 
-        4) Exceed max_model_simulations. Show raise an error.
+        4) Exceed max_model_simulations. Should raise an error.
+
+        5) (To be added).  Test that self._iteration_count is incremented as expected when all models have been run
         """
         # setup
         configData = copy.deepcopy(self.config)
@@ -220,12 +222,24 @@ class testRunSubmit(unittest.TestCase):
         rSubmit = copy.deepcopy(self.rSubmit)
         rSubmit.config.fixedParams(fixed_params=fixed_params)
         with self.assertRaises(optclim_exceptions.submitModel):
-            result = rSubmit.stdFunction(params)
-        # expect two model configs.
-        self.assertEqual(len(rSubmit.model_index),2)
+            result = rSubmit.stdFunction(params2)
+        # expect four  model configs.
+        self.assertEqual(len(rSubmit.model_index),4)
         # second model should have SST_PERTURB = 4
         last_model = list(rSubmit.model_index.values())[-1]
         self.assertEqual(last_model.parameters['SST_PERTURB'],4.0)
+        # now fake the models as processed and provide some obs.
+        for model in rSubmit.model_index.values():
+            model.status = 'PROCESSED'
+            model.simulated_obs = fake_fn(rSubmit.config, model.parameters)
+        result = rSubmit.stdFunction(params2) # should now work.
+        self.assertEqual(result.shape,(2,nobs),'Expected two sets of obs')
+        self.assertEqual(rSubmit._iteration_count,1,'Expected iteration count to be 1')
+        self.assertEqual(rSubmit._count_within_iteration,0,
+                         f'Expected 0 within iteration count got {rSubmit._count_within_iteration}')
+        # also expect that logical param and logical obs have size 2.
+        self.assertEqual(len(rSubmit._logical_parameters),2,'Expected 2 logical params')
+        self.assertEqual(len(rSubmit._logical_obs),2,'Expected 2 logical obs')
 
 
     # end test case for stdFunction
@@ -700,7 +714,186 @@ class testRunSubmit(unittest.TestCase):
         nSubmit = self.rSubmit.load(fp)
         self.assertEqual(self.rSubmit,nSubmit)
 
+    def test_logical_name(self):
+        """
+        Test that logical name works.
+        Tests ar:
+          Start with new runSubmit.  logical_name should return 'I0_i0', runSubmit._count_within_iteration should be 1.
+          Call with the same params. Should get back same name and _count_within_iteration should mot change.
+            Call with different params. Should get back 'I0_i1' and _count_within_iteration should be 2.
+            call with initial params. Should get back 'I0_i0' and _count_within_iteration should not change.
+            Modify runSubmit to have _iteration = 1 and _count_within_iteration = 0
+            Call with initial params. Should get back 'I1_i0' and _count_within_iteration should be 0
+
+        """
+        #TODO -- clean this up so a bit less repetitive.
+        param_list = [dict(CT=1e-4, EACF=0.5, ENTCOEF=3, ICE_SIZE=3e-5, RHCRIT=0.7, VF1=0.5, CW=2e-4),
+                      dict(CT=1e-4, EACF=0.5, ENTCOEF=3, ICE_SIZE=3e-5, RHCRIT=0.7, VF1=0.5, CW=2e-4,ensembleMember=2),
+                      dict(CT=1e-4, EACF=0.5, ENTCOEF=3, ICE_SIZE=3e-5, RHCRIT=0.7, VF1=0.5, CW=2e-4,ensembleMember=3)]
+        name = self.rSubmit.logical_name(param_list[0])
+        self.assertEqual(name,'I0_i0')
+        self.assertEqual(self.rSubmit._count_within_iteration,1)
+        name2 = self.rSubmit.logical_name(param_list[0])
+        self.assertEqual(name2,'I0_i0')
+        self.assertEqual(self.rSubmit._count_within_iteration,1)
+        # new params
+        name3 = self.rSubmit.logical_name(param_list[1])
+        self.assertEqual(name3,'I0_i1')
+        self.assertEqual(self.rSubmit._count_within_iteration,2)
+        # back to first params
+        name4 = self.rSubmit.logical_name(param_list[0])
+        self.assertEqual(name4,'I0_i0')
+        self.assertEqual(self.rSubmit._count_within_iteration,2)
+        self.rSubmit._iteration_count = 1 # modify iteration
+        self.rSubmit._count_within_iteration = 0
+        name5 = self.rSubmit.logical_name(param_list[0])
+        self.assertEqual(name5,'I0_i0') # already got it.
+        name6 = self.rSubmit.logical_name(param_list[2])
+        self.assertEqual(name6,'I1_i0')
+        # and check that ._parameters is a three member dict.
+        self.assertEqual(len(self.rSubmit._logical_parameters),3)
+
+    def test_comp_logical_obs(self):
+        """
+        Test that compute_logical_obs works as expected.
+
+        Tests are:
+            1) Just call comp_logical_obs directly with nEns = 1 and params being vf1=1.0. Should have one model to run and None returned.
+            2) Set ensembleSize = 2 -- should get two new models and None returned. (setting ensembleMember should result in different choices to not setting ensembleMember at all)
+            3) Create the model objects directly and set their simulated_obs to known values run again and check returned series is expected for above two cases.
+            4) reset the runSubmit object & verify get expected results when run individually with ensembleMember values.
+            5) Pass a multimodel function through, along with appropriate  fixed_params & nEns set to two. Should get four models created and None returned.
+            6) Create the model objects directly and set their simulated_obs to known values run again and check returned series is expected for above case.
+        """
+        fixed_params = dict(run_time=3600)
+        params = dict(VF1=1.0)
+        # 1) Call comp_logical_obs with nEns=1 and simple params
+        rSubmit = copy.deepcopy(self.rSubmit)
 
 
-if __name__ == "__main__":
-    unittest.main()  # actually run the test cases
+        result = rSubmit.comp_logical_obs(params, fixed_params)
+        self.assertEqual(len(rSubmit.model_index), 1, "Should have one model for nEns=1")
+        self.assertIsNone(result, "Should return None when model not processed")
+
+        # 1a) Set simulated_obs for models, call again, check returned series
+        for model in rSubmit.model_index.values():
+            model.status = 'PROCESSED'
+            model.simulated_obs = pd.Series(42, index=rSubmit.config.obsNames())
+        result = rSubmit.comp_logical_obs(params, fixed_params)
+        self.assertTrue(isinstance(result, pd.Series), "Should return a Series when processed")
+        self.assertTrue((result.values == 42).all(), "All values should be 42")
+
+        # 2) Set ensembleSize=2, call again. Should have two models.
+        rSubmit = copy.deepcopy(self.rSubmit)
+        result = rSubmit.comp_logical_obs(params, fixed_params,n_ensemble=2)
+        self.assertEqual(len(rSubmit.model_index), 2, "Should have two models for nEns=2")
+        self.assertIsNone(result, "Should return None when models not processed")
+
+        # 2a) Set simulated_obs for models, call again, check returned series
+        for count,model in enumerate(rSubmit.model_index.values()):
+            model.status = 'PROCESSED'
+            model.simulated_obs = pd.Series(41+count, index=rSubmit.config.obsNames())
+        result = rSubmit.comp_logical_obs(params, fixed_params,n_ensemble=2)
+        self.assertTrue(isinstance(result, pd.Series), "Should return a Series when processed")
+        self.assertTrue((result.values == 41.5).all(), "All values should be 41.5 ")
+
+
+        # 2) Reset runSubmit, run with individual ensembleMember values
+
+        rSubmit = copy.deepcopy(self.rSubmit)
+        ens_values = list(range(0,3))
+        for ensembleMember in ens_values:
+            params = dict(VF1=1.0, ensembleMember=ensembleMember)
+            result = rSubmit.comp_logical_obs(params, fixed_params)
+            self.assertIsNone(result, "Should return None when models not processed")
+        self.assertEqual(len(rSubmit.model_index), len(ens_values), f"Should have {len(ens_values)} models")
+        # now give the models simulated_obs and rerun
+        for model,ensembleMember in zip(rSubmit.model_index.values(),ens_values):
+            model.status = 'PROCESSED'
+            model.simulated_obs = pd.Series(99+ensembleMember, index=rSubmit.config.obsNames())
+            params = dict(VF1=1.0, ensembleMember=ensembleMember)
+            result = rSubmit.comp_logical_obs(params, fixed_params)
+            self.assertTrue(isinstance(result, pd.Series), "Should return a Series when processed")
+            self.assertTrue((result.values == 99+ensembleMember).all(), f"All values should be {99+ensembleMember} for ensembleMember={ensembleMember}")
+
+
+
+        # 5) Pass a multimodel function and fixed_params, n_ensemble=2
+        rSubmit.delete()
+        rSubmit = copy.deepcopy(self.rSubmit)
+        rSubmit.config.obsNames(rSubmit.config.obsNames()+['delta_olr_nhx']) # add an obs which ctl_plus4k will set to 1
+        params = dict(VF1=1.0,theta=1e-4)
+        fixed_params = {
+            "control": {"Delta_SST": 0},
+            "plus4k": {"Delta_SST": 1.0}
+        }
+        from example_multiparam import ctl_plus4k # get simple multimodel function
+
+        result = rSubmit.comp_logical_obs(params, fixed_params, n_ensemble=2,multi_config_fn=ctl_plus4k)
+        self.assertEqual(len(rSubmit.model_index), 4, "Should have four models for multimodel function and nEns=2")
+        self.assertIsNone(result, "Should return None when models not processed")
+
+        # 6) Set simulated_obs for these models, call again, check returned series
+        sim_obs = set(rSubmit.config.obsNames())-set(['delta_olr_nhx'])
+        for model in rSubmit.model_index.values():
+            model.status = 'PROCESSED'
+
+            model.simulated_obs = pd.Series(123+model.parameters['Delta_SST']+0.1*model.parameters['ensembleMember'],
+                                            index=sim_obs)
+        result = rSubmit.comp_logical_obs(params, fixed_params=fixed_params,n_ensemble=2,multi_config_fn=ctl_plus4k)
+        expect_results = pd.Series(123.05,index=rSubmit.config.obsNames()).rename('I0_i0') # Only one case
+        expect_results['delta_olr_nhx'] = 1.0
+        self.assertTrue(isinstance(result, pd.Series), "Should return a Series when processed")
+        pdtest.assert_series_equal(result,expect_results)
+
+    def test_logical_fns(self):
+        """
+        Rather a basic test to see that logical_params, logical_obs and logical_cose works as expected.
+
+        Tests:
+         Run a set of n-params through. Calling stdFunction more than once
+           to give iterations.
+        Expect a dataset with param values linked to names. Can check names are correct.
+
+        :return:
+        """
+        params1 = np.array([[0.1+count,count] for count in range(0,4)])
+        param2 = np.array([[0.2 + count, count] for count in range(0, 4)])
+        param3 = np.array([[0.3 + count, count] for count in range(0, 2)])
+        index = [f'I0_i{c}' for c in range(0,4)]+\
+                [f'I1_i{c}' for c in range(0,4)]+\
+                [f'I2_i{c}' for c in range(0,2)]
+
+
+
+        rSubmit = copy.deepcopy(self.rSubmit)
+        rSubmit.config.obsNames(['temp_nhx']) # just one obs to keep it simple.
+        rSubmit.config.paramNames(['vf1','ensembleMember'])
+        expected_df = pd.DataFrame(np.vstack([params1,param2,param3]),
+                                      columns=rSubmit.config.paramNames(),index=index)
+        obs_list=[]
+        for param in [params1,param2,param3]:
+            with self.assertRaises(optclim_exceptions.submitModel):
+                result = rSubmit.stdFunction(param)
+            # now fill in the values
+            indx = rSubmit.config.obsNames()
+            for model in rSubmit.model_index.values():
+                if model.status != 'PROCESSED':
+                    model.status = 'PROCESSED'
+                    obs = pd.Series(21+model.parameters['vf1']**2,
+                                                    index=indx)
+                    model.simulated_obs = obs
+                    obs_list.append(obs)
+            result = rSubmit.stdFunction(param) # this actually retrieves the obs.
+
+        got = rSubmit.logical_params()
+        pdtest.assert_frame_equal(got,expected_df)
+
+        expected_obs_df = pd.DataFrame(obs_list,index=index)
+        got = rSubmit.logical_obs()
+        pdtest.assert_frame_equal(got, expected_obs_df)
+        # get the cost. WIll just check the index matches.
+        got = rSubmit.logical_cost()
+        pdtest.assert_index_equal(got.index,expected_obs_df.index)
+
+

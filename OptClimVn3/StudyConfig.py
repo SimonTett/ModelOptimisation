@@ -39,9 +39,10 @@ __version__ = '3.0.0'
 
 import genericLib
 
+
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 type_fixed_param_function: typing.TypeAlias = typing.Callable[
-    [dict[typing.Hashable, 'Model.Model']], typing.Optional[pd.Series]]
+    ["runSubmit",dict[typing.Hashable, typing.Any]], typing.Optional[pd.Series]]
 
 
 # functions available to everything.
@@ -609,12 +610,7 @@ class OptClimConfig(dictFile):
         scalings = self.Config.get('scalings', {})
         if obsNames is None:
             obsNames = self.obsNames()
-        # TODO raise error if any of the scaling names are not in obsNames as a consistency check.
-        missing = {k for k in scalings.keys() if not k.endswith("comment")} - set(obsNames)
-        # removing any keys that end with "comment"
 
-        if missing:
-            raise ValueError("Following scaling keys are not in obsNames: " + " ".join(missing))
         scales = pd.Series([scalings.get(k, 1.0) for k in obsNames], index=obsNames).rename(self.name())
         # get scalings -- if not defined set to 1.
 
@@ -2838,6 +2834,15 @@ class OptClimConfigVn3(OptClimConfigVn2):
             scales = self.scales(obsNames=obsNames)
         except ValueError as exception:  # missing some errors
             bad += ['scales have problems ' + str(exception)]
+        # test scalings are consistent with obs
+        scalings = self.Config.get('scalings', {})
+        if obsNames is None:
+            obsNames = self.obsNames()
+        missing = {k for k in scalings.keys() if not k.endswith("comment")} - set(obsNames)
+        # removing any keys that end with "comment" but expect those scalings to be in obsNames
+
+        if missing:
+            bad += ["Following scaling keys are not in obsNames: " + " ".join(missing)]
 
         if len(bad):  # something went wrong. So report all the trapped errors with a failure.
             for m in bad:
@@ -2885,10 +2890,11 @@ class OptClimConfigVn3(OptClimConfigVn2):
         Check configuration is consistent. Raise ValueError if not
         :return: True if OK, False if not
         """
-        OK = self.check_params() and self.check_obs()
-        if not OK:
+        ok = self.check_params() and self.check_obs()
+
+        if not ok:
             raise ValueError("Configuration has problems")
-        return OK
+        return ok
 
     def obsNames(self,
                  obsNames:typing.Optional[list[str]]=None,

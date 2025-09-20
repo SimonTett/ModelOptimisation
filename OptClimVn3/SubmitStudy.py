@@ -39,7 +39,8 @@ import generic_json
 from Model import Model
 from model_base import model_base, journal
 from Study import Study
-from StudyConfig import OptClimConfigVn3, dictFile
+#from StudyConfig import OptClimConfigVn3, dictFile
+from StudyConfig import dictFile
 
 # check we are version 3.8 or above.
 
