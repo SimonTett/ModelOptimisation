@@ -7,7 +7,8 @@ import pathlib
 
 import Model
 from SubmitStudy import SubmitStudy
-
+from StudyConfig import OptClimConfigVn3
+from model_base import model_base
 import numpy as np
 import pandas as pd
 import optclim_exceptions
@@ -39,6 +40,63 @@ Type information for the function is:
 
 """
 my_logger=logging.getLogger(f"OPTCLIM.{__name__}")
+
+class LogicalInfo(model_base):
+    """ Class to hold logical information about parameters, observations etc. 
+    Inherits from Submit_study so has basic to_dict and from_dict methods.
+    This to be used in runSubmit to hold information about the logical obs and parameters. Idea being tha none logical param set might correspond to multiple model evaluations.
+    
+    """
+    def __init__(self):
+        super().__init__()
+        self.iteration_count: int = 0  # count of iterations. Used in generating logical names.
+        self.count_within_iteration: int = 0  # count of models within an iteration. Used in generating logical names.
+        self.names: dict[str, str] = dict()  # dict of logical names indexed by key generated from parameters.
+        self.parameters: dict[str, pd.Series] = dict()  # dict of parameters indexed by logical name.
+        self.obs: dict[str, pd.Series] = dict()  # dict of obs indexed by logical name.
+        self.cost: dict[str, float] = dict()  # dict of cost indexed by logical name.
+        self.extra_params: dict[str, list[dict]] = dict()  # dict of extra params indexed by logical name.
+    @staticmethod
+    def key( params: dict) -> str:
+        """
+        Generate a key for a set of parameters. This is based on sorting the items in params and then generating a string.
+        :param params: dictionary of parameters. Uses Study.key fn.
+        :return: key string.
+        """
+        key = SubmitStudy.key(params) # actually using Study key fn. Could also  include fpFmt if needed.
+        return key
+
+
+
+    def completed_iteration(self):
+        """
+        Mark the end of an iteration. Increases iteration count and resets count within iteration.
+        :return: None
+        """
+        self.iteration_count += 1
+        self.count_within_iteration = 0
+
+
+    def name(self, params: dict) -> str:
+        """
+        Generate a name for a set of parameters. This is based on the iteration number and index within iteration.
+        It also stores the parameters in self._logical_parameters if they are not already there.
+        :param params: dictionary of parameters.
+        :return: logical name.
+        """
+        key = self.key(params)
+        try:
+            name = self.names[key] # already have a name for this set of parameters.
+        except KeyError: # need to generate a new name.
+            name = f"I{self.iteration_count}_i{self.count_within_iteration}"
+            self.count_within_iteration += 1 # increase count for next time.
+            self.names[key] = name
+            # store parameters
+            param_series = pd.Series(params).rename(name) # these are the params that the algorithm varies.
+            self.parameters[name] = param_series
+
+        return name
+
 class runSubmit(SubmitStudy):
     # Has the following additional attributes over SubmitStudy (and Study)
     #trace:typing.List[str] # the trace of all model evaluations. Elements are keys into model_info
@@ -61,7 +119,7 @@ class runSubmit(SubmitStudy):
         """
 
     def __init__(self,
-                 config: typing.Optional["OptClimConfigVn3"],
+                 config: typing.Optional[OptClimConfigVn3],
                  name: typing.Optional[str] = None,
                  rootDir: typing.Optional[pathlib.Path] = None,
                  refDir: typing.Optional[pathlib.Path] = None,
@@ -72,13 +130,10 @@ class runSubmit(SubmitStudy):
         super().__init__(config, name, rootDir, refDir, models, model_name, config_path, next_iter_cmd)
         self.trace:list[str] = []
         self.prev_trace:list[str] = []
-        ## attributes for logical names etc.
-        self._iteration_count:int =0 # count of iterations. Used in generating logical names.
-        self._count_within_iteration:int =0 # count of models within an iteration. Used in generating logical names.
-        self._logical_names:dict[str,str] = dict() # dict of logical names indexed by key generated from parameters.
-        self._logical_parameters:dict[str,pd.Series] = dict() # dict of parameters indexed by logical name.
-        self._logical_obs:dict[str,pd.Series] = dict() # dict of obs indexed by logical name.
-        self._logical_cost:dict[str,float] = dict() # dict of cost indexed by logical name.
+        ## attributes for logical names etc. Having them as private for now as not sure if they will be needed outside this class.
+        ## Will make a new class to handle logical names so can easily re-factorise if needed.
+        self._logical_info:LogicalInfo = LogicalInfo()
+ 
 
     def closest_model(self,model:"Model.Model")  -> ("Model.Model",float):
         """
@@ -198,33 +253,6 @@ class runSubmit(SubmitStudy):
             raise ValueError("Obs contains null values at: " + ", ".join(obs.index[null]))
         return obs
 
-    def logical_name(self, params: dict) -> str:
-        """
-        Generate a logical name for a set of parameters. This is based on the iteration number and index within iteration.
-        It also stores the parameters in self._logical_parameters if they are not already there.
-        :param params: dictionary of parameters.
-        :return: logical name.
-        """
-        key = self.key(params)
-        try:
-            name = self._logical_names[key] # already have a name for this set of parameters.
-        except KeyError: # need to generate a new name.
-            name = f"I{self._iteration_count}_i{self._count_within_iteration}"
-            self._count_within_iteration += 1 # increase count for next time.
-            self._logical_names[key] = name
-            # store parameters
-            param_series = pd.Series(params).rename(name)
-            self._logical_parameters[name] = param_series
-
-        return name
-
-    def completed_iteration(self):
-        """
-        Mark the end of an iteration. Increases iteration count and resets count within iteration.
-        :return: None
-        """
-        self._iteration_count += 1
-        self._count_within_iteration = 0
 
     def logical_params(self,normalize:bool=False,
                ) -> pd.DataFrame:
@@ -233,7 +261,7 @@ class runSubmit(SubmitStudy):
         :param normalize: Normalise parameters to [0,1] based on param limits.
         :return: df of parameters indexed by logical name.
         """
-        df = pd.DataFrame(self._logical_parameters).T
+        df = pd.DataFrame(self._logical_info.parameters).T
         if normalize:
             ranges = self.config.paramRanges(paramNames=df.columns)
             df = (df-ranges.loc['minParam', :]) / ranges.loc['rangeParam', :]
@@ -245,41 +273,41 @@ class runSubmit(SubmitStudy):
         Return a series of costs for all logical names.
         :return: series with costs
         """
-        return pd.Series(self._logical_cost).rename("cost")
+        return pd.Series(self._logical_info.cost).rename("cost")
 
     def logical_obs(self,
                     normalize:bool=False,
                     scale:bool=True,
-                    obsNames:typing.Union[bool,list[str],None]=None) -> pd.DataFrame:
+                    obs_names:typing.Union[bool,list[str],None]=None) -> pd.DataFrame:
         """
         Return a dataframe of observations for all logical names.
         :param normalize: normalise the obs by error estimates from target
         :param scale: scale the obs by self.config.scales()
-        :param obsNames: Names to use, If None -- use config obsNames.
-           If True uses all obs in self._logical_obs. This might fail with normalize if not all obs are present in tgt.
+        :param obs_names: Names to use, If None -- use config obsNames.
+           If True uses all obs in self._logical_info.obs. This might fail with normalize if not all obs are present in tgt.
         :return: dataframe of obs
         """
-        obsDF = pd.DataFrame(self._logical_obs).T
-        if obsNames is None:
-            obsNames = self.config.obsNames() # use config supplied one.
-        if isinstance(obsNames, bool) and obsNames: # if True
-            obsNames = obsDF.columns
+        obs_df = pd.DataFrame(self._logical_info.obs).T
+        if obs_names is None:
+            obs_names = self.config.obsNames() # use config supplied one.
+        if isinstance(obs_names, bool) and obs_names: # if True
+            obs_names = obs_df.columns
 
-        obsDF=obsDF.reindex(columns=obsNames)
+        obs_df=obs_df.reindex(columns=obs_names)
 
         if scale:  # scale ?
-            obsDF *= self.config.scales(obsNames=obsNames)
+            obs_df *= self.config.scales(obsNames=obs_names)
 
         if normalize:  # normalize
-            tgt = self.config.targets(scale=scale, obsNames=obsNames)
-            obsDF -= tgt  # difference from tgt.
+            tgt = self.config.targets(scale=scale, obsNames=obs_names)
+            obs_df -= tgt  # difference from tgt.
             cov = self.config.Covariances(scale=scale)  # get covariances.
             errCov = cov['CovTotal']  # just want the total
             sd = pd.Series(np.sqrt(np.diag(errCov)),
                            index=errCov.index)  # square root of diagonal elements. Need to reindex.
-            obsDF /= sd  # normalise by SD
+            obs_df /= sd  # normalise by SD
 
-        return obsDF
+        return obs_df
 
 
     def comp_logical_obs(self,
@@ -297,7 +325,7 @@ class runSubmit(SubmitStudy):
         It does any ensemble averaging needed.
           Adds in fixed params and calls make_model or multi_config_fn to actually get data from the model.
           If n_ensemble > 1 then runs ensemble and averages the results.
-          Stores the parameters, obs and cost in self._logical_parameters, self._logical_obs and self._logical_cost respectively.
+          Stores the parameters, obs and cost in self._logical_info.parameters, self._logical_info.obs and self._logical_info.cost respectively.
             For the later two only once obs are generated.  Cost is sum of squares of obs (after processing by transform_check) divided by no of obs.
         :param params: dictionary of parameters which vary
         :param fixed_params: dictionary of fixed parameters.
@@ -328,10 +356,11 @@ class runSubmit(SubmitStudy):
             else:
                 pass # all ok.
 
-        name = self.logical_name(params) # get the name based on the params. This will also store the params.
+        name = self._logical_info.name(params) # get the name based on the params. This will also store the params.
         # For now no caching of obs or cost. Could be done if needed. TODO insert caching if needed.
         ## Try and compute all observations wanted.
         obs = [] # where we will store the obs for each ensemble member.
+        extra_params = [] # where we will store the extra params for each ensemble member.
         for ens_member in range(n_ensemble): # loop over ensemble members
             # We try and get all the ensemble members and then return None if any need running.
             # Do this so have a full list of cases to run to allow parallelism.
@@ -342,7 +371,9 @@ class runSubmit(SubmitStudy):
 
             # note that ensembleMember will be overwritten if it is in fixed_params or params.
             if multi_config_fn is None: # simple calculation
-                sim_obs = self.make_model( ens_param|params|fixed_params).simulated_obs
+                full_params = ens_param|params|fixed_params
+                sim_obs = self.make_model(full_params ).simulated_obs
+                extra_params.append(full_params)
                 # merge params and fixed_params. simulated_obs is None if model not run.
             else:
                 # set up dict containing all parameters for each model and then run multi_config_fn.
@@ -351,13 +382,14 @@ class runSubmit(SubmitStudy):
                 sim_obs = multi_config_fn(self, all_params) # obs will be None if any models need running.
                 if sim_obs is not None and not isinstance(sim_obs, pd.Series):
                     raise ValueError(f"multi_config_fn should return a pandas Series or None but got {type(sim_obs)}")
-
+                extra_params.extend(all_params.values())
             if sim_obs is None:
                 model_fail = True # flag that we need to return None once we have looped over ensemble members.
             else:
                 sim_obs = sim_obs.rename(sim_obs.name or f"ens{ens_member}")
                 obs.append(sim_obs.rename('ens'+str(ens_member))) # store the obs and name it by ensemble member.
         ## Done loop over ensemble members. Now for final processing.
+        self._logical_info.extra_params[name] = extra_params # store the extra params for this logical name.
         if model_fail: # some model needs running so return None
             return None
         # otherwise all models we need have ran.
@@ -370,12 +402,12 @@ class runSubmit(SubmitStudy):
             obs = obs[0] # single obs.
         obs = obs.rename(name)  # rename series to logical name.
          # now  got obs so can store them
-        self._logical_obs[name] = obs # store obs
+        self._logical_info.obs[name] = obs # store obs
 
         # now apply transform fn and compute cost
         obs = self.transform_check(obs, transform=transform, scale=scale, residual=residual)
         n_obs = len(obs)
-        self._logical_cost[name]=(obs**2).sum()/n_obs # store the avg cost
+        self._logical_info.cost[name]=(obs**2).sum()/n_obs # store the avg cost
         return obs
 
 
@@ -407,7 +439,7 @@ class runSubmit(SubmitStudy):
         :param ensemble_average -- If True average the ensemble members.
 
         The four  parameters below they are applied in the order: scale, residual, transform, sumSquare.
-        The first three are handled in comp_logical_obs and occur after any essemble averaging.
+        The first three are handled in comp_logical_info.obs and occur after any ensemble averaging.
         :param scale   -- if True scale obs  by self.scales()
 
         :param residual  -- if True remove target (self.target()) from obs
@@ -485,7 +517,7 @@ class runSubmit(SubmitStudy):
             raise optclim_exceptions.submitModel
 
         if all_ran: # all models ran so can mark end of iteration.
-            self.completed_iteration()  # mark end of iteration
+            self._logical_info.completed_iteration()  # mark end of iteration
 
         if sumSquare:
             sim_obs = (sim_obs ** 2).sum(axis=1)

@@ -154,7 +154,7 @@ class journal:
 class model_base:
     """
     Generic base class for models. Provides default methods for reading/writing data.
-    Note that it is not expected to actually be instantiated. See sub-classes (Model for exmaple) for larger functionality.
+    Note that it is not expected to actually be instantiated. See sub-classes (Model for example) for larger functionality.
 
         Methods:
     --------
@@ -178,7 +178,7 @@ class model_base:
         initialise the subclass
         First call superclass __init__subclass__ method
         Then store default methods in registries
-        :poram args: args to be passed to supper class __init__subclass__
+        :param args: args to be passed to supper class __init__subclass__
         :param kwargs:keywords to be passed to super class __init__subclass__
         :return: Nada
         """

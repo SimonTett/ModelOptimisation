@@ -234,12 +234,12 @@ class testRunSubmit(unittest.TestCase):
             model.simulated_obs = fake_fn(rSubmit.config, model.parameters)
         result = rSubmit.stdFunction(params2) # should now work.
         self.assertEqual(result.shape,(2,nobs),'Expected two sets of obs')
-        self.assertEqual(rSubmit._iteration_count,1,'Expected iteration count to be 1')
-        self.assertEqual(rSubmit._count_within_iteration,0,
-                         f'Expected 0 within iteration count got {rSubmit._count_within_iteration}')
+        self.assertEqual(rSubmit._logical_info.iteration_count,1,'Expected iteration count to be 1')
+        self.assertEqual(rSubmit._logical_info.count_within_iteration,0,
+                         f'Expected 0 within iteration count got {rSubmit._logical_info.count_within_iteration}')
         # also expect that logical param and logical obs have size 2.
-        self.assertEqual(len(rSubmit._logical_parameters),2,'Expected 2 logical params')
-        self.assertEqual(len(rSubmit._logical_obs),2,'Expected 2 logical obs')
+        self.assertEqual(len(rSubmit._logical_info.parameters),2,'Expected 2 logical params')
+        self.assertEqual(len(rSubmit._logical_info.obs),2,'Expected 2 logical obs')
 
 
     # end test case for stdFunction
@@ -714,44 +714,6 @@ class testRunSubmit(unittest.TestCase):
         nSubmit = self.rSubmit.load(fp)
         self.assertEqual(self.rSubmit,nSubmit)
 
-    def test_logical_name(self):
-        """
-        Test that logical name works.
-        Tests ar:
-          Start with new runSubmit.  logical_name should return 'I0_i0', runSubmit._count_within_iteration should be 1.
-          Call with the same params. Should get back same name and _count_within_iteration should mot change.
-            Call with different params. Should get back 'I0_i1' and _count_within_iteration should be 2.
-            call with initial params. Should get back 'I0_i0' and _count_within_iteration should not change.
-            Modify runSubmit to have _iteration = 1 and _count_within_iteration = 0
-            Call with initial params. Should get back 'I1_i0' and _count_within_iteration should be 0
-
-        """
-        #TODO -- clean this up so a bit less repetitive.
-        param_list = [dict(CT=1e-4, EACF=0.5, ENTCOEF=3, ICE_SIZE=3e-5, RHCRIT=0.7, VF1=0.5, CW=2e-4),
-                      dict(CT=1e-4, EACF=0.5, ENTCOEF=3, ICE_SIZE=3e-5, RHCRIT=0.7, VF1=0.5, CW=2e-4,ensembleMember=2),
-                      dict(CT=1e-4, EACF=0.5, ENTCOEF=3, ICE_SIZE=3e-5, RHCRIT=0.7, VF1=0.5, CW=2e-4,ensembleMember=3)]
-        name = self.rSubmit.logical_name(param_list[0])
-        self.assertEqual(name,'I0_i0')
-        self.assertEqual(self.rSubmit._count_within_iteration,1)
-        name2 = self.rSubmit.logical_name(param_list[0])
-        self.assertEqual(name2,'I0_i0')
-        self.assertEqual(self.rSubmit._count_within_iteration,1)
-        # new params
-        name3 = self.rSubmit.logical_name(param_list[1])
-        self.assertEqual(name3,'I0_i1')
-        self.assertEqual(self.rSubmit._count_within_iteration,2)
-        # back to first params
-        name4 = self.rSubmit.logical_name(param_list[0])
-        self.assertEqual(name4,'I0_i0')
-        self.assertEqual(self.rSubmit._count_within_iteration,2)
-        self.rSubmit._iteration_count = 1 # modify iteration
-        self.rSubmit._count_within_iteration = 0
-        name5 = self.rSubmit.logical_name(param_list[0])
-        self.assertEqual(name5,'I0_i0') # already got it.
-        name6 = self.rSubmit.logical_name(param_list[2])
-        self.assertEqual(name6,'I1_i0')
-        # and check that ._parameters is a three member dict.
-        self.assertEqual(len(self.rSubmit._logical_parameters),3)
 
     def test_comp_logical_obs(self):
         """
@@ -897,3 +859,54 @@ class testRunSubmit(unittest.TestCase):
         pdtest.assert_index_equal(got.index,expected_obs_df.index)
 
 
+class TestLogicalInfo(unittest.TestCase):
+    """
+    Test the logical_info method of runSubmit class.
+
+    This test case sets up a runSubmit instance with predefined parameters and observations,
+    simulates model runs, and verifies that the logical_info method returns the expected DataFrame.
+    """
+
+
+
+    def test_logical_name(self):
+        """
+        Test that logical name works.
+        Tests ar:
+          Start with new logical_info.  logical_name should return 'I0_i0', count_within_iteration should be 1.
+          Call with the same params. Should get back same name and count_within_iteration should mot change.
+            Call with different params. Should get back 'I0_i1' and count_within_iteration should be 2.
+            call with initial params. Should get back 'I0_i0' and count_within_iteration should not change.
+            Modify runSubmit to have _iteration = 1 and count_within_iteration = 0
+            Call with initial params. Should get back 'I1_i0' and count_within_iteration should be 0
+
+        """
+        # TODO -- clean this up so a bit less repetitive.
+        param_list = [dict(CT=1e-4, EACF=0.5, ENTCOEF=3, ICE_SIZE=3e-5, RHCRIT=0.7, VF1=0.5, CW=2e-4),
+                      dict(CT=1e-4, EACF=0.5, ENTCOEF=3, ICE_SIZE=3e-5, RHCRIT=0.7, VF1=0.5, CW=2e-4,
+                           ensembleMember=2),
+                      dict(CT=1e-4, EACF=0.5, ENTCOEF=3, ICE_SIZE=3e-5, RHCRIT=0.7, VF1=0.5, CW=2e-4,
+                           ensembleMember=3)]
+        logical_info = runSubmit.LogicalInfo()
+        name = logical_info.name(param_list[0])
+        self.assertEqual(name, 'I0_i0')
+        self.assertEqual(logical_info.count_within_iteration, 1)
+        name2 =logical_info.name(param_list[0])
+        self.assertEqual(name2, 'I0_i0')
+        self.assertEqual(logical_info.count_within_iteration, 1)
+        # new params
+        name3 = logical_info.name(param_list[1])
+        self.assertEqual(name3, 'I0_i1')
+        self.assertEqual(logical_info.count_within_iteration, 2)
+        # back to first params
+        name4 = logical_info.name(param_list[0])
+        self.assertEqual(name4, 'I0_i0')
+        self.assertEqual(logical_info.count_within_iteration, 2)
+        logical_info.iteration_count = 1  # modify iteration
+        logical_info.count_within_iteration = 0
+        name5 = logical_info.name(param_list[0])
+        self.assertEqual(name5, 'I0_i0')  # already got it.
+        name6 = logical_info.name(param_list[2])
+        self.assertEqual(name6, 'I1_i0')
+        # and check that .parameters is a three member dict.
+        self.assertEqual(len(logical_info.parameters), 3)
