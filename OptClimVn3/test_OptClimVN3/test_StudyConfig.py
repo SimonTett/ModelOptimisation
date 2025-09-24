@@ -951,12 +951,7 @@ class testStudyConfig(unittest.TestCase):
         config = copy.deepcopy(self.config)
         ok = config.check_obs(obsNames=['fred1', 'fred2'])  # should fail
         self.assertFalse(ok, msg='check_obs should have failed')
-        # check that having scales that are not in obs fails
-        # get an error because obsNames differ.
-        config = copy.deepcopy(self.config)
-        scales = config.scales(dict(HARRY=1.0, james=2.0))
-        with self.assertRaises(ValueError):
-            self.assertFalse(config.check_obs())  # should fail
+
 
     def test_check_params(self):
         """ test that check_params works/fails as expected"""

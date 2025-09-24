@@ -43,8 +43,24 @@ my_logger=logging.getLogger(f"OPTCLIM.{__name__}")
 
 class LogicalInfo(model_base):
     """ Class to hold logical information about parameters, observations etc. 
-    Inherits from Submit_study so has basic to_dict and from_dict methods.
-    This to be used in runSubmit to hold information about the logical obs and parameters. Idea being tha none logical param set might correspond to multiple model evaluations.
+
+    This to be used in runSubmit to hold information about the logical obs, parameters and related information.
+      Idea being that logical param set might correspond to multiple model evaluations.
+      As a class it is really a place to hold related things together and make maintenance easier.
+      It is a subclass of model_base so has access to to_dict and from_dict methods which
+      make it easy to save and restore the information.
+
+      It has only a small number of  methods and for most use runSubmit will need to reach inside this class. This does not feel ideal.
+      An alternative would be to pass appropriate information from runSubmit to methods here.
+
+      It has the following attributes:
+        iteration_count: int -- count of iterations. Used in generating  names.
+        count_within_iteration: int -- count of models within an iteration. Used in generating  names.
+        names: dict[str,str] -- dict of logical names indexed by key generated from parameters.
+        parameters: dict[str,pd.Series] -- dict of parameters indexed by logical name.
+        obs: dict[str,pd.Series] -- dict of obs indexed by logical name.
+        cost: dict[str,float] -- dict of cost indexed by logical name.
+        keys: dict[str,list[str]] -- dict of model keys for each logical name indexed by logical name.
     
     """
     def __init__(self):
@@ -55,7 +71,7 @@ class LogicalInfo(model_base):
         self.parameters: dict[str, pd.Series] = dict()  # dict of parameters indexed by logical name.
         self.obs: dict[str, pd.Series] = dict()  # dict of obs indexed by logical name.
         self.cost: dict[str, float] = dict()  # dict of cost indexed by logical name.
-        self.extra_params: dict[str, list[dict]] = dict()  # dict of extra params indexed by logical name.
+        self.keys: dict[str, list[str]] = dict()  # dict of model keys indexed by logical name.
     @staticmethod
     def key( params: dict) -> str:
         """
@@ -65,7 +81,6 @@ class LogicalInfo(model_base):
         """
         key = SubmitStudy.key(params) # actually using Study key fn. Could also  include fpFmt if needed.
         return key
-
 
 
     def completed_iteration(self):
@@ -95,7 +110,24 @@ class LogicalInfo(model_base):
             param_series = pd.Series(params).rename(name) # these are the params that the algorithm varies.
             self.parameters[name] = param_series
 
+
         return name
+
+    def store_key(self,name:str,parameters:dict) -> str:
+        """
+        Store the key for a set of parameters under a given name.
+        :param name: name to store key under.
+        :param parameters: parameters to generate key from
+        :return: key
+        """
+        key = self.key(parameters)
+        if name in self.keys: # got the name already
+            if key not in self.keys[name]: # but not got this key
+                self.keys[name].append(key)
+        else:
+            self.keys[name] = [key] # initialise the list of keys for this name.
+
+        return key
 
 class runSubmit(SubmitStudy):
     # Has the following additional attributes over SubmitStudy (and Study)
@@ -130,12 +162,13 @@ class runSubmit(SubmitStudy):
         super().__init__(config, name, rootDir, refDir, models, model_name, config_path, next_iter_cmd)
         self.trace:list[str] = []
         self.prev_trace:list[str] = []
-        ## attributes for logical names etc. Having them as private for now as not sure if they will be needed outside this class.
-        ## Will make a new class to handle logical names so can easily re-factorise if needed.
+        # _logical_info holds information for per optimisation parameter info.
+        # Currently, largely a bag of attributes which this class reaches into as it needs to.
+        # Having _logical_info as private for now as not sure if it will be needed outside this class.
         self._logical_info:LogicalInfo = LogicalInfo()
  
 
-    def closest_model(self,model:"Model.Model")  -> ("Model.Model",float):
+    def closest_model(self,model:Model.Model)  -> tuple[Model.Model,float]:
         """
         Find and return the closet model in the (current) model trace to specified model.
         Close is defined as the smallest min difference for the normalised params that are fp or int.
@@ -259,13 +292,13 @@ class runSubmit(SubmitStudy):
         """
         Return a dataframe of parameters for all logical names.
         :param normalize: Normalise parameters to [0,1] based on param limits.
+          ensembleMember will be normalised by ensemble size. See StudyConfig.paramRanges()
         :return: df of parameters indexed by logical name.
         """
         df = pd.DataFrame(self._logical_info.parameters).T
-        if normalize:
-            ranges = self.config.paramRanges(paramNames=df.columns)
+        if normalize: # Normalize by param ranges
+            ranges = self.config.paramRanges(ensemble=True).reindex(columns=df.columns)
             df = (df-ranges.loc['minParam', :]) / ranges.loc['rangeParam', :]
-
         return df
 
     def logical_cost(self) -> pd.Series:
@@ -290,8 +323,10 @@ class runSubmit(SubmitStudy):
         obs_df = pd.DataFrame(self._logical_info.obs).T
         if obs_names is None:
             obs_names = self.config.obsNames() # use config supplied one.
-        if isinstance(obs_names, bool) and obs_names: # if True
+        elif isinstance(obs_names, bool) and obs_names: # if True
             obs_names = obs_df.columns
+        else:
+            pass
 
         obs_df=obs_df.reindex(columns=obs_names)
 
@@ -305,9 +340,19 @@ class runSubmit(SubmitStudy):
             errCov = cov['CovTotal']  # just want the total
             sd = pd.Series(np.sqrt(np.diag(errCov)),
                            index=errCov.index)  # square root of diagonal elements. Need to reindex.
+            sd = sd.reindex(obs_names) # extract only those we want.
             obs_df /= sd  # normalise by SD
 
         return obs_df
+
+    def logical_models(self,name: str) -> list[Model.Model]:
+        """
+        Return  list of models for a given logical name.
+        :param name: logical name.
+        :return: list of models
+        """
+        result=[self.model_index[key] for key in self._logical_info.keys.get(name,[])]
+        return result
 
 
     def comp_logical_obs(self,
@@ -345,12 +390,12 @@ class runSubmit(SubmitStudy):
         ## Check that ensembleMember is not in params or fixed_params when n_ensemble > 1
         # I am not convinced this is the best way to do it but for now it will do.
         if n_ensemble > 1:
-            if 'ensembleMember' in params:
-                raise ValueError("ensembleMember set in params when n_ensemble > 1")
             if multi_config_fn is not None:
-                for k,v in fixed_params.items():
+                for k, v in fixed_params.items():
                     if 'ensembleMember' in v:
                         raise ValueError(f"ensembleMember is in fixed_params for model {k} when n_ensemble > 1")
+            elif 'ensembleMember' in params:
+                raise ValueError("ensembleMember set in params when n_ensemble > 1")
             elif 'ensembleMember' in fixed_params:  #
                 raise ValueError("ensembleMember is in fixed_params when n_ensemble > 1")
             else:
@@ -360,7 +405,6 @@ class runSubmit(SubmitStudy):
         # For now no caching of obs or cost. Could be done if needed. TODO insert caching if needed.
         ## Try and compute all observations wanted.
         obs = [] # where we will store the obs for each ensemble member.
-        extra_params = [] # where we will store the extra params for each ensemble member.
         for ens_member in range(n_ensemble): # loop over ensemble members
             # We try and get all the ensemble members and then return None if any need running.
             # Do this so have a full list of cases to run to allow parallelism.
@@ -369,11 +413,11 @@ class runSubmit(SubmitStudy):
             else:
                 ens_param= dict(ensembleMember=ens_member) # set ensemble member
 
-            # note that ensembleMember will be overwritten if it is in fixed_params or params.
+            # note that ensembleMember will be overwritten if it is in fixed_params or params. Checked above.
             if multi_config_fn is None: # simple calculation
                 full_params = ens_param|params|fixed_params
                 sim_obs = self.make_model(full_params ).simulated_obs
-                extra_params.append(full_params)
+                self._logical_info.store_key(name,full_params)
                 # merge params and fixed_params. simulated_obs is None if model not run.
             else:
                 # set up dict containing all parameters for each model and then run multi_config_fn.
@@ -382,14 +426,14 @@ class runSubmit(SubmitStudy):
                 sim_obs = multi_config_fn(self, all_params) # obs will be None if any models need running.
                 if sim_obs is not None and not isinstance(sim_obs, pd.Series):
                     raise ValueError(f"multi_config_fn should return a pandas Series or None but got {type(sim_obs)}")
-                extra_params.extend(all_params.values())
+                for all_param in all_params.values():
+                    self._logical_info.store_key(name,all_param)
             if sim_obs is None:
                 model_fail = True # flag that we need to return None once we have looped over ensemble members.
             else:
-                sim_obs = sim_obs.rename(sim_obs.name or f"ens{ens_member}")
-                obs.append(sim_obs.rename('ens'+str(ens_member))) # store the obs and name it by ensemble member.
+                # work out name for this ensemble member so when make a data array have unique index. And store the obs
+                obs.append(sim_obs.rename(f"r{ens_member}")) # store the obs and name it by ensemble member.
         ## Done loop over ensemble members. Now for final processing.
-        self._logical_info.extra_params[name] = extra_params # store the extra params for this logical name.
         if model_fail: # some model needs running so return None
             return None
         # otherwise all models we need have ran.

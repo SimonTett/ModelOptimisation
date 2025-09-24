@@ -750,10 +750,10 @@ class OptClimConfig(dictFile):
                     cov[k].loc[consName, :] = 0.0
                     cov[k].loc[:, consName] = 0.0
                     cov[k].loc[consName, consName] = v
+
         # scale data
         if scale:
-            obsNames = self.obsNames(
-                add_constraint=useConstraint)  # make sure we have included the constraint (if wanted) in obs
+
             scales = self.scales(obsNames=obsNames)
 
             cov_scale = pd.DataFrame(np.outer(scales, scales), index=scales.index, columns=scales.index)
@@ -1603,10 +1603,7 @@ class OptClimConfig(dictFile):
             study['ensembleSize'] = value
             self.setv('study', study)
 
-        ensembleSize = study.get('ensembleSize')
-        # default is ensemble size of 1.
-        if ensembleSize is None:
-            ensembleSize = 1  # do this way as JSON file can have null.
+        ensembleSize = study.get('ensembleSize') or 1 # if ensembleSize is None or 0 set it to 1
 
         return ensembleSize
 
@@ -1754,10 +1751,14 @@ class OptClimConfigVn2(OptClimConfig):
             svalues = (svalues - range.loc['minParam', :]) / range.loc['rangeParam', :]
         return svalues.rename(self.name())
 
-    def paramRanges(self, paramNames=None, values: dict = None):
+    def paramRanges(self, paramNames=None,
+                    values: dict = None,
+                    ensemble: bool = False) -> pd.DataFrame:
         """
         :param paramNames -- a list of the parameters to extract ranges for.
         If not supplied the paramNames method will be used.
+        :values -- if not None then set the minmax values to this dict
+        :param ensemble (default False). If True then include ensembleMember in the parameter names
         :return: a pandas array with rows names minParam, maxParam, rangeParam
         """
         if paramNames is None: paramNames = self.paramNames()
@@ -1769,6 +1770,12 @@ class OptClimConfigVn2(OptClimConfig):
         names = [p for p in paramNames if p in param.columns]
         param = param.loc[:, names]  # just keep the parameters we want and have.
         param = param.astype(float)
+        if ensemble:
+            # add ensemble member parameters if needed.
+            # Only really needed for plotting or similar.
+            # setting range to 0 to ensemble size to avoid division by zero when
+            # ensemble size is 1.
+            param.loc[:,'ensembleMember'] = [0.0, float(self.ensembleSize())]
         param.loc['rangeParam', :] = param.loc['maxParam', :] - param.loc['minParam', :]  # compute range
         return param
 
@@ -2798,6 +2805,16 @@ class OptClimConfigVn3(OptClimConfigVn2):
                     cov[k].loc[consName, :] = 0.0
                     cov[k].loc[:, consName] = 0.0
                     cov[k].loc[consName, consName] = v
+        # extract to obsNames
+        obsNames = self.obsNames(add_constraint=useConstraint)
+        # make sure we have included the constraint (if wanted) in obs
+        for k in keys:
+            if k in cov and cov[k] is not None:
+                cov[k] = cov[k].reindex(index=obsNames, columns=obsNames)
+                if cov[k].isnull().values.any():
+                    raise ValueError(
+                        f"Covariance {k} has missing values after reindexing -- probably missing observations")
+                my_logger.debug(f'Extracted cov {k} to {", ".join(obsNames)}')
         # scale data
         if scale:
             obsNames = self.obsNames(
@@ -2834,15 +2851,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
             scales = self.scales(obsNames=obsNames)
         except ValueError as exception:  # missing some errors
             bad += ['scales have problems ' + str(exception)]
-        # test scalings are consistent with obs
-        scalings = self.Config.get('scalings', {})
-        if obsNames is None:
-            obsNames = self.obsNames()
-        missing = {k for k in scalings.keys() if not k.endswith("comment")} - set(obsNames)
-        # removing any keys that end with "comment" but expect those scalings to be in obsNames
 
-        if missing:
-            bad += ["Following scaling keys are not in obsNames: " + " ".join(missing)]
 
         if len(bad):  # something went wrong. So report all the trapped errors with a failure.
             for m in bad:
@@ -2853,31 +2862,52 @@ class OptClimConfigVn3(OptClimConfigVn2):
     def check_params(self) -> bool:
         """
         Check parameter related configuration is consistent.
-        checks begin, default and ranges
+        checks  begin, default, ranges & ensemble size
         Raises warnings if not consistent
         :return: True if OK, False if Not
         """
         bad = []
-        expected_params = self.paramNames()
-        my_logger.debug(f'Expected params are: {expected_params}')
+
+        errors_to_catch = (KeyError, ValueError)
+
+        try:
+            expected_params = self.paramNames()
+            my_logger.debug(f'Expected params are: {expected_params}')
+        except errors_to_catch:  # some error
+            bad += ['Problem running paramNames']
+            expected_params = []  # so other tests do not fail.
         try:
             default = self.standardParam(paramNames=expected_params)
             if default.isnull().any():
                 bad += ['Missing values for standard: ' + ", ".join(default[default.isnull()].index)]
-        except (KeyError, ValueError):
+        except errors_to_catch:
             bad += ['Problem running standardParam']
         try:
             range = self.paramRanges(paramNames=expected_params)
             if range.isnull().any().any():
                 bad += ['Missing values for range: ' + ", ".join(range.loc[:, range.isnull().any()].columns)]
-        except (KeyError, ValueError):
+        except errors_to_catch:
             bad += ['Problem running paramRanges']
         try:
             begin = self.beginParam(paramNames=expected_params)
             if begin.isnull().any():
                 bad += ['Missing values for begin: ' + ", ".join(begin[begin.isnull()].index)]
-        except (KeyError, ValueError):  # some error
+        except errors_to_catch:  # some error
             bad += ['Problem running beginParam']
+
+        try:
+            ensembleSize = self.ensembleSize()
+            if ensembleSize < 1:
+                bad += [f'ensembleSize {ensembleSize} < 1']
+        except (KeyError, ValueError):  # some error
+            bad += ['Problem running ensembleSize']
+
+        try:
+            fixed = self.fixedParams()
+            if not isinstance(fixed, dict):
+                bad += ['fixedParams is not a dict']
+        except (KeyError,ValueError):  # some error
+            bad += ['Problem running fixedParams']
 
         if len(bad) > 0:
             for m in bad:

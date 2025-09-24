@@ -819,22 +819,24 @@ class testRunSubmit(unittest.TestCase):
 
         :return:
         """
-        params1 = np.array([[0.1+count,count] for count in range(0,4)])
-        param2 = np.array([[0.2 + count, count] for count in range(0, 4)])
-        param3 = np.array([[0.3 + count, count] for count in range(0, 2)])
-        index = [f'I0_i{c}' for c in range(0,4)]+\
-                [f'I1_i{c}' for c in range(0,4)]+\
-                [f'I2_i{c}' for c in range(0,2)]
+        param1 = np.array([[0.1+count,0.5+count] for count in range(0,4)])
+        param2 = np.array([[0.2 + count,0.4+count] for count in range(0, 4)])
+        param3 = np.array([[0.3 + count, 0.2+count] for count in range(0, 2)])
+        index = [f'I0_i{c}' for c in range(0,param1.shape[0])]+\
+                [f'I1_i{c}' for c in range(0,param2.shape[0])]+\
+                [f'I2_i{c}' for c in range(0,param3.shape[0])]
 
 
 
         rSubmit = copy.deepcopy(self.rSubmit)
-        rSubmit.config.obsNames(['temp_nhx']) # just one obs to keep it simple.
-        rSubmit.config.paramNames(['vf1','ensembleMember'])
-        expected_df = pd.DataFrame(np.vstack([params1,param2,param3]),
+
+        rSubmit.config.obsNames(['lat_nhx','lprecip_tropics']) # just one obs to keep it simple.
+        rSubmit.config.paramNames(['vf1','rhcrit'])
+        scales = rSubmit.config.scales() # scalings needed to get expected results
+        expected_df = pd.DataFrame(np.vstack([param1,param2,param3]),
                                       columns=rSubmit.config.paramNames(),index=index)
         obs_list=[]
-        for param in [params1,param2,param3]:
+        for param in [param1,param2,param3]:
             with self.assertRaises(optclim_exceptions.submitModel):
                 result = rSubmit.stdFunction(param)
             # now fill in the values
@@ -842,21 +844,77 @@ class testRunSubmit(unittest.TestCase):
             for model in rSubmit.model_index.values():
                 if model.status != 'PROCESSED':
                     model.status = 'PROCESSED'
-                    obs = pd.Series(21+model.parameters['vf1']**2,
-                                                    index=indx)
+                    obs = pd.Series([model.parameters[p]**2 for p in rSubmit.config.paramNames()],index=indx)+rSubmit.config.targets(scale=True)
+
                     model.simulated_obs = obs
-                    obs_list.append(obs)
+                    obs_list.append(obs*scales)
             result = rSubmit.stdFunction(param) # this actually retrieves the obs.
 
         got = rSubmit.logical_params()
+        pdtest.assert_frame_equal(got,expected_df)
+        # try normalised params
+        got = rSubmit.logical_params(normalize=True)
+        prange = rSubmit.config.paramRanges(ensemble=True).reindex(columns=expected_df.columns)
+        expected_df -= prange.loc['minParam',:]
+        expected_df = expected_df.div(prange.loc['rangeParam',:],axis=1)
+        expected_df = expected_df.reindex(columns=rSubmit.config.paramNames())
         pdtest.assert_frame_equal(got,expected_df)
 
         expected_obs_df = pd.DataFrame(obs_list,index=index)
         got = rSubmit.logical_obs()
         pdtest.assert_frame_equal(got, expected_obs_df)
+        # Now try normalised cost.
+        cov = rSubmit.config.Covariances(scale=True)['CovTotal']
+        sd = np.sqrt(np.diag(cov))
+        expected_obs_df = (expected_obs_df - rSubmit.config.targets(scale=True))/sd
+        got = rSubmit.logical_obs(normalize=True)
+        pdtest.assert_frame_equal(got, expected_obs_df)
         # get the cost. WIll just check the index matches.
         got = rSubmit.logical_cost()
         pdtest.assert_index_equal(got.index,expected_obs_df.index)
+
+        ## do case when ensembleSize = 2
+        rSubmit = copy.deepcopy(self.rSubmit)
+        ens_size = rSubmit.config.ensembleSize(2) # set ensemble size to two
+        rSubmit.config.obsNames(['lat_nhx', 'lprecip_tropics'])  # just one obs to keep it simple.
+        rSubmit.config.paramNames(['vf1', 'rhcrit'])
+        cols = rSubmit.config.paramNames()+['ensembleMember']
+        import itertools
+        param_values = [np.append(p, [e], axis=0) for param in [param1, param2, param3]
+                        for p, e in itertools.product(param, range(ens_size))]
+
+        index = [f'I0_i{c}' for c in range(0,ens_size*param1.shape[0])]+\
+                [f'I1_i{c}' for c in range(0,ens_size*param2.shape[0])]+\
+                [f'I2_i{c}' for c in range(0,ens_size*param3.shape[0])]
+        expected_df = pd.DataFrame(np.vstack(param_values),
+                                   columns=cols, index=index)
+        obs_list = []
+        for param in [param1, param2, param3]:
+            with self.assertRaises(optclim_exceptions.submitModel):
+                result = rSubmit.stdFunction(param,ensemble_average=False)
+            # now fill in the values
+            indx = rSubmit.config.obsNames()
+            for model in rSubmit.model_index.values():
+                if model.status != 'PROCESSED':
+                    model.status = 'PROCESSED'
+                    obs = (pd.Series([model.parameters[p] ** 2 for p in rSubmit.config.paramNames()],
+                                    index=indx) + rSubmit.config.targets(scale=True)+
+                           0.01*model.parameters['ensembleMember']) # add a bit to make ensembleMember visible
+
+                    model.simulated_obs = obs
+                    obs_list.append(obs * scales)
+            result = rSubmit.stdFunction(param,ensemble_average=False)  # this actually retrieves the obs.
+        got = rSubmit.logical_params()
+        pdtest.assert_frame_equal(got, expected_df)
+        # and obs
+        expected_obs_df = pd.DataFrame(obs_list, index=index)
+        got = rSubmit.logical_obs()
+        pdtest.assert_frame_equal(got, expected_obs_df)
+        # and cost
+        got = rSubmit.logical_cost()
+        pdtest.assert_index_equal(got.index, expected_obs_df.index)
+        # no need to test normalised versions as that is done above.
+
 
 
 class TestLogicalInfo(unittest.TestCase):
