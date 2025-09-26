@@ -2555,42 +2555,35 @@ class OptClimConfigVn3(OptClimConfigVn2):
             initial["initParams"] = begin
             initial["initScale"] = False
 
-        begin = initial.get('initParams')
-        scaleRange = initial.get("initScale")  # want to scale ranges?
-
         if paramNames is None:
             paramNames = self.paramNames()
-        beginValues = {}  # empty dict
+        begin = initial.get('initParams',{}) # get the begin values which should be a dict
+        scale_range = initial.get("initScale")  # want to scale ranges?
+        param_range = self.paramRanges(paramNames=paramNames)  # get param range
+        begin = pd.Series(begin).reindex(paramNames)
+        if scale_range:
+            begin = begin * param_range.loc['rangeParam', :] + param_range.loc['minParam', :]
+        # now fill in any None values with standard values.
         standard = self.standardParam(paramNames=paramNames)
-
-        range = self.paramRanges(paramNames=paramNames)  # get param range
-
-        for p in paramNames:  # list below is probably rather slow and could be sped up!
-            beginValues[p] = begin.get(p)
-            if beginValues[p] is None:
-                beginValues[p] = standard[p]  # Will trigger an error if standard[p] does not exist
-            else:
-                if scaleRange:  # values are specified as 0-1
-                    beginValues[p] = beginValues[p] * range.loc['rangeParam', p] + range.loc['minParam', p]
-            if scale:  # want to return params  in range 0-1
-                beginValues[p] = (beginValues[p] - range.loc['minParam', p]) / range.loc['rangeParam', p]
-
-        beginValues = pd.Series(beginValues, dtype=float)[paramNames]  # order in the same way for everything.
+        begin = begin.fillna(standard)  # fill in any None values with standard values.
+        # fill in any None values with standard values.
+        if scale: # want to return params  in range 0-1
+            begin = (begin - range.loc['minParam', :]) / range.loc['rangeParam', :]
 
         # verify values are within range
         if scale:
-            L = beginValues.gt(1.0) | beginValues.lt(0.0)
+            L = (begin > 1.0 )| (begin < 0.0)
         else:
-            L = range.loc['maxParam', :].lt(beginValues) | beginValues.lt(range.loc['minParam', :])
+            L =( begin > param_range.loc['maxParam', :]) | (begin < param_range.loc['minParam', :])
 
         if np.any(L):
             print("L  \n", L)
-            print("begin: \n", beginValues)
-            print("range: \n", range)
-            print("Parameters out of range", beginValues[L].index)
+            print("begin: \n", begin)
+            print("range: \n", param_range)
+            print("Parameters out of range", begin[L].index)
             raise ValueError("Parameters out of range: ")
 
-        return beginValues.astype(float).rename(self.name())
+        return begin.astype(float).rename(self.name())
 
     def fixedParams_keys(self) -> typing.List[typing.Hashable]:
         """
