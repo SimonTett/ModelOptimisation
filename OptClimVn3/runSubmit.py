@@ -554,14 +554,15 @@ class runSubmit(SubmitStudy):
                     result.append(obs)
 
         sim_obs = pd.DataFrame([empty if r is None else r for r in result])  # replace None with nans & convert to a df.
-
+        all_new = all([r is None for r in result])
+        if all_new: # all models are new so want a new iteration
+                self._logical_info.completed_iteration()  # mark end of iteration
         all_ran = all([r is not None for r in result])
         if not all_ran and raiseError:
             # want to raise error if any of result is None meaning at least one model needs to be ran.
             raise optclim_exceptions.submitModel
 
-        if all_ran: # all models ran so can mark end of iteration.
-            self._logical_info.completed_iteration()  # mark end of iteration
+
 
         if sumSquare:
             sim_obs = (sim_obs ** 2).sum(axis=1)
@@ -876,6 +877,69 @@ class runSubmit(SubmitStudy):
         print("status", status)
 
         return finalConfig
+
+    ## run_params
+    def run_params(self,ensemble_average:bool = True) -> OptClimConfigVn3:
+        """
+        Run the model for a set of parameters specified in the configuration file.
+        This is a simple run of the model for a set of parameters. It does not do any optimisation.
+
+        It does not do any scaling, residual or transform. It just runs the model(s) and returns the simulated obs.
+        The parameters to use are specified in the configuration file.
+        The fixed parameters are also specified in the configuration file.
+        :param ensemble_average -- if True (default) and if ensemble size > 1 then average the ensemble members.
+        :return: finalConfig -- a studyConfig. The following methods should give you useful data:
+                finalConfig.obs() -- the observations
+
+        """
+
+        params_dir = self.config.optimise() # get the parameters to run
+        params = self.get_parameters(params_dir) # convert to dataframe
+
+        obs = self.stdFunction(params.values, df=True, raiseError=True,ensemble_average=ensemble_average)
+
+        filename = self.rootDir / (self.config.fileName().stem + "_final.json")  # final config file name
+        final_config = self.runConfig(add_cost=False, filename=filename)  # get final runInfo
+
+        return final_config
+    def get_parameters(self,dict_in: dict) -> pd.DataFrame:
+        """
+        Convert a dictionary of parameters to a pandas DataFrame.
+        :param dict_in: dictionary of parameters
+           Uses the following keys:
+            - parameters: list of dictionaries of parameters
+            - index: optional list of index values for the DataFrame
+            - scale: optional boolean to indicate if parameters should be scaled to their ranges.
+              Default is False.
+        uses self.config to get standard parameters (to fill missing with) and parameter ranges (if scale set).
+        :return: pandas DataFrame of parameters
+        """
+
+        param_list: list[dict] = dict_in['parameters']
+
+        # check keys match
+        keys = set(param_list[0].keys())
+        for d in param_list:
+            if set(d.keys()) != keys:
+                raise ValueError("All dictionaries in the list must have the same keys.")
+
+        # convert to DataFrame
+        index = dict_in.get('index')
+        params = pd.DataFrame(param_list, index=index)
+        # apply scaling if needed
+        param_names = params.columns.to_list()
+        param_range = self.config.paramRanges(paramNames=param_names)  # get param range
+        if dict_in.get('scale', False):
+            params = params * param_range.loc['rangeParam', :] + param_range.loc['minParam', :]
+
+        # fill missing values with standard values
+        std = self.config.standardParam(paramNames=param_names)
+        params = params.fillna(std)
+        # check params are within ranges
+        L = (params < param_range.loc['minParam', :]) | (params > param_range.loc['maxParam', :])
+        if L.any().any():
+            raise ValueError(f"Parameters out of range:\n{params[L]}")
+        return params
 
     def runPYSOT(self, scale=True):
 
