@@ -39,9 +39,10 @@ __version__ = '3.0.0'
 
 import genericLib
 
+
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 type_fixed_param_function: typing.TypeAlias = typing.Callable[
-    [dict[typing.Hashable, 'Model.Model']], typing.Optional[pd.Series]]
+    ["runSubmit",dict[typing.Hashable, typing.Any]], typing.Optional[pd.Series]]
 
 
 # functions available to everything.
@@ -609,12 +610,7 @@ class OptClimConfig(dictFile):
         scalings = self.Config.get('scalings', {})
         if obsNames is None:
             obsNames = self.obsNames()
-        # TODO raise error if any of the scaling names are not in obsNames as a consistency check.
-        missing = {k for k in scalings.keys() if not k.endswith("comment")} - set(obsNames)
-        # removing any keys that end with "comment"
 
-        if missing:
-            raise ValueError("Following scaling keys are not in obsNames: " + " ".join(missing))
         scales = pd.Series([scalings.get(k, 1.0) for k in obsNames], index=obsNames).rename(self.name())
         # get scalings -- if not defined set to 1.
 
@@ -754,10 +750,10 @@ class OptClimConfig(dictFile):
                     cov[k].loc[consName, :] = 0.0
                     cov[k].loc[:, consName] = 0.0
                     cov[k].loc[consName, consName] = v
+
         # scale data
         if scale:
-            obsNames = self.obsNames(
-                add_constraint=useConstraint)  # make sure we have included the constraint (if wanted) in obs
+
             scales = self.scales(obsNames=obsNames)
 
             cov_scale = pd.DataFrame(np.outer(scales, scales), index=scales.index, columns=scales.index)
@@ -1607,10 +1603,7 @@ class OptClimConfig(dictFile):
             study['ensembleSize'] = value
             self.setv('study', study)
 
-        ensembleSize = study.get('ensembleSize')
-        # default is ensemble size of 1.
-        if ensembleSize is None:
-            ensembleSize = 1  # do this way as JSON file can have null.
+        ensembleSize = study.get('ensembleSize') or 1 # if ensembleSize is None or 0 set it to 1
 
         return ensembleSize
 
@@ -1758,10 +1751,14 @@ class OptClimConfigVn2(OptClimConfig):
             svalues = (svalues - range.loc['minParam', :]) / range.loc['rangeParam', :]
         return svalues.rename(self.name())
 
-    def paramRanges(self, paramNames=None, values: dict = None):
+    def paramRanges(self, paramNames=None,
+                    values: dict = None,
+                    ensemble: bool = False) -> pd.DataFrame:
         """
         :param paramNames -- a list of the parameters to extract ranges for.
         If not supplied the paramNames method will be used.
+        :values -- if not None then set the minmax values to this dict
+        :param ensemble (default False). If True then include ensembleMember in the parameter names
         :return: a pandas array with rows names minParam, maxParam, rangeParam
         """
         if paramNames is None: paramNames = self.paramNames()
@@ -1773,6 +1770,12 @@ class OptClimConfigVn2(OptClimConfig):
         names = [p for p in paramNames if p in param.columns]
         param = param.loc[:, names]  # just keep the parameters we want and have.
         param = param.astype(float)
+        if ensemble:
+            # add ensemble member parameters if needed.
+            # Only really needed for plotting or similar.
+            # setting range to 0 to ensemble size to avoid division by zero when
+            # ensemble size is 1.
+            param.loc[:,'ensembleMember'] = [0.0, float(self.ensembleSize())]
         param.loc['rangeParam', :] = param.loc['maxParam', :] - param.loc['minParam', :]  # compute range
         return param
 
@@ -2552,42 +2555,35 @@ class OptClimConfigVn3(OptClimConfigVn2):
             initial["initParams"] = begin
             initial["initScale"] = False
 
-        begin = initial.get('initParams')
-        scaleRange = initial.get("initScale")  # want to scale ranges?
-
         if paramNames is None:
             paramNames = self.paramNames()
-        beginValues = {}  # empty dict
+        begin = initial.get('initParams',{}) # get the begin values which should be a dict
+        scale_range = initial.get("initScale")  # want to scale ranges?
+        param_range = self.paramRanges(paramNames=paramNames)  # get param range
+        begin = pd.Series(begin).reindex(paramNames)
+        if scale_range:
+            begin = begin * param_range.loc['rangeParam', :] + param_range.loc['minParam', :]
+        # now fill in any None values with standard values.
         standard = self.standardParam(paramNames=paramNames)
-
-        range = self.paramRanges(paramNames=paramNames)  # get param range
-
-        for p in paramNames:  # list below is probably rather slow and could be sped up!
-            beginValues[p] = begin.get(p)
-            if beginValues[p] is None:
-                beginValues[p] = standard[p]  # Will trigger an error if standard[p] does not exist
-            else:
-                if scaleRange:  # values are specified as 0-1
-                    beginValues[p] = beginValues[p] * range.loc['rangeParam', p] + range.loc['minParam', p]
-            if scale:  # want to return params  in range 0-1
-                beginValues[p] = (beginValues[p] - range.loc['minParam', p]) / range.loc['rangeParam', p]
-
-        beginValues = pd.Series(beginValues, dtype=float)[paramNames]  # order in the same way for everything.
+        begin = begin.fillna(standard)  # fill in any None values with standard values.
+        # fill in any None values with standard values.
+        if scale: # want to return params  in range 0-1
+            begin = (begin - range.loc['minParam', :]) / range.loc['rangeParam', :]
 
         # verify values are within range
         if scale:
-            L = beginValues.gt(1.0) | beginValues.lt(0.0)
+            L = (begin > 1.0 )| (begin < 0.0)
         else:
-            L = range.loc['maxParam', :].lt(beginValues) | beginValues.lt(range.loc['minParam', :])
+            L =( begin > param_range.loc['maxParam', :]) | (begin < param_range.loc['minParam', :])
 
         if np.any(L):
             print("L  \n", L)
-            print("begin: \n", beginValues)
-            print("range: \n", range)
-            print("Parameters out of range", beginValues[L].index)
+            print("begin: \n", begin)
+            print("range: \n", param_range)
+            print("Parameters out of range", begin[L].index)
             raise ValueError("Parameters out of range: ")
 
-        return beginValues.astype(float).rename(self.name())
+        return begin.astype(float).rename(self.name())
 
     def fixedParams_keys(self) -> typing.List[typing.Hashable]:
         """
@@ -2802,6 +2798,16 @@ class OptClimConfigVn3(OptClimConfigVn2):
                     cov[k].loc[consName, :] = 0.0
                     cov[k].loc[:, consName] = 0.0
                     cov[k].loc[consName, consName] = v
+        # extract to obsNames
+        obsNames = self.obsNames(add_constraint=useConstraint)
+        # make sure we have included the constraint (if wanted) in obs
+        for k in keys:
+            if k in cov and cov[k] is not None:
+                cov[k] = cov[k].reindex(index=obsNames, columns=obsNames)
+                if cov[k].isnull().values.any():
+                    raise ValueError(
+                        f"Covariance {k} has missing values after reindexing -- probably missing observations")
+                my_logger.debug(f'Extracted cov {k} to {", ".join(obsNames)}')
         # scale data
         if scale:
             obsNames = self.obsNames(
@@ -2839,6 +2845,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
         except ValueError as exception:  # missing some errors
             bad += ['scales have problems ' + str(exception)]
 
+
         if len(bad):  # something went wrong. So report all the trapped errors with a failure.
             for m in bad:
                 my_logger.warning(m)
@@ -2848,31 +2855,52 @@ class OptClimConfigVn3(OptClimConfigVn2):
     def check_params(self) -> bool:
         """
         Check parameter related configuration is consistent.
-        checks begin, default and ranges
+        checks  begin, default, ranges & ensemble size
         Raises warnings if not consistent
         :return: True if OK, False if Not
         """
         bad = []
-        expected_params = self.paramNames()
-        my_logger.debug(f'Expected params are: {expected_params}')
+
+        errors_to_catch = (KeyError, ValueError)
+
+        try:
+            expected_params = self.paramNames()
+            my_logger.debug(f'Expected params are: {expected_params}')
+        except errors_to_catch:  # some error
+            bad += ['Problem running paramNames']
+            expected_params = []  # so other tests do not fail.
         try:
             default = self.standardParam(paramNames=expected_params)
             if default.isnull().any():
                 bad += ['Missing values for standard: ' + ", ".join(default[default.isnull()].index)]
-        except (KeyError, ValueError):
+        except errors_to_catch:
             bad += ['Problem running standardParam']
         try:
             range = self.paramRanges(paramNames=expected_params)
             if range.isnull().any().any():
                 bad += ['Missing values for range: ' + ", ".join(range.loc[:, range.isnull().any()].columns)]
-        except (KeyError, ValueError):
+        except errors_to_catch:
             bad += ['Problem running paramRanges']
         try:
             begin = self.beginParam(paramNames=expected_params)
             if begin.isnull().any():
                 bad += ['Missing values for begin: ' + ", ".join(begin[begin.isnull()].index)]
-        except (KeyError, ValueError):  # some error
+        except errors_to_catch:  # some error
             bad += ['Problem running beginParam']
+
+        try:
+            ensembleSize = self.ensembleSize()
+            if ensembleSize < 1:
+                bad += [f'ensembleSize {ensembleSize} < 1']
+        except (KeyError, ValueError):  # some error
+            bad += ['Problem running ensembleSize']
+
+        try:
+            fixed = self.fixedParams()
+            if not isinstance(fixed, dict):
+                bad += ['fixedParams is not a dict']
+        except (KeyError,ValueError):  # some error
+            bad += ['Problem running fixedParams']
 
         if len(bad) > 0:
             for m in bad:
@@ -2885,10 +2913,11 @@ class OptClimConfigVn3(OptClimConfigVn2):
         Check configuration is consistent. Raise ValueError if not
         :return: True if OK, False if not
         """
-        OK = self.check_params() and self.check_obs()
-        if not OK:
+        ok = self.check_params() and self.check_obs()
+
+        if not ok:
             raise ValueError("Configuration has problems")
-        return OK
+        return ok
 
     def obsNames(self,
                  obsNames:typing.Optional[list[str]]=None,

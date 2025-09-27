@@ -362,7 +362,7 @@ class Model(ModelBaseClass, journal):
             output_file -- name of output file for post-processing. If None will be sim_obs.json
                 This is where simulated observations go (which are then read in).
                 Will be stored in self._post_process_output
-        post_process will be deep-copyed to self.post_process with script, interp, input_file, output_file removed
+        post_process will be deep-copied to self.post_process with script, interp, input_file, output_file removed
         self.post_process_cmd_script will hold the command to run the post-processing.
         :return: None
         """
@@ -1156,7 +1156,10 @@ class Model(ModelBaseClass, journal):
         :return:a tempModel instance.
         """
         dct2 = cls.convert_pure_paths(dct)
-        dct2['configs'] = namelist_var.GroupConfig.from_dict(dct2['configs'])  # convert configs back to a configs object.
+        try:
+            dct2['configs'] = namelist_var.GroupConfig.from_dict(dct2['configs'])  # convert configs back to a configs object.
+        except KeyError: # old style configs so just let __init__ deal with it.
+            pass
         obj = cls(name=dct2.pop('name'), reference=dct2.pop('reference'))  # create a default instance
         obj.fill_attrs(dct2)
         return obj

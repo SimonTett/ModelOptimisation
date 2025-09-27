@@ -1,0 +1,55 @@
+Plans for a simple dashboard interface for OptClimVn3
+
+Want to visualise the following:
+1) Status of all models.
+2) Job names for all models. This is specific to each model so might require changes to Model classes
+3) Cost function for 'logical' parameter sets.
+4) Normalised parameter values for 'logical' parameter sets.
+5) Normalised obs values for 'logical' obs. Ability to show obsNames or all obs. And to apply transform
+
+Ideally via a web interface or some tabbing interface.
+Use very standard technology so easy to deploy.
+I think beyond my ability/time/need to deal with.
+
+So, just continue with current monitoring approach for now which just makes an image.
+So write a monitor script that produces multiple windows/images with the above info.
+Then can just view these images in a browser or image viewer.
+
+Need to have way of setting runSubmit object read only --
+    disable writing to file to avoid clashes with running OptClimVn3.
+
+ Set N to some sensible number like 20!  But allow user to change that value
+
+
+
+ All plots -- allow refresh on user request. This would do a re-read of the underlying data.
+ Provide a function that does that returning what is needed for the plots.
+
+ All plots should allow zoom-in/sub-selection by user.
+ AI prompt -- do ask for clarification how I want things to look/work.
+  Iteratively working and giving me a limited set of choices at each iteration is best.
+ Start by using bokeh. I'd like a static matplotlib version derived from the bokeh version if possible.
+// Job Info page
+Show table of all models with:
+- Model name, status, job name. Status coloured. Last time updated.
+- Show jobs in status order and then by most recent change.
+- Allow user to filter by status, last #N, last time updated.
+
+// cost function page
+Show all logical costs (as just a line ).
+x-axis; Name.  y-axis; cost value. Symbol with name for minimum cost.
+
+// normalised parameter & Obs values
+Top: Show normalised parameter values for last N logical parameter sets. As heatmap.
+x-axis; name. y-axis; param name. Colour by normalised value. Line where min value is.
+
+Bottom: Show normalised obs values for logical obs sets as heatmap.
+Allow transformation which changes name to index and applies a linear transform to the obs values.
+x-axis name; y-axis obs name. Colour by normalised value.
+Allow selection of observations from full list of obs. Default is obsNames.
+
+
+
+Allow selection of observations and parameters with default being obsNames and paramNames
+Allow selection of last N logical sets with default being all.
+Allow font size setting.

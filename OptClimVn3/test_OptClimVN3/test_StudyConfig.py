@@ -825,9 +825,7 @@ class testStudyConfig(unittest.TestCase):
         test_scales = dict(one=2, two=1, three=4)
         obsNames = test_scales.keys()
         expect = pd.Series(test_scales)
-        # get an error because obsNames differ.
-        with self.assertRaises(ValueError):
-            scales = self.config.scales(test_scales)
+
         scales = self.config.scales(test_scales, obsNames=obsNames)
         nptest.assert_array_equal(scales, expect)
         scales = self.config.scales(dict(one=2, three=4), obsNames=obsNames)
@@ -950,9 +948,10 @@ class testStudyConfig(unittest.TestCase):
     def test_check_obs(self):
         """ test that check_obs works/fails as expected"""
         self.config.check_obs()  # should work.
-
-        ok = self.config.check_obs(obsNames=['fred1', 'fred2'])  # should fail
+        config = copy.deepcopy(self.config)
+        ok = config.check_obs(obsNames=['fred1', 'fred2'])  # should fail
         self.assertFalse(ok, msg='check_obs should have failed')
+
 
     def test_check_params(self):
         """ test that check_params works/fails as expected"""

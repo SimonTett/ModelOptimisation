@@ -4,11 +4,11 @@ import logging
 import typing
 import pathlib
 
-from mpl_toolkits.mplot3d.proj3d import inv_transform
 
 import Model
 from SubmitStudy import SubmitStudy
-
+from StudyConfig import OptClimConfigVn3
+from model_base import model_base
 import numpy as np
 import pandas as pd
 import optclim_exceptions
@@ -40,17 +40,107 @@ Type information for the function is:
 
 """
 my_logger=logging.getLogger(f"OPTCLIM.{__name__}")
+
+class LogicalInfo(model_base):
+    """ Class to hold logical information about parameters, observations etc. 
+
+    This to be used in runSubmit to hold information about the logical obs, parameters and related information.
+      Idea being that logical param set might correspond to multiple model evaluations.
+      As a class it is really a place to hold related things together and make maintenance easier.
+      It is a subclass of model_base so has access to to_dict and from_dict methods which
+      make it easy to save and restore the information.
+
+      It has only a small number of  methods and for most use runSubmit will need to reach inside this class. This does not feel ideal.
+      An alternative would be to pass appropriate information from runSubmit to methods here.
+
+      It has the following attributes:
+        iteration_count: int -- count of iterations. Used in generating  names.
+        count_within_iteration: int -- count of models within an iteration. Used in generating  names.
+        names: dict[str,str] -- dict of logical names indexed by key generated from parameters.
+        parameters: dict[str,pd.Series] -- dict of parameters indexed by logical name.
+        obs: dict[str,pd.Series] -- dict of obs indexed by logical name.
+        cost: dict[str,float] -- dict of cost indexed by logical name.
+        keys: dict[str,list[str]] -- dict of model keys for each logical name indexed by logical name.
+    
+    """
+    def __init__(self):
+        super().__init__()
+        self.iteration_count: int = 0  # count of iterations. Used in generating logical names.
+        self.count_within_iteration: int = 0  # count of models within an iteration. Used in generating logical names.
+        self.names: dict[str, str] = dict()  # dict of logical names indexed by key generated from parameters.
+        self.parameters: dict[str, pd.Series] = dict()  # dict of parameters indexed by logical name.
+        self.obs: dict[str, pd.Series] = dict()  # dict of obs indexed by logical name.
+        self.cost: dict[str, float] = dict()  # dict of cost indexed by logical name.
+        self.keys: dict[str, list[str]] = dict()  # dict of model keys indexed by logical name.
+    @staticmethod
+    def key( params: dict) -> str:
+        """
+        Generate a key for a set of parameters. This is based on sorting the items in params and then generating a string.
+        :param params: dictionary of parameters. Uses Study.key fn.
+        :return: key string.
+        """
+        key = SubmitStudy.key(params) # actually using Study key fn. Could also  include fpFmt if needed.
+        return key
+
+
+    def completed_iteration(self):
+        """
+        Mark the end of an iteration. Increases iteration count and resets count within iteration.
+        :return: None
+        """
+        self.iteration_count += 1
+        self.count_within_iteration = 0
+
+
+    def name(self, params: dict) -> str:
+        """
+        Generate a name for a set of parameters. This is based on the iteration number and index within iteration.
+        It also stores the parameters in self._logical_parameters if they are not already there.
+        :param params: dictionary of parameters.
+        :return: logical name.
+        """
+        key = self.key(params)
+        try:
+            name = self.names[key] # already have a name for this set of parameters.
+        except KeyError: # need to generate a new name.
+            name = f"I{self.iteration_count}_i{self.count_within_iteration}"
+            self.count_within_iteration += 1 # increase count for next time.
+            self.names[key] = name
+            # store parameters
+            param_series = pd.Series(params).rename(name) # these are the params that the algorithm varies.
+            self.parameters[name] = param_series
+
+
+        return name
+
+    def store_key(self,name:str,parameters:dict) -> str:
+        """
+        Store the key for a set of parameters under a given name.
+        :param name: name to store key under.
+        :param parameters: parameters to generate key from
+        :return: key
+        """
+        key = self.key(parameters)
+        if name in self.keys: # got the name already
+            if key not in self.keys[name]: # but not got this key
+                self.keys[name].append(key)
+        else:
+            self.keys[name] = [key] # initialise the list of keys for this name.
+
+        return key
+
 class runSubmit(SubmitStudy):
     # Has the following additional attributes over SubmitStudy (and Study)
-    trace:typing.List[str] # the trace of all model evaluations. Elements are keys into model_info
-    prev_trace:typing.List[str] # the trace off all model evaluation the previous time the algorithm was run
+    #trace:typing.List[str] # the trace of all model evaluations. Elements are keys into model_info
+    #prev_trace:typing.List[str] # the trace off all model evaluation the previous time the algorithm was run
 
 
     """
           Class   to deal with running various algorithms. (not all of which are optimization).
           It is a specialisation of SubmitStudy and is separated out to make maintenance easier.
           Idea is that each method should use cases that exist and deal with parallelism.
-          If it finds out that cases are missing it should raise optclim_exceptions.submitModel
+          If it finds out that cases are missing it should raise optclim_exceptions.submitModel.
+
           Functions should  return a finalConfig which contains
           whatever additional information they consider useful.
 
@@ -61,7 +151,7 @@ class runSubmit(SubmitStudy):
         """
 
     def __init__(self,
-                 config: typing.Optional["OptClimConfigVn3"],
+                 config: typing.Optional[OptClimConfigVn3],
                  name: typing.Optional[str] = None,
                  rootDir: typing.Optional[pathlib.Path] = None,
                  refDir: typing.Optional[pathlib.Path] = None,
@@ -70,9 +160,15 @@ class runSubmit(SubmitStudy):
                  config_path: typing.Optional[pathlib.Path] = None,
                  next_iter_cmd: typing.Optional[typing.List[str]] = None):
         super().__init__(config, name, rootDir, refDir, models, model_name, config_path, next_iter_cmd)
-        self.trace = []
-        self.prev_trace = []
-    def closest_model(self,model:"Model")  -> ("Model",float):
+        self.trace:list[str] = []
+        self.prev_trace:list[str] = []
+        # _logical_info holds information for per optimisation parameter info.
+        # Currently, largely a bag of attributes which this class reaches into as it needs to.
+        # Having _logical_info as private for now as not sure if it will be needed outside this class.
+        self._logical_info:LogicalInfo = LogicalInfo()
+ 
+
+    def closest_model(self,model:Model.Model)  -> tuple[Model.Model,float]:
         """
         Find and return the closet model in the (current) model trace to specified model.
         Close is defined as the smallest min difference for the normalised params that are fp or int.
@@ -151,7 +247,6 @@ class runSubmit(SubmitStudy):
         return model
 
     def transform_check(self,obs:pd.Series,
-                        model_name:str, # TODO consider removing this as only used for error messages.
                         transform: typing.Optional[pd.DataFrame] = None,
                         scale: bool = False,
                         residual: bool = False,
@@ -159,21 +254,23 @@ class runSubmit(SubmitStudy):
 
         """
         Check and transform obs
-        :param obs: obs to be checked and transformed
-        :param model_name: str which identifies model (or models)
-        :param transform: Transform matrix
+        :param obs: observations to be checked and transformed. Will reduce them to the obsNames in self.config.obsNames()
+
         :param scale: If True scale obs
         :param residual: If True obs are relative to target values
-        :return: pandas series of transformed matrix.
+        :param transform: Transform matrix
 
-        Checks are that no desired obs are missing and no nulls are in transformed series.
+        Obs are transformed in the order scale, residual, transform.
+        return: pandas series of transformed obs
+
+        Checks are that no missing observations, no desired obs are missing and no nulls are in transformed series.
         """
 
         obsNames = self.config.obsNames()
         missing_obs = set(obsNames) - set(obs.index)
         if len(missing_obs) > 0:  # trigger error as missing obs
-            raise ValueError(f"Missing {' '.join(missing_obs)} from model {model_name}")
-        # force fixed order.
+            raise ValueError(f"Missing {' '.join(missing_obs)} from {obs.name}")
+        # force fixed order and select only those obs we want.
         obs = obs.reindex(obsNames)
         # note using obsNames as specified. transform (if supplied) can change names.
         if scale:  # scale sim obs.
@@ -189,6 +286,176 @@ class runSubmit(SubmitStudy):
             raise ValueError("Obs contains null values at: " + ", ".join(obs.index[null]))
         return obs
 
+
+    def logical_params(self,normalize:bool=False,
+               ) -> pd.DataFrame:
+        """
+        Return a dataframe of parameters for all logical names.
+        :param normalize: Normalise parameters to [0,1] based on param limits.
+          ensembleMember will be normalised by ensemble size. See StudyConfig.paramRanges()
+        :return: df of parameters indexed by logical name.
+        """
+        df = pd.DataFrame(self._logical_info.parameters).T
+        if normalize: # Normalize by param ranges
+            ranges = self.config.paramRanges(ensemble=True).reindex(columns=df.columns)
+            df = (df-ranges.loc['minParam', :]) / ranges.loc['rangeParam', :]
+        return df
+
+    def logical_cost(self) -> pd.Series:
+        """
+        Return a series of costs for all logical names.
+        :return: series with costs
+        """
+        return pd.Series(self._logical_info.cost).rename("cost")
+
+    def logical_obs(self,
+                    normalize:bool=False,
+                    scale:bool=True,
+                    obs_names:typing.Union[bool,list[str],None]=None) -> pd.DataFrame:
+        """
+        Return a dataframe of observations for all logical names.
+        :param normalize: normalise the obs by error estimates from target
+        :param scale: scale the obs by self.config.scales()
+        :param obs_names: Names to use, If None -- use config obsNames.
+           If True uses all obs in self._logical_info.obs. This might fail with normalize if not all obs are present in tgt.
+        :return: dataframe of obs
+        """
+        obs_df = pd.DataFrame(self._logical_info.obs).T
+        if obs_names is None:
+            obs_names = self.config.obsNames() # use config supplied one.
+        elif isinstance(obs_names, bool) and obs_names: # if True
+            obs_names = obs_df.columns
+        else:
+            pass
+
+        obs_df=obs_df.reindex(columns=obs_names)
+
+        if scale:  # scale ?
+            obs_df *= self.config.scales(obsNames=obs_names)
+
+        if normalize:  # normalize
+            tgt = self.config.targets(scale=scale, obsNames=obs_names)
+            obs_df -= tgt  # difference from tgt.
+            cov = self.config.Covariances(scale=scale)  # get covariances.
+            errCov = cov['CovTotal']  # just want the total
+            sd = pd.Series(np.sqrt(np.diag(errCov)),
+                           index=errCov.index)  # square root of diagonal elements. Need to reindex.
+            sd = sd.reindex(obs_names) # extract only those we want.
+            obs_df /= sd  # normalise by SD
+
+        return obs_df
+
+    def logical_models(self,name: str) -> list[Model.Model]:
+        """
+        Return  list of models for a given logical name.
+        :param name: logical name.
+        :return: list of models
+        """
+        result=[self.model_index[key] for key in self._logical_info.keys.get(name,[])]
+        return result
+
+
+    def comp_logical_obs(self,
+                 params: dict,
+                 fixed_params: dict,
+                 n_ensemble:int=1,
+                 multi_config_fn: typing.Optional[typing.Callable[[runSubmit, dict[str, dict]],typing.Optional[pd.Series]]] = None,
+                 transform: typing.Optional[pd.DataFrame] = None,
+                 scale: bool = False,
+                 residual: bool = False,
+                 ) -> typing.Optional[pd.Series]:
+        """
+        Compute the observations for a given set of parameters.
+        Broadly this function generates (via make_model) the model(s) needed to compute the observations or gets the observations from those models that have been ran.
+        It does any ensemble averaging needed.
+          Adds in fixed params and calls make_model or multi_config_fn to actually get data from the model.
+          If n_ensemble > 1 then runs ensemble and averages the results.
+          Stores the parameters, obs and cost in self._logical_info.parameters, self._logical_info.obs and self._logical_info.cost respectively.
+            For the later two only once obs are generated.  Cost is sum of squares of obs (after processing by transform_check) divided by no of obs.
+        :param params: dictionary of parameters which vary
+        :param fixed_params: dictionary of fixed parameters.
+           If multi_config_fn is None then this is a simple dict otherwise it is a dict of dict with keys being interpreted by the function.
+        :param n_ensemble: number of ensemble members. If set to 1 (default) then no ensembleMember parameter is added.
+        :param multi_config_fn: function to call if using multiple models to compute obs.
+        The following parameters are applied after ensemble averaging (if any) and using transform_check method.
+        :param transform -- transform matrix to apply to obs.
+        :param scale -- if True scale obs by self.config.scales()
+        :param residual -- if True compute obs as difference from target.
+
+
+        :return: pandas series of potentially transformed obs  or None if some run is needed.
+        """
+
+        model_fail = False
+        ## Check that ensembleMember is not in params or fixed_params when n_ensemble > 1
+        # I am not convinced this is the best way to do it but for now it will do.
+        if n_ensemble > 1:
+            if multi_config_fn is not None:
+                for k, v in fixed_params.items():
+                    if 'ensembleMember' in v:
+                        raise ValueError(f"ensembleMember is in fixed_params for model {k} when n_ensemble > 1")
+            elif 'ensembleMember' in params:
+                raise ValueError("ensembleMember set in params when n_ensemble > 1")
+            elif 'ensembleMember' in fixed_params:  #
+                raise ValueError("ensembleMember is in fixed_params when n_ensemble > 1")
+            else:
+                pass # all ok.
+
+        name = self._logical_info.name(params) # get the name based on the params. This will also store the params.
+        # For now no caching of obs or cost. Could be done if needed. TODO insert caching if needed.
+        ## Try and compute all observations wanted.
+        obs = [] # where we will store the obs for each ensemble member.
+        for ens_member in range(n_ensemble): # loop over ensemble members
+            # We try and get all the ensemble members and then return None if any need running.
+            # Do this so have a full list of cases to run to allow parallelism.
+            if n_ensemble is 1:
+                ens_param = {} # empty dict
+            else:
+                ens_param= dict(ensembleMember=ens_member) # set ensemble member
+
+            # note that ensembleMember will be overwritten if it is in fixed_params or params. Checked above.
+            if multi_config_fn is None: # simple calculation
+                full_params = ens_param|params|fixed_params
+                sim_obs = self.make_model(full_params ).simulated_obs
+                self._logical_info.store_key(name,full_params)
+                # merge params and fixed_params. simulated_obs is None if model not run.
+            else:
+                # set up dict containing all parameters for each model and then run multi_config_fn.
+                all_params = {k: (ens_param | params | fp ) for k,fp in fixed_params.items()} # needs to be using  python 3.9+ for | operator.
+                # now call multi_config_fn on the dict that was constructed.
+                sim_obs = multi_config_fn(self, all_params) # obs will be None if any models need running.
+                if sim_obs is not None and not isinstance(sim_obs, pd.Series):
+                    raise ValueError(f"multi_config_fn should return a pandas Series or None but got {type(sim_obs)}")
+                for all_param in all_params.values():
+                    self._logical_info.store_key(name,all_param)
+            if sim_obs is None:
+                model_fail = True # flag that we need to return None once we have looped over ensemble members.
+            else:
+                # work out name for this ensemble member so when make a data array have unique index. And store the obs
+                obs.append(sim_obs.rename(f"r{ens_member}")) # store the obs and name it by ensemble member.
+        ## Done loop over ensemble members. Now for final processing.
+        if model_fail: # some model needs running so return None
+            return None
+        # otherwise all models we need have ran.
+        if len(obs) != n_ensemble:
+            raise ValueError(f"Logic error -- expected {n_ensemble} ensemble members but got {len(obs)}")
+         # now have all the ensemble members.
+        if n_ensemble >1:  # ensemble avg obs if necessary
+            obs = pd.DataFrame(obs).mean(axis=0)
+        else:
+            obs = obs[0] # single obs.
+        obs = obs.rename(name)  # rename series to logical name.
+         # now  got obs so can store them
+        self._logical_info.obs[name] = obs # store obs
+
+        # now apply transform fn and compute cost
+        obs = self.transform_check(obs, transform=transform, scale=scale, residual=residual)
+        n_obs = len(obs)
+        self._logical_info.cost[name]=(obs**2).sum()/n_obs # store the avg cost
+        return obs
+
+
+
     def stdFunction(self, params: np.ndarray,
                     df: bool = False,
                     raiseError: bool = True,
@@ -196,9 +463,9 @@ class runSubmit(SubmitStudy):
                     transform: typing.Optional[pd.DataFrame] = None,
                     scale: bool = False,
                     residual: bool = False,
-                    sumSquare: bool = False) -> np.ndarray | pd.DataFrame | pd.Series:
+                    sumSquare: bool = False) -> typing.Union[np.ndarray, pd.DataFrame]:
         """
-        Standard Function used for running model . Returns values from cache if already got it.
+        Standard Function used for running model. Returns values from cache if already got it.
           If not got cached model then raises runModelError exception or returns NaN
            after generating new model.
 
@@ -215,7 +482,8 @@ class runSubmit(SubmitStudy):
                 Else return array full of nans.
         :param ensemble_average -- If True average the ensemble members.
 
-        The four  parameters below they are applied in the order: scale, residual, transform, sumSquare
+        The four  parameters below they are applied in the order: scale, residual, transform, sumSquare.
+        The first three are handled in comp_logical_info.obs and occur after any ensemble averaging.
         :param scale   -- if True scale obs  by self.scales()
 
         :param residual  -- if True remove target (self.target()) from obs
@@ -227,7 +495,7 @@ class runSubmit(SubmitStudy):
                   Column names being the obs names. Index being sensible labels for rows which will be new obs names.
                   Do be careful to make sure transform has same scaling as here...
 
-        :param sumSquare (defaultFalse) -- if True return the sum of squares of the observations after any processing.
+        :param sumSquare (default False) -- if True return the sum of squares of the observations after any processing.
 
 
         Using stdFunction -- this  is a method as it needs to know various bits of information contained in ModelSubmit..
@@ -266,65 +534,44 @@ class runSubmit(SubmitStudy):
         nObs = len(obsNames)  # How many observations are we expecting?
         if nObs == 0:  # Got zero. Something gone wrong
             raise ValueError("No observations found. Check your configuration file ")
-        # result = np.full((nsim, nObs), np.nan)  # array of np.nan for result
+
         result = []  # empty list. Will fill with series from analysis and then make into a dataframe.
-        fixed_params = self.config.fixedParams()  # get fixed parameters
         nEns = self.config.ensembleSize()  # how many ensemble members do we want to run.
         empty = pd.Series(np.repeat(np.nan, nObs), index=obsNames)
+        multi_config_fn = self.config.fixed_param_function()
+        fixed_params = self.config.fixedParams()  # get fixed parameters
         for indx in range(0, nsim):  # iterate over the simulations.
             pDict = dict(zip(paramNames, use_params[indx, :]))  # create dict with names and values.
-            # TODO -- store this in the parameters/observations at the meta model level.
-            # self.parameters[indx]=pd.Series(pDict,name=indx) # store parameters in the parameters dataframe
-            ensObs = []
-            for ensembleMember in range(0, nEns):
+            if ensemble_average or (nEns == 1): # can do ensemble average in comp_logical_obs
+                obs = self.comp_logical_obs(pDict,fixed_params,n_ensemble=nEns,multi_config_fn=multi_config_fn,
+                                            transform=transform,scale=scale,residual=residual)
+                result.append(obs )
+            else: # want all ensemble members separately but only if want more than one ensemble member.
+                for ens_member in range(0, nEns):
+                    params_ens = pDict | dict(ensembleMember=ens_member)
+                    obs = self.comp_logical_obs(params_ens,fixed_params,multi_config_fn=multi_config_fn,
+                                                transform=transform,scale=scale,residual=residual)
+                    result.append(obs)
 
-                pDict.update(ensembleMember=ensembleMember)
-                multi_config_fn = self.config.fixed_param_function()
-                if multi_config_fn is  None:
-                    pDict.update(fixed_params)
-                    model = self.make_model(pDict)
-                    obs = model.simulated_obs
-                    model_name=model.name
-                else:
-                    models = dict()
-                    for k,fp in fixed_params.items():
-                        params = pDict.copy()
-                        params.update(fp)
-                        models[k] = self.make_model(params)
-                    # now call multi_config_fn
-                    obs = multi_config_fn(models)
-                    model_name = ' '.join([m.name for m in models.values()])
-                    model_name += 'fn: '+multi_config_fn.__name__
-
-                if obs is None:
-                    obs = empty  # empty obs
-                else:
-                    obs= self.transform_check(obs,model_name,transform=transform,scale=scale,residual=residual) # TODO move this after ensemble averaging.
-                ensObs.append(obs)
-
-            # This happens both when a new model is created or an existing model used.
-            # end of loop over ensemble members.
-
-            # compute ensemble-mean if needed
-            if ensemble_average and (len(ensObs) > 1):
-                my_logger.debug("Computing ensemble average")
-                ensObs = pd.DataFrame(ensObs)
-                ensObs = [ensObs.mean(axis=0)]
-            #
-            result.extend(ensObs.copy())  # add to list of  results. Note copying as  ensObs is changed in the loop
-        # end of loop over simulations to be done.
-
-        result = pd.DataFrame(result)  # convert to a dataframe
-
-        if raiseError and np.any(result.isnull()):
-            # want to raise error if any of result is nan.
+        sim_obs = pd.DataFrame([empty if r is None else r for r in result])  # replace None with nans & convert to a df.
+        all_new = all([r is None for r in result])
+        if all_new: # all models are new so want a new iteration
+                self._logical_info.completed_iteration()  # mark end of iteration
+        all_ran = all([r is not None for r in result])
+        if not all_ran and raiseError:
+            # want to raise error if any of result is None meaning at least one model needs to be ran.
             raise optclim_exceptions.submitModel
-        if sumSquare:
-            result = (result ** 2).sum(axis=1)
-        if not df:  # want it as values not  a dataframe
-            result = np.squeeze(result.values)
 
-        return result
+
+
+        if sumSquare:
+            sim_obs = (sim_obs ** 2).sum(axis=1)
+
+        if not df:  # want it as values not  a dataframe
+            sim_obs = np.squeeze(sim_obs.values)
+
+        return sim_obs
+
 
     def genOptFunction(self, **kwargs):
         """
@@ -630,6 +877,69 @@ class runSubmit(SubmitStudy):
         print("status", status)
 
         return finalConfig
+
+    ## run_params
+    def run_params(self,ensemble_average:bool = True) -> OptClimConfigVn3:
+        """
+        Run the model for a set of parameters specified in the configuration file.
+        This is a simple run of the model for a set of parameters. It does not do any optimisation.
+
+        It does not do any scaling, residual or transform. It just runs the model(s) and returns the simulated obs.
+        The parameters to use are specified in the configuration file.
+        The fixed parameters are also specified in the configuration file.
+        :param ensemble_average -- if True (default) and if ensemble size > 1 then average the ensemble members.
+        :return: finalConfig -- a studyConfig. The following methods should give you useful data:
+                finalConfig.obs() -- the observations
+
+        """
+
+        params_dir = self.config.optimise() # get the parameters to run
+        params = self.get_parameters(params_dir) # convert to dataframe
+
+        obs = self.stdFunction(params.values, df=True, raiseError=True,ensemble_average=ensemble_average)
+
+        filename = self.rootDir / (self.config.fileName().stem + "_final.json")  # final config file name
+        final_config = self.runConfig(add_cost=False, filename=filename)  # get final runInfo
+
+        return final_config
+    def get_parameters(self,dict_in: dict) -> pd.DataFrame:
+        """
+        Convert a dictionary of parameters to a pandas DataFrame.
+        :param dict_in: dictionary of parameters
+           Uses the following keys:
+            - parameters: list of dictionaries of parameters
+            - index: optional list of index values for the DataFrame
+            - scale: optional boolean to indicate if parameters should be scaled to their ranges.
+              Default is False.
+        uses self.config to get standard parameters (to fill missing with) and parameter ranges (if scale set).
+        :return: pandas DataFrame of parameters
+        """
+
+        param_list: list[dict] = dict_in['parameters']
+
+        # check keys match
+        keys = set(param_list[0].keys())
+        for d in param_list:
+            if set(d.keys()) != keys:
+                raise ValueError("All dictionaries in the list must have the same keys.")
+
+        # convert to DataFrame
+        index = dict_in.get('index')
+        params = pd.DataFrame(param_list, index=index)
+        # apply scaling if needed
+        param_names = params.columns.to_list()
+        param_range = self.config.paramRanges(paramNames=param_names)  # get param range
+        if dict_in.get('scale', False):
+            params = params * param_range.loc['rangeParam', :] + param_range.loc['minParam', :]
+
+        # fill missing values with standard values
+        std = self.config.standardParam(paramNames=param_names)
+        params = params.fillna(std)
+        # check params are within ranges
+        L = (params < param_range.loc['minParam', :]) | (params > param_range.loc['maxParam', :])
+        if L.any().any():
+            raise ValueError(f"Parameters out of range:\n{params[L]}")
+        return params
 
     def runPYSOT(self, scale=True):
 

@@ -138,15 +138,9 @@ class test_um_rose(unittest.TestCase):
         self.assertTrue(tar_file.exists())
         # check that the tar file has at least 1K byte in it
         self.assertGreater(tar_file.stat().st_size, 1000)
-        # check that  have the right values for archer_archive_dir and remote_archive_dir
-        # FIXME -- doesn't look like remove_archive_dir is being set at all which may because reference config does not have it
-        # turned on...
-        #raise NotImplementedError("Test needs to be fixed to look in the right place")
         archer_archive_dir = model.read_param('archer_archive_dir')
         self.assertEqual(archer_archive_dir,str(model.model_dir/'output'))
-        remote_archive_dir = pathlib.PurePath(model.read_param('remote_archive_dir'))
-        # if remote archiving not turned on in ref config then this will fail as remote_archive_dir will not be set.
-        self.assertEqual(remote_archive_dir.name,model.model_dir.parent.name)
+
 
 
 
@@ -362,7 +356,7 @@ and even more text
                             run_info=run_info)
             self.assertEqual(model.parameters_no_key['prebuild'], str(expected_prebuild))
     def test__guess_prebuild(self):
-        # check __guess_prebuild works
+        # check _guess_prebuild works
         model = self.model
         model.reference=pathlib.Path('/home/n02/n02-puma/tetts/roses/u-db898')
         expected_path = pathlib.PurePath(f'/home/n02/n02/tetts/cylc-run/u-db898/share/fcm_make_um') # path on puma

@@ -17,13 +17,13 @@ import pandas as pd
 
 from model_base import model_base
 from Model  import Model # root class for all models.
-from StudyConfig import OptClimConfigVn3
+#from StudyConfig import OptClimConfigVn3
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 #TOMAYBEDO: Consider removing keeping the config. Instead, just parse bits of it that we need and store them in the Study.
 
 class Study:
     # class attribute type information.
-    config: OptClimConfigVn3
+    config: "OptClimConfigVn3"
     name: str
     rootDir: pathlib.Path
     model_index: dict
