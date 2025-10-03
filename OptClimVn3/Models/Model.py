@@ -583,7 +583,7 @@ class Model(ModelBaseClass, journal):
         if not fake:
             for file in [self.submit_script, self.continue_script]:
                 if file is not None:
-                    (self.model_dir / file).chmod(0o766)  # set permission
+                    (self.model_dir / file).chmod(0o755)  # set permission
         else:
             self.fake = True # we are faking now!
 
