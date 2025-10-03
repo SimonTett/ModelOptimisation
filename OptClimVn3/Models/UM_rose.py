@@ -147,17 +147,15 @@ class UM_rose(Model):
         # Those parameters do not contribute towards the unique key used to identify the model.
         if self.run_info is not None:  # need to test for None as reloading of config gives us None.
             for key in ['runModelTime', 'runUser', 'runCode',
-                        'OPTCLIM_ARGS', 'runEnvSetup', 'prebuild']:
+                        'OPTCLIM_ARGS', 'runEnvSetup']:
                 if self.run_info.get(key) is not None:
                     # Get None if either null in the original  json config or not present
                     self.parameters_no_key[key] = self.run_info[key]
-            # deal with prebuild set to True -- where we guess the path.
-            if self.parameters_no_key.get('prebuild',False):
-                prebuild_path = self._guess_prebuild()
-                if prebuild_path is not None:
-                    self.parameters_no_key['prebuild'] = str(prebuild_path)
-                else:
-                    self.parameters_no_key.pop('prebuild')  # remove it as True won't work!
+            # deal with prebuild
+            prebuild = self.guess_prebuild(self.run_info.get('prebuild', None))
+            if prebuild:
+                self.parameters_no_key['prebuild'] = str(prebuild)
+
             # set RUNID to False and RUN_NAME to first 5 characters of the name.
             if self.name is not None:
                 self.parameters_no_key['RUNID'] = False
@@ -280,17 +278,31 @@ class UM_rose(Model):
         my_logger.debug(f'Changed {modified_files}')
         return modified_files
 
-    # utility fns. Private for now
-    def _guess_prebuild(self) -> typing.Optional[pathlib.PurePath]:
+    # utility fns.
+    def guess_prebuild(self, prebuild:typing.Union[bool,str,None]) -> typing.Optional[pathlib.PurePath]:
         """
-        Guess the prebuild dict. Will only work on archer2/puma
+        Guess or extract the prebuild dict. Will only work on archer2/puma. Paths should be specified on archer2 and exist on puma2.
         :param self:
+        :param prebuild: bool or str or None.
         :return: PurePath -- successfully guessed prebuild dct. (path is a dir) 
                  None -- guess did not work.
         """
         # ARCHER2
 
         # get the name from the reference and assume userid the same as this
+        if isinstance(prebuild, str):
+            prebuild = genericLib.expand(prebuild) # should be path on machine we are running on.
+            if prebuild.is_dir():
+                my_logger.debug(f'prebuild {prebuild} is a directory')
+                return self._puma_path(prebuild) # convert to puma path and return.
+            else:
+                my_logger.warning(f'prebuild {prebuild} is not a directory')
+                return None
+        elif not prebuild: # bool False or None
+           return None
+        else: # anything else so let main code handle.
+            pass
+
         ref_suite_name = self.reference.name
         # work out user and id.
         # work out user id in reference if it is an abs path.

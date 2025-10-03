@@ -355,19 +355,24 @@ and even more text
                             parameters=parameters,
                             run_info=run_info)
             self.assertEqual(model.parameters_no_key['prebuild'], str(expected_prebuild))
-    def test__guess_prebuild(self):
+    def test_guess_prebuild(self):
         # check _guess_prebuild works
         model = self.model
         model.reference=pathlib.Path('/home/n02/n02-puma/tetts/roses/u-db898')
         expected_path = pathlib.PurePath(f'/home/n02/n02/tetts/cylc-run/u-db898/share/fcm_make_um') # path on puma
         with patch.multiple(pathlib.Path,is_dir=MagicMock(return_value=True),
                             is_absolute=MagicMock(return_value=True)):
-            result = model._guess_prebuild()
+            result = model.guess_prebuild(True)
             self.assertEqual(result,expected_path)
 
         with patch.multiple(pathlib.Path,is_dir=MagicMock(return_value=False),
                             is_absolute=MagicMock(return_value=True)):
-            result = model._guess_prebuild()
+            result = model.guess_prebuild(True) # directory guessed does not exist
+            self.assertIsNone(result)
+
+        # pass in None and False and should get None
+        for val in [None,False]:
+            result = model.guess_prebuild(val)
             self.assertIsNone(result)
 
 ## specific tests.
