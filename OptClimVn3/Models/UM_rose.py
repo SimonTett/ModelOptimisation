@@ -623,6 +623,9 @@ class UM_rose_cylc7(UM_rose):
                 cmd.append(args)
             cmd.append(f'-C {self._puma_path(self.suite_dir)}')  # path to the suite dir.
             f.write(' '.join(cmd) + '\n')
+        # set permissions to be executable
+        script.chmod(0o755)
+
 
     def set_scratch(self):
         """
@@ -708,6 +711,8 @@ class UM_rose_cylc8(UM_rose):
                 my_logger.info('Adding X to name')
                 cmd.append(f'--workflow-name=X{self.suite_dir.name}')
             f.write(' '.join(cmd) + '\n')
+        # set permissions to be executable
+        script.chmod(0o755)
 
 
 
