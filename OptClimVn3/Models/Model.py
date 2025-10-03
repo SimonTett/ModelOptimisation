@@ -1004,7 +1004,7 @@ class Model(ModelBaseClass, journal):
             else:  # just append the value.
                 keys.append(repr(v))  # use the object repr method.
         # add on the reference
-        keys.extend(['reference',self.reference]) 
+        keys.extend(['reference',str(self.reference)])
         keys = tuple(keys)  # convert to tuple
         return str(keys)  # and then to a string.
 

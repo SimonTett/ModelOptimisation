@@ -721,7 +721,7 @@ class ModelTestCase(unittest.TestCase):
 
         # test key for mixed params is as expected
         pDict = {'zz': 1.02, 'aa': 1, 'nn': [0, 1]}
-        expect = str(('aa', '1', 'nn', '[0, 1]', 'zz', '1.02'))
+        expect = str(('aa', '1', 'nn', '[0, 1]', 'zz', '1.02','reference',str(self.refDir.resolve())))
         self.model.parameters = pDict
         key = self.model.key()
         self.assertEqual(key, expect)
