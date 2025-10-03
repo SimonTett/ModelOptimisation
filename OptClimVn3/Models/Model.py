@@ -988,7 +988,7 @@ class Model(ModelBaseClass, journal):
 
     def key(self, fpFmt: str = '%.4g') -> str:
         """
-        Generate key from keys and values in self.parameters.
+        Generate key from keys and values in self.parameters and from reference.
         This should be unique (to some rounding on float parameters)
         :param fpFmt -- format to convert float to string. (Default is %.4g)
         :return: a tuple as an index. tuple is key_name, value in sorted order of key_name.
@@ -1003,6 +1003,8 @@ class Model(ModelBaseClass, journal):
                 keys.append(fpFmt % v)  # float point number so use formatter.
             else:  # just append the value.
                 keys.append(repr(v))  # use the object repr method.
+        # add on the reference
+        keys.extend(['reference',self.reference]) 
         keys = tuple(keys)  # convert to tuple
         return str(keys)  # and then to a string.
 
