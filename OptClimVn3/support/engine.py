@@ -507,7 +507,7 @@ class slurm_engine(abstractEngine):
 
         codes = dict(
             PENDING='Queueing', RUNNING='Running', SUSPENDED='Suspended', CANCELLED='Failed', COMPLETING='Running',
-            COMPLETED='Finished', CONFIGURING='Running', FAILED='Failed', TIMEOUT='Failed', PREEMPTED='Queuing',
+            COMPLETED='Finished', CONFIGURING='Running', FAILED='Failed', TIMEOUT='Failed', PREEMPTED='Queuing',CONFIGUR='Queuing',
             NODE_FAIL='Failed', SPECIAL_EXIT='Failed',COMPLETI='Running')
 
         # check for job not present (either because it ran or was never there)
