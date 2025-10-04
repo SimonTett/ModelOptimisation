@@ -210,9 +210,9 @@ class SubmitStudy(Study, model_base, journal):
         config_path = model_dir / (name + '.mcfg')  # create model config in model dir
         if config_path.exists():
             raise ValueError(f"config_path {config_path} already exists")
-        paramDir = copy.deepcopy(params)
-        reference = self.expand(paramDir.pop('reference', self.refDir))
-        model_name = paramDir.pop('model_name', self.model_name)
+        param_dir = copy.deepcopy(params)
+        reference = self.expand(param_dir.pop('reference', str(self.refDir)))
+        model_name = param_dir.pop('model_name', self.model_name)
         post_process = self.config.getv('postProcess')
         run_info = self.config.run_info()
         study = self.to_study()  # convert SubmitStudy to Study
@@ -220,7 +220,7 @@ class SubmitStudy(Study, model_base, journal):
                                  reference=reference,
                                  model_dir=model_dir,
                                  config_path=config_path,
-                                 parameters=paramDir,
+                                 parameters=param_dir,
                                  post_process=post_process,
                                  study=study,
                                  engine=self.engine,
@@ -462,9 +462,18 @@ class SubmitStudy(Study, model_base, journal):
                 # verify key is as expected.
                 model = Model.load_model(path)  # load the model.
                 got_key = obj.key_for_model(model)
-                if key != got_key:  # key changed. TODO. deal with ensembleMember which seems to be truncated.
-                    raise ValueError(f"Key has changed from {key} to {got_key} for model {model}")
-                model_index[key] = model
+                if key != got_key:  # key changed.
+                    # Code update means key generation has changed with one change being addition of reference path to the key.
+                    fixed_key = key[0:-1]
+                    ref = ('reference', str(model.reference))
+                    fixed_key += ", "+str(ref)[1:]
+                    fixed_key = fixed_key.replace('"','') # strip out the " that come from str(str)!
+
+                    if fixed_key != got_key:
+                        raise ValueError(f"Key has changed from {key} to {got_key} for model {model}")
+                    else:
+                        my_logger.info(f"Key for model {model} has reference added to it")
+                model_index[got_key] = model
             else:
                 my_logger.warning(f"Failed to find {path} so ignoring.")
 

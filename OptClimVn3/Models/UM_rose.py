@@ -86,6 +86,7 @@ class UM_rose(Model):
     """
     # additional attributes to the model class.
     suite_dir: typing.Optional[pathlib.Path]  # path for suite dir.
+    suite_name: typing.Optional[str]  # name of the suite
     model_data_dir: typing.Optional[pathlib.Path]  # path for model_data_dir.
 
     # test if we are on Archer by calling hostname -A and that stdout contains archer2.ac.uk
@@ -125,18 +126,22 @@ class UM_rose(Model):
             self.model_data_dir = None
         super().__init__(*args, **kwargs)  # call the super-class init method.
 
-        # deal with suite_dir -- where suite info gets written. Different from model_dir which is where
+        # deal with suite_dir & suite_name -- where suite info gets written. Different from model_dir which is where
         # models are ran. This different from other models so far.
         if suite_dir is None:
             if self.name is not None:
                 # Work out suite_dir which is where suite info gets written.
                 # suite dir name is name_PID -- should be unique enough..
                 # problem is that cylc uses a very flat space...
-                self.suite_dir = self.puma_dir / f'{self.name}_{os.getpid()}'
+                self.suite_name = f'{self.name}_{os.getpid()}' # name of suite (which can be modified up to submission)
+                self.suite_dir = self.puma_dir / self.suite_name # where suite info gets written.
+
             else:
+                self.suite_name = None
                 self.suite_dir = None
         else:
             self.suite_dir = pathlib.Path(suite_dir)
+            self.suite_name = self.suite_dir.name  # get the name from the path.
         # when reading from a file this may fail as suite_dir will be be done so
         # code works out self.suite_dir from name and pid.
         # this then used here and when the actual values get copied in
@@ -678,6 +683,15 @@ class UM_rose_cylc8(UM_rose):
         :return: nothing.
         """
 
+        """
+        FIXME 
+        clean script should be: 
+           cylc stop --now --now --max-polls=100 SUITE_NAME
+           cylc clean --yes SUITE_NAME
+           
+           Should run on puma2 and need to workout the SUITE_NAME -- which should be recorded in the Model object somewhere.
+        """
+
         if script_type == 'submit':
             script = self.submit_script
         elif script_type == 'continue':
@@ -863,20 +877,20 @@ class UKESM1_params(Model):
 
     @register_param("ensembleMember")
     def ens_member(self,
-                   ensMember: typing.Optional[int],
+                   ens_member: typing.Optional[int],
                    transform:bool = True) -> typing.Union[list[tuple[NamelistVar,int]],int]:
         """
-        :param ensMember: ensemble member. The ensemble member to set. If None then read the value from the namelist.
+        :param ens_member: ensemble member. The ensemble member to set. If None then read the value from the namelist.
         :param transform:  Does nothing and present for compatibility with other parameters.
         :return: [(nl,int)] or ensemble member value if None.
         """
         nl = NamelistVar('um_rose', self.um_namelist_file, 'env', 'ENS_MEMBER')
-        inverse = (ensMember is None)
+        inverse = (ens_member is None)
         if inverse:
-            ensMember:int = self.read_nl_value(nl, raise_error=False)
-            return ensMember
+            ens_member:int = self.read_nl_value(nl, raise_error=False)
+            return ens_member
         # otherwise set the ensemble member.
-        return [(nl,ensMember)]
+        return [(nl, ens_member)]
 
     @register_param('START_TIME')
     def start_time(self, value: typing.Optional[str]=None,

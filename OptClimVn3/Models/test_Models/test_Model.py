@@ -713,23 +713,19 @@ class ModelTestCase(unittest.TestCase):
         with self.assertRaises(ValueError):
             model = myModel('fred', self.refDir, post_process=pp)
 
-    def test_key(self):
+    def test_attrs_for_key(self):
         """
         Tests for key
         :return:
         """
 
         # test key for mixed params is as expected
-        pDict = {'zz': 1.02, 'aa': 1, 'nn': [0, 1]}
-        expect = str(('aa', '1', 'nn', '[0, 1]', 'zz', '1.02','reference',str(self.refDir.resolve())))
-        self.model.parameters = pDict
-        key = self.model.key()
+        p_dict = {'zz': 1.02, 'aa': 1, 'nn': [0, 1]}
+        expect = p_dict|dict(reference=self.model.reference)
+        self.model.parameters = p_dict
+        key = self.model.attrs_for_key()
         self.assertEqual(key, expect)
-        # test that small real differences don't cause any differences.
-        pDict = {'zz': 1.0200001, 'aa': 1, 'nn': [0, 1]}
-        self.model.parameters = pDict
-        key = self.model.key()
-        self.assertEqual(key, expect)
+
 
     def test_archive(self):
         # test archiving works

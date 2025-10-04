@@ -944,14 +944,14 @@ class HadCM3(Model):
         return self.initHist_nlcfiles(oinitialV, nl_var='OINITIAL')
 
     @register_param("ensembleMember")
-    def ens_member(self, ensMember: typing.Optional[int]) -> None:
+    def ens_member(self, ens_member: typing.Optional[int]) -> None:
         """
         Do nothing as for HadCM3 random perturb is from name.
-        :param ensMember: ensemble member. The ensemble member wanted.
+        :param ens_member: ensemble member. The ensemble member wanted.
         :return: None (for now) as nothing done.
         """
 
-        inverse = (ensMember is None)
+        inverse = (ens_member is None)
         if inverse:
             my_logger.warning("Can not invert ensMember")
             return None

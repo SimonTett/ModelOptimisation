@@ -16,12 +16,12 @@ import warnings
 import functools
 
 """
-TODO to have multiple models to compute a single set of observations.
-Approach will be to have a user supplied function which takes self, dict of parameters, calls make_model for each model and then combines the results.
-Writer of the function handles dependencies. Function will return pandas series  or None if nothing. For *now* all models will use the same post-processing.
+ For *now* all models will use the same post-processing.
 So only thing that can differ is fixed parameters or reference model. Not even model type etc.
 Type information for the function is:
  typing.Callable[[runSubmit, dict], typing.Optional[pd.Series]]
+ 
+ CURRENT PROBLEM: how to sensibly add reference to model keys
  
  Providing logical information about the parameters, observations etc to runSubmit so they can be plotted as opposed to the individual models.
     # simulated_obs:pd.DataFrame # the simulated observations for the evaluations (which might require multiple model evaluations). Index based on names
@@ -224,6 +224,9 @@ class runSubmit(SubmitStudy):
         :param params: dictionary of parameters
         :return: Model object
         """
+        # add reference model to params if not already there.
+        if 'reference' not in params and self.refDir is not None:
+            params['reference'] = self.refDir
         model = self.get_model(params)
         if model is None:  # no model so time to create one.
             model = self.create_model(params)  # returns None if no model was created.
@@ -401,10 +404,13 @@ class runSubmit(SubmitStudy):
             else:
                 pass # all ok.
 
+
+
         name = self._logical_info.name(params) # get the name based on the params. This will also store the params.
         # For now no caching of obs or cost. Could be done if needed. TODO insert caching if needed.
         ## Try and compute all observations wanted.
         obs = [] # where we will store the obs for each ensemble member.
+
         for ens_member in range(n_ensemble): # loop over ensemble members
             # We try and get all the ensemble members and then return None if any need running.
             # Do this so have a full list of cases to run to allow parallelism.
@@ -415,13 +421,15 @@ class runSubmit(SubmitStudy):
 
             # note that ensembleMember will be overwritten if it is in fixed_params or params. Checked above.
             if multi_config_fn is None: # simple calculation
-                full_params = ens_param|params|fixed_params
+                full_params = ens_param|params|fixed_params # needs to be using  python 3.9+ for | operator.
+                full_params.update(reference=str(self.expand(full_params.get('reference',self.refDir)))) # add in reference params if they are there.
                 sim_obs = self.make_model(full_params ).simulated_obs
                 self._logical_info.store_key(name,full_params)
                 # merge params and fixed_params. simulated_obs is None if model not run.
             else:
                 # set up dict containing all parameters for each model and then run multi_config_fn.
                 all_params = {k: (ens_param | params | fp ) for k,fp in fixed_params.items()} # needs to be using  python 3.9+ for | operator.
+                # Make sure reference is in each set of params.
                 # now call multi_config_fn on the dict that was constructed.
                 sim_obs = multi_config_fn(self, all_params) # obs will be None if any models need running.
                 if sim_obs is not None and not isinstance(sim_obs, pd.Series):

@@ -973,6 +973,10 @@ class TestRunParams(unittest.TestCase):
         fake_function = fake_run(run_submit)
         config = run_submit.run_params() # should run.
         self.assertIsInstance(config,StudyConfig.OptClimConfigVn3)
+        # check for multiple params sets
+        run_submit = copy.deepcopy(self.rSubmit)
+        run_params = copy.deepcopy(self.run_params)
+
 
 
 

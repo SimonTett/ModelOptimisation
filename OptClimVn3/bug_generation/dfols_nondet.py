@@ -71,7 +71,7 @@ for num,(std,good) in enumerate(zip(std_sconfig.model_index.keys(),good_sconfig.
 
 # lets work out the iter size for the std case
 for itc,it in enumerate(std_sconfig.iterations()):
-    if std in [i.key() for i in it]:
+    if std in [i.attrs_for_key() for i in it]:
         print(itc,len(it))
 
 

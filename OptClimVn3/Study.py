@@ -128,8 +128,7 @@ class Study:
         :param fpFmt: floating point format for floats
         :return: key
         """
-        # key = self.key(model.parameters, fpFmt=fpFmt)  # Generate key.
-        key = model.key(fpFmt=fpFmt)
+        key = self.key(model.attrs_for_key(), fpFmt=fpFmt)  # Generate key.
         return key
 
     @staticmethod
@@ -143,20 +142,25 @@ class Study:
         """
 
         keys = []
-        paramKeys = sorted(parameters.keys())  # fixed ordering
+        param_keys = sorted(parameters.keys())  # fixed ordering
 
         # deal with variable parameters -- produced by optimisation so have names and values.
-        for k in paramKeys:  # iterate over keys in sorted order.
+        for k in param_keys:  # iterate over keys in sorted order.
             keys.append(k)
             v = parameters[k]
             if isinstance(v, float):
                 keys.append(fpFmt % v)  # float point number so use formatter.
+            elif isinstance(v,str):
+                keys.append(v)  # string so just append
+            elif isinstance(v,pathlib.PurePath): # pathlib object # Path inherits from PurePath
+                keys.append(str(v))  # convert path to string
             else:  # just append the value.
                 keys.append(repr(v))  # use the object repr method.
+
         keys = tuple(keys)  # convert to tuple
         return str(keys)  # and then to a string.
 
-    def get_model(self, parameters: typing.Mapping, fpFmt: str = '%.4g') -> Model:
+    def get_model(self, parameters: typing.Mapping, fpFmt: str = '%.4g') -> typing.Optional[Model]:
         """
         Return model  that matches key generated from parameters or None if not match.
         :param parameters: parameters as a dict

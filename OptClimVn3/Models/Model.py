@@ -46,7 +46,7 @@ To add a new model you likely need to do, at least, the following:
 Do write tests for your new Model testing your new and modified methods.
 
 """
-from __future__ import annotations # TODO remove use of this.
+
 
 import copy
 import functools
@@ -986,43 +986,32 @@ class Model(ModelBaseClass, journal):
         self.config_path.unlink(missing_ok=True)
         return True
 
-    def key(self, fpFmt: str = '%.4g') -> str:
+    def attrs_for_key(self) -> dict:
         """
-        Generate key from keys and values in self.parameters and from reference.
-        This should be unique (to some rounding on float parameters)
-        :param fpFmt -- format to convert float to string. (Default is %.4g)
+        Return dict  that can be used to generate a key for this model.
         :return: a tuple as an index. tuple is key_name, value in sorted order of key_name.
         """
-        keys = []
-        paramKeys = sorted(self.parameters.keys())  # fixed ordering
-        # Iterate over sorted parameter names.
-        for k in paramKeys:  # iterate over keys in sorted order.
-            keys.append(k)
-            v = self.parameters[k]
-            if isinstance(v, float):
-                keys.append(fpFmt % v)  # float point number so use formatter.
-            else:  # just append the value.
-                keys.append(repr(v))  # use the object repr method.
-        # add on the reference
-        keys.extend(['reference',str(self.reference)])
-        keys = tuple(keys)  # convert to tuple
-        return str(keys)  # and then to a string.
+
+        params = self.parameters.copy()
+        params.update(reference=self.reference)  # add reference
+
+        return params
 
     @register_param("ensembleMember")
-    def ens_member(self, ensMember: typing.Optional[int]) -> None:
+    def ens_member(self, ens_member: typing.Optional[int]) -> None:
         """
         Do nothing as perturbing initial conditions is model-specific. But needed
          for test cases.
-        :param ensMember: ensemble member. The ensemble member wanted.
+        :param ens_member: ensemble member. The ensemble member wanted.
         :return: None (for now) as nothing done.
         """
 
-        inverse = (ensMember is None)
+        inverse = (ens_member is None)
         if inverse:
             my_logger.warning("Can not invert ensMember")
             return None
 
-        my_logger.warning(f"Nothing set for {ensMember}. Override in your own model")
+        my_logger.warning(f"Nothing set for {ens_member}. Override in your own model")
         return None
 
 
@@ -1151,7 +1140,7 @@ class Model(ModelBaseClass, journal):
         return dct
 
     @classmethod
-    def from_dict(cls, dct: dict) -> Model:
+    def from_dict(cls, dct: dict) -> "Model":
         """
         Convert a dict representing the Model to a Model object.
         :param dct: dict to be converted to a model

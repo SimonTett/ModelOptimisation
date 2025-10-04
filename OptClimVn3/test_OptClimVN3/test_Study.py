@@ -147,9 +147,9 @@ class TestStudy(unittest.TestCase):
 
 
     def test_key_for_model(self):
-        pDict = {'zz': 1.02, 'aa': 1, 'nn': [0, 1]}
-        expect = str(('aa', '1', 'nn', '[0, 1]', 'zz', '1.02'))
-        model = Model(name='test_model',reference=self.reference,parameters=pDict)
+        p_dict = {'zz': 1.02, 'aa': 1, 'nn': [0, 1]}
+        expect = str(('aa', '1', 'nn', '[0, 1]','reference',str(self.reference), 'zz', '1.02'))
+        model = Model(name='test_model',reference=self.reference,parameters=p_dict)
         mkey = self.study.key_for_model(model)
         self.assertEqual(expect,mkey)
 
@@ -160,13 +160,13 @@ class TestStudy(unittest.TestCase):
         """
 
         # test key for mixed params is as expected
-        pDict = {'zz': 1.02, 'aa': 1, 'nn': [0, 1]}
+        p_dict = {'zz': 1.02, 'aa': 1, 'nn': [0, 1]}
         expect = str(('aa', '1', 'nn', '[0, 1]', 'zz', '1.02'))
-        key = self.study.key(pDict)
+        key = self.study.key(p_dict)
         self.assertEqual(key, expect)
         # test that small real differences don't cause any differences.
-        pDict = {'zz': 1.0200001, 'aa': 1, 'nn': [0, 1]}
-        key = self.study.key(pDict)
+        p_dict = {'zz': 1.0200001, 'aa': 1, 'nn': [0, 1]}
+        key = self.study.key(p_dict)
         self.assertEqual(key, expect)
 
     def test_get_model(self):
@@ -176,12 +176,11 @@ class TestStudy(unittest.TestCase):
         """
         # first case -- one we already have.
         m = list(self.study.model_index.values())[4] # read a model
-
-        m2 = self.study.get_model(m.parameters)
+        m2 = self.study.get_model(m.parameters|dict(reference=m.reference))
         self.assertEqual(m, m2)
 
         # and one we don;t have -- should return None
-        params=dict(fred=2,harry=3)
+        params=dict(fred=2,harry=3)|dict(reference=m.reference)
         m3 = self.study.get_model(params)
         self.assertIsNone(m3)
 
