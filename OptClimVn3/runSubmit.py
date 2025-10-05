@@ -15,30 +15,7 @@ import optclim_exceptions
 import warnings
 import functools
 
-"""
- For *now* all models will use the same post-processing.
-So only thing that can differ is fixed parameters or reference model. Not even model type etc.
-Type information for the function is:
- typing.Callable[[runSubmit, dict], typing.Optional[pd.Series]]
- 
- CURRENT PROBLEM: how to sensibly add reference to model keys
- 
- Providing logical information about the parameters, observations etc to runSubmit so they can be plotted as opposed to the individual models.
-    # simulated_obs:pd.DataFrame # the simulated observations for the evaluations (which might require multiple model evaluations). Index based on names
-    # These are raw -- i.e. before scaling, transform or residual calculations done. Only present where all needed models have been run.
-    # parameters:pd.DataFrame # the parameters for the models. Indexing is the same as simulated_obs.
-    # cost -- pd.Series # the estimated cost for each model evaluation. Indexing is the same as simulated_obs. Will apply scaling and transform if provided. 
-    # other_information:pd.DataFrame # other information about the models. Indexing is the same as simulated_obs.
-    #     #         Will contain: number of ensemble members, iteration number, index within iteration.
-    # extra_params: dict[str,dict[str,dict[str,float_int_or_string]] # extra params for each model evaluation. str is the name. 
-    And the parameter dict has key  based on ensemble_member and the extra_parameters dict! 
-    # names: dict[str] -- dict of names indexed by key generated from parameters. name will be a function of iteration number & index within iteration.
-    Have fn name which takes list of parameters. Looks them all  up in names. If any missing will  compute current iteration number from max of current iteration number. 
-          If all missing increases iteration number. For those not there generates names,  adds to names, updates other_information, parameters. 
-           Returns list of names.
-    In the main bit of the call the observations and cost are updated if have values. 
 
-"""
 my_logger=logging.getLogger(f"OPTCLIM.{__name__}")
 
 class LogicalInfo(model_base):
@@ -148,7 +125,13 @@ class runSubmit(SubmitStudy):
        runJacobian is fairly simple and might form a good model for this. See runAlgorithm.py which is the script that
        runs the whole system.
 
-        """
+
+     For *now* all models will use the same post-processing.
+    So only thing that can differ is fixed parameters or reference model. Not even model type etc.
+    Type information for the function is:
+     typing.Callable[[runSubmit, dict], typing.Optional[pd.Series]]
+
+    """
 
     def __init__(self,
                  config: typing.Optional[OptClimConfigVn3],
