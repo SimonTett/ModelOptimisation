@@ -790,7 +790,8 @@ class testRunSubmit(unittest.TestCase):
             "control": {"Delta_SST": 0},
             "plus4k": {"Delta_SST": 1.0}
         }
-        from example_multiparam import ctl_plus4k # get simple multimodel function
+
+        from OptClimVn3.scripts.example_multiparam import ctl_plus4k # get simple multimodel function
 
         result = r_submit.comp_logical_obs(params, fixed_params, n_ensemble=2,multi_config_fn=ctl_plus4k)
         self.assertEqual(len(r_submit.model_index), 4, "Should have four models for multimodel function and nEns=2")
