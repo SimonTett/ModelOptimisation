@@ -55,7 +55,7 @@
         "initScale_comment": "If true then startParams range from 0 to 1 where 0 means min value; 1 max value.",
         "fixedParams": {
             "_comment": " List of parameters and values that are fixed and not modified in optimisation. Set to null to use default values",
-            "multiple_function": "example_multiparam.ctl_plus4k",
+            "multiple_function": "$OPTCLIMTOP/OptClimVn3/scripts/example_multiparam.ctl_plus4k",
             "multiple_function_comment":"Module path with function at the end. Everything should be dot separated. If provided then fixedParams has multiple configurations and this function will combine them.",
             "control": {
                 "START_TIME": "1998-12-01",

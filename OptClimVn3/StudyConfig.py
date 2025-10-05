@@ -1,4 +1,5 @@
 """
+TODO: (re)sort use of modules as code not nesc in search path.
 Provides classes and methods suitable for manipulating study configurations.  Includes two useful classes:
     fileDict which designed to provide some kind of permanent store across  invocations of the framework. 
 
@@ -2601,18 +2602,28 @@ class OptClimConfigVn3(OptClimConfigVn2):
 
     def fixed_param_function(self) -> typing.Optional[type_fixed_param_function]:
         """
-        Extract the function from string. Note will import the module that contains the function.
+        Extract the function from string. Note will import the file that contains the function.
         Be very careful...
 
         :return: function or None if no multiple_function found.
         """
-        import importlib
+        import importlib.util
+        import sys
         fn_test = self.getv('initial').get('fixedParams', {}).get('multiple_function', None)
         if fn_test is None:
             return fn_test
-        module, fn_name = fn_test.rsplit('.', 1)
-        mod = importlib.import_module(module)  # import the module
-        fn: type_fixed_param_function = getattr(mod, fn_name)  # extract the function
+        path, fn_name = fn_test.rsplit('.', 1)
+        path = self.expand(path+'.py')  # expand it
+        if not path.is_file():  # path is a file so use that
+            raise FileNotFoundError(f"Cannot find file {path} for fixed parameter function")
+
+
+
+        spec = importlib.util.spec_from_file_location('noname_module_at_all', path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        fn: type_fixed_param_function = getattr(module, fn_name)  # extract the function
         return fn
 
     def set_none_std(self, params: dict) -> dict:

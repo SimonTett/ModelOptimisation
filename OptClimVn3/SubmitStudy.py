@@ -6,12 +6,6 @@ Porting hints:
 3) System assumes your model is setup to run on your cluster using a script which is setup for whatever Q system
    your computer uses.
 
-# TODO: Have some way of copying configuration somewhere else which handles messy business of changing paths.
-# Mainly so can run a model with different obs making use of the existing simulations.
-# Can use archive functionality...
-# have an UPDATE method which updates all model simulated observations by rerunning the processing with, potentially, updated
-# configuation file/code.
-# Will update the obs too.
 """
 from __future__ import annotations
 

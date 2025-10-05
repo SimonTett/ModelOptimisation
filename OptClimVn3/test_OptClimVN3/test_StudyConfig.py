@@ -336,7 +336,7 @@ class testStudyConfig(unittest.TestCase):
         c1.update(delta_SST=4.)
         c2 = fix
         c2.update(delta_SST=0.0)
-        fixparams=dict(config1=c1,config2=c2,multiple_function='example_multiparam.ctl_plus4k')
+        fixparams=dict(config1=c1,config2=c2,multiple_function='$OPTCLIMTOP/OptClimVn3/scripts/example_multiparam.ctl_plus4k')
         self.config.fixedParams(fixed_params=fixparams)
         fp = self.config.fixedParams()
         self.assertEqual(fp['config1'],fixparams["config1"])
@@ -349,7 +349,7 @@ class testStudyConfig(unittest.TestCase):
         c1.update(delta_SST=4.)
         c2 = fix
         c2.update(delta_SST=0.0)
-        fixparams = dict(config1=c1, config2=c2, multiple_function='example_multiparam.ctl_plus4k',multiple_configa_comment='Some  text')
+        fixparams = dict(config1=c1, config2=c2, multiple_function='$OPTCLIMTOP/OptClimVn3/scripts/example_multiparam.ctl_plus4k',multiple_configa_comment='Some  text')
         self.config.Config['initial']['fixedParams'] = fixparams
         fix_keys = self.config.fixedParams_keys()
         self.assertEqual(fix_keys,['config1','config2'])

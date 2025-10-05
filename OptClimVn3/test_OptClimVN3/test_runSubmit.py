@@ -204,8 +204,8 @@ class testRunSubmit(unittest.TestCase):
         # test that can run with multiple_function
         fixed_params = {
             "_comment": " List of parameters and values that are fixed and not modified in optimisation. Set to null to use default values",
-            "multiple_function": "example_multiparam.ctl_plus4k",
-            "multiple_function_comment":"Module path with function at the end. Everything should be dot separated. If provided then fixedParams has multiple configurations and this function will combine them.",
+            "multiple_function": "$OPTCLIMTOP/OptClimVn3/scripts/example_multiparam.ctl_plus4k",
+            "multiple_function_comment":"path with function at the end. Everything should be dot separated. If provided then fixedParams has multiple configurations and this function will combine them.",
             "control": {
                 "START_TIME": "1998-12-01",
                 "START_TIME_comment": "Start time as an iso string",
