@@ -704,29 +704,33 @@ class UM_rose_cylc8(UM_rose):
         script.unlink(missing_ok=True)  # unlink it if it exists.
         with script.open('wt') as f:
             f.write('#!/bin/bash --login\n')
-            f.write('export CYLC_VERSION=8\n') # make sure in cycl8 
-            cmd = ['cylc']
-            if script_type == 'submit':
-                cmd += ['vip','--no-run-name']
-            elif script_type == 'continue':
-                cmd += ['play','--no-run-name'] # might need a release as well.
-            elif script_type == 'clean':
-                cmd += ['clean']
+            f.write('export CYLC_VERSION=8\n') # make sure in cycl8
+            if script_type == 'clean':
+                f.write(f'cylc stop --now --now --max-polls=100 {self.suite_name}\n')
+                f.write(f'cylc clean --yes {self.suite_name}\n')
+
             else:
-                raise ValueError(f'Unknown script_type {script_type}')
-            if args:
-                cmd.append(args)
-            cmd.append(f'{self._puma_path(self.suite_dir)}')  # path to the suite dir.
-            # cylc does not like having names starting with .,- or numbers.
-            # if names starts with this pattern we will modify the name by adding X
-            # TODO -- if I want to clean or do anything do I need to use the modified name?
-            # in which case it needs to be stored somewhere.
-            if re.match(r'$[.,\-[0-9]',self.suite_dir.name):
-                my_logger.info('Adding X to name')
-                cmd.append(f'--workflow-name=X{self.suite_dir.name}')
-            f.write(' '.join(cmd) + '\n')
+                cmd = ['cylc']
+                if script_type == 'submit':
+                    cmd += ['vip','--no-run-name']
+                elif script_type == 'continue':
+                    cmd += ['play','--no-run-name'] # might need a release as well.
+                else:
+                    raise ValueError(f'Unknown script_type {script_type}')
+                if args:
+                    cmd.append(args)
+                cmd.append(f'{self._puma_path(self.suite_dir)}')  # path to the suite dir.
+                # cylc does not like having names starting with .,- or numbers.
+                # if names starts with this pattern we will modify the name by adding X
+                # TODO -- if I want to clean or do anything do I need to use the modified name?
+                # in which case it needs to be stored somewhere.
+                if re.match(r'$[.,\-[0-9]',self.suite_dir.name):
+                    my_logger.info('Adding X to name')
+                    cmd.append(f'--workflow-name=X{self.suite_dir.name}')
+                f.write(' '.join(cmd) + '\n')
         # set permissions to be executable
         script.chmod(0o755)
+        return
 
 
 

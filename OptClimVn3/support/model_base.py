@@ -10,6 +10,7 @@ import datetime
 
 import generic_json
 
+
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 
 
@@ -365,8 +366,15 @@ class model_base:
         """
         config_path.parent.mkdir(parents=True, exist_ok=True)
         my_logger.debug(f"Created {config_path.parent}")
-        with open(config_path, "w") as fp:
+        # write to a temp file and then rename it to avoid partial writes.
+        output_file = config_path.with_suffix('.tmp')
+        if output_file.exists():
+            output_file.unlink()  # remove it if it exists.
+        with open(output_file, "w") as fp:
             result = generic_json.dump(self, fp, indent=2)  # JSON encoder does the magic needed
+        if config_path.exists():
+            config_path.unlink()  # remove it if it exists.
+        output_file.rename(config_path)  # atomic operation
         my_logger.info(f"Wrote to {config_path}")
         return result
 

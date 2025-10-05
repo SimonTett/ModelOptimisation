@@ -18,7 +18,7 @@
 [runtime]
     [[OPTCLIM_HPC]]
     inherit = HPC_SERIAL
-    execution time limit = PT5M
+    execution time limit = PT10M
     [[[environment]]]
 	 DATAM = {{DATAM}}
 	 OPTCLIMTOP = {{OPTCLIMTOP}}
@@ -28,13 +28,17 @@
     [[optclim_pre]]
         inherit = OPTCLIM_HPC
         script = """
+        date +"%Y-%m-%d %H:%M:%S.%3N"
         . {{PY_ENV_SETUP}} # setup the environment. Could be in script-pre?
+        date +"%Y-%m-%d %H:%M:%S.%3N"
         {{OPTCLIM_SET_STATUS_SCRIPT}} {{OPTCLIM_ARGS}} {{MODEL_CONFIG}} RUNNING
         """
     [[optclim_post]]
         inherit = OPTCLIM_HPC
         script = """
+        date +"%Y-%m-%d %H:%M:%S.%3N"
         . {{PY_ENV_SETUP}} # setup the environment
+        date +"%Y-%m-%d %H:%M:%S.%3N"
         {{OPTCLIM_SET_STATUS_SCRIPT}} {{OPTCLIM_ARGS}} {{MODEL_CONFIG}} SUCCEEDED
         """
         ## need more time for optclim_post as could be copying lots of files
