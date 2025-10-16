@@ -18,7 +18,7 @@ import shutil
 genericLib.setup_env() # set up default env.
 
 
-class test_um_rose(unittest.TestCase):
+class test_umRose(unittest.TestCase):
     def setUp(self):
         """
         Setup case
@@ -30,24 +30,24 @@ class test_um_rose(unittest.TestCase):
                           )
         self.parameters = copy.deepcopy(parameters)
 
-        tmpDir = tempfile.TemporaryDirectory()
-        testDir = pathlib.Path(tmpDir.name)  # used throughout.
-        refDir = pathlib.Path(genericLib.expand('$OPTCLIMTOP/OptClimVn3/configurations/example_UM_rose/references/u-db898')) # ROSE config
-        simObsDir = genericLib.expand('$OPTCLIMTOP/test_in')
-        self.tmpDir = tmpDir  # really a way of keeping in context
-        self.testDir = testDir
+        tmp_dir = tempfile.TemporaryDirectory()
+        test_dir = pathlib.Path(tmp_dir.name)  # used throughout.
+        ref_dir = pathlib.Path(genericLib.expand('$OPTCLIMTOP/OptClimVn3/configurations/example_UM_rose/references/u-db898')) # ROSE config
+        sim_obs_dir = genericLib.expand('$OPTCLIMTOP/test_in')
+        self.tmpDir = tmp_dir  # really a way of keeping in context
+        self.testDir = test_dir
         # create a model and store it.
-        self.refDir = refDir
+        self.refDir = ref_dir
         filepath =os.environ['OPTCLIMTOP']+'/OptClimVn3/configurations/example_UM_rose/references/u-db898/OptClimVn3/configurations/example_UM_rose/references/u-db898'
         post_process = dict(script='$OPTCLIMTOP/OptClimVn3/scripts/comp_obs.py', output_file='obs.json')
         self.post_process = post_process
-        self.model = UKESM1_1(name='testM', reference=refDir,
-                            model_dir=testDir, suite_dir=testDir/'suite',post_process=post_process,
+        self.model = UKESM1_1(name='testM', reference=ref_dir,
+                            model_dir=test_dir, suite_dir=test_dir/'suite',post_process=post_process,
                             parameters=parameters)
 
         self.config_path = self.model.config_path
 
-        shutil.copy(simObsDir / '01_GN' / 'h0101' / 'observables.nc',
+        shutil.copy(sim_obs_dir / '01_GN' / 'h0101' / 'observables.nc',
                     self.model.model_dir / 'obs.nc')  # copy over a netcdf file of observations.
 
     def tearDown(self):
@@ -344,7 +344,8 @@ and even more text
 
         run_info = dict(
             prebuild=True,  # guess the prebuild file
-            use_scratch=True  # use scratch space. Means models get cleaned up after 28 days.
+            use_scratch=True,  # use scratch space. Means models get cleaned up after 28 days.
+            transfer_dir='some_test_dir'  # transfer directory
         )
         with patch.multiple(pathlib.Path, is_dir=MagicMock(return_value=True),
                             is_absolute=MagicMock(return_value=True),
@@ -355,6 +356,8 @@ and even more text
                             parameters=parameters,
                             run_info=run_info)
             self.assertEqual(model.parameters_no_key['prebuild'], str(expected_prebuild))
+            self.assertEqual(model.parameters_no_key['transfer_dir'], 'some_test_dir')
+
     def test_guess_prebuild(self):
         # check _guess_prebuild works
         model = self.model
@@ -374,6 +377,7 @@ and even more text
         for val in [None,False]:
             result = model.guess_prebuild(val)
             self.assertIsNone(result)
+
 
 ## specific tests.
 

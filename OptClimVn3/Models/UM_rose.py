@@ -11,7 +11,7 @@
 #  **Might** be fixed by changes to archive_root_path
 # 4) Have archiving on -- that puts data in archive_root_path which gets set to model_dir/output
 # 5) If archiving to JASMIN then set transfer_dir to something sensible which changes with the studies
-#    run names are unique per study but no guarantees beyond that...
+#    run names are unique per study but no guarantees beyond that... Can be set in run_info block
 # 6) Test your case works.
 
 # Possible further changes to creating  a UM_rose model
@@ -22,6 +22,32 @@
 # 5) Have a clean method which runs cylc clean. That could form part of the post_process step -- run after successfully running post process.
 #     have um_rose process method which calls the super class process and then runs cylc clean. Assuming that if post_process fails then get an error and not much happens!
 #     Probably a bad idea to have it run automatically. Perhaps a SubmitStudy method clean which runs clean on all models in the study. [Clean being model dependent]
+
+# Significant refactor -- have the suite dir be model_dir so just std approach. Extra files will go in there. Add a scripts dir and put the various modified scripts in there.
+# need remote_dir to be ~/optclim_jobs/name_$$ with a change if the name starts with a number.
+# ssh puma2 f"'mkdir -p {remote_dir}; echo $?'"
+# Submit installs model  dir on the remote machine. New install_remote method which install it. Use remote_dir for that.
+# Now have a suite_name different from the  name. suite_name is name_$$
+# How do we know if we are remote??  Depends on the platform. So add to run_info remote_install:bool. If True will install remotely.
+# When done ? part of submission I think. That will change  submit/clean/continue as the remote paths will be different.
+# rsync -av --exclude '.svn'  {suite_dir} puma2:{remote_dir}
+# Once installed then ssh the submit script.
+# ssh puma2 f"cd {remote_dir}; ./submit_script.sh"
+# Add to model state the name of the remote dir so can find it again.
+#  Add to processing an archive to transfer_dir on jasmin if set. Though that is making the code jasmin specific which goes against the
+#  idea of generalising it. Perhaps just use the global script to do the archiving which can be easily rewritten for other platforms.
+# So would have an archive script?? Add to model info some metadata from the multiple function. Would like the name used to be part of the model info.
+
+## More general approach so removes some of the archer2 specific stuff.
+# 1) Have a remote_install_dir which is the directory on the remote machine where the model is installed. If None then no remote install.
+# 2) Have a submit_node which is the node to submit the job on. submit_node & remote_install_dir used to construct rsync command and ssh command to submit the job.
+#   If null, and ssh_node is set then use ssh_node. [Current behaviour]
+# 3) Add remote_install method which remote installs the model. This method for Model to allow over ridding.
+# 4) engine currently uses ssh_node -- provide some way of overriding that on a per-method basis. This to support running the model.
+# 5) Still need pid in name as cylc uses a flat name space. That could be done as part of the cylc install. Can I use cylc install to install in cylc_run/study_name/run_name????
+#        It does look like can install in subdirectories of cylc-run. Which means no need for pid in the name. Though complication is that need to specify the "study name" somehow.
+# 6) Allow study name to be given to model instance.
+
 
 
 import fileinput
@@ -48,6 +74,8 @@ import pathlib
 from namelist_var import NamelistVar, GroupConfig
 
 
+
+
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")  # have this anywhere you want logging
 
 type_create_script = typing.Literal["submit", "continue", "clean"] # type def for various flavours of _create_script.
@@ -65,17 +93,18 @@ class UM_rose(Model):
       If None then when running() ran self.model_dir will be set to $ROSE_DATA/$DATAM if $ROSE_DATA defined
       Data is copied from this directory (if not None) to model_dir/'share/data/History_Data'  in succeeded().
 
-    Initialisation uses the following values from run_info which become variables -- see UM_rose_Parameters_c7.csv. :
+    Initialisation uses the following values from run_info which become variables -- see files in UM_rose_params :
     For the following variables values of None mean the suite is not modified.
         - runModelTime:str -- time as iso duration for model to run for.
         - runUser:str -- username to run the suite as.
         - runCode:str -- job code/account to run suite with.
         - prebuild:str|bool -- path to prebuild. Means much faster compilation
                               if bool and True will guess path from reference.
-                              This assumes on archer2 and user_id is the same as reference
+                              This assumes on archer2 and user_id is the same as reference.
 
-    - use_scratch:bool -- If True then use scratch space for work and share.
-                           Files here are deleted after 28 days,
+        - transfer_dir :str -- path to archive directory on jasmin.
+
+
     - OPTCLIM_ARGS :str -- arguments to pass to optclim scripts which get passed to set_status_script. Default ''
     - OPTCLIM_SET_STATUS_SCRIPT -- path to script which sets the status. (Uses self.set_status_script)
     - runEnvSetup:str -- path to the environment setup script.
@@ -148,11 +177,11 @@ class UM_rose(Model):
         # then the configs will point to the wrong place.
         self.configs = GroupConfig(root_dir=self.suite_dir)  # grouped configs for writing out generic namelists
 
-        # modify parameters_no_key to include runModelTime, runUser, runCode, OPTCLIM_ARGS, runEnvSetup,prebuild if set.
-        # Those parameters do not contribute towards the unique key used to identify the model.
+        # modify parameters_no_key to include runModelTime, runUser, runCode, OPTCLIM_ARGS, runEnvSetup,prebuild,transfer_dir if set.
+        # Those parameters do not contribute towards the unique key used to identify the model so go in parameters_no_key
         if self.run_info is not None:  # need to test for None as reloading of config gives us None.
             for key in ['runModelTime', 'runUser', 'runCode',
-                        'OPTCLIM_ARGS', 'runEnvSetup']:
+                        'OPTCLIM_ARGS', 'runEnvSetup','transfer_dir']:
                 if self.run_info.get(key) is not None:
                     # Get None if either null in the original  json config or not present
                     self.parameters_no_key[key] = self.run_info[key]
@@ -369,7 +398,6 @@ class UM_rose(Model):
     def update_suite_rc(self):
         """
         Update the cylc/rose suite.rc to include OptClim tasks.
-        If use_scratch set then update rose_suite.conf to use scratch space.
         """
         suite_file = self.suite_dir / self.suite_file_name
         genericLib.backup_file(suite_file, ext='.bak', create='copy')  # make a backup of the suite file.
@@ -383,15 +411,9 @@ class UM_rose(Model):
             suite_rc.write(f'\n\n%include {self.include_file_name}\n')
 
         if self.run_info.get('use_scratch', False):
-            self.set_scratch()  # cylc specific method to set scratch space.
-            # can modify rose-suite.conf elsewhere so back this up with a different name.
+            raise ValueError('use_scratch no longer supported. Modify your reference manually.')
 
-    def set_scratch(self):
-        """
-        This version will raise notImplementedError as how done depends on the cylc version.
-        :return:
-        """
-        raise NotImplementedError('This method is not implemented. It is cylc version specific. ')
+
 
     def copy_suite_apps(self):
         """Copy OptClim specific apps from the reference directory to the model directory"""
@@ -632,23 +654,6 @@ class UM_rose_cylc7(UM_rose):
         script.chmod(0o755)
 
 
-    def set_scratch(self):
-        """
-        Set the scratch space for the UM_rose cylc7 model.
-        This will update the rose-suite.conf file to use scratch space.
-        :return: nothing.
-        """
-        # ARCHER2
-        with fileinput.input(self.suite_dir / 'rose-suite.conf', inplace=True, backup='.bak_update') as f:
-            for line in f:
-                if f.isfirstline():  # first line
-                    print('## Scratch space being used')
-                    print(r'root-dir{share}=ln*=/mnt/lustre/a2fs-nvme/work/n02/n02/$USER')
-                    print(r'root-dir{work}=ln*=/mnt/lustre/a2fs-nvme/work/n02/n02/$USER')
-
-                print(line, end='')
-        my_logger.debug('Using scratch space for share and work space')
-
 
 class UM_rose_cylc8(UM_rose):
     """
@@ -659,19 +664,7 @@ class UM_rose_cylc8(UM_rose):
     include_file_name = 'optclim_c8.rc'
 
     # cylc 8 specific methods.
-    # to use scratch space need to change site/archer2.rc in the [[HPC]] section change platform from archer2 to archer2-nvme
-    # Can't be done by changing a variable as this is a jinja2 file :-(
-    # also need to change archer2-bg to archer2-nvme-bg
-    def set_scratch(self):
-        # need to change site/archer2.rc in the [[HPC]] section change platform from archer2 to archer2-nvme
-        # Can't be done by changing a variable as this is a jinja2 file :-(
-        # also need to change archer2-bg to archer2-nvme-bg
-        self.replace_file(self.suite_dir / 'rose-suite.conf',
-                          r'^\s*platform\s*=\s*archer2\s*$',
-                          'platform = archer2-nvme')
-        self.replace_file(self.suite_dir / 'rose-suite.conf',
-                          r'^\s*platform_bg\s*=\s*archer2-bg\s*$',
-                          'platform_bg = archer2-nvme-bg')
+
 
     def _create_script(self,
                        script_type: type_create_script,
