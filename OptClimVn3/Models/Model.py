@@ -581,6 +581,7 @@ class Model(ModelBaseClass, journal):
          implementations of create_model, modify_model and set_params.
         Will verify that (if defined) post-processing script exists failing if not
         Also, should make any changes needed to those files.
+        Also runs install_remote using run_info['remote_machine'] and run_info['remote_dir'] if they are not None.
         :return:
         """
         self.fake = self.fake or fake
@@ -594,8 +595,15 @@ class Model(ModelBaseClass, journal):
             for file in [self.submit_script, self.continue_script]:
                 if file is not None:
                     (self.model_dir / file).chmod(0o755)  # set permission
+            ok=self.install_remote(remote_machine=self.run_info.get('remote_machine'),
+                                remote_dir=self.run_info.get('remote_dir'))
+            # If not defined in run_info then values will be None and will just return True
+            if not ok:
+                raise RuntimeError('Failed to remote_install')
+
         else:
             self.fake = True # we are faking now!
+        # possibly do remote_install
 
         self.set_status('INSTANTIATED')
 

@@ -334,7 +334,8 @@ class ModelTestCase(unittest.TestCase):
         got = self.model.read_params(list(expect_dir.keys()))
         self.assertEqual(expect_dir, got)
 
-    def test_instantiate(self):
+    @unittest.mock.patch("Model.Model.install_remote", autospec=True)
+    def test_instantiate(self,mck_install):
         """
         Test instantiate method.
           Files should exist.  There should be .bak files for those namelists that got changed.
@@ -348,6 +349,7 @@ class ModelTestCase(unittest.TestCase):
 
         omodel = copy.deepcopy(self.model)
         self.model.instantiate()
+        self.assertEqual(mck_install.call_count, 1)  # called install_remote.
 
         mm = myModel.load_model(self.config_path)
         self.assertEqual(mm.to_dict(), self.model.to_dict())
@@ -360,7 +362,7 @@ class ModelTestCase(unittest.TestCase):
         bak_count = 0
         # how many .bak files do we expect?
         nls = self.model.gen_params()  # gt the namelist files that have changed.
-        nl_changed_files = set([self.model.model_dir/d.filepath for d in nls.keys()]) # files that are changed and so should have .bak files.
+        nl_changed_files = set([self.model.config_dir/d.filepath for d in nls.keys()]) # files that are changed and so should have .bak files.
 
         expected_bak_count = len(nl_changed_files)
 

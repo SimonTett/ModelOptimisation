@@ -7,7 +7,6 @@ import tempfile
 import copy
 import pathlib
 from Model import Model
-from simple_model import simple_model
 from SubmitStudy import SubmitStudy
 import StudyConfig
 
