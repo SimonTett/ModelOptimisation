@@ -188,8 +188,9 @@ class TestEngine(unittest.TestCase):
     def test_connect_fn(self):
         eng = engine.abstractEngine.create_engine('SGE',ssh_node='ssh_node')
         result = eng.connect_fn([])
-        self.assertEqual(result[0:2],['ssh','ssh_node'])
-        # cmd 3 includes lots of stuff.
+        expected = ['ssh','-q','-o','batchmode=yes','-o','StrictHostKeyChecking=yes']
+        self.assertEqual(result[0:len(expected)],expected)
+
 
 
 if __name__ == '__main__':

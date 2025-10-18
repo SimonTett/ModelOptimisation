@@ -15,6 +15,7 @@ import typing
 import pathlib
 from abc import ABCMeta, abstractmethod
 from subprocess import CalledProcessError
+import shlex # for protecting commands with spaces etc.
 
 from model_base import model_base, journal  # so can save things. The default to_dict, from_dict should work.
 
@@ -86,9 +87,11 @@ class abstractEngine(model_base, journal):
             rundir = '$PWD'  # path at time of running (on linux systems)
         s = f"cd {str(rundir)}; export PYTHONPATH=$PYTHONPATH ; export PATH=$PATH; export OPTCLIMTOP=$OPTCLIMTOP; " + \
             " ".join([str(c) for c in cmd])
+        # sanitize the command -- in case there are spaces etc.
+        s = shlex.quote(s)
         # run_cmd (which will eventually run the command) will expand env variables with values, at the time it is run.
         my_logger.debug(f"{s} will be run on {self.ssh_node}")
-        return ['ssh', self.ssh_node, s]
+        return ['ssh','-q','-o','batchmode=yes','-o','StrictHostKeyChecking=yes',self.ssh_node, s]
 
     def __eq__(self, other):
         """

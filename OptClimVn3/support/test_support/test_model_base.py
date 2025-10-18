@@ -196,9 +196,58 @@ class Test_history(unittest.TestCase):
         with self.assertRaises(subprocess.SubprocessError):
             self.history.run_cmd(['ls'])
 
+    @unittest.mock.patch("model_base.journal.run_cmd", autospec=True)
+    def test_run_remote_command(self,mck_run_cmd):
+        """
+        Test that run_remote_command works as expected.
+        :param mck_run_cmd: mck of run_cmd which run_remote_cmd runs
+        :return:
 
+        Implements the following test cases.
+        1) run_cmd has the appropriate argument list when run_remote_command is called
+          with remote_machine = 'puma2' and remote_command = pathlib.PurePath('/bin/ls')
+          and with appropriate mock to mck_run_cmd gives expected value.
+        2) ValueError is raised if remote_machine is not a string
+        3) ValueError is raised if remote_command is not a PurePath
+        """
+        # python
 
+    @unittest.mock.patch("model_base.journal.run_cmd", autospec=True)
+    def test_run_remote_command(self, mck_run_cmd):
+        """
+        Test that run_remote_command:
+          1) calls journal.run_cmd(self, cmd_list) with an ssh command containing
+             - ssh, -q, an -o BatchMode=... option, the remote machine and the remote path.
+          2) raises ValueError if remote_machine is not a string
+          3) raises ValueError if remote_command is not a pathlib.PurePath
+        """
+        # 1) correct argument list and return value propagation
+        mck_run_cmd.return_value = "ssh-ok"
+        remote_machine = 'puma2'
+        remote_command = pathlib.PurePath('/bin/ls')
 
+        result = self.history.run_remote_command(remote_machine, remote_command)
+
+        mck_run_cmd.assert_called_once()
+        # call_args -> ((self.history, cmd_list), {})
+        called_self, called_cmd = mck_run_cmd.call_args[0]
+        self.assertIs(called_self, self.history)
+        self.assertIsInstance(called_cmd, list)
+        self.assertEqual(result, mck_run_cmd.return_value)
+
+        # called run_cmd with expected args??
+        expected_cmd = ['ssh','-q','-o','batchmode=yes','-o','StrictHostKeyChecking=yes',
+                        remote_machine, str(remote_command.as_posix())]
+
+        self.assertEqual(called_cmd, expected_cmd)
+
+        # 2) remote_machine not a string -> ValueError
+        with self.assertRaises(ValueError):
+            self.history.run_remote_command(123, remote_command)
+
+        # 3) remote_command not a pathlib.PurePath -> ValueError
+        with self.assertRaises(ValueError):
+            self.history.run_remote_command(remote_machine, '/bin/ls')
 
 
 if __name__ == '__main__':

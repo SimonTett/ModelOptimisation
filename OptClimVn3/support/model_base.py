@@ -7,6 +7,7 @@ import numpy as np
 import subprocess
 import typing
 import datetime
+import shlex
 
 import generic_json
 
@@ -123,20 +124,21 @@ class journal:
         # issue is that fileNotFound will get returned if a file does not exist. Would need to
         # convert to subprocess.CalledProcessError
         args.update(**kwargs)
-        cmd_to_run = [os.path.expandvars(c) for c in cmd]
-        cmd_report = " ".join(cmd_to_run)
+        cmd_to_run = [shlex.quote(os.path.expandvars(c)) for c in cmd]
         # using expandvars so any shell variables in command are expanded.
+        cmd_report = " ".join(cmd_to_run) # if something goes wrong report this command.
+        # Makes it easier to run command and see what happened.
         try:
-            my_logger.debug(f"Running {' '.join(cmd_to_run)}")
+            my_logger.debug(f"Running {cmd_report}")
             output = subprocess.check_output(cmd_to_run, **args)  # run cmd
         except subprocess.CalledProcessError as e:
-            str=f"""{cmd_report} failed.
+            s=f"""{cmd_report} failed.
             STDOUT 
             {e.output}
             {"=" * 60}
             STDERR 
             { e.stderr}"""
-            my_logger.warning(str)
+            my_logger.warning(s)
             raise
         except FileNotFoundError as e:  # cmd not found
             raise subprocess.CalledProcessError(
@@ -146,8 +148,29 @@ class journal:
                 stderr=e.strerror,
             ) from None
 
-        self.store_output(cmd, output)
+        self.store_output(cmd, output) # and store the output.
         return output
+
+
+    def run_remote_command(self, remote_machine:str,
+                           remote_path:pathlib.PurePath) -> str:
+        """
+        run remote_cmd on remote system.
+        :param remote_machine: remote machine name. Any form that ssh accepts.
+        :param remote_path: remote path for command. Should be a PurePath.
+        :return: stdout from running the command.
+        """
+        # check variable types are correct.
+        if not isinstance(remote_path,pathlib.PurePath):
+            raise ValueError(f"remote_path {remote_path} is not a PurePath")
+        if not isinstance(remote_machine, str):
+            raise ValueError(f"remote_node {remote_machine} is not a str")
+
+        remote_cmd = remote_path.as_posix()  # get as posix path for remote machine.
+        cmd = ['ssh','-q','-o','batchmode=yes','-o','StrictHostKeyChecking=yes', remote_machine, remote_cmd]
+        result = self.run_cmd(cmd) # will raise exceptions if it fails and runs shlex.quote on args.
+        my_logger.debug(f"ssh run result: {result}")
+        return result
 
 
 

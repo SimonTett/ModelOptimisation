@@ -11,6 +11,7 @@ import time
 import unittest
 import unittest.mock
 import tarfile
+import shlex
 
 import StudyConfig  # so can read in a config for fake_fn.
 import numpy as np
@@ -408,10 +409,14 @@ class ModelTestCase(unittest.TestCase):
             # args is a tuple of the arguments (just one list in this case)
             name = f"{model.name}{len(model.model_jids):05d}"
             outdir = model.model_dir / 'model_output'
-            scmd = (self.eng.submit_cmd([str(model.model_dir / 'submit.sh')], name,
+            scmd = self.eng.submit_cmd([str(model.model_dir / 'submit.sh')], name,
                                         rundir=model.model_dir,
-                                        outdir=outdir, time=2000),)
-            self.assertEqual(mock_chk.call_args.args, scmd)
+                                        outdir=outdir, time=2000)
+            scmd = [shlex.quote(s) for s in scmd]
+            #scmd = (scmd, )
+
+
+            self.assertEqual(mock_chk.call_args.args[0], scmd)
 
             # also expect changes in status & history
             self.assertEqual(len(model._history), 2)
@@ -419,10 +424,12 @@ class ModelTestCase(unittest.TestCase):
             self.assertEqual(v, [f"Status set to SUBMITTED in {model.model_dir}"])
             # now check that a post-processing script got submitted.
             sub_script = [str(model.set_status_script), str(model.config_path), 'PROCESSED']
-            expect_output = dict(cmd=self.eng.submit_cmd(sub_script, f"PP_{model.name}",
+            scmd = self.eng.submit_cmd(sub_script, f"PP_{model.name}",
                                                          outdir=model.model_dir / 'PP_output',
                                                          rundir=model.model_dir,
-                                                         time=1800, hold=True), result='Your job 123456')
+                                                         time=1800, hold=True)
+            #scmd = [shlex.quote(s) for s in scmd]
+            expect_output = dict(cmd=scmd, result='Your job 123456')
             got = list(model._output.values())[0][0]
             self.assertEqual(got, expect_output)
 
@@ -438,17 +445,18 @@ class ModelTestCase(unittest.TestCase):
 
             name = f"{model.name}{len(model.model_jids):05d}"
             outdir = model.model_dir / 'model_output'
-            scmd = (self.eng.submit_cmd([str(model.model_dir / 'continue.sh')], name,
+            scmd = self.eng.submit_cmd([str(model.model_dir / 'continue.sh')], name,
                                         rundir=model.model_dir,
-                                        outdir=outdir, time=2000),)
-            self.assertEqual(mock_chk.call_args.args, scmd)
+                                        outdir=outdir, time=2000)
+            lex_scmd = [shlex.quote(s) for s in scmd]
+            self.assertEqual(mock_chk.call_args.args[0], lex_scmd)
 
             # also expect changes in status & history,
             self.assertEqual(len(model._history), 2)
             k, v = model._history.popitem()  # remove last history entry.
             self.assertEqual(v, [f"Status set to SUBMITTED in {model.model_dir}"])
-            expect_output = dict(cmd=scmd[0], result='Your job 123457')
-            got = list(model._output.values())[-1][0]  # TODO fixme This test failing.
+            expect_output = dict(cmd=scmd, result='Your job 123457')
+            got = list(model._output.values())[-1][0]  # get last output
             self.assertEqual(got, expect_output)
 
             # test that submit_cmd works. Will still be continuing!
@@ -603,7 +611,7 @@ class ModelTestCase(unittest.TestCase):
         model.simulated_obs=None # reset obs to None
         # use fake_fn to generate some fake obs!
         fake_obs = self.fake_fn().to_dict()
-        # and write them out for process to read! 
+        # and write them out for process to read!
         with open(model.model_dir / model._post_process_output, 'w') as fp:
             generic_json.dump(fake_obs, fp)
 
@@ -921,7 +929,7 @@ class ModelTestCase(unittest.TestCase):
         # change the status in memory
         model.status='NO WAY'
         model.reload()
-        model == cpy_model 
+        model == cpy_model
         self.assertEqual(model,cpy_model) # should be the same
 
     """
@@ -984,6 +992,44 @@ class ModelTestCase(unittest.TestCase):
         model = self.model
         model.instantiate()
         self.assertEqual(model.calendar(),'standard')
+
+    @unittest.mock.patch("model_base.journal.run_cmd", autospec=True)
+    def test_install_remote(self,mck_run_cmd):
+        """
+        Test that install_remote works.
+
+        Does the following tests:
+        1) Case works and gives what we expected!
+        2) If either remote_machine or remote_dir are None that mck.call_count is still 1.
+
+        :return:
+        """
+        remote_machine = 'some_random_computer'
+        remote_dir = pathlib.PurePath('fred/harry')
+        expected_cmd = ['rsync','-a','-q',f"{self.model.model_dir}",f"{remote_machine}:{remote_dir.as_posix()}/"]
+
+        result = self.model.install_remote(remote_machine=remote_machine, remote_dir=remote_dir)
+        self.assertTrue(result)
+        self.assertEqual(mck_run_cmd.call_count, 1)
+        self.assertEqual(mck_run_cmd.call_args[0][1], expected_cmd)
+
+        # remote_match is None
+        result = self.model.install_remote(remote_machine=None, remote_dir=remote_dir)
+        self.assertTrue(result)
+        self.assertEqual(mck_run_cmd.call_count, 1)
+
+        # remote_dir is None
+        result = self.model.install_remote(remote_machine=None, remote_dir=remote_dir)
+        self.assertTrue(result)
+        self.assertEqual(mck_run_cmd.call_count, 1)
+
+        # failure if remote_dir is not a pure path or None
+        with self.assertRaises(ValueError) as err:
+            result = self.model.install_remote(remote_machine=remote_machine, remote_dir=str(remote_dir))
+        with self.assertRaises(ValueError) as err:
+            result = self.model.install_remote(remote_machine=123456, remote_dir=remote_dir)
+
+
         
 
 

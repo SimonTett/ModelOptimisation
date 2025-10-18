@@ -70,6 +70,7 @@ from model_base import journal
 from ModelBaseClass import ModelBaseClass, register_param
 from namelist_var import NamelistVar,GroupConfig,type_allowed_fortran
 from engine import abstractEngine
+import shlex
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 
@@ -1403,6 +1404,41 @@ class Model(ModelBaseClass, journal):
         :return: string representing the calendar for this model which will be 'standard'
         """
         return 'standard'
+
+    def install_remote(self,
+                       remote_machine:typing.Optional[str]=None,
+                       remote_dir:typing.Optional[pathlib.PurePath]=None) -> bool:
+        """
+        Install model on remote system.
+        :param remote_machine: remote machine -- remote machine to install on.
+        If None will return True and do nothing
+        :param remote_dir: remote directory to install to.
+          self.model_dir will be copied to remote_machine:remote_dir/self.model_dir.name
+         uses rsync to copy model directory to remote system.
+        If remote_dir is None then nothing is done and True is returned.
+        :raises ValueError: if remote_dir is not Nome and not a PurePath or if run_info does not contain model_run_host
+        :return: True if installed, False if not.
+        """
+        if (remote_dir is None) or (remote_machine is None):
+            my_logger.debug(f"Remote machine or  remote dir are not set.")
+            return True # nothing to be done.
+        # check variable types are correct.
+        if not isinstance(remote_dir,pathlib.PurePath):
+            raise ValueError(f"remote_dir {remote_dir} is not a PurePath")
+        if not isinstance(remote_machine,str):
+            raise  ValueError(f"remote_machine {remote_machine} is not a string")
+        my_logger.info(f"Installing {self.name} to {remote_dir} on remote system")
+
+        remote_path = pathlib.PurePath(remote_dir).as_posix().rstrip('/') # get as posix path for remote machine.
+        # above from chat-5 mini when asked for security guidance.
+        #cmd = ['ssh','-q','-o','batchmode=yes',remote_machine,f"mkdir -p {str(remote_dir)}"]
+        #result = self.run_cmd(cmd) # make remote dir. Note that run_cmd uses shlex.quote
+        # now rsync the workflow dir to the remote dir. rsync will create remote_dir if it does not exist.
+        cmd = ['rsync','-a','-q',f"{self.model_dir}",f"{remote_machine}:{remote_path}/"]
+        result = self.run_cmd(cmd) # will raise exceptions if it fails and runs shlex.quote on args.
+        my_logger.debug(f"rsync result: {result}")
+        return True
+
 
 
 Model.register_class(Model)  # register ourselves!
