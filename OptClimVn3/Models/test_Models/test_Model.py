@@ -207,7 +207,8 @@ class ModelTestCase(unittest.TestCase):
                       model_dir=self.testDir, parameters=pardict)
         cmd = [model.expand(self.post_process['script']), 'input.json', self.post_process['output_file']]
         expected_dct = dict(name='test_model', reference=pathlib.PurePath(self.refDir),
-                            model_dir=pathlib.PurePath(self.testDir), parameters=pardict,
+                            model_dir=pathlib.PurePath(self.testDir), config_dir=pathlib.PurePath(self.testDir),
+                            parameters=pardict,
                             post_process={}, _output={},
                             _post_process_input='input.json',
                             _post_process_output='sim_obs.json',

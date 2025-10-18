@@ -186,6 +186,7 @@ class Model(ModelBaseClass, journal):
                  engine: typing.Optional[abstractEngine] = None,
                  run_info: typing.Optional[dict] = None,
                  fake: bool = False,
+                 config_dir: typing.Optional[pathlib.Path] = None,
                  study: typing.Optional["Study"] = None):
         # TODO add in verbose option so that set_model_status script has verbose options provided in.
         """
@@ -195,8 +196,10 @@ class Model(ModelBaseClass, journal):
         :param reference -- reference directory. Should be a pathlib.Path
                 keyword arguments
         :param model_dir --- where model will be created and any files written.
-             Should be a pathlib.Path. Will, if needed, be created. If node cwd will be used.
+             Should be a pathlib.Path. Will, if needed, be created. If none cwd will be used.
              Must be different from reference
+        :param config_dir -- where configuration files are written. This should be relative to model_dir.
+          If None then config files stored in model_dir
         :param config_path: Where configuration will be created.
                If not defined (or None) will be model_dir/(self.name+".mcfg")
         :param status -- model status. Default = "CREATED"
@@ -246,6 +249,12 @@ class Model(ModelBaseClass, journal):
 
         self.reference = reference
         self.model_dir = model_dir
+        if config_dir is None:
+            self.config_dir = model_dir
+        elif model_dir is not None:
+            self.config_dir = model_dir/config_dir # config_dir **relative** to model_dir
+        else:
+            raise ValueError("config_dir must be specified if model_dir is None")
         if status not in self.allowed_status:
             raise ValueError(f"Status {status} not in " + " ".join(self.allowed_status))
 

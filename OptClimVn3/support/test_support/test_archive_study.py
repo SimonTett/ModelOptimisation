@@ -63,9 +63,11 @@ class TestArchive(unittest.TestCase):
         sub.rootDir = outdir
         sub.config_path = outdir/sub.config_path.name
         # need to fix the models too!
+        # means fiing config_path, model_dir and config_path.
         for k,m in sub.model_index.items():
             m.config_path = outdir/m.config_path.relative_to(self.submit.rootDir)
             m.model_dir = outdir/m.model_dir.relative_to(self.submit.rootDir)
+            m.config_dir = outdir/m.config_dir.relative_to(self.submit.rootDir)
         self.assertEqual(asubmit,sub)
 
         # read in an archive generated on Eddie -- tests that remapping happens..
