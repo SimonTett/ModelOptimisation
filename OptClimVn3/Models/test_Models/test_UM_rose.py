@@ -6,7 +6,7 @@ import metomi.rose.config
 from aiofiles.ospath import samefile
 from scipy.constants import value
 
-from UM_rose import UM_rose, UKESM1_1, UKESM1_1_c8
+from UM_rose import UM_rose, UKESM1_1, UKESM1_1_c8, config_dir
 import copy
 import tempfile
 import pathlib
@@ -42,7 +42,7 @@ class test_umRose(unittest.TestCase):
         post_process = dict(script='$OPTCLIMTOP/OptClimVn3/scripts/comp_obs.py', output_file='obs.json')
         self.post_process = post_process
         self.model = UKESM1_1(name='testM', reference=ref_dir,
-                            model_dir=test_dir, suite_dir=test_dir/'suite',post_process=post_process,
+                            model_dir=test_dir, config_dir='suite',post_process=post_process,
                             parameters=parameters)
 
         self.config_path = self.model.config_path
@@ -77,7 +77,7 @@ class test_umRose(unittest.TestCase):
         Test that read_value works
         :return:
         """
-        shutil.copytree(self.refDir,self.model.suite_dir,dirs_exist_ok=True)
+        shutil.copytree(self.refDir,self.model.config_dir,dirs_exist_ok=True)
         val=self.model.read_param('ai')
         self.assertEqual(val,2.5700e-02)
 
@@ -110,22 +110,23 @@ class test_umRose(unittest.TestCase):
 
 
         ## Check that suite.rc was updated correctly
-        with open(model.suite_dir / 'suite.rc', 'r') as suite_file:
+        with open(model.model_dir/model.config_dir / 'suite.rc', 'r') as suite_file:
             last_line = suite_file.readlines()[-1]
             self.assertEqual(last_line.strip(), "%include optclim.rc")
 
         ## Check that all the required files were copied over
-        suite_files = list(model.model_dir.rglob('*'))
+        config_direct = model.model_dir / model.config_dir
+        suite_files = list(config_direct.rglob('*'))
         required_files = [
             'optclim.rc',
             'bin/optclim_task.sh',
         ]
         for filename in required_files:
-            self.assertIn(model.suite_dir / filename, suite_files)
+            self.assertIn(config_direct / filename, suite_files)
         # find all the .bak files in suite_dir
-        bak_files = set(model.suite_dir.rglob('*.bak'))
+        bak_files = set(config_direct.rglob('*.bak'))
         # expect the following backup files
-        expected_bak_files = set([model.suite_dir/(f+'.bak') for f in [
+        expected_bak_files = set([config_direct/(f+'.bak') for f in [
             "app/postproc/rose-app.conf", # We change the postproc script
             "app/um/rose-app.conf", # coz we change variables.
             "rose-suite.conf", # coz we modify variables in here too.
@@ -133,11 +134,7 @@ class test_umRose(unittest.TestCase):
             ]])
         # check have what we expect.
         self.assertEqual(bak_files, expected_bak_files)
-        # check that tar file generated
-        tar_file = self.model.model_dir / 'rose_suite.tar.gz'
-        self.assertTrue(tar_file.exists())
-        # check that the tar file has at least 1K byte in it
-        self.assertGreater(tar_file.stat().st_size, 1000)
+
         archer_archive_dir = model.read_param('archer_archive_dir')
         self.assertEqual(archer_archive_dir,str(model.model_dir/'output'))
 
@@ -150,7 +147,7 @@ class test_umRose(unittest.TestCase):
         :return:
         """
         # copy the ref dir into the suite_dir
-        shutil.copytree(self.refDir,self.model.suite_dir,dirs_exist_ok=True)
+        shutil.copytree(self.refDir,self.model.config_dir,dirs_exist_ok=True)
         params = dict(ai=1e-2,dp_corr_strat=500.0,two_d_fsd_factor=2,ent_fac_dp= 1.0)
         self.model.set_params(parameters=params)
         # test values
@@ -237,8 +234,8 @@ and even more text
         and adding the submit, continue & clean scripts.
         :return:
         """
-        shutil.rmtree(self.model.suite_dir, onerror=genericLib.errorRemoveReadonly)
-        shutil.copytree(self.refDir,self.model.suite_dir,dirs_exist_ok=True)
+        shutil.rmtree(self.model.config_dir, onerror=genericLib.errorRemoveReadonly)
+        shutil.copytree(self.refDir,self.model.config_dir,dirs_exist_ok=True)
         # create the submit and continue scripts
         for file in [self.model.submit_script, self.model.continue_script,self.model.clean_script]:
 
@@ -292,25 +289,11 @@ and even more text
         model = self.model
         model.instantiate()
         model.set_status('SUBMITTED')
-        os.environ['ROSE_DATA'] = str(self.model.model_dir/'data')
-        os.environ['DATAM']='History_Data'
-        model_data_dir=pathlib.Path(os.environ['ROSE_DATA'])/os.environ['DATAM']
-        model_data_dir.mkdir(exist_ok=True,parents=True) # create the directory if it doesn't exist.
-        model.running() #
-        self.assertEqual(model_data_dir,model.model_data_dir)
-        # set model.model_data_dir to model_dir. Should not be modified,
-        model.model_data_dir = model.model_dir
-        model.set_status('SUBMITTED',check_existing=False)
-        model.running()
-        # check that model_data_dir is set to model_dir
-        self.assertEqual(self.model.model_data_dir,self.model.model_dir)
-        # remove ROSE_DATA from the environment and set self.model.model_data_dir to None
-        del os.environ['ROSE_DATA']
-        model.model_data_dir = None
-        # test that running works.
-        model.set_status('SUBMITTED',check_existing=False)
-        model.running()
-        self.assertIsNone(self.model.model_data_dir) # model_data_dir should be None
+
+        jid=model.running() #
+        self.assertEqual(jid,'NOJID')
+
+
 
     def notest_succeeded(self):
         # test that succeeded works. No need as using archive functionality-- code left for now.
@@ -336,15 +319,14 @@ and even more text
     def test_init(self):
         # test the init method
         reference = pathlib.Path('/home/n02/n02-puma/tetts/roses/u-db898')
-        expected_prebuild = pathlib.PurePath(f'/home/n02/n02/tetts/cylc-run/u-db898/share/fcm_make_um')
+        expected_prebuild = pathlib.PurePath('~tetts/prebuilds/u-dr496/fcm_make_um')  # expected prebuild path
         post_process = dict(script='$OPTCLIMTOP/OptClimVn3/scripts/comp_obs.py', output_file='obs.json')
 
         parameters = dict(dp_corr_strat=500.0, two_d_fsd_factor=2,
                           ent_fac_dp=1.0, ai=3e-2, RUN_TARGET='P2M')
 
         run_info = dict(
-            prebuild=True,  # guess the prebuild file
-            use_scratch=True,  # use scratch space. Means models get cleaned up after 28 days.
+            prebuild='~tetts/prebuilds/u-dr496/fcm_make_um',  #
             transfer_dir='some_test_dir'  # transfer directory
         )
         with patch.multiple(pathlib.Path, is_dir=MagicMock(return_value=True),
@@ -355,11 +337,12 @@ and even more text
                             model_dir=self.testDir, post_process=post_process,
                             parameters=parameters,
                             run_info=run_info)
-            self.assertEqual(model.parameters_no_key['prebuild'], str(expected_prebuild))
+            self.assertEqual(model.parameters_no_key['prebuild'], expected_prebuild.as_posix())
             self.assertEqual(model.parameters_no_key['transfer_dir'], 'some_test_dir')
 
-    def test_guess_prebuild(self):
-        # check _guess_prebuild works
+    def no_test_guess_prebuild(self):
+        # check _guess_prebuild works. Turned off aas not using guess_prebuild
+        # but left in (for now) in case needed later.
         model = self.model
         model.reference=pathlib.Path('/home/n02/n02-puma/tetts/roses/u-db898')
         expected_path = pathlib.PurePath(f'/home/n02/n02/tetts/cylc-run/u-db898/share/fcm_make_um') # path on puma
@@ -411,9 +394,9 @@ class TestUKESM1ParamFunctions(unittest.TestCase):
         testDir1= testDir / 'test1'
         testDir2 = testDir / 'test2'
         self.models = [UKESM1_1(name='test_c7', reference=refDir1,
-                              model_dir=testDir1, suite_dir=testDir1/'suite', post_process=post_process),
+                              model_dir=testDir1, config_dir='suite', post_process=post_process),
                     UKESM1_1_c8(name='test_c8', reference=refDir2,
-                              model_dir=testDir2, suite_dir=testDir2/'suite', post_process=post_process)]
+                              model_dir=testDir2, config_dir='suite', post_process=post_process)]
         for model in self.models:
             model.instantiate()
 

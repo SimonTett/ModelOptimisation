@@ -114,24 +114,26 @@ class UM_rose(Model):
 
     """
     # additional attributes to the model class.
-    suite_dir: typing.Optional[pathlib.Path]  # path for suite dir.
+
     suite_name: typing.Optional[str]  # name of the suite
-    model_data_dir: typing.Optional[pathlib.Path]  # path for model_data_dir.
+
 
     # test if we are on Archer by calling hostname -A and that stdout contains archer2.ac.uk
-    archer2 = False
     stat = subprocess.run(['hostname', '-A'], capture_output=True, text=True)
     if not ((stat.returncode == 0) and 'archer2.ac.uk' in stat.stdout):
         my_logger.warning('Not running on archer2. This code will need re-writing to work on other platforms')
-        archer2 = True
-        # probably overkill. Only for instantiate
+        archer2 = False
+        default_remote_dir = None
+        default_remote_machine = None
+    else:
+        archer2 = True # running on archer2
+        default_remote_dir = 'rose_optclim' # where model will be copied across too.
+        default_remote_machine = 'puma2'
+
+
     # Get the user ID
-    user_id = os.environ.get('USER') or os.environ.get('USERNAME')
-    base_path = f'{user_id}/rose_optclim'  # which gives us path where files are stored.
-    # ARCHER2
-    puma_dir = pathlib.Path('/home/n02/n02-puma') / base_path  # puma2 root path on archer2.
-    suite_file_name = None
-    include_file_name = None
+    user_id = os.environ.get('USER') or os.environ.get('USERNAME') # Needed?
+    model_data_dir = 'output' # where model data gets put
 
     def __init__(self, *args, **kwargs):
         """
@@ -144,38 +146,18 @@ class UM_rose(Model):
         Sets up the following no_key variables:
         runModelTime, runUser, runCode,OPTCLIM_ARGS,runEnvSetup,prebuild from run_info
         Sets up MODEL_CONFIG and OPTCLIM_SET_STATUS_SCRIPT
-        and sets submit and continue scripts to be in suite_dir.
+        and sets submit and continue scripts to be in config_dir
         """
         # remove suite_dir and model_data_dir from kwargs
-        suite_dir: typing.Optional[str] = kwargs.pop("suite_dir", None)
-        model_data_dir: typing.Optional[str] = kwargs.pop('model_data_dir', None)
-        if model_data_dir is not None:
-            self.model_data_dir = pathlib.Path(model_data_dir)
-        else:
-            self.model_data_dir = None
+        if 'config_dir' not in kwargs:
+            kwargs['config_dir'] = pathlib.Path('workflow')
+        suite_name = kwargs.pop('suite_name', None) # name of the suite. Popped as not used by super class.
+
         super().__init__(*args, **kwargs)  # call the super-class init method.
+        if suite_name is None:
+            suite_name = self.name  # default to name
+        self.suite_name = suite_name
 
-        # deal with suite_dir & suite_name -- where suite info gets written. Different from model_dir which is where
-        # models are ran. This different from other models so far.
-        if suite_dir is None:
-            if self.name is not None:
-                # Work out suite_dir which is where suite info gets written.
-                # suite dir name is name_PID -- should be unique enough..
-                # problem is that cylc uses a very flat space...
-                self.suite_name = f'{self.name}_{os.getpid()}' # name of suite (which can be modified up to submission)
-                self.suite_dir = self.puma_dir / self.suite_name # where suite info gets written.
-
-            else:
-                self.suite_name = None
-                self.suite_dir = None
-        else:
-            self.suite_dir = pathlib.Path(suite_dir)
-            self.suite_name = self.suite_dir.name  # get the name from the path.
-        # when reading from a file this may fail as suite_dir will be be done so
-        # code works out self.suite_dir from name and pid.
-        # this then used here and when the actual values get copied in
-        # then the configs will point to the wrong place.
-        self.configs = GroupConfig(root_dir=self.suite_dir)  # grouped configs for writing out generic namelists
 
         # modify parameters_no_key to include runModelTime, runUser, runCode, OPTCLIM_ARGS, runEnvSetup,prebuild,transfer_dir if set.
         # Those parameters do not contribute towards the unique key used to identify the model so go in parameters_no_key
@@ -186,9 +168,10 @@ class UM_rose(Model):
                     # Get None if either null in the original  json config or not present
                     self.parameters_no_key[key] = self.run_info[key]
             # deal with prebuild
-            prebuild = self.guess_prebuild(self.run_info.get('prebuild', None))
+            prebuild = self.run_info.get('prebuild', None)
             if prebuild:
-                self.parameters_no_key['prebuild'] = str(prebuild)
+                self.parameters_no_key['prebuild'] = pathlib.PurePath(os.path.expandvars(prebuild)).as_posix()
+                # expand any vars, make sure it looks like a path and convert to a posix format string.
 
             # set RUNID to False and RUN_NAME to first 5 characters of the name.
             if self.name is not None:
@@ -196,12 +179,12 @@ class UM_rose(Model):
                 self.parameters_no_key['RUN_NAME'] = self.name[:5]  # first 5 characters of the name.
 
             # Deal with runEnvSetup
-            runEnvSetup = genericLib.expand(self.parameters_no_key.get('runEnvSetup',
+            run_env_setup = genericLib.expand(self.parameters_no_key.get('runEnvSetup',
                                                                        '$OPTCLIMTOP/OptClimVn3/setup_archer2'))
-            # check runEnvSetup actually exists.
-            if not pathlib.Path(runEnvSetup).is_file():
-                raise ValueError(f'runEnvSetup {runEnvSetup} does not exist.')
-            self.parameters_no_key['runEnvSetup'] = str(runEnvSetup)  # need to convert to string.
+            # check run_env_setup actually exists.
+            if not pathlib.Path(run_env_setup).is_file():
+                raise ValueError(f'run_env_setup {run_env_setup} does not exist.')
+            self.parameters_no_key['runEnvSetup'] = str(run_env_setup)  # need to convert to string.
 
             # deal with OPTCLIM_ARGS -- giving it a default value of ''
             self.parameters_no_key['OPTCLIM_ARGS'] = self.parameters_no_key.get('OPTCLIM_ARGS', '')
@@ -217,27 +200,13 @@ class UM_rose(Model):
         if self.set_status_script is not None:
             self.parameters_no_key['OPTCLIM_SET_STATUS_SCRIPT'] = str(self.set_status_script)
             my_logger.debug(f'Set OPTCLIM_SET_STATUS_SCRIPT to {str(self.set_status_script)}')
-        # set up submit and continue script. These need to be on puma2 so putting them in the suite_dir
-        if self.suite_dir is not None:
-            self.submit_script = self.suite_dir / 'submit_script.sh'  # script to run on puma2 to submit the job.
-            self.continue_script = self.suite_dir / 'continue_script.sh'  # probably don't need this for now. There if have an error.
-            self.clean_script = self.suite_dir / 'clean_script.sh'  # script to clean the suite.
+        # set up paths to the various scripts we want
+        script_dir = self.model_dir/'scripts'
+        script_dir.mkdir(parents=True, exist_ok=True)
+        self.submit_script = script_dir / 'submit_script.sh'  # script to run on puma2 to submit the job.
+        self.continue_script = script_dir / 'continue_script.sh'  # probably don't need this for now. There if have an error.
+        self.clean_script = script_dir / 'clean_script.sh'  # script to clean the suite.
 
-
-    def create_model(self,
-                     direct: typing.Optional[pathlib.Path] = None,
-                     copy_ref: bool = True
-                     ) :
-        """
-        Create the model. This is a rose specific version of create model. It will copy the reference config
-         to **self.suite_dir** and create model_dir using super().create_model.
-        :param direct: directory to create the model in.
-        :param copy_ref: If True then copy the reference directory to the suite_dir.
-        :return:nothing.
-        """
-
-        super().create_model(direct, copy_ref=False)  # create model dir
-        super().create_model(direct=self.suite_dir, copy_ref=copy_ref)  # create the suite
 
     @staticmethod
     def replace_file(file: pathlib.Path,
@@ -282,35 +251,6 @@ class UM_rose(Model):
                 print(repl_line, end='')
         return file, count_match
 
-    @staticmethod
-    def change_rose_dir(direct: pathlib.Path) -> dict[pathlib.Path,int]:
-        """
-        Recursively change all values of [file:$ROSE_DATA/] to [file: ]in text files in input directory.
-        :param direct: directory to change.
-        :return dict indexed by file path and number of changes made.
-        """
-        #TODO -- might need to replace other ROSE_DATA references. Suck it and see!
-        raise NotImplementedError("Code no longer needed")
-        match = r"(.*)\[file:\$ROSE_DATA/(.*?)\](.*)"
-        replacement = r"\1[file:\2]\3"
-
-        if not direct.is_dir():  # check direct is a directory!
-            raise ValueError(f'path {direct} is not a directory.')
-
-        modified_files = dict()
-        for file in direct.iterdir():  # iterate over files in the directory
-            if file.is_dir():
-                my_logger.debug(f'{file} is a directory so calling change_rose_dir')
-                modified_files.update(UM_rose.change_rose_dir(file))
-            elif file.is_file() and genericLib.likely_text_file(file):  # likely a text file
-                res = UM_rose.replace_file(file, match, replacement, backup_ext='.bak')  # do replacement
-                if res is not None:  # any change?
-                    my_logger.debug(f'Modified {pth}')
-                    modified_files[res[0]] = res[1]
-            else:
-                my_logger.debug(f'file {file} is not a directory nor likely a text file so skipping')
-        my_logger.debug(f'Changed {modified_files}')
-        return modified_files
 
     # utility fns.
     def guess_prebuild(self, prebuild:typing.Union[bool,str,None]) -> typing.Optional[pathlib.PurePath]:
@@ -320,8 +260,10 @@ class UM_rose(Model):
         :param prebuild: bool or str or None.
         :return: PurePath -- successfully guessed prebuild dct. (path is a dir) 
                  None -- guess did not work.
+                 Consider removing this functionality as reference configs should have it in.
         """
         # ARCHER2
+        raise NotImplementedError('Too hard to support!')
 
         # get the name from the reference and assume userid the same as this
         if isinstance(prebuild, str):
@@ -363,22 +305,22 @@ class UM_rose(Model):
         UM rose specific version of modify model,
         Does the following (after calling the superclass method
         Copies the optclim suite apps into the suite_dir and modifies the suite_file_name
-        Also generates  any necessary scripts and sets archer_archive_dir to model_dir/output
+        Also generates  any necessary scripts and sets archer_archive_dir to model_dir/model_data_dir
 
         """
         super().modify_model()  # call the base class method.
         # now do the specific stuff...
         self.copy_suite_apps()  # copy the optclim specific apps to the suite dir.
         self.update_suite_rc()  # update the suite.rc/flow.cylc file
-        # need to generate submit_cmd and continue_cmd
+        # need to generate scripts
         # done here as super class instantiate cleans directory before doing anything else and then checks.
         # so need to call this in modify_model
         args = self.parameters_no_key.get('OPTCLIM_ARGS')
         self._create_script('submit', args=args)
         self._create_script('continue', args=args)
         self._create_script('clean',args=args)  # create the clean script.
-        # and set archer_archive_dir to be model_dir/output as that is where we copy data to.
-        archive_dir = str(self.model_dir / 'output')
+        # and set archer_archive_dir to be model_dir/model_data_dir as that is where we copy data to.
+        archive_dir = str(self.model_dir / self.model_data_dir)
         self.parameters_no_key['archer_archive_dir'] = archive_dir # add to parameters_no_key
         my_logger.debug(f'Set archer_archive_dir to {archive_dir}')
 
@@ -399,12 +341,12 @@ class UM_rose(Model):
         """
         Update the cylc/rose suite.rc to include OptClim tasks.
         """
-        suite_file = self.suite_dir / self.suite_file_name
+        suite_file = self.config_dir / self.suite_file_name
         genericLib.backup_file(suite_file, ext='.bak', create='copy')  # make a backup of the suite file.
         with suite_file.open('a') as suite_rc:
             if self.include_file_name is None:
                 raise ValueError('Set self.include_file_name')
-            inc = self.suite_dir/self.include_file_name
+            inc = self.config_dir/self.include_file_name
             if not inc.exists():
                 raise FileNotFoundError(f'file {inc} does not exist')
             
@@ -418,27 +360,8 @@ class UM_rose(Model):
     def copy_suite_apps(self):
         """Copy OptClim specific apps from the reference directory to the model directory"""
         optclim_tasks_root = pathlib.Path(__file__).parent / 'um_rose_files/optclim_tasks'
-        shutil.copytree(optclim_tasks_root, self.suite_dir, dirs_exist_ok=True)
+        shutil.copytree(optclim_tasks_root, self.config_dir, dirs_exist_ok=True)
 
-    def instantiate(self, fake: bool = False) -> None:
-        """
-        Instantiate the model. This is a UM_rose specific version of instantiate.
-        Calls  superclass method and then tar/gzip the suite_dir and copy it to the model_dir.
-        :param fake: passed to the super class method.
-        :return:nothing.
-        """
-
-        super().instantiate(fake=fake)  # call super class method.
-        # tar up the suite_dir and copy to model_dir.
-        tar_file = self.model_dir / 'rose_suite.tar.gz'
-        try:
-            tar_file.unlink(missing_ok=True)  # remove any old tar file.
-            with tarfile.open(tar_file, "w:gz") as tar:
-                tar.add(self.suite_dir, arcname=self.suite_dir.name)
-            my_logger.debug(f'Created tar file {tar_file} from {self.suite_dir}')
-        except Exception as e:
-            my_logger.error(f"Failed to create tar file: {e}")
-            raise
 
 
     def check(self) -> bool:
@@ -485,10 +408,11 @@ class UM_rose(Model):
         for script in [self.submit_script, self.continue_script,self.clean_script]:
             if not (script is None or script.is_file()):
                 raise FileNotFoundError(f"{script} is not a file.")
-        # 3) Check values of archive_pp and archive_netcdf and warn if they are set to True
+        # 3) Check values of archive_pp and archive_netcdf and warn if they are not True
         for param in ['archive_pp', 'archive_netcdf']:
             if self.read_param(param,raise_error=False) is not True:
-                my_logger.warning(f'{param} is not  True. Your data will not be copied into model_dir/output and post-processing may fail.')
+                my_logger.warning(f'{param} is not  True.'+\
+                                  f' Your data will not be copied into {self.model_dir/self.model_data_dir} and post-processing may fail.')
 
         return True
 
@@ -500,6 +424,7 @@ class UM_rose(Model):
         If not then the path will be unmodified and retuned as a purePath.
         :return: puma path as a purePath.
         """
+        raise NotImplementedError('No longer needed')
         if not isinstance(path, pathlib.Path):
             raise ValueError(f'path {path} is not a pathlib.Path')
         cpts = path.parts
@@ -511,73 +436,22 @@ class UM_rose(Model):
         result = pathlib.PurePath(*result)  # convert to a pure path.
         return result
 
-    def running(self) -> typing.Optional[str]:
+    def running(self,jid:typing.Optional[str]='NOJID') -> typing.Optional[str]:
         """
         UM_model version of running. No jid possible for UM as cylc handling all of that.
-        Will try and set up model_data_dir if not set.
-        Note does not call superclass method...
+        :param jid: job id -- if passed in overrides any existing job id.
+
         """
+        my_jid = super().running(jid=jid)  # call the super-class method specifying jid
+        return my_jid
 
-        if self.model_data_dir is None:
-            base_dir = os.environ.get('ROSE_DATA')
-            if base_dir is not None:
-                base_dir = pathlib.Path(base_dir) / os.environ['DATAM']
-                self.model_data_dir = base_dir
-                my_logger.debug(f'Set model_data_dir to {self.model_data_dir}')
 
-        self.set_status('RUNNING')  # update status and save to disk
 
-        return 'NOJOBID'
-
-    def rose_succeeded(self): # renamed so not generally called. Will reinstate if needed or delete later.
-        """
-        UM_ROSE specific version of succeeded. 
-        If self.model_data_dir is defined
-             Copies pp, netcdf and last dump files  in this dir to model_dir/'output'
-        If not defined raises ValueError.
-        if not a dir raises FileNotFoundError.
-        then calls superclass succeeded.
-        Copying as files might be on other file systems and hard links across file systems do not work.
-        """
-
-        data_dir = self.model_dir / 'output'  # where model data will be copied too
-        if self.model_data_dir is None:  # not set trigger an error
-            raise ValueError('model_data_dir not set. Something probably went wrong in running() method')
-
-        if not self.model_data_dir.is_dir():
-            raise FileNotFoundError(f'self.model_data_dir {self.model_data_dir} is not a dir')
-        my_logger.debug(f"model_data_dir set and is {self.model_data_dir}")
-        # create data dir if it does not exist.
-        data_dir.mkdir(parents=True, exist_ok=True)
-
-        # ready to go now.
-        file_patterns = ['*.pp', '*.nc']  # file patterns to copy.
-        # iterate over patterns to find list of files to copy.
-        files_to_copy = []
-        for fpattern in file_patterns:
-            files = [file for file in self.model_data_dir.glob(fpattern) if file.is_file()]
-            files_to_copy += files
-        # deal with dumps
-        # UM file names do sort alphanumerically so last file is most recent..
-        # note if this method gets run more than once you will have more than dump file...
-        dump_files = [f for f in self.model_data_dir.glob('*.d*_00') if f.is_file()]
-        # and sort them!
-        dump_files = sorted(dump_files)
-        files_to_copy.append(dump_files[-1])  # last dump file.
-
-        # now copy the files to the data_dir.
-        for file in files_to_copy:
-            new_file = data_dir / file.name
-            my_logger.debug(f'Copying {file} to {new_file}')
-            shutil.copy2(file, new_file)
-
-        super().succeeded()  # call the superclass method.
-        # Must occur after copying files otherwise data may not be accessible for the post-processing job.
 
     def submit_cmd(self) -> typing.List[str]:
         """"
         Generate the submission command. Overrides the super-class version.
-        Will return ssh cmd that submits suite.
+
         """
         if self.status in ['INSTANTIATED', 'PERTURBED']:  # start again.
             script = self.submit_script
@@ -586,12 +460,9 @@ class UM_rose(Model):
             raise NotImplementedError('Continue not implemented yet')
         else:
             raise ValueError(f"Status {self.status} not expected ")
-        # ARCHER2
-        cmd = ['ssh', 'puma2', self._puma_path(script)]  # script to submit
-        # Could make puma2 more generic -- so specified through run_info.
-        # But no point at the moment as only running on archer2/puma2.
-        # and I suspect that changes will need to be different on other platforms.
-        # Where hopefully one can just run rose/cylc on the local machine.
+
+        cmd = [str(self.model_dir/script)]
+
         return cmd
 
     # TODO (when needed). Add a delete method to kill the suite and delete the suite_dir
@@ -648,7 +519,12 @@ class UM_rose_cylc7(UM_rose):
                 raise ValueError(f'Unknown script_type: {script_type}')
             if args:
                 cmd.append(args)
-            cmd.append(f'-C {self._puma_path(self.suite_dir)}')  # path to the suite dir.
+            if self.remote_directory is not None:
+                config_dir = self.remote_directory/self.config_dir # path on remote machine to config dir.
+            else:
+                config_dir = self.model_dir/self.config_dir # path on local machine to config dir.
+
+            cmd.append(f'-C {config_dir.as_posix()}')  # path to the config dir. rose needs posix path.
             f.write(' '.join(cmd) + '\n')
         # set permissions to be executable
         script.chmod(0o755)
@@ -695,6 +571,11 @@ class UM_rose_cylc8(UM_rose):
             raise ValueError(f'Unknown script type: {script_type}')
         script.parent.mkdir(parents=True, exist_ok=True)  # might need to create directory
         script.unlink(missing_ok=True)  # unlink it if it exists.
+        if self.remote_directory is not None:
+            config_directory = self.remote_directory/self.config_dir # path on remote machine to config dir.
+        else:
+            config_directory = self.model_dir/self.config_dir
+
         with script.open('wt') as f:
             f.write('#!/bin/bash --login\n')
             f.write('export CYLC_VERSION=8\n') # make sure in cycl8
@@ -712,14 +593,16 @@ class UM_rose_cylc8(UM_rose):
                     raise ValueError(f'Unknown script_type {script_type}')
                 if args:
                     cmd.append(args)
-                cmd.append(f'{self._puma_path(self.suite_dir)}')  # path to the suite dir.
+                cmd.append(config_directory.as_posix())  # path to the suite dir.
                 # cylc does not like having names starting with .,- or numbers.
                 # if names starts with this pattern we will modify the name by adding X
                 # TODO -- if I want to clean or do anything do I need to use the modified name?
                 # in which case it needs to be stored somewhere.
-                if re.match(r'$[.,\-[0-9]',self.suite_dir.name):
+                if re.match(r'$[.,\-[0-9]',self.suite_name):
                     my_logger.info('Adding X to name')
-                    cmd.append(f'--workflow-name=X{self.suite_dir.name}')
+                    cmd.append(f'--workflow-name=X{self.suite_name}')
+                else:
+                    cmd.append(f'--workflow-name={self.suite_name}')
                 f.write(' '.join(cmd) + '\n')
         # set permissions to be executable
         script.chmod(0o755)

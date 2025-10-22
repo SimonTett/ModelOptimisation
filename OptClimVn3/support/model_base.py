@@ -113,10 +113,11 @@ class journal:
                 print(f"Command {' '.join(str_cmd)} stored at {key} returned {dct['result']}")
         return
 
-    def run_cmd(self, cmd: list, **kwargs) -> str:
+    def run_cmd(self, cmd: list[str|pathlib.PurePath],convert_to_posix:bool = False, **kwargs) -> str:
         """
         Run a command using subprocess.check_output and record output.
-        :param cmd: command to run. Any shell variables ($VARNAME) in the cmd will be expanded at the time of running.
+        :param cmd: command to run. Any shell variables ($VARNAME) in the cmd will be expanded at the time of running. Should be a list of strings or PurePaths
+        :param convert_to_posix: If True any pathlib.PurePath in cmd will be converted to posix style strings before running.
         **kwargs -- kwargs to be passed to subprocess.check_output. Will update defaults which is just text=True and stderr=subprocess.DEVNULL
         :return: output from running command
         """
@@ -124,8 +125,21 @@ class journal:
         # issue is that fileNotFound will get returned if a file does not exist. Would need to
         # convert to subprocess.CalledProcessError
         args.update(**kwargs)
-        cmd_to_run = [shlex.quote(os.path.expandvars(c)) for c in cmd]
-        # using expandvars so any shell variables in command are expanded.
+        cmd_to_run: list[str] = []
+        for c in cmd:
+            if not isinstance(c,(str,pathlib.PurePath)):
+                raise ValueError(f"cmd element {c} is not str or PurePath")
+            if isinstance(c,pathlib.PurePath):
+                if convert_to_posix:
+                    c = c.as_posix() # convert to posix str for running.
+                else:
+                    c = str(c) # convert to str for running.
+            c = os.path.expandvars(c)  # expand any shell variables
+            c = shlex.quote(c)  # make it a bit safer.
+            cmd_to_run.append(c)
+
+
+
         cmd_report = " ".join(cmd_to_run) # if something goes wrong report this command.
         # Makes it easier to run command and see what happened.
         try:
@@ -143,34 +157,13 @@ class journal:
         except FileNotFoundError as e:  # cmd not found
             raise subprocess.CalledProcessError(
                 returncode=e.errno,
-                cmd=cmd,
+                cmd=cmd_to_run,
                 output=None,
                 stderr=e.strerror,
             ) from None
 
-        self.store_output(cmd, output) # and store the output.
+        self.store_output(cmd_to_run, output) # and store the output.
         return output
-
-
-    def run_remote_command(self, remote_machine:str,
-                           remote_path:pathlib.PurePath) -> str:
-        """
-        run remote_cmd on remote system.
-        :param remote_machine: remote machine name. Any form that ssh accepts.
-        :param remote_path: remote path for command. Should be a PurePath.
-        :return: stdout from running the command.
-        """
-        # check variable types are correct.
-        if not isinstance(remote_path,pathlib.PurePath):
-            raise ValueError(f"remote_path {remote_path} is not a PurePath")
-        if not isinstance(remote_machine, str):
-            raise ValueError(f"remote_node {remote_machine} is not a str")
-
-        remote_cmd = remote_path.as_posix()  # get as posix path for remote machine.
-        cmd = ['ssh','-q','-o','batchmode=yes','-o','StrictHostKeyChecking=yes', remote_machine, remote_cmd]
-        result = self.run_cmd(cmd) # will raise exceptions if it fails and runs shlex.quote on args.
-        my_logger.debug(f"ssh run result: {result}")
-        return result
 
 
 

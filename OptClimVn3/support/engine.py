@@ -130,7 +130,7 @@ class abstractEngine(model_base, journal):
 
     @abstractmethod
     def submit_cmd(self,
-                   cmd: typing.List[str],
+                   cmd: typing.List[str|pathlib.PurePath],
                    name: str,
                    outdir: typing.Optional[pathlib.Path] = None,
                    rundir: typing.Optional[pathlib.Path] = None,
@@ -218,7 +218,7 @@ class sge_engine(abstractEngine):
     Engine class for SGE
     """
 
-    def submit_cmd(self, cmd: typing.List, name: str,
+    def submit_cmd(self, cmd: list[str|pathlib.PurePath], name: str,
                    outdir: typing.Optional[pathlib.Path] = None,
                    rundir: typing.Optional[pathlib.Path] = None,
                    run_code: typing.Optional[str] = None,

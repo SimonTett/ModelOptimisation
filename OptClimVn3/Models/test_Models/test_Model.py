@@ -219,7 +219,8 @@ class ModelTestCase(unittest.TestCase):
                             model_jids=[],
                             submission_count=0, continue_script=pathlib.PurePath('continue.sh'),
                             submit_script=pathlib.PurePath('submit.sh'), submitted_jid=None,
-                            set_status_script=pathlib.PurePath(self.model.expand("$OPTCLIMTOP/OptClimVn3/scripts/set_model_status.py")))
+                            set_status_script=pathlib.PurePath(self.model.expand("$OPTCLIMTOP/OptClimVn3/scripts/set_model_status.py")),
+                            remote_directory=None)
 
         dct = model.to_dict()
 
@@ -334,8 +335,8 @@ class ModelTestCase(unittest.TestCase):
         got = self.model.read_params(list(expect_dir.keys()))
         self.assertEqual(expect_dir, got)
 
-    @unittest.mock.patch("Model.Model.install_remote", autospec=True)
-    def test_instantiate(self,mck_install):
+    @unittest.mock.patch("Model.Model.run_cmd", autospec=True)
+    def test_instantiate(self,mck_run_cmd):
         """
         Test instantiate method.
           Files should exist.  There should be .bak files for those namelists that got changed.
@@ -349,7 +350,7 @@ class ModelTestCase(unittest.TestCase):
 
         omodel = copy.deepcopy(self.model)
         self.model.instantiate()
-        self.assertEqual(mck_install.call_count, 1)  # called install_remote.
+        self.assertEqual(mck_run_cmd.call_count, 0)  # should not call run_cmd at all -- only called to remote install.
 
         mm = myModel.load_model(self.config_path)
         self.assertEqual(mm.to_dict(), self.model.to_dict())
@@ -388,6 +389,20 @@ class ModelTestCase(unittest.TestCase):
 
         self.assertEqual(bak_count, expected_bak_count)
         self.assertEqual(1, count_config)  # only one config file.
+        ##
+        # test. Need to set up remote_machine and remote_dir in model.run_info
+        # If remote_dir is not set then just copy to remote model_dir?
+        # expect that call run_cmd once and it has the rsync command in it.
+        model = copy.deepcopy(omodel) # refactor by doing a copy of self.model at beginning
+        model.run_info.update(dict(remote_machine='user@my.remote.machine.edu', remote_dir='/home/user/remote_model_dir'))
+        model.instantiate()
+        self.assertEqual(mck_run_cmd.call_count, 1)
+        cmd_args = mck_run_cmd.call_args.args[1]  # first arg is self
+        self.assertIn('rsync', cmd_args[0])
+        self.assertIn('user@my.remote.machine.edu:/home/user/remote_model_dir/', cmd_args[-1])  # dest dir
+
+
+
 
 
     @unittest.mock.patch.object(myModel, 'now', side_effect=gen_time())
@@ -431,7 +446,7 @@ class ModelTestCase(unittest.TestCase):
                                                          outdir=model.model_dir / 'PP_output',
                                                          rundir=model.model_dir,
                                                          time=1800, hold=True)
-            #scmd = [shlex.quote(s) for s in scmd]
+            scmd = [shlex.quote(s) for s in scmd]
             expect_output = dict(cmd=scmd, result='Your job 123456')
             got = list(model._output.values())[0][0]
             self.assertEqual(got, expect_output)
@@ -458,7 +473,7 @@ class ModelTestCase(unittest.TestCase):
             self.assertEqual(len(model._history), 2)
             k, v = model._history.popitem()  # remove last history entry.
             self.assertEqual(v, [f"Status set to SUBMITTED in {model.model_dir}"])
-            expect_output = dict(cmd=scmd, result='Your job 123457')
+            expect_output = dict(cmd=lex_scmd, result='Your job 123457')
             got = list(model._output.values())[-1][0]  # get last output
             self.assertEqual(got, expect_output)
 
@@ -996,41 +1011,78 @@ class ModelTestCase(unittest.TestCase):
         model.instantiate()
         self.assertEqual(model.calendar(),'standard')
 
-    @unittest.mock.patch("model_base.journal.run_cmd", autospec=True)
-    def test_install_remote(self,mck_run_cmd):
+
+    def test_install_remote_command(self):
         """
         Test that install_remote works.
 
         Does the following tests:
         1) Case works and gives what we expected!
-        2) If either remote_machine or remote_dir are None that mck.call_count is still 1.
+        2) If either remote_machine or remote_dir are None then None is returned and no action taken.
 
         :return:
         """
         remote_machine = 'some_random_computer'
         remote_dir = pathlib.PurePath('fred/harry')
-        expected_cmd = ['rsync','-a','-q',f"{self.model.model_dir}",f"{remote_machine}:{remote_dir.as_posix()}/"]
+        ssh_opts = ["-o", "BatchMode=yes", "-o",
+                    "StrictHostKeyChecking=yes"]  # run in batch mode with strict host key checking
+        ssh_command = "ssh " + " ".join(shlex.quote(opt) for opt in ssh_opts)
+        expected_cmd = ['rsync','-a','-q','-e',ssh_command,pathlib.PurePath(self.model.model_dir),f"{remote_machine}:{remote_dir.as_posix()}/"]
 
-        result = self.model.install_remote(remote_machine=remote_machine, remote_dir=remote_dir)
-        self.assertTrue(result)
-        self.assertEqual(mck_run_cmd.call_count, 1)
-        self.assertEqual(mck_run_cmd.call_args[0][1], expected_cmd)
+        cmd = self.model.install_remote_command(remote_machine=remote_machine, remote_model_dir=remote_dir)
+        self.assertEqual(cmd, expected_cmd)
 
-        # remote_match is None
-        result = self.model.install_remote(remote_machine=None, remote_dir=remote_dir)
-        self.assertTrue(result)
-        self.assertEqual(mck_run_cmd.call_count, 1)
+        # remote_machine is None
+        result = self.model.install_remote_command(remote_machine=None, remote_model_dir=remote_dir)
+        self.assertIsNone(result)
 
-        # remote_dir is None
-        result = self.model.install_remote(remote_machine=None, remote_dir=remote_dir)
-        self.assertTrue(result)
-        self.assertEqual(mck_run_cmd.call_count, 1)
+
+        # remote_model_dir is None
+        result = self.model.install_remote_command(remote_machine=remote_machine, remote_model_dir=None)
+        self.assertIsNone(result)
 
         # failure if remote_dir is not a pure path or None
         with self.assertRaises(ValueError) as err:
-            result = self.model.install_remote(remote_machine=remote_machine, remote_dir=str(remote_dir))
+            result = self.model.install_remote_command(remote_machine=remote_machine, remote_model_dir=str(remote_dir))
         with self.assertRaises(ValueError) as err:
-            result = self.model.install_remote(remote_machine=123456, remote_dir=remote_dir)
+            result = self.model.install_remote_command(remote_machine=123456, remote_model_dir=remote_dir)
+
+    def test_ssh_command(self):
+        """
+        Test that ssh_command works.
+
+        Does the following tests:
+        1) With only cmd provided simple ssh command is returned
+        2) If remote_model_dir
+        2) If remote_machine is None then input cmd is returned.
+        3) If remote_dir is provided then output directories are changed.
+
+        :return:
+        """
+        remote_machine = 'some_random_computer'
+        remote_dir = pathlib.PurePath('fred/harry')
+        local_dir = pathlib.PurePath(self.model.model_dir/'fred')
+        cmd = ['ls','-l',local_dir]
+        expected_cmd = ['ls','-l',pathlib.PurePath(local_dir).as_posix()]
+        ssh_cmd = ['ssh','-q','-o','batchmode=yes','-o','StrictHostKeyChecking=yes',remote_machine]
+        expected = ssh_cmd + [" ".join(expected_cmd)]
+
+        result = self.model.ssh_command(cmd, remote_machine=remote_machine)
+        self.assertEqual(result, expected)
+
+        # remote_machine is None
+        result = self.model.ssh_command(cmd, remote_machine=None)
+        self.assertEqual(result, cmd)
+
+        # remote_dir provided
+        expected_cmd = ['ls','-l',(remote_dir/'fred').as_posix()]
+        expected_cmd = ssh_cmd + [" ".join(expected_cmd)]
+        result = self.model.ssh_command(cmd, remote_machine=remote_machine, remote_model_dir=remote_dir)
+        self.assertEqual(result, expected_cmd)
+
+
+
+
 
 
         
