@@ -165,16 +165,29 @@ class UM_rose(Model):
         # modify parameters_no_key to include runModelTime, runUser, runCode, OPTCLIM_ARGS, runEnvSetup,prebuild,transfer_dir if set.
         # Those parameters do not contribute towards the unique key used to identify the model so go in parameters_no_key
         if self.run_info is not None:  # need to test for None as reloading of config gives us None.
-            for key in ['runModelTime', 'runUser', 'runCode',
+            for key in ['runModelTime', 'runUser', 'runCode','prebuild',
                         'OPTCLIM_ARGS', 'runEnvSetup','transfer_dir']:
                 if self.run_info.get(key) is not None:
                     # Get None if either null in the original  json config or not present
                     self.parameters_no_key[key] = self.run_info[key]
+            local_root_dir = self.run_info.get('local_root_dir')
+            if local_root_dir is not None:
+                local_root_dir = pathlib.PurePath(local_root_dir)
+            # deal with transfer_dir
+            if 'transfer_dir' in self.parameters_no_key:
+                transfer_dir = os.path.expandvars(self.parameters_no_key['transfer_dir'])
+                transfer_dir,parts = self.new_path(self.model_dir,pathlib.PurePath(transfer_dir),root_dir=local_root_dir)
+                # transfer_dir ends with model_dir.name and when the transfer to jasmin happens the model name is used so drop it.
+                transfer_dir = transfer_dir.parent
+                self.parameters_no_key['transfer_dir'] = transfer_dir.as_posix() # posix string for the UM
+                my_logger.debug(f'Transfer dir: {self.parameters_no_key['transfer_dir']}')
             # deal with prebuild
-            prebuild = self.run_info.get('prebuild', None)
-            if prebuild:
+            if 'prebuild' in self.parameters_no_key:
+                prebuild = self.parameters_no_key['prebuild']
                 self.parameters_no_key['prebuild'] = pathlib.PurePath(os.path.expandvars(prebuild)).as_posix()
                 # expand any vars, make sure it looks like a path and convert to a posix format string.
+                my_logger.debug(f'Prebuild dir: {self.parameters_no_key["prebuild"]}')
+
 
             # set RUNID to False and RUN_NAME to first 5 characters of the name.
             if self.name is not None:

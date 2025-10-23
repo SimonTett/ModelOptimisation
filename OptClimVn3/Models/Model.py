@@ -312,10 +312,7 @@ class Model(ModelBaseClass, journal):
         script_pth = root / "scripts/set_model_status.py"
         self.set_status_script = script_pth
 
-        # Set status
-        self.status = status
-        if self.status == 'CREATED':  # creating model for the first time
-            self.update_history("CREATING model")
+
             # and simulated obs.
         self.simulated_obs = None
         self.configs = GroupConfig(root_dir=self.config_dir) # grouped configs for writing out generic namelists
@@ -331,6 +328,10 @@ class Model(ModelBaseClass, journal):
 
 
         self.remote = dict(remote_machine=remote_machine, remote_model_dir=remote_model_dir) # remote info
+        # Set status
+        self.status = status
+        if self.status == 'CREATED':  # creating model for the first time
+            self.update_history("CREATING model")
 
     @classmethod
     def get_param_info(cls,parameter:str) -> list[NamelistVar|typing.Callable]:

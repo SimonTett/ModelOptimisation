@@ -327,18 +327,19 @@ and even more text
 
         run_info = dict(
             prebuild='~tetts/prebuilds/u-dr496/fcm_make_um',  #
-            transfer_dir='some_test_dir'  # transfer directory
+            transfer_dir='some_test_dir',# transfer directory
+            local_root_dir=self.testDir,
         )
         with patch.multiple(pathlib.Path, is_dir=MagicMock(return_value=True),
                             is_absolute=MagicMock(return_value=True),
                             samefile=MagicMock(return_value=False),):
 
-            model = UM_rose(name='fred', reference=reference,
-                            model_dir=self.testDir, post_process=post_process,
+            model = UM_rose(name='test001', reference=reference,
+                            model_dir=self.testDir/'fred/test001', post_process=post_process,
                             parameters=parameters,
                             run_info=run_info)
             self.assertEqual(model.parameters_no_key['prebuild'], expected_prebuild.as_posix())
-            self.assertEqual(model.parameters_no_key['transfer_dir'], 'some_test_dir')
+            self.assertEqual(model.parameters_no_key['transfer_dir'], 'some_test_dir/fred')
 
     def no_test_guess_prebuild(self):
         # check _guess_prebuild works. Turned off aas not using guess_prebuild
