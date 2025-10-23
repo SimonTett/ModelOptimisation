@@ -397,7 +397,7 @@ class runSubmit(SubmitStudy):
         for ens_member in range(n_ensemble): # loop over ensemble members
             # We try and get all the ensemble members and then return None if any need running.
             # Do this so have a full list of cases to run to allow parallelism.
-            if n_ensemble is 1:
+            if n_ensemble == 1:
                 ens_param = {} # empty dict
             else:
                 ens_param= dict(ensembleMember=ens_member) # set ensemble member
@@ -870,7 +870,7 @@ class runSubmit(SubmitStudy):
         return finalConfig
 
     ## run_params
-    def run_params(self,ensemble_average:bool = True) -> OptClimConfigVn3:
+    def run_params(self,ensemble_average:bool = True,scale:bool=True) -> OptClimConfigVn3:
         """
         Run the model for a set of parameters specified in the configuration file.
         This is a simple run of the model for a set of parameters. It does not do any optimisation.
@@ -887,7 +887,8 @@ class runSubmit(SubmitStudy):
         params_dir = self.config.optimise() # get the parameters to run
         params = self.get_parameters(params_dir) # convert to dataframe
 
-        obs = self.stdFunction(params.values, df=True, raiseError=True,ensemble_average=ensemble_average)
+        obs = self.stdFunction(params.values, df=True, raiseError=True,ensemble_average=ensemble_average,
+                               scale=scale)
 
         filename = self.rootDir / (self.config.fileName().stem + "_final.json")  # final config file name
         final_config = self.runConfig(add_cost=False, filename=filename)  # get final runInfo
@@ -918,7 +919,8 @@ class runSubmit(SubmitStudy):
         index = dict_in.get('index')
         params = pd.DataFrame(param_list, index=index)
         # apply scaling if needed
-        param_names = params.columns.to_list()
+        param_names = self.config.paramNames()
+        params = params.reindex(columns=param_names)
         param_range = self.config.paramRanges(paramNames=param_names)  # get param range
         if dict_in.get('scale', False):
             params = params * param_range.loc['rangeParam', :] + param_range.loc['minParam', :]
