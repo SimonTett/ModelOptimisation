@@ -269,6 +269,8 @@ while True:  # loop indefinitely so can have fake_fn. This really to test code/a
             finalConfig = rSUBMIT.runJacobian()
         elif algorithmName == 'RUNOPTIMISED':  # run optimised case through configuration in JSON file.
             finalConfig = rSUBMIT.runOptimized()
+        elif algorithmName == 'RUN_PARAMS':  # run params.
+            finalConfig = rSUBMIT.run_params(scale=True)
         else:
             raise ValueError(f"Don't know what to do with Algorithm: {algorithmName}")
         break  # we have finished running algorithm so can exit and go to final clear up.
