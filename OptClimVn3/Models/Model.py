@@ -106,6 +106,7 @@ class Model(ModelBaseClass, journal):
     _post_process_input: typing.Optional[str]
     _post_process_output: typing.Optional[str]
     configs: GroupConfig
+    remote: dict[str,str|pathlib.PurePath]
 
     """
     Abstract model class. Any class that inherits from this will have name lookup.
@@ -131,7 +132,7 @@ class Model(ModelBaseClass, journal):
         configs - cache of configuration files (namelists or equivalent)
         pertub_count -- no of times model has been perturbed.
         submission_count -- no of times model has been submitted.
-        remote_directory -- pure path for remote_directory or None.
+        remote -- dict containing info on remote machine and directory if needed. Keys are machine and directory respectively.
         
         Private attributes:
           _post_process_input -- name of input file for post-procesing
@@ -318,7 +319,18 @@ class Model(ModelBaseClass, journal):
             # and simulated obs.
         self.simulated_obs = None
         self.configs = GroupConfig(root_dir=self.config_dir) # grouped configs for writing out generic namelists
-        self.remote_directory = None # remote directory if needed. Set up in instantiate.
+        # Set up remote stuff.
+        remote_machine = self.run_info.get('remote_machine', None)
+        remote_model_dir = self.run_info.get('remote_model_dir', None)
+        local_root_dir = self.run_info.get('local_root_dir', None)
+        if local_root_dir is not None:
+            local_root_dir = pathlib.PurePath(local_root_dir)
+        if remote_model_dir is not None:
+            remote_model_dir = pathlib.PurePath(remote_model_dir)
+            remote_model_dir, rel_path = self.new_path(self.model_dir, remote_model_dir, root_dir=local_root_dir)
+
+
+        self.remote = dict(remote_machine=remote_machine, remote_model_dir=remote_model_dir) # remote info
 
     @classmethod
     def get_param_info(cls,parameter:str) -> list[NamelistVar|typing.Callable]:
@@ -600,13 +612,8 @@ class Model(ModelBaseClass, journal):
                 if file is not None:
                     (self.model_dir / file).chmod(0o755)  # set permission
             # install remote if needed.
-            remote_machine = self.run_info.get('remote_machine', None)
-            remote_model_dir= self.run_info.get('remote_dir', None)
-            if remote_model_dir is not None:
-                remote_model_dir = pathlib.PurePath(remote_model_dir) # remote_dir should be a string
-                self.remote_directory = remote_model_dir
-            cmd=self.install_remote_command(remote_machine=remote_machine,
-                                            remote_model_dir=remote_model_dir)
+
+            cmd=self.install_remote_command(remote_machine=self.remote.get('remote_machine'),remote_model_dir=self.remote.get('remote_model_dir'))
             if cmd is not None:
                 output=self.run_cmd(cmd,convert_to_posix=True)
                 my_logger.debug(f"Installed model remotely with {cmd} and got {output}")
@@ -1486,6 +1493,26 @@ class Model(ModelBaseClass, journal):
         cmd = ['ssh','-q','-o','batchmode=yes','-o','StrictHostKeyChecking=yes', remote_machine, remote_cmd]
         return cmd #
 
+    @staticmethod
+    def new_path(path: pathlib.PurePath,
+                 target_dir: pathlib.PurePath,
+                 root_dir: typing.Optional[pathlib.PurePath] = None) -> tuple[pathlib.PurePath,pathlib.PurePath]:
+        """
+        Create a new path by replacing the root_dir in path with target_dir.
+        :param path:path to be modified
+        :param target_dir: Target directory to replace root_dir with.
+            If root_dir is None or path is not relative to root_dir then path.name is appended to target_dir
+        :param root_dir:root dir to use
+        :return:new_path with root_dir replaced by target_dir or target_dir/path.name if root_dir is None or path is not relative to root_dir
+          AND add_path which is the part added to target_dir.
+        """
+        if root_dir is not None and path.is_relative_to(root_dir):
+            add_path = path.relative_to(root_dir)
+        else:
+            add_path = path.name
+        new_path = target_dir / add_path
+        return new_path,add_path
+
     def install_remote_command(self,
                                remote_machine:typing.Optional[str]=None,
                                remote_model_dir:typing.Optional[pathlib.PurePath]=None) -> typing.Optional[list[str|pathlib.PurePath]]:
@@ -1493,12 +1520,21 @@ class Model(ModelBaseClass, journal):
         Generate cmd to install on remote machine. Use run_cmd to actually do it.
         WIll return None if no remote machine or remote_dir
         :param remote_machine: remote machine -- remote machine to install on.
-        If None will return None
         :param remote_model_dir: remote directory to install to.
-          self.model_dir will be copied to remote_machine:remote_dir/self.model_dir.name
+        if either remote_machine or remote_model_dir is None then nothing is done and None is returned.
+        :param local_root_dir: local root dir. If provided and self.model_dir is relative to this then that part
+         will be replaced when generating remote path. Otherwise, only self.model_dir.name is used.
+         For example if local_root_dir is /home/user/models and self.model_dir is /home/user/models/model1
+         then on remote system remote_model_dir/model1 will be used.
+          self.model_dir will be copied to remote_machine:remote_dir
          uses rsync to copy model directory to remote system.
         If remote_dir is None then nothing is done and True is returned.
-        :raises ValueError: if remote_dir is not Nome and not a PurePath or if run_info does not contain model_run_host
+        Assumed that rsync will create remote_dir if it does not exist.
+        :raises ValueError: if remote_dir is not Nome and not a PurePath or remote_dir is not None and not a str
+
+        Thoughts -- could work with remote_machine not set by just returning cmd to rsync to remote_model_dir (with potential path adjustment).
+        But for now require both to be set.
+
         :return: cmd (list of strings/purePaths to run).
         """
         if (remote_model_dir is None) or (remote_machine is None):
@@ -1509,14 +1545,15 @@ class Model(ModelBaseClass, journal):
             raise ValueError(f"remote_dir {remote_model_dir} is not a PurePath")
         if not isinstance(remote_machine,str):
             raise  ValueError(f"remote_machine {remote_machine} is not a string")
+
         my_logger.debug(f"Will install {self.model_dir} to {remote_model_dir} on {remote_machine}")
 
-        remote_path = pathlib.PurePath(remote_model_dir).as_posix().rstrip('/') # get as posix path for remote machine.
-        # now rsync the model dir to the remote dir. rsync will create remote_dir if it does not exist.
+        remote_path = remote_model_dir.as_posix().rstrip('/') # get as posix path for remote machine.
+        # now create cmd to rsync the model dir to the remote dir. rsync will create remote_dir if it does not exist.
         ssh_opts = ["-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes"] # run in batch mode with strict host key checking
         ssh_command = "ssh " + " ".join(shlex.quote(opt) for opt in ssh_opts)
-        cmd = ['rsync','-a','-q',"-e",ssh_command,pathlib.PurePath(self.model_dir),f"{remote_machine}:{remote_path}/"]
-
+        cmd = ['rsync','-a','-q',"-e",ssh_command,pathlib.PurePath(self.model_dir),f"{remote_machine}:{remote_path}"]
+        # note no trailing slash so we copy the model_dir to remote_path NOT into remote_path (as would happen with a trailing slash)
 
         return cmd
 

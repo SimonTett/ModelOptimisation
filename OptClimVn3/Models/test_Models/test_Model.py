@@ -220,7 +220,8 @@ class ModelTestCase(unittest.TestCase):
                             submission_count=0, continue_script=pathlib.PurePath('continue.sh'),
                             submit_script=pathlib.PurePath('submit.sh'), submitted_jid=None,
                             set_status_script=pathlib.PurePath(self.model.expand("$OPTCLIMTOP/OptClimVn3/scripts/set_model_status.py")),
-                            remote_directory=None)
+                            remote=dict(remote_machine=None,remote_model_dir=None),
+                            )
 
         dct = model.to_dict()
 
@@ -393,13 +394,18 @@ class ModelTestCase(unittest.TestCase):
         # test. Need to set up remote_machine and remote_dir in model.run_info
         # If remote_dir is not set then just copy to remote model_dir?
         # expect that call run_cmd once and it has the rsync command in it.
-        model = copy.deepcopy(omodel) # refactor by doing a copy of self.model at beginning
-        model.run_info.update(dict(remote_machine='user@my.remote.machine.edu', remote_dir='/home/user/remote_model_dir'))
+        model = myModel(name='test_model', reference=self.refDir,
+                             model_dir=self.testDir / 'study2', post_process=self.post_process,
+                             run_info=dict(remote_machine='user@my.remote.machine.ac.uk', remote_model_dir=pathlib.PurePath('/home/user/remote_model_dir')),
+                             parameters=dict(RHCRIT=2, VF1=2.5, CT=2,G0=10,ANVIL_FACTOR=0.5,multi_var=2.0),
+                             engine=self.eng)
+
+        # need to recreate model as model creation sets everything up.
         model.instantiate()
         self.assertEqual(mck_run_cmd.call_count, 1)
         cmd_args = mck_run_cmd.call_args.args[1]  # first arg is self
         self.assertIn('rsync', cmd_args[0])
-        self.assertIn('user@my.remote.machine.edu:/home/user/remote_model_dir/', cmd_args[-1])  # dest dir
+        self.assertIn('user@my.remote.machine.ac.uk:/home/user/remote_model_dir/study2', cmd_args[-1])  # dest dir
 
 
 
@@ -1018,7 +1024,9 @@ class ModelTestCase(unittest.TestCase):
 
         Does the following tests:
         1) Case works and gives what we expected!
-        2) If either remote_machine or remote_dir are None then None is returned and no action taken.
+        2) Test that local_root_dir works as expected
+        3) If either remote_machine or remote_dir are None then None is returned and no action taken.
+        4) Tests that if wrong types passed a value error is raised.
 
         :return:
         """
@@ -1027,10 +1035,12 @@ class ModelTestCase(unittest.TestCase):
         ssh_opts = ["-o", "BatchMode=yes", "-o",
                     "StrictHostKeyChecking=yes"]  # run in batch mode with strict host key checking
         ssh_command = "ssh " + " ".join(shlex.quote(opt) for opt in ssh_opts)
-        expected_cmd = ['rsync','-a','-q','-e',ssh_command,pathlib.PurePath(self.model.model_dir),f"{remote_machine}:{remote_dir.as_posix()}/"]
+        expected_cmd = ['rsync','-a','-q','-e',ssh_command,pathlib.PurePath(self.model.model_dir),f"{remote_machine}:{remote_dir.as_posix()}"]
 
         cmd = self.model.install_remote_command(remote_machine=remote_machine, remote_model_dir=remote_dir)
         self.assertEqual(cmd, expected_cmd)
+
+
 
         # remote_machine is None
         result = self.model.install_remote_command(remote_machine=None, remote_model_dir=remote_dir)

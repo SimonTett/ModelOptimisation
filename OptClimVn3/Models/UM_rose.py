@@ -157,6 +157,9 @@ class UM_rose(Model):
         if suite_name is None:
             suite_name = self.name  # default to name
         self.suite_name = suite_name
+        if re.match(r'$[.,\-[0-9]', self.suite_name):
+            my_logger.debug('Adding X to name')
+            self.suite_name= 'X' + self.suite_name  # add X to start of name if starts with non-alpha char.
 
 
         # modify parameters_no_key to include runModelTime, runUser, runCode, OPTCLIM_ARGS, runEnvSetup,prebuild,transfer_dir if set.
@@ -519,8 +522,9 @@ class UM_rose_cylc7(UM_rose):
                 raise ValueError(f'Unknown script_type: {script_type}')
             if args:
                 cmd.append(args)
-            if self.remote_directory is not None:
-                config_dir = self.remote_directory/self.config_dir # path on remote machine to config dir.
+            remote_dir = self.remote.get('remote_directory')
+            if remote_dir is not None:
+                config_dir = remote_dir/self.config_dir # path on remote machine to config dir.
             else:
                 config_dir = self.model_dir/self.config_dir # path on local machine to config dir.
 
@@ -571,8 +575,9 @@ class UM_rose_cylc8(UM_rose):
             raise ValueError(f'Unknown script type: {script_type}')
         script.parent.mkdir(parents=True, exist_ok=True)  # might need to create directory
         script.unlink(missing_ok=True)  # unlink it if it exists.
-        if self.remote_directory is not None:
-            config_directory = self.remote_directory/self.config_dir # path on remote machine to config dir.
+        remote_dir = self.remote.get('remote_directory')
+        if remote_dir is not None:
+            config_directory = remote_dir/self.config_dir # path on remote machine to config dir.
         else:
             config_directory = self.model_dir/self.config_dir
 
@@ -594,15 +599,7 @@ class UM_rose_cylc8(UM_rose):
                 if args:
                     cmd.append(args)
                 cmd.append(config_directory.as_posix())  # path to the suite dir.
-                # cylc does not like having names starting with .,- or numbers.
-                # if names starts with this pattern we will modify the name by adding X
-                # TODO -- if I want to clean or do anything do I need to use the modified name?
-                # in which case it needs to be stored somewhere.
-                if re.match(r'$[.,\-[0-9]',self.suite_name):
-                    my_logger.info('Adding X to name')
-                    cmd.append(f'--workflow-name=X{self.suite_name}')
-                else:
-                    cmd.append(f'--workflow-name={self.suite_name}')
+                cmd.append(f'--workflow-name={self.suite_name}')
                 f.write(' '.join(cmd) + '\n')
         # set permissions to be executable
         script.chmod(0o755)
