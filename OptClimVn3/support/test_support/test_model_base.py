@@ -130,15 +130,16 @@ class TestModelBase(unittest.TestCase):
         self.assertIsInstance(got_path, pathlib.Path)
         self.assertEqual(expected_path,got_path)
         # check that ~ works.
-        test_path = '~some_user/some_dir/james.txt'
-        expected_path = pathlib.Path('~some_user/some_dir/james.txt').expanduser()
+        user = os.environ.get('USER','some_user') # get user id.
+        test_path = f'~{user}/some_dir/james.txt'
+        expected_path = pathlib.Path(f'~{user}/some_dir/james.txt').expanduser()
         got_path = model_base.expand(test_path)
         self.assertIsInstance(got_path, pathlib.Path)
         self.assertEqual(expected_path,got_path)
         # set local to False.
         os.environ['fred']='fred/james.txt'
-        test_path = '~some_user/some_dir/$fred'
-        expected_path = pathlib.PurePath('~some_user/some_dir/fred/james.txt')
+        test_path = f'~{user}/some_dir/$fred'
+        expected_path = pathlib.PurePath(f'~{user}/some_dir/fred/james.txt')
         got_path = model_base.expand(test_path,local=False)
 
         self.assertIsInstance(got_path,pathlib.PurePath)
