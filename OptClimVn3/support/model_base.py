@@ -397,14 +397,21 @@ class model_base:
 
 
     @classmethod
-    def expand(cls, filestr: typing.Optional[str]) -> typing.Optional[pathlib.Path]:
+    def expand(cls, filestr: typing.Optional[str],
+               local:bool = True) -> typing.Optional[pathlib.Path|pathlib.PurePath]:
         """
         Expand any env vars, convert to path and then expand any user constructs.
         :param filestr: path like string or None
+        :param local: whether to expand user constructs like ~ and make a Path
+        If False then only env vars are expanded and conversion to a PurePath is done.
         :return:expanded path or, if filestr is None, None.
         """
         if filestr is None:
             return None
         path = os.path.expandvars(filestr)
-        path = pathlib.Path(path).expanduser()
+        if local:
+            path = os.path.expanduser(path)
+            path = pathlib.Path(path)
+        else:
+            path = pathlib.PurePath(path)
         return path

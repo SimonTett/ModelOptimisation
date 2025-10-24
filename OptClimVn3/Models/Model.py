@@ -318,13 +318,10 @@ class Model(ModelBaseClass, journal):
         self.configs = GroupConfig(root_dir=self.config_dir) # grouped configs for writing out generic namelists
         # Set up remote stuff.
         remote_machine = self.run_info.get('remote_machine', None)
-        remote_model_dir = self.run_info.get('remote_model_dir', None)
-        local_root_dir = self.run_info.get('local_root_dir', None)
-        if local_root_dir is not None:
-            local_root_dir = pathlib.PurePath(local_root_dir)
+        remote_model_dir = self.expand(self.run_info.get('remote_model_dir', None),local=False)
+        local_root_dir = self.expand(self.run_info.get('local_root_dir', None))
         if remote_model_dir is not None:
-            remote_model_dir = pathlib.PurePath(remote_model_dir)
-            remote_model_dir, rel_path = self.new_path(self.model_dir, remote_model_dir, root_dir=local_root_dir)
+            remote_model_dir = self.new_path(self.model_dir, remote_model_dir, root_dir=local_root_dir)
 
 
         self.remote = dict(remote_machine=remote_machine, remote_model_dir=remote_model_dir) # remote info
@@ -1497,7 +1494,7 @@ class Model(ModelBaseClass, journal):
     @staticmethod
     def new_path(path: pathlib.PurePath,
                  target_dir: pathlib.PurePath,
-                 root_dir: typing.Optional[pathlib.PurePath] = None) -> tuple[pathlib.PurePath,pathlib.PurePath]:
+                 root_dir: typing.Optional[pathlib.PurePath] = None) -> pathlib.PurePath:
         """
         Create a new path by replacing the root_dir in path with target_dir.
         :param path:path to be modified
@@ -1512,7 +1509,7 @@ class Model(ModelBaseClass, journal):
         else:
             add_path = path.name
         new_path = target_dir / add_path
-        return new_path,add_path
+        return new_path
 
     def install_remote_command(self,
                                remote_machine:typing.Optional[str]=None,

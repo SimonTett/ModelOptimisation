@@ -136,7 +136,7 @@ class test_umRose(unittest.TestCase):
         self.assertEqual(bak_files, expected_bak_files)
 
         archer_archive_dir = model.read_param('archer_archive_dir')
-        self.assertEqual(archer_archive_dir,str(model.model_dir/'output'))
+        self.assertEqual(archer_archive_dir,(model.model_dir/'output').as_posix())
 
 
 
@@ -238,7 +238,7 @@ and even more text
         shutil.copytree(self.refDir,self.model.config_dir,dirs_exist_ok=True)
         # create the submit and continue scripts
         for file in [self.model.submit_script, self.model.continue_script,self.model.clean_script]:
-
+            file.parent.mkdir(parents=True, exist_ok=True)
             with file.open('wt') as f:
                 f.write('A script')
 
@@ -319,7 +319,7 @@ and even more text
     def test_init(self):
         # test the init method
         reference = pathlib.Path('/home/n02/n02-puma/tetts/roses/u-db898')
-        expected_prebuild = pathlib.PurePath('~tetts/prebuilds/u-dr496/fcm_make_um')  # expected prebuild path
+        expected_prebuild = pathlib.PurePath('~tetts/prebuilds/u-dr496/fcm_make_um').as_posix()  # expected prebuild path
         post_process = dict(script='$OPTCLIMTOP/OptClimVn3/scripts/comp_obs.py', output_file='obs.json')
 
         parameters = dict(dp_corr_strat=500.0, two_d_fsd_factor=2,
@@ -334,12 +334,15 @@ and even more text
                             is_absolute=MagicMock(return_value=True),
                             samefile=MagicMock(return_value=False),):
 
-            model = UM_rose(name='test001', reference=reference,
-                            model_dir=self.testDir/'fred/test001', post_process=post_process,
+            model = UM_rose(name='001test', reference=reference,
+                            model_dir=self.testDir/'fred/001test', post_process=post_process,
                             parameters=parameters,
                             run_info=run_info)
-            self.assertEqual(model.parameters_no_key['prebuild'], expected_prebuild.as_posix())
-            self.assertEqual(model.parameters_no_key['transfer_dir'], 'some_test_dir/fred')
+            self.assertEqual(expected_prebuild,model.parameters_no_key['prebuild'], )
+            self.assertEqual('some_test_dir/fred',model.parameters_no_key['transfer_dir'] )
+            # check suite_name is as expected.
+            self.assertEqual('fred/X001test',model.suite_name, )
+
 
     def no_test_guess_prebuild(self):
         # check _guess_prebuild works. Turned off aas not using guess_prebuild
