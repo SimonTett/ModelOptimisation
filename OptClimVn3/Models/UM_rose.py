@@ -180,7 +180,7 @@ class UM_rose(Model):
                 # transfer_dir ends with model_dir.name and when the transfer to jasmin happens the model name is used so drop it.
                 transfer_dir = transfer_dir.parent
                 self.parameters_no_key['transfer_dir'] = transfer_dir.as_posix() # posix string for the UM
-                my_logger.debug(f'Transfer dir: {self.parameters_no_key['transfer_dir']}')
+                my_logger.debug(f'Transfer dir: {self.parameters_no_key["transfer_dir"]}')
             # deal with prebuild
             if 'prebuild' in self.parameters_no_key:
                 prebuild = self.parameters_no_key['prebuild']
