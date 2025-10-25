@@ -611,9 +611,12 @@ class Model(ModelBaseClass, journal):
                     (self.model_dir / file).chmod(0o755)  # set permission
             # install remote if needed.
 
-            cmd=self.install_remote_command(remote_machine=self.remote.get('remote_machine'),remote_model_dir=self.remote.get('remote_model_dir'))
-            if cmd is not None:
-                output=self.run_cmd(cmd,convert_to_posix=True)
+            cmds=self.install_remote_command(remote_machine=self.remote.get('remote_machine'),
+                                             remote_model_dir=self.remote.get('remote_model_dir'))
+            # expect list of cmds to run. make dir and then do rsync
+            if cmds is not None:
+                for cmd in cmds:
+                    output=self.run_cmd(cmd,convert_to_posix=True)
                 my_logger.debug(f"Installed model remotely with {cmd} and got {output}")
 
 
@@ -1513,7 +1516,7 @@ class Model(ModelBaseClass, journal):
 
     def install_remote_command(self,
                                remote_machine:typing.Optional[str]=None,
-                               remote_model_dir:typing.Optional[pathlib.PurePath]=None) -> typing.Optional[list[str|pathlib.PurePath]]:
+                               remote_model_dir:typing.Optional[pathlib.PurePath]=None) -> typing.Optional[list[list[str|pathlib.PurePath]]]:
         """
         Generate cmd to install on remote machine. Use run_cmd to actually do it.
         WIll return None if no remote machine or remote_dir
@@ -1527,13 +1530,16 @@ class Model(ModelBaseClass, journal):
           self.model_dir will be copied to remote_machine:remote_dir
          uses rsync to copy model directory to remote system.
         If remote_dir is None then nothing is done and True is returned.
+        First creates remote_dir on remote_machine using ssh cmd
         Assumed that rsync will create remote_dir if it does not exist.
         :raises ValueError: if remote_dir is not Nome and not a PurePath or remote_dir is not None and not a str
 
         Thoughts -- could work with remote_machine not set by just returning cmd to rsync to remote_model_dir (with potential path adjustment).
         But for now require both to be set.
+         A more generic way of doing this is to have a script that gets runs to do the installation.
+           That then offloads the details of how to do the install to that script. For example could use rsync or scp or globus
 
-        :return: cmd (list of strings/purePaths to run).
+        :return: list of commands to run. Each element is a  list of strings/purePaths to run.
         """
         if (remote_model_dir is None) or (remote_machine is None):
             my_logger.debug(f"Remote machine or  remote dir are not set.")
@@ -1545,15 +1551,19 @@ class Model(ModelBaseClass, journal):
             raise  ValueError(f"remote_machine {remote_machine} is not a string")
 
         my_logger.debug(f"Will install {self.model_dir} to {remote_model_dir} on {remote_machine}")
+        # TODO -- need to create the remote directory if it does not exist??
+
+
 
         remote_path = remote_model_dir.as_posix().rstrip('/') # get as posix path for remote machine.
+        cmd0 = self.ssh_command(['mkdir', '-p', remote_path], remote_machine=remote_machine)  # cmd to create remote dir if needed.
         # now create cmd to rsync the model dir to the remote dir. rsync will create remote_dir if it does not exist.
         ssh_opts = ["-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes"] # run in batch mode with strict host key checking
         ssh_command = "ssh " + " ".join(shlex.quote(opt) for opt in ssh_opts)
-        cmd = ['rsync','-a','-q',"-e",ssh_command,pathlib.PurePath(self.model_dir),f"{remote_machine}:{remote_path}"]
+        cmd = ['rsync','-a','-q',"-e",ssh_command,pathlib.PurePath(self.model_dir),f"{remote_machine}:{remote_path}/"]
         # note no trailing slash so we copy the model_dir to remote_path NOT into remote_path (as would happen with a trailing slash)
 
-        return cmd
+        return [cmd0,cmd]
 
 
 

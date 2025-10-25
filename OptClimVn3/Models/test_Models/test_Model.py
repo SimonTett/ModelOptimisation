@@ -402,8 +402,11 @@ class ModelTestCase(unittest.TestCase):
 
         # need to recreate model as model creation sets everything up.
         model.instantiate()
-        self.assertEqual(mck_run_cmd.call_count, 1)
-        cmd_args = mck_run_cmd.call_args.args[1]  # first arg is self
+        self.assertEqual(mck_run_cmd.call_count, 2)
+        cmd_args = mck_run_cmd.call_args_list[0].args[1]  # first arg is self getting the remote create dir
+        self.assertIn('ssh', cmd_args[0])
+        # rysnc command should be in last call
+        cmd_args = mck_run_cmd.call_args_list[-1].args[1]  # first arg is self
         self.assertIn('rsync', cmd_args[0])
         self.assertIn('user@my.remote.machine.ac.uk:/home/user/remote_model_dir/study2', cmd_args[-1])  # dest dir
 
@@ -1035,10 +1038,10 @@ class ModelTestCase(unittest.TestCase):
         ssh_opts = ["-o", "BatchMode=yes", "-o",
                     "StrictHostKeyChecking=yes"]  # run in batch mode with strict host key checking
         ssh_command = "ssh " + " ".join(shlex.quote(opt) for opt in ssh_opts)
-        expected_cmd = ['rsync','-a','-q','-e',ssh_command,pathlib.PurePath(self.model.model_dir),f"{remote_machine}:{remote_dir.as_posix()}"]
+        expected_cmd = ['rsync','-a','-q','-e',ssh_command,pathlib.PurePath(self.model.model_dir),f"{remote_machine}:{remote_dir.as_posix()}/"]
 
-        cmd = self.model.install_remote_command(remote_machine=remote_machine, remote_model_dir=remote_dir)
-        self.assertEqual(cmd, expected_cmd)
+        cmds = self.model.install_remote_command(remote_machine=remote_machine, remote_model_dir=remote_dir)
+        self.assertEqual(cmds[1], expected_cmd)
 
 
 
