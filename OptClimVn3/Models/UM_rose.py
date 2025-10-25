@@ -477,7 +477,7 @@ class UM_rose(Model):
         else:
             raise ValueError(f"Status {self.status} not expected ")
 
-        cmd = [str(self.model_dir/script)]
+        cmd = [self.model_dir/script]
 
         return cmd
 
@@ -580,11 +580,16 @@ class UM_rose_cylc8(UM_rose):
             raise ValueError(f'Unknown script type: {script_type}')
         script.parent.mkdir(parents=True, exist_ok=True)  # might need to create directory
         script.unlink(missing_ok=True)  # unlink it if it exists.
-        remote_dir = self.remote.get('remote_directory')
+        remote_dir = self.remote.get('remote_model_dir')
         if remote_dir is not None:
-            config_directory = remote_dir/self.config_dir # path on remote machine to config dir.
+            config_directory = self.new_path(self.config_dir,remote_dir)
+            if not config_directory.is_absolute(): # need abs path
+                config_directory = pathlib.PurePath('~')/config_directory
         else:
-            config_directory = self.model_dir/self.config_dir
+            # this code unlikely to be well tested as on archer2 run cylc from pum!
+            config_directory = self.config_dir
+            if not config_directory.is_absolute(): # need abs path
+                config_directory = pathlib.Path.cwd()/config_directory
 
         with script.open('wt') as f:
             f.write('#!/bin/bash --login\n')

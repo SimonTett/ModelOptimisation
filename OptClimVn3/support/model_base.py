@@ -113,7 +113,10 @@ class journal:
                 print(f"Command {' '.join(str_cmd)} stored at {key} returned {dct['result']}")
         return
 
-    def run_cmd(self, cmd: list[str|pathlib.PurePath],convert_to_posix:bool = False, **kwargs) -> str:
+    def run_cmd(self, cmd: list[str|pathlib.PurePath],
+                convert_to_posix:bool = False,
+                quote:bool=True,
+                **kwargs) -> str:
         """
         Run a command using subprocess.check_output and record output.
         :param cmd: command to run. Any shell variables ($VARNAME) in the cmd will be expanded at the time of running. Should be a list of strings or PurePaths
@@ -135,7 +138,8 @@ class journal:
                 else:
                     c = str(c) # convert to str for running.
             c = os.path.expandvars(c)  # expand any shell variables
-            c = shlex.quote(c)  # make it a bit safer.
+            if quote:
+                c = shlex.quote(c)  # make it a bit safer.
             cmd_to_run.append(c)
 
 

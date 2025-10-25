@@ -616,7 +616,7 @@ class Model(ModelBaseClass, journal):
             # expect list of cmds to run. make dir and then do rsync
             if cmds is not None:
                 for cmd in cmds:
-                    output=self.run_cmd(cmd,convert_to_posix=True)
+                    output=self.run_cmd(cmd,convert_to_posix=True,quote=False)
                 my_logger.debug(f"Installed model remotely with {cmd} and got {output}")
 
 
@@ -744,8 +744,8 @@ class Model(ModelBaseClass, journal):
         # Model has been modified so that will run model.set_status("SUCCEEDED")
         # which will release the post-processing job.
         cmd = self.submit_cmd()  # cmd that submits the model.
-        remote_machine = self.run_info.get('remote_machine', None)
-        remote_dir= self.run_info.get('remote_dir', None)
+        remote_machine = self.remote.get('remote_machine')
+        remote_dir= self.remote.get('remote_model_dir')
         if remote_dir is not None:
             remote_dir = pathlib.PurePath(remote_dir) # remote_dir should be a string
         cmd = self.ssh_command(cmd,remote_machine=remote_machine,remote_model_dir=remote_dir)
@@ -1551,16 +1551,13 @@ class Model(ModelBaseClass, journal):
             raise  ValueError(f"remote_machine {remote_machine} is not a string")
 
         my_logger.debug(f"Will install {self.model_dir} to {remote_model_dir} on {remote_machine}")
-        # TODO -- need to create the remote directory if it does not exist??
-
-
 
         remote_path = remote_model_dir.as_posix().rstrip('/') # get as posix path for remote machine.
         cmd0 = self.ssh_command(['mkdir', '-p', remote_path], remote_machine=remote_machine)  # cmd to create remote dir if needed.
         # now create cmd to rsync the model dir to the remote dir. rsync will create remote_dir if it does not exist.
         ssh_opts = ["-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes"] # run in batch mode with strict host key checking
         ssh_command = "ssh " + " ".join(shlex.quote(opt) for opt in ssh_opts)
-        cmd = ['rsync','-a','-q',"-e",ssh_command,pathlib.PurePath(self.model_dir),f"{remote_machine}:{remote_path}/"]
+        cmd = ['rsync','-a','-q',"-e",ssh_command,self.model_dir.as_posix()+'/',f"{remote_machine}:{remote_path}"]
         # note no trailing slash so we copy the model_dir to remote_path NOT into remote_path (as would happen with a trailing slash)
 
         return [cmd0,cmd]
