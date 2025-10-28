@@ -339,7 +339,7 @@ and even more text
                             parameters=parameters,
                             run_info=run_info)
             self.assertEqual(expected_prebuild,model.parameters_no_key['prebuild'], )
-            self.assertEqual('some_test_dir/fred',model.parameters_no_key['transfer_dir'] )
+            self.assertEqual('some_test_dir',model.parameters_no_key['transfer_dir'] )
             # check suite_name is as expected.
             self.assertEqual('fred/X001test',model.suite_name, )
 

@@ -75,6 +75,10 @@ class SubmitStudy(Study, model_base, journal):
         next_iter_jids -- the jobs ids of all submitted next_iter_cmd jobs
     """
 
+    """
+    Issues: 1) loading should change the config path or make it an absolute paths.
+    """
+
     fn_type = Callable[[Mapping], pd.Series]  # type hint for fakeFn
 
     def __init__(self,

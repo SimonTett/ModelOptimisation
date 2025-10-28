@@ -23,10 +23,27 @@
 #    In particular, it does not have model_dir and all the other stuff just the config.
 #      Maybe a new super class ModelConfig which takes all the config related stuff then Model inherits from that. But will need to know what the configurations are...
 # 5) Have a clean method which runs cylc clean. That could form part of the post_process step -- run after successfully running post process.
-#     have um_rose process method which calls the super class process and then runs cylc clean. Assuming that if post_process fails then get an error and not much happens!
-#     Probably a bad idea to have it run automatically. Perhaps a SubmitStudy method clean which runs clean on all models in the study. [Clean being model dependent]
+#     Perhaps a SubmitStudy method clean which runs clean on all models in the study. [Clean being model dependent]
 
-#
+"""
+Current problems:
+  transfer to jasmin is giving files something like: /gws/nopw/j04/terrafirma/tetts/optclim/test_run2/test_run2/tc000
+  transfer_dir='/gws/nopw/j04/terrafirma/tetts/optclim/test_run2'
+
+  My guess is that my evil hack of naming the run root_dir/tc000. Will try not changing transfer_dir to see if that helps.
+
+  Data is being copied, for example, to output/test_run2/tc003/YYYYetc -- ideally would like data to go to output/YYYYetc
+  Looks like run name is being used. To much of a faff to change now. Will deal with later if needed.
+
+  jasmin transfer fails (because credentials  expired) then very hard to restart it.
+    Auto restart does not work even when reauthorised..
+
+  And then the post-processing job never gets released for reasons... Looks like housekeeping never got run...
+  Soln: model.succeeded() -- which will release the job.
+
+  Failures from make_ancil -- increase time in reference job.
+
+"""
 
 
 
@@ -155,7 +172,7 @@ class UM_rose(Model):
             # deal with transfer_dir -- for jasmin archiving
             if 'transfer_dir' in self.parameters_no_key:
                 transfer_dir = self.expand(self.parameters_no_key['transfer_dir'],local=False) # remote path
-                transfer_dir = self.new_path(self.model_dir.parent,transfer_dir,root_dir=local_root_dir)
+                #transfer_dir = self.new_path(self.model_dir.parent,transfer_dir,root_dir=local_root_dir)
                 # transfer_dir ends with model_dir.name and when the transfer to jasmin happens the model name is used so drop it.
                 self.parameters_no_key['transfer_dir'] = transfer_dir.as_posix() # posix string for the UM
                 my_logger.debug(f'Transfer dir: {self.parameters_no_key["transfer_dir"]}')

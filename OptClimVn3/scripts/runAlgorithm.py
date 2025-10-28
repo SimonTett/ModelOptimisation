@@ -69,10 +69,11 @@ parser.add_argument("--update_config", action='store_true',
                     help="If set update *existing* configuration from configuration given. Be careful when doing this.")
 parser.add_argument("-m", "--monitor", action='store_true', help='Producing monitoring plot after running')
 parser.add_argument('--kill',action='store_true',help='Kill all jobs in the study. ')
-parser.add_argument('--process',action='store_true',help='Process all models that are SUCCEEDED and have no jobs. ')
+parser.add_argument('--process',action='store_true',help='Process all models that are SUCCEEDED and have no jobs. Then continue.')
 parser.add_argument('--model_pattern',type=str,default=None,
                     help='glob pattern relative to the rootDir to load models when config is generated for first time. A good choice is "*/*.mcfg". Not tested. ')
-
+parser.add_argument('--set_local_root_dir',action=argparse.BooleanOptionalAction,default=True,
+                    help='If set (default) then if run_info.local_root_dir is not set it to root_dir. ')
 fail_help_str = """Behaviour for models that failed. Choices are:
                 fail (default), 
                 continue (continue run with no changes)), 
@@ -127,6 +128,10 @@ if args.dir is not None:
     rootDir = Model.expand(args.dir)  # directory defined so set rootDir
 else:  # set rootDir to cwd/name
     rootDir = pathlib.Path.cwd() / configData.name()  # default path
+
+if args.set_local_root_dir and (configData.run_info().get('local_root_dir') is None):
+    configData.run_info()['local_root_dir'] = str(rootDir)
+    my_logger.info(f"Set run_info.local_root_dir to {rootDir} ")
  
 
 if purge: # purging data? Do early to minimize the amount of output user sees before this.
@@ -166,6 +171,7 @@ rSUBMIT = None  # set it to None
 if config_path.exists():  # config file exists. Read it in.
     my_logger.info(f"Reading status from {config_path}")
     rSUBMIT = runSubmit.runSubmit.load_SubmitStudy(config_path)
+
     if not isinstance(rSUBMIT, runSubmit.runSubmit):
         raise ValueError(f"Something wrong")
     if update_config:
@@ -177,9 +183,13 @@ if config_path.exists():  # config file exists. Read it in.
     if args.kill:
         my_logger.info(f"Killing all jobs in {rSUBMIT}")
         rSUBMIT.kill()
+
     if args.process:
         my_logger.info(f"Processing all models in {rSUBMIT} that are SUCCEEDED and have no jobs.")
         rSUBMIT.process()
+        cmd = rSUBMIT.engine.kill_job(rSUBMIT.next_iter_jids[1]) # kill the next iter job.
+        rSUBMIT.run_cmd(cmd)
+        my_logger.info(f"Killing next iteration job with cmd: {cmd}")
 
     if delete:  # delete the config
         result = input(f">>>Going to delete existing configs in {rootDir}<<<. OK ? (yes if so): ") 
@@ -209,6 +219,9 @@ if rSUBMIT is None:  # no configuration exists. So create it.
         my_logger.info(f"Loaded models in {files} ")
         raise NotImplementedError('Need to deal with gen_name which could be inconsistent here.' )
     my_logger.debug(f"Created new runSubmit {rSUBMIT}")
+else:
+    my_logger.debug(f"Using existing runSubmit {rSUBMIT}")
+
 
 
 # We might  have runs to do so check that and run them if so.
@@ -235,16 +248,16 @@ if not (dry_run or read_only):  # not dry running or read only.
             if fail == 'delete':  # delete model
                 rSUBMIT.delete_model(model)
     #  submit models and exit -- only those that are submittable will be submitted.
-    nModels = rSUBMIT.submit_all_models(fake_fn=fakeFn)
+    #nModels = rSUBMIT.submit_all_models(fake_fn=fakeFn)
     # this handles both models that are instantiated or those that need continuing.
     # see submit_all_models for details.
-    if nModels > 0:  # submitted some models
-        my_logger.info(f"Submitted {nModels}. rSubmit: {rSUBMIT}")
-        exit(0)  # just exit.
+    #if nModels > 0:  # submitted some models
+    #    my_logger.info(f"Submitted {nModels}. rSubmit: {rSUBMIT}")
+    #    exit(0)  # just exit.
 
-# check status is only PROCESSED.
+# check status is only PROCESSED or INSTANTIATED.
 status = rSUBMIT.status()
-if np.any(status != 'PROCESSED'):
+if any(s not in ['PROCESSED','INSTANTIATED'] for s in status):
     raise ValueError(f"Have unexpected status rSUBMIT:{rSUBMIT}")
 
 algorithmName = configData.optimise()['algorithm'].upper()

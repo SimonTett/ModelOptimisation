@@ -133,6 +133,13 @@ class runSubmit(SubmitStudy):
 
     """
 
+    """
+    Issues -- no logical info until all runs done (for run_params anyhow).  
+    Might be path in runAlgorithm where we have models to run so don't run algorithm. 
+    Soln would be adding a method to runSubmit to update logical info from existing models.
+    perhaps on load?? 
+    """
+
     def __init__(self,
                  config: typing.Optional[OptClimConfigVn3],
                  name: typing.Optional[str] = None,
@@ -223,6 +230,9 @@ class runSubmit(SubmitStudy):
                 # That would terminate but then jacobian etc would be stuffed as would use this last state. A better approach might be to set
                 # self.exceeded_max_models to True. Then rerun the algorithm with maxFn set to max_model_simulations.
                 # OR set maxFn to min(max_model_simulations,maxFn).
+        elif model.status in  ["INSTANTIATED"]:  # model exists but needs submitting
+            my_logger.debug(f"Model {model} has been instantiated but not run -- need to submit")
+            raise optclim_exceptions.submitModel
 
         elif model.status != "PROCESSED":  # not processed so raise ValueError and complain.
             raise ValueError(f"{model} status != PROCESSED but is {model.status}")

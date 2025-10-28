@@ -1038,7 +1038,7 @@ class ModelTestCase(unittest.TestCase):
         ssh_opts = ["-o", "BatchMode=yes", "-o",
                     "StrictHostKeyChecking=yes"]  # run in batch mode with strict host key checking
         ssh_command = "ssh " + " ".join(shlex.quote(opt) for opt in ssh_opts)
-        expected_cmd = ['rsync','-a','-q','-e',ssh_command,pathlib.PurePath(self.model.model_dir),f"{remote_machine}:{remote_dir.as_posix()}/"]
+        expected_cmd = ['rsync','-a','-q','-e',ssh_command,str(self.model.model_dir)+'/',f"{remote_machine}:{remote_dir.as_posix()}"]
 
         cmds = self.model.install_remote_command(remote_machine=remote_machine, remote_model_dir=remote_dir)
         self.assertEqual(cmds[1], expected_cmd)

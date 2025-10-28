@@ -48,6 +48,18 @@ Do write tests for your new Model testing your new and modified methods.
 """
 
 
+
+"""
+Failure modes and solutions:
+1) Post-processing times out. Model state is SUCCEEDED but no post-processing done.
+    PP job id will not exist.
+    Solution: re-run post-processing only. 
+    runAlgorithm --process 
+    
+    Complain to archer2 help desk -- job has 30 mins time limit and runs in about 3 mins interactively. 
+"""
+
+
 import copy
 import functools
 import logging
@@ -1557,7 +1569,7 @@ class Model(ModelBaseClass, journal):
         # now create cmd to rsync the model dir to the remote dir. rsync will create remote_dir if it does not exist.
         ssh_opts = ["-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes"] # run in batch mode with strict host key checking
         ssh_command = "ssh " + " ".join(shlex.quote(opt) for opt in ssh_opts)
-        cmd = ['rsync','-a','-q',"-e",ssh_command,self.model_dir.as_posix()+'/',f"{remote_machine}:{remote_path}"]
+        cmd = ['rsync','-a','-q',"-e",ssh_command,str(self.model_dir)+'/',f"{remote_machine}:{remote_path}"]
         # note no trailing slash so we copy the model_dir to remote_path NOT into remote_path (as would happen with a trailing slash)
 
         return [cmd0,cmd]

@@ -7,6 +7,7 @@ import tempfile
 from Model import Model
 import platform
 import shutil
+import typing
 
 import genericLib
 import os
@@ -77,15 +78,21 @@ class testScripts(unittest.TestCase):
         """ Test runAlgorithm by running it in test mode.
         Success means it has worked!
         """
-        if platform.system() == 'Windows':
-            cmd = [sys.executable]
+        def make_cmd(config_path:typing.Optional[pathlib.Path]=None):
+            if platform.system() == 'Windows':
+                cmd = [sys.executable]
 
-        else:
-            cmd = []
-        config_pth = Model.expand("$OPTCLIMTOP/OptClimVn3/configurations/dfols14param_opt3.json")
-        config = StudyConfig.readConfig(config_pth)
-        cmd += [str(self.script_dir / 'runAlgorithm.py'), str(config_pth), "-v", "-t",
-                "-d", str(self.tempDir), "--delete"]
+            else:
+                cmd = []
+            if config_path is None:
+                config_path = Model.expand("$OPTCLIMTOP/OptClimVn3/configurations/dfols14param_opt3.json")
+            cmd += [str(self.script_dir / 'runAlgorithm.py'), str(config_path), "-v", "-t",
+                    "-d", str(self.tempDir)]
+            return cmd
+
+        config_path = Model.expand("$OPTCLIMTOP/OptClimVn3/configurations/dfols14param_opt3.json")
+        cmd = make_cmd(config_path=config_path)
+        config = StudyConfig.readConfig(config_path)
         res = subprocess.run(cmd, capture_output=True, text=True)
         if res.returncode != 0:
             print("stdout", res.stdout)
@@ -95,6 +102,55 @@ class testScripts(unittest.TestCase):
         self.assertTrue(config_pth.exists())  # check config file exists.
         sconfig = runSubmit.load(config_pth)
         self.assertIsInstance(sconfig, runSubmit)
+        # check that config.run_info()['local_root_dir'] is self.tempDir.parent
+        local_root_dir = sconfig.config.run_info()['local_root_dir']
+        self.assertEqual(self.tempDir, pathlib.Path(local_root_dir))
+
+
+        cmd +=['--no-set_local_root_dir']
+        shutil.rmtree(self.tempDir)
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        if res.returncode != 0:
+            print("stdout", res.stdout)
+            print("stderr", res.stderr)
+            res.check_returncode()
+        config_pth = self.tempDir / (config.name() + ".scfg")
+        sconfig = runSubmit.load(config_pth)
+        self.assertIsNone(sconfig.config.run_info().get('local_root_dir'))
+        # now use dryrun
+        cmd = make_cmd()
+        cmd += ['--dryrun','-v']
+        shutil.rmtree(self.tempDir)
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        if res.returncode != 0:
+            print("stdout", res.stdout)
+            print("stderr", res.stderr)
+            print("cmd is ", ' '.join(cmd))
+            res.check_returncode()
+
+        config_pth = self.tempDir / (config.name() + ".scfg")
+        sconfig = runSubmit.load(config_pth)
+        print(len(sconfig.model_index))
+        models = [m for m in sconfig.model_index.values() if m.status == 'INSTANTIATED']
+        # fake run the first 5 models.
+        for m in models[:5]:
+            m.status = 'PROCESSED'
+            m.simulated_obs = genericLib.fake_fn(sconfig.config,m.parameters)
+            m.dump_model()
+
+
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        print("stdout", res.stdout)
+        print("stderr", res.stderr)
+        if res.returncode != 0:
+
+            print("cmd is ", ' '.join(cmd))
+            res.check_returncode()
+        sconfig = runSubmit.load(config_pth)
+        models = sconfig.processed_models()
+        self.assertEqual(len(models),5)
+        self.assertEqual(len(sconfig.logical_obs()),5)
+        self.assertEqual(len(sconfig.logical_cost()),5)
 
 
 if __name__ == '__main__':
