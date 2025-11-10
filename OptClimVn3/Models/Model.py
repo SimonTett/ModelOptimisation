@@ -168,13 +168,16 @@ class Model(ModelBaseClass, journal):
     allowed_status = set(status_info.keys())
     _known_parameters_cache: typing.Optional[set[str]] = None  # cache for known parameters.
     @classmethod
-    def load_model(cls, model_path: pathlib.Path):
+    def load_model(cls, model_path: pathlib.Path,
+                   parameters: typing.Optional[list] = None,):
         """
         Load a configuration
         :param model_path:  where the configuration is stored
+        :param parameters: list of parameters to use. If provided will read all parameters from model config.
           config_path will be set to model_path
           model_dir will be set to model_path.parent.
           warnings given if these are changes.
+
         :return: loaded model
         """
         model = super().load(model_path)  # Using json "magic". See generic_json for what actually happens.
@@ -186,6 +189,18 @@ class Model(ModelBaseClass, journal):
         if not model.model_dir.samefile(model_path.parent):
             my_logger.warning(f"Model {model} model_dir changed to {model_path.parent} ")
             model.model_dir = model_path.parent # update directory with where we actually loaded it from.
+        if parameters is not None:
+            # read all parameters from model config.
+            all_params = model.read_params(parameters, fail=True)
+            for p in all_params:
+                if p in model.parameters:
+                    if model.parameters[p] != all_params[p]:
+                        my_logger.warning(f"Model {model} parameter {p} changed from "
+                                          f"{model.parameters[p]} to {all_params[p]}")
+                else:
+                    my_logger.warning(f"Model {model} parameter {p} added with value {all_params[p]}")
+            model.parameters.update(all_params)  # update parameters with read values.
+            raise NotImplementedError("Model.load_model with parameters not implemented yet. Implement testing")
         return model
 
 
@@ -1152,6 +1167,7 @@ class Model(ModelBaseClass, journal):
         # dump the model. TODO: Make dump take a fp or a path. If it has a fileptr then just write to it.
         with tempfile.TemporaryDirectory() as tmpdir:
             # dump the model (but no change to internal values)
+            # handle models that were read in and so, potentially, outside rootDir
             tmpfile = pathlib.Path(tmpdir) / self.config_path.name
             self.dump(tmpfile)
             arc_path = self.config_path.relative_to(rootDir)
