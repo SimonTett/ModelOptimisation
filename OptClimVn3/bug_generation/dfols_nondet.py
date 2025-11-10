@@ -8,11 +8,15 @@ import tempfile
 from Model import Model
 import platform
 import shutil
+import genericLib
 
 import copy
 
+
+
 import StudyConfig
 from runSubmit import runSubmit # so we can test if we have one!
+genericLib.setup_env()
 script_dir = Model.expand("$OPTCLIMTOP/OptClimVn3/scripts")
 # std config first
 config_pth = Model.expand("$OPTCLIMTOP/OptClimVn3/configurations/dfols14param_opt3.json")
