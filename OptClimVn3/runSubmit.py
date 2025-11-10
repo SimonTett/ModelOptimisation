@@ -707,7 +707,7 @@ class runSubmit(SubmitStudy):
         finalConfig = self.runConfig(scale=scale,transJacobian=jac)  # get the configuration.
         return finalConfig
 
-    def runDFOLS(self, scale=True):
+    def runDFOLS(self, scale=True,stop=False):
         """
         run DFOLS algorithm. It runs until new models need to be ran or DFOLS complets.
                 If new models are needed then runModelError will be raised.
@@ -716,6 +716,7 @@ class runSubmit(SubmitStudy):
                 should trap that error and then run the necessary models using Submit.submit.
 
         :param scale (default True). If True scale data for transform matrix and in calculations of obs
+        :param stop If True stop the algorithm by setting 
         See StudyConfig.scalings()
         It should not make any difference if scale is True or False. But if regularisation is done
         then it is better to have all (diagonal) elements of the covariance matrix have roughly the same mag
@@ -756,14 +757,6 @@ class runSubmit(SubmitStudy):
         prange = (prange.loc['minParam',:].values,prange.loc['maxParam',:].values)
         # update the user parameters from the configuration.
         userParams = configData.DFOLS_userParams(userParams=userParams)
-        # potentially overwrite maxfun with max_model_simulations
-        max_model_sims = self.config.max_model_simulations()
-        if max_model_sims is not None:
-            maxfun = dfols_config.get("maxfun")
-            if maxfun is not None and (maxfun != max_model_sims):
-                my_logger.warning(f"Overwriting value of maxfun={maxfun} with max_model_simulations={max_model_sims}")
-            dfols_config['maxfun']=max_model_sims # and set it! and write back to the config.
-            self.config.DFOLS_config(dfols_config) # Store modified config back
         tMat = configData.transMatrix(scale=scale)  # scaling on transform matrix and in optfn  needs to be the same.
         # hacky stuff for dfols
         trap_two_evals = dfols_config.get("trap_two_evals",False) # deal with bad number of evals
@@ -774,6 +767,11 @@ class runSubmit(SubmitStudy):
         if raise_error is None:
             raise_error= False
         optFn = self.genOptFunction(transform=tMat, residual=True, raiseError=raise_error, scale=scale)
+        if stop:
+            dfols_config['maxfun']=len(self.logical_cost())+1
+            self.update_history(f"DFOLS stopped with maxfun = {dfols_config['maxfun']}")
+            # +1 allows cases that have been run but not added to logical obs/cost
+            self.config.DFOLS_config(dfols_config) # store modified config
         try:
             with warnings.catch_warnings():  # catch the complaints from DFOLS about NaNs encountered...
                 warnings.filterwarnings('ignore')  # Ignore all warnings...

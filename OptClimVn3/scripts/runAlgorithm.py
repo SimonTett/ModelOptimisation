@@ -89,6 +89,8 @@ parser.add_argument("--archive",action='store_true',help="Archive configuration 
 
 parser.add_argument("--guess_fail", action='store_true',
                     help="If set then use guess_fail to see if Running models have failed and set them failed.")
+parser.add_argument("--stop", action='store_true',
+                    help="Stop the algorithm which is algorithm specific and might require more models being ran.")
 args = parser.parse_args()
 verbose = args.verbose
 dry_run = args.dryrun
@@ -247,13 +249,6 @@ if not (dry_run or read_only):  # not dry running or read only.
                 model.status = 'CONTINUE'
             if fail == 'delete':  # delete model
                 rSUBMIT.delete_model(model)
-    #  submit models and exit -- only those that are submittable will be submitted.
-    #nModels = rSUBMIT.submit_all_models(fake_fn=fakeFn)
-    # this handles both models that are instantiated or those that need continuing.
-    # see submit_all_models for details.
-    #if nModels > 0:  # submitted some models
-    #    my_logger.info(f"Submitted {nModels}. rSubmit: {rSUBMIT}")
-    #    exit(0)  # just exit.
 
 # check status is only PROCESSED or INSTANTIATED.
 status = rSUBMIT.status()
@@ -271,19 +266,19 @@ while True:  # loop indefinitely so can have fake_fn. This really to test code/a
     try:  # run an algorithm iteration.
         np.random.seed(123456)  # init RNG though probably should go to the runXXX methods.
         if algorithmName == 'DFOLS':
-            finalConfig = rSUBMIT.runDFOLS(scale=True)
+            finalConfig = rSUBMIT.runDFOLS(scale=True,stop=args.stop)
         elif algorithmName == 'PYSOT':
             # pySOT -- probably won't work without some work.
-            finalConfig = rSUBMIT.runPYSOT(scale=True)
+            finalConfig = rSUBMIT.runPYSOT(scale=True,stop=args.stop)
         elif algorithmName == 'GAUSSNEWTON':
-            finalConfig = rSUBMIT.runGaussNewton(scale=True)
+            finalConfig = rSUBMIT.runGaussNewton(scale=True,stop=args.stop)
         elif algorithmName == 'JACOBIAN':
             # compute the Jacobian.
-            finalConfig = rSUBMIT.runJacobian()
+            finalConfig = rSUBMIT.runJacobian(stop=args.stop)
         elif algorithmName == 'RUNOPTIMISED':  # run optimised case through configuration in JSON file.
-            finalConfig = rSUBMIT.runOptimized()
+            finalConfig = rSUBMIT.runOptimized(stop=args.stop)
         elif algorithmName == 'RUN_PARAMS':  # run params.
-            finalConfig = rSUBMIT.run_params(scale=True)
+            finalConfig = rSUBMIT.run_params(scale=True,stop=args.stop)
         else:
             raise ValueError(f"Don't know what to do with Algorithm: {algorithmName}")
         break  # we have finished running algorithm so can exit and go to final clear up.
@@ -297,6 +292,11 @@ while True:  # loop indefinitely so can have fake_fn. This really to test code/a
         if dry_run:  # nothing gets submitted or faked. So exit
             my_logger.info(f"dry_run -- exiting")
             break
+        if stop: # stopping. Raise error if any runs to be submitted. This could change in future.
+            if iter_count > 0:
+                raise ValueError("Stopping but Instantiating  {iter_count} cases")
+            my_logger.info('Stopping')
+            break # exit loop
         nModels = rSUBMIT.submit_all_models(fake_fn=fakeFn)  # this also saves the config.
         finalConfig = rSUBMIT.runConfig(scale=True, add_cost=wantCost)  # generate final configuration
         my_logger.info(f"On iteration {iter_count} submitted {nModels} models")
