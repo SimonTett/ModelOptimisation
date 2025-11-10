@@ -2615,7 +2615,8 @@ class OptClimConfigVn3(OptClimConfigVn2):
         path, fn_name = fn_test.rsplit('.', 1)
         path = self.expand(path+'.py')  # expand it
         if not path.is_file():  # path is a file so use that
-            raise FileNotFoundError(f"Cannot find file {path} for fixed parameter function")
+            my_logger.warning(f"Cannot find file {path} for fixed parameter function")
+            return None
 
 
 
