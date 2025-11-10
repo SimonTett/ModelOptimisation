@@ -1046,19 +1046,17 @@ class ModelTestCase(unittest.TestCase):
 
 
         # remote_machine is None
-        result = self.model.install_remote_command(remote_machine=None, remote_model_dir=remote_dir)
-        self.assertIsNone(result)
+        self.assertIsNone(self.model.install_remote_command(remote_machine=None, remote_model_dir=remote_dir))
 
 
         # remote_model_dir is None
-        result = self.model.install_remote_command(remote_machine=remote_machine, remote_model_dir=None)
-        self.assertIsNone(result)
+        self.assertIsNone(self.model.install_remote_command(remote_machine=remote_machine, remote_model_dir=None))
 
         # failure if remote_dir is not a pure path or None
         with self.assertRaises(ValueError) as err:
-            result = self.model.install_remote_command(remote_machine=remote_machine, remote_model_dir=str(remote_dir))
+            self.model.install_remote_command(remote_machine=remote_machine, remote_model_dir=str(remote_dir))
         with self.assertRaises(ValueError) as err:
-            result = self.model.install_remote_command(remote_machine=123456, remote_model_dir=remote_dir)
+            self.model.install_remote_command(remote_machine=123456, remote_model_dir=remote_dir)
 
     def test_ssh_command(self):
         """

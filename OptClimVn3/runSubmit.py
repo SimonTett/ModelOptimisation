@@ -895,7 +895,7 @@ class runSubmit(SubmitStudy):
         params_dir = self.config.optimise() # get the parameters to run
         params = self.get_parameters(params_dir) # convert to dataframe
 
-        obs = self.stdFunction(params.values, df=True, raiseError=True,ensemble_average=ensemble_average,
+        self.stdFunction(params.values, df=True, raiseError=True,ensemble_average=ensemble_average,
                                scale=scale)
 
         filename = self.rootDir / (self.config.fileName().stem + "_final.json")  # final config file name

@@ -168,7 +168,6 @@ class UM_rose(Model):
                 if self.run_info.get(key) is not None:
                     # Get None if either null in the original  json config or not present
                     self.parameters_no_key[key] = self.run_info[key]
-            local_root_dir = self.expand(self.run_info.get('local_root_dir'))
             # deal with transfer_dir -- for jasmin archiving
             if 'transfer_dir' in self.parameters_no_key:
                 transfer_dir = self.expand(self.parameters_no_key['transfer_dir'],local=False) # remote path

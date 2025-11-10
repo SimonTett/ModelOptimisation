@@ -6,7 +6,7 @@ import metomi.rose.config
 from aiofiles.ospath import samefile
 from scipy.constants import value
 
-from UM_rose import UM_rose, UKESM1_1, UKESM1_1_c8, config_dir
+from UM_rose import UM_rose, UKESM1_1, UKESM1_1_c8
 import copy
 import tempfile
 import pathlib
