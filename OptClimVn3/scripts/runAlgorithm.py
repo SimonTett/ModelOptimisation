@@ -73,7 +73,7 @@ parser.add_argument('--process',action='store_true',help='Process all models tha
 parser.add_argument('--model_pattern',type=str,default=None,
                     help='glob pattern relative to the rootDir to load models when config is generated for first time. A good choice is "*/*.mcfg". Not tested. ')
 parser.add_argument('--set_local_root_dir',action=argparse.BooleanOptionalAction,default=True,
-                    help='If set (default) then if run_info.local_root_dir is not set it to root_dir. ')
+                    help='If true (default) then if run_info.local_root_dir is not set it to root_dir. ')
 fail_help_str = """Behaviour for models that failed. Choices are:
                 fail (default), 
                 continue (continue run with no changes)), 
