@@ -1,4 +1,5 @@
 import copy
+import os.path
 import pathlib
 import subprocess
 import tempfile
@@ -121,6 +122,30 @@ class TestModelBase(unittest.TestCase):
             setattr(m2,k,v_orig) # put original value back
         self.assertEqual(m1,m2) # and should be equal
 
+    def test_expand(self):
+        # test that we can expand paths.
+        test_path = '$OPTCLIMTOP/OptClimVn3/support/test_support/test_model_base.py'
+        expected_path = pathlib.Path(os.path.expandvars(test_path))
+        got_path = model_base.expand(test_path)
+        self.assertIsInstance(got_path, pathlib.Path)
+        self.assertEqual(expected_path,got_path)
+        # check that ~ works.
+        user = os.environ.get('USER','some_user') # get user id.
+        test_path = f'~{user}/some_dir/james.txt'
+        expected_path = pathlib.Path(f'~{user}/some_dir/james.txt').expanduser()
+        got_path = model_base.expand(test_path)
+        self.assertIsInstance(got_path, pathlib.Path)
+        self.assertEqual(expected_path,got_path)
+        # set local to False.
+        os.environ['fred']='fred/james.txt'
+        test_path = f'~{user}/some_dir/$fred'
+        expected_path = pathlib.PurePath(f'~{user}/some_dir/fred/james.txt')
+        got_path = model_base.expand(test_path,local=False)
+
+        self.assertIsInstance(got_path,pathlib.PurePath)
+        self.assertEqual(expected_path,got_path)
+
+
 class Test_history(unittest.TestCase):
 
     def setUp(self):
@@ -195,8 +220,6 @@ class Test_history(unittest.TestCase):
         mck_check.side_effect = subprocess.SubprocessError #
         with self.assertRaises(subprocess.SubprocessError):
             self.history.run_cmd(['ls'])
-
-
 
 
 

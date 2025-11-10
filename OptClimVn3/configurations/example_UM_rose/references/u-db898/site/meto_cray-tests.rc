@@ -1,0 +1,50 @@
+    [[ROSE_ANA_RESOURCE]]
+        inherit = HPC_SERIAL
+        [[[job]]]
+            execution time limit = PT10M
+
+    [[UMBUILD_NOOMP]]
+        inherit = UMBUILD
+        [[[environment]]]
+            OPENMP= false
+            PREBUILD = {{PREBUILDS}}/fcm_make_meto_xc40_cce_um_safe_noomp
+
+    [[ATMOS_TEST_RESOURCE]]
+        inherit = ATMOS_RESOURCE
+        [[[job]]]
+             execution time limit = {{MAIN_CLOCK}}
+
+    [[ATMOS_NCRUN_RESOURCE]]
+        inherit = ATMOS_RESOURCE
+        [[[job]]]
+            execution time limit = {{NCRUN_CLOCK}}
+
+{% set PE_APPN = PE_ATM_PPN if PE_ATM_PPN is defined else PPN %}
+{% set PE_TASKS_ATM = PE_ATM_PROCX * PE_ATM_PROCY + PE_IOS_NPROC %}
+{% set PE_NODE_ATM = node(PE_TASKS_ATM, PE_OMPTHR_ATM, PE_HYPTHR_ATM, PE_APPN) %}
+{% set PE_TPNUMA_ATM = tpnuma(PE_OMPTHR_ATM, PE_HYPTHR_ATM, PE_APPN) %}
+    [[ATMOS_PE_RESOURCE]]
+        inherit = ATMOS_TEST_RESOURCE
+        [[[directives]]]
+            -l select={{PE_NODE_ATM}}:ncpus={{PE_APPN}}:coretype={{METO_CORE}}:subproject={{SUBPROJECT}}:funding={{FUNDING}}
+        [[[environment]]]
+            ROSE_LAUNCHER_PREOPTS = -ss -n {{PE_TASKS_ATM}} -cc numa_node -N {{2*(PE_TPNUMA_ATM|int)}} -S {{PE_TPNUMA_ATM}} -d {{PE_OMPTHR_ATM}} -j {{PE_HYPTHR_ATM}}
+
+{% set OMP_APPN = OMP_ATM_PPN if OMP_ATM_PPN is defined else PPN %}
+{% set OMP_TASKS_ATM = OMP_ATM_PROCX * OMP_ATM_PROCY + OMP_IOS_NPROC %}
+{% set OMP_NODE_ATM = node(OMP_TASKS_ATM, OMP_OMPTHR_ATM, OMP_HYPTHR_ATM, OMP_APPN) %}
+{% set OMP_TPNUMA_ATM = tpnuma(OMP_OMPTHR_ATM, OMP_HYPTHR_ATM, OMP_APPN) %}
+    [[ATMOS_OMP_RESOURCE]]
+        inherit = ATMOS_TEST_RESOURCE
+        [[[directives]]]
+            -l select={{OMP_NODE_ATM}}:ncpus={{OMP_APPN}}:coretype={{METO_CORE}}:subproject={{SUBPROJECT}}:funding={{FUNDING}}
+        [[[environment]]]
+            ROSE_LAUNCHER_PREOPTS = -ss -n {{OMP_TASKS_ATM}} -cc numa_node -N {{2*(OMP_TPNUMA_ATM|int)}} -S {{OMP_TPNUMA_ATM}} -d {{OMP_OMPTHR_ATM}} -j {{OMP_HYPTHR_ATM}}
+
+    [[ATMOS_NOOMP_RESOURCE]]
+        inherit = ATMOS_TEST_RESOURCE
+        [[[environment]]]
+            ROSE_LAUNCHER_PREOPTS = -ss -n {{TASKS_ATM}} -cc numa_node -N {{2*(TPNUMA_ATM|int)}} -S {{TPNUMA_ATM}}
+
+    [[MULE_RESOURCE]]
+        pre-script = module load scitools/production_legacy-os42-1

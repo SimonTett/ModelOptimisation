@@ -1,0 +1,45 @@
+{
+  "comment": "Set of parameters to run. Used by run_params in framework and not by optimisation routines",
+  "algorithm": "run_params",
+  "algorithm_comment": "Algorithm wanted. run_params will run sets of parameter values without optimising",
+  "parameters": [
+    {
+      "VF1": null,
+      "RHCRIT": null,
+      "ICE_SIZE": null,
+      "ENTCOEF": null,
+      "EACF": null,
+      "CT": null,
+      "CW": null,
+      "DYNDIFF": null,
+      "KAY_GWAVE": null,
+      "ASYM_LAMBDA": null,
+      "CHARNOCK": null,
+      "G0": null,
+      "Z0FSEA": null,
+      "ALPHAM": null
+    },
+    {
+      "VF1": 0.8,
+      "RHCRIT": 0.2,
+      "ICE_SIZE": 0.0,
+      "ENTCOEF": 1.0,
+      "EACF": 0.4,
+      "CT": 1.0,
+      "CW": 1.0,
+      "DYNDIFF": 1.0,
+      "KAY_GWAVE": 1.0,
+      "ASYM_LAMBDA": 0.0,
+      "CHARNOCK": 1.0,
+      "G0": 0.0,
+      "Z0FSEA": 0.0,
+      "ALPHAM": 0.0
+    }
+
+  ],
+  "parameters_comment": "List of parameter sets to run. Each entry is a dictionary of parameter names and values and will be augmented with fixed_params. null values will use standard parameter values. Each dict *must* have the same keys.",
+  "scale": true,
+  "scale_comment": "If true then parameters range from 0 to 1 where 0 means min value; 1 max value. Will use ranges so all values must be float or int",
+  "index":["Control","Test1" ],
+  "index_comment":"index for  parameter sets. Must be same length as parameters list. "
+}

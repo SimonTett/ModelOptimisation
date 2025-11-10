@@ -1,4 +1,4 @@
-#!/bin/env python
+#!/usr/bin/env python
 #  script to set model status to defined status by running appropriate function.
 #  These functions may have other effects beyond setting the status. This script should be called
 # from the running model. Min necessary is to have the model say when it is completed.

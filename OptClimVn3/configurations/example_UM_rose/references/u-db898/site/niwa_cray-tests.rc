@@ -1,0 +1,52 @@
+    [[ROSE_ANA_RESOURCE]]
+        inherit = HPC_SERIAL
+        [[[remote]]]
+            host = $(rose host-select $ROSE_ORIG_HOST)
+        [[[job]]]
+            execution time limit = PT10M
+
+    [[UMBUILD_NOOMP]]
+        inherit = UMBUILD
+        [[[environment]]]
+            OPENMP= false
+            PREBUILD = 
+
+    [[ATMOS_NCRUN_RESOURCE]]
+        inherit = ATMOS_RESOURCE
+        [[[job]]]
+            execution time limit = {{NCRUN_CLOCK}}
+
+{% set PE_APPN = PE_ATM_PPN if PE_ATM_PPN is defined else PPN %}
+{% set PE_TASKS_ATM = PE_ATM_PROCX * PE_ATM_PROCY + PE_IOS_NPROC %}
+{% set PE_NODE_ATM = node(PE_TASKS_ATM, PE_OMPTHR_ATM, PE_HYPTHR_ATM, PE_APPN) %}
+    [[ATMOS_PE_RESOURCE]]
+        inherit = ATMOS_RESOURCE
+        [[[directives]]]
+            --nodes = {{PE_NODE_ATM}}
+            --ntasks = {{PE_TASKS_ATM}}
+            --cpus-per-task = {{PE_OMPTHR_ATM}}
+        [[[environment]]]
+            OMP_NUM_THREADS = {{PE_OMPTHR_ATM}}
+
+{% set OMP_APPN = OMP_ATM_PPN if OMP_ATM_PPN is defined else PPN %}
+{% set OMP_TASKS_ATM = OMP_ATM_PROCX * OMP_ATM_PROCY + OMP_IOS_NPROC %}
+{% set OMP_NODE_ATM = node(OMP_TASKS_ATM, OMP_OMPTHR_ATM, OMP_HYPTHR_ATM, OMP_APPN) %}
+    [[ATMOS_OMP_RESOURCE]]
+        inherit = ATMOS_RESOURCE
+        [[[directives]]]
+            --nodes = {{OMP_NODE_ATM}} 
+            --ntasks = {{OMP_TASKS_ATM}}
+            --cpus-per-task = {{OMP_OMPTHR_ATM}}
+        [[[environment]]]
+            OMP_NUM_THREADS = {{OMP_OMPTHR_ATM}}
+
+    [[ATMOS_NOOMP_RESOURCE]]
+        inherit = ATMOS_RESOURCE
+        [[[environment]]]
+            OMP_NUM_THREADS = 1
+
+    [[MULE_RESOURCE]]
+        pre-script = """
+            module load Anaconda2/4.2.0-GCC-4.8.5
+            module load Mule
+        """

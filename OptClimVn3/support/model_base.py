@@ -7,8 +7,10 @@ import numpy as np
 import subprocess
 import typing
 import datetime
+import shlex
 
 import generic_json
+
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 
@@ -25,14 +27,14 @@ class journal:
         Times are such a pain!
         :return: utcnow datetime.datetime
         """
-        return datetime.datetime.utcnow()
+        return datetime.datetime.now(datetime.timezone.utc)
 
     def update_history(self, message: typing.Optional[str]):
         """
         Update the _history directory. Key will be self.now()
         If self._history does not exist, then it will be created.
         Routine updates existing values so that multiple updates in a short time will preserve _history.
-        Short time defined as less than precision of str(now))
+        Short time defined as less than precision of str(now)
         :param message:message text to be stored.
         If message is None then  self._history will be created and the control returns
         :return:
@@ -48,6 +50,8 @@ class journal:
         h += [message]  # add on the message
         self._history[dtkey] = h  # store it back again.
         my_logger.debug(f"Updated history at {dtkey} ")
+        # TODO consider having a separate entry for the time and storing history as a list of named tuples
+        # so then _history would be a list of named tuples with time and message.
 
     def last_history_key(self) -> typing.Optional[str]:
         """
@@ -109,56 +113,69 @@ class journal:
                 print(f"Command {' '.join(str_cmd)} stored at {key} returned {dct['result']}")
         return
 
-    def run_cmd(self, cmd: list, **kwargs):
+    def run_cmd(self, cmd: list[str|pathlib.PurePath],
+                convert_to_posix:bool = False,
+                quote:bool=True,
+                **kwargs) -> str:
         """
         Run a command using subprocess.check_output and record output.
-        :param cmd: command to run. Any shell variables ($VARNAME) in the cmd will be expanded at the time of running.
-        :**kwargs -- kwargs to be passed to subprocess.check_output. Will update defaults which is just text=True and stderr=subprocess.DEVNULL 
+        :param cmd: command to run. Any shell variables ($VARNAME) in the cmd will be expanded at the time of running. Should be a list of strings or PurePaths
+        :param convert_to_posix: If True any pathlib.PurePath in cmd will be converted to posix style strings before running.
+        **kwargs -- kwargs to be passed to subprocess.check_output. Will update defaults which is just text=True and stderr=subprocess.DEVNULL
         :return: output from running command
         """
         args = dict(text=True, stderr=subprocess.DEVNULL)  #
         # issue is that fileNotFound will get returned if a file does not exist. Would need to
         # convert to subprocess.CalledProcessError
         args.update(**kwargs)
-        cmd_to_run = [os.path.expandvars(c) for c in cmd]
-        cmd_report = " ".join(cmd_to_run)
-        # using expandvars so any shell variables in command are expanded.
+        cmd_to_run: list[str] = []
+        for c in cmd:
+            if not isinstance(c,(str,pathlib.PurePath)):
+                raise ValueError(f"cmd element {c} is not str or PurePath")
+            if isinstance(c,pathlib.PurePath):
+                if convert_to_posix:
+                    c = c.as_posix() # convert to posix str for running.
+                else:
+                    c = str(c) # convert to str for running.
+            c = os.path.expandvars(c)  # expand any shell variables
+            if quote:
+                c = shlex.quote(c)  # make it a bit safer.
+            cmd_to_run.append(c)
+
+
+
+        cmd_report = " ".join(cmd_to_run) # if something goes wrong report this command.
+        # Makes it easier to run command and see what happened.
         try:
-            my_logger.debug(f"Running {' '.join(cmd_to_run)}")
+            my_logger.debug(f"Running {cmd_report}")
             output = subprocess.check_output(cmd_to_run, **args)  # run cmd
         except subprocess.CalledProcessError as e:
-            str=f"""cmd_report failed.
+            s=f"""{cmd_report} failed.
             STDOUT 
             {e.output}
             {"=" * 60}
             STDERR 
             { e.stderr}"""
-            # TODO try again if this fails...
-            my_logger.warning(str)
+            my_logger.warning(s)
             raise
         except FileNotFoundError as e:  # cmd not found
             raise subprocess.CalledProcessError(
                 returncode=e.errno,
-                cmd=cmd,
+                cmd=cmd_to_run,
                 output=None,
                 stderr=e.strerror,
             ) from None
 
-        self.store_output(cmd, output)
+        self.store_output(cmd_to_run, output) # and store the output.
         return output
 
 
-def to_path(self) -> pathlib.Path:
-    """
-    Convert flexi_path to path
-    :return: if possible a path representation of path.
-    """
 
 
 class model_base:
     """
     Generic base class for models. Provides default methods for reading/writing data.
-    Note that it is not expected to actually be instantiated. See sub-classes (Model for exmaple) for larger functionality.
+    Note that it is not expected to actually be instantiated. See sub-classes (Model for example) for larger functionality.
 
         Methods:
     --------
@@ -182,7 +199,7 @@ class model_base:
         initialise the subclass
         First call superclass __init__subclass__ method
         Then store default methods in registries
-        :poram args: args to be passed to supper class __init__subclass__
+        :param args: args to be passed to supper class __init__subclass__
         :param kwargs:keywords to be passed to super class __init__subclass__
         :return: Nada
         """
@@ -216,7 +233,6 @@ class model_base:
                 pass
         return result
 
-    # TODO -- find a more elegant way of providing this functionality.
     @classmethod
     def from_dict(cls, dct: dict):
         """
@@ -240,15 +256,18 @@ class model_base:
 
         result = dict()
         right_pure_path_type = type(pathlib.PurePath())  # (will give Windows/Posix as appropriate)
-        for key, var in dct.items():
-            if isinstance(var, pathlib.PurePath):  # something path like
-                if cls._convert_path2pure and isinstance(var,pathlib.Path): # convert path to (local) purePath
-                    var = pathlib.PurePath(var) # purify path.
-                var = cls.translate_path(var)
+        for key, value in dct.items():
+            if isinstance(value, pathlib.PurePath):  # something path like
+                if cls._convert_path2pure and isinstance(value,pathlib.Path): # convert path to (local) purePath
+                    value = pathlib.PurePath(value) # purify path.
+                value = cls.translate_path(value)
+                if not pathlib.Path(value).exists():
+                    my_logger.warning(f"{value} does not exist. Keeping as purePath")
+                
                 # path is of correct type (after conversion) and exists -- make it a path!
-                if (type(var) == right_pure_path_type) and (pathlib.Path(var).exists()):
-                    var = pathlib.Path(var)
-            result[key] = var  # just store in in the result.
+                if (type(value) == right_pure_path_type) and (pathlib.Path(value).exists()):
+                    value = pathlib.Path(value)
+            result[key] = value  # just store in in the result.
         return result
 
     def fill_attrs(self, dct: dict, convert_pure_paths: bool = False):
@@ -312,20 +331,27 @@ class model_base:
 
         return cfg
 
-    def __eq__(self, other):
+    def __eq__(self, other,vars_to_ignore:typing.Optional[typing.List[str]]=None):
         """
         Equality! and print delta
         :param other: other object
         :return: True if equal
         """
+        if self is other:
+            return True
         if type(other) != type(self):
             print(f"Types differ = {type(self), type(other)}")
             return False
+
+        if vars_to_ignore is None:
+            vars_to_ignore = []
 
         # iterate over the vars of the two objects.
         for (k, v), (k2, v2) in zip(vars(self).items(), vars(other).items()):
             if k != k2:  # names differ. Should not happen.
                 raise ValueError("Something wrong")
+            if k in vars_to_ignore: # ignore this variable
+                continue
             if type(v) != type(v2):  # types differ so different
                 print(f"Types for {k} differ")
                 return False  # types differ -- return False
@@ -360,22 +386,36 @@ class model_base:
         """
         config_path.parent.mkdir(parents=True, exist_ok=True)
         my_logger.debug(f"Created {config_path.parent}")
-        with open(config_path, "w") as fp:
+        # write to a temp file and then rename it to avoid partial writes.
+        output_file = config_path.with_suffix('.tmp')
+        if output_file.exists():
+            output_file.unlink()  # remove it if it exists.
+        with open(output_file, "w") as fp:
             result = generic_json.dump(self, fp, indent=2)  # JSON encoder does the magic needed
+        if config_path.exists():
+            config_path.unlink()  # remove it if it exists.
+        output_file.rename(config_path)  # atomic operation
         my_logger.info(f"Wrote to {config_path}")
         return result
 
 
 
     @classmethod
-    def expand(cls, filestr: typing.Optional[str]) -> typing.Optional[pathlib.Path]:
+    def expand(cls, filestr: typing.Optional[str],
+               local:bool = True) -> typing.Optional[pathlib.Path|pathlib.PurePath]:
         """
         Expand any env vars, convert to path and then expand any user constructs.
         :param filestr: path like string or None
+        :param local: whether to expand user constructs like ~ and make a Path
+        If False then only env vars are expanded and conversion to a PurePath is done.
         :return:expanded path or, if filestr is None, None.
         """
         if filestr is None:
             return None
         path = os.path.expandvars(filestr)
-        path = pathlib.Path(path).expanduser()
+        if local:
+            path = os.path.expanduser(path)
+            path = pathlib.Path(path)
+        else:
+            path = pathlib.PurePath(path)
         return path

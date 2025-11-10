@@ -2,13 +2,16 @@
 ipython
 DFO-LS # always have the most current version of DFO-LS.
 numpy~=1.26 # TODO upgrade to 2+
-cf-units~=3.2
+#cf-units~=3.2
 #scitools-iris~=3.8
 xarray~=2024.9.0
 netcdf4~=1.6.0
 matplotlib~=3.6
 pandas~=2.2.2
-f90nml~=1.4.3
 scipy~=1.13
 pytest~=8.3
+metomi-rose==2.2.0 # avoid most recent version.
+f90nml~=1.4.3
+matplotlib # needed for plotting
+PqQt5 # needed for interactive plotting
 

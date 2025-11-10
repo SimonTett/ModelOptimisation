@@ -1,0 +1,167 @@
+{# Macro to calculate number of nodes required based on total tasks, #}
+{# OpenMP threads, hyperthreads and number of cores per node #}
+{%- macro node(t,o,h,pn) -%}
+  {{ ((t*o)/(h*pn)) | round (0, 'ceil') | int }}
+{%- endmacro -%}
+
+{# Macro to calculate number of tasks per NUMA region on a node based on #}
+{# OpenMP threads, hyperthreads and number of cores per node. #}
+{%- macro tpnuma(o,h,pn) -%}
+  {{ ((h*pn)/(2*o)) | round (0, 'ceil') | int }}
+{%- endmacro -%}
+
+{% set PPN = 24 %}
+{% set APPN = MAIN_ATM_PPN if MAIN_ATM_PPN is defined else PPN %}
+{% set TASKS_RCF = MAIN_RCF_PROCX * MAIN_RCF_PROCY %}
+{% set TASKS_ATM = MAIN_ATM_PROCX * MAIN_ATM_PROCY + MAIN_IOS_NPROC %}
+{% set NODE_RCF = node(TASKS_RCF, MAIN_OMPTHR_RCF, MAIN_HYPTHR_RCF, APPN) %}
+{% set NODE_ATM = node(TASKS_ATM, MAIN_OMPTHR_ATM, MAIN_HYPTHR_ATM, APPN) %}
+{% set TPNUMA_RCF = tpnuma(MAIN_OMPTHR_RCF, MAIN_HYPTHR_RCF, APPN) %}
+{% set TPNUMA_ATM = tpnuma(MAIN_OMPTHR_ATM, MAIN_HYPTHR_ATM, APPN) %}
+
+{# Set up start dumps #}
+{% set AINITIAL = ARCHER_AINITIAL_DIR + '/' + AINITIAL_FILE %}
+
+    [[NCAS_NOT_SUPPORTED]]
+        script = """
+            echo 'Task not supported at NCAS' >&2
+            false
+        """
+        [[[ job ]]]
+            # No need to submit to the queue
+            batch system = background
+
+    [[RETRIES]]
+        [[[job]]]
+            execution retry delays = 2*PT30M, 2*PT1H, PT3H, 3*PT6H
+
+    [[SUBMIT_RETRIES]]
+        [[[job]]]
+            submission retry delays = PT1M, 2*PT5M, 2*PT30M, 4*PT3H
+
+    [[LINUX]]
+        [[[environment]]]
+            PLATFORM = linux
+            UMDIR = ~um
+        [[[job]]]
+            batch system = background
+        [[[remote]]]
+            host = {{ROSE_ORIG_HOST}}
+
+    [[EXTRACT_RESOURCE]]
+        inherit = LINUX
+
+    [[HPC]]
+        init-script = "export HOME=$DATADIR"
+        pre-script = """
+                     module load atp
+                     module load cray-netcdf/4.3.2
+                     module load cray-hdf5/1.8.13
+                     module swap cray-mpich cray-mpich/7.2.6
+                     module list 2>&1
+                     """
+        [[[directives]]]
+            -W umask = 0022
+            -A = {{ARCHER_GROUP}}
+        [[[environment]]]
+            PLATFORM = cce
+            UMDIR = /work/y07/y07/umshared
+            CMIP6_ANCILS = $UMDIR/cmip6/ancils
+        [[[job]]]
+            batch system = pbs
+        [[[remote]]]
+            host = $(rose host-select archer)
+{% if HPC_USER is defined %}
+            owner = {{HPC_USER}}
+{% endif %}
+
+    [[HPC_SERIAL]]
+        inherit = HPC
+        [[[directives]]]
+            -l select=serial=true:ncpus=1
+        [[[environment]]]
+            ROSE_TASK_N_JOBS = 6
+
+    [[UMBUILD]]
+        [[[environment]]]
+            CONFIG = ncas-xc30-cce
+            OPENMP= true
+            OPTIM = safe
+            PREBUILD =
+
+    [[UMBUILD_RESOURCE]]
+        inherit = HPC_SERIAL
+        [[[job]]]
+            execution time limit = PT3H
+
+    [[STARTDUMP]]
+        [[[environment]]]
+            AINITIAL = {{AINITIAL}}
+
+    [[INSTALL_RESOURCE]]
+        inherit = HPC_SERIAL
+        [[[job]]]
+            execution time limit = PT1M
+
+    [[UM_PARALLEL]]
+        inherit = HPC
+        [[[directives]]]
+            -q={{ARCHER_QUEUE}}
+        [[[environment]]]
+            ATP_ENABLED = 1
+            ROSE_LAUNCHER = aprun
+
+    [[RCF_RESOURCE]]
+        inherit = UM_PARALLEL
+        [[[directives]]]
+            -l select={{NODE_RCF}}
+        [[[environment]]]
+            ROSE_LAUNCHER_PREOPTS = -ss -n {{TASKS_RCF}} -N {{2*(TPNUMA_RCF|int)}} -S {{TPNUMA_RCF}} -d {{MAIN_OMPTHR_RCF}} -j {{MAIN_HYPTHR_RCF}}
+        [[[job]]]
+            execution time limit = PT20M
+
+    [[ATMOS_RESOURCE]]
+        inherit = UM_PARALLEL, SUBMIT_RETRIES
+        [[[directives]]]
+            -l select={{NODE_ATM}}
+        [[[environment]]]
+            ROSE_LAUNCHER_PREOPTS = -ss -n {{TASKS_ATM}} -N {{2*(TPNUMA_ATM|int)}} -S {{TPNUMA_ATM}} -d {{MAIN_OMPTHR_ATM}} -j {{MAIN_HYPTHR_ATM}}
+        [[[job]]]
+            execution time limit = {{MAIN_CLOCK}}
+
+    [[PPBUILD_RESOURCE]]
+        inherit = HPC_SERIAL
+        [[[job]]]
+            execution time limit = PT5M
+
+    [[POSTPROC_RESOURCE]]
+        inherit = HPC_SERIAL, RETRIES
+        pre-script = """module load anaconda
+                        export PYTHONPATH=$PYTHONPATH:$UMDIR/lib/python2.7
+                        module list
+                        ulimit -s unlimited
+                     """
+        [[[job]]]
+            execution time limit = PT3H
+        [[[environment]]]
+            MOOPROJECT = ''
+
+    [[PPTRANSFER_RESOURCE]]
+        pre-script = "module load anaconda"
+        [[[remote]]]
+            host = dtn02.rdf.ac.uk
+        [[[environment]]]
+            UMDIR = ~um
+            PLATFORM = linux
+
+    [[SUPERMEAN_RESOURCE]]
+        inherit = LINUX, NCAS_NOT_SUPPORTED
+
+    [[LOGS_RESOURCE]]
+        inherit = LINUX, NCAS_NOT_SUPPORTED
+
+    [[WALLCLOCK_RESOURCE]]
+        inherit = HPC_SERIAL, NCAS_NOT_SUPPORTED
+
+    [[HOUSEKEEP_RESOURCE]]
+        inherit = LINUX

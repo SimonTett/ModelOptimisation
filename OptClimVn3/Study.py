@@ -17,13 +17,13 @@ import pandas as pd
 
 from model_base import model_base
 from Model  import Model # root class for all models.
-from StudyConfig import OptClimConfigVn3
+#from StudyConfig import OptClimConfigVn3
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
-
+#TOMAYBEDO: Consider removing keeping the config. Instead, just parse bits of it that we need and store them in the Study.
 
 class Study:
     # class attribute type information.
-    config: OptClimConfigVn3
+    config: "OptClimConfigVn3"
     name: str
     rootDir: pathlib.Path
     model_index: dict
@@ -47,7 +47,8 @@ class Study:
         :param config: Configuration information.
         :param name: Name of the study. If None name of config is used.
         :param rootDir : Root dir where, by default, config file will be created and
-            where model configurations will be searched for.
+            where model configurations will be searched for. Will be converted to an absolute path if not already by
+            prepending the current working directory.
           If None will be current dir/config.name().
         :param models : Lst of models.
         """
@@ -65,6 +66,11 @@ class Study:
             self.rootDir = pathlib.Path.cwd() / self.name  # default path
         else:
             self.rootDir = rootDir
+        # make sure rootDir is an absolute path rather than relative.
+        if not self.rootDir.is_absolute():
+            self.rootDir = pathlib.Path.cwd() / self.rootDir
+
+
 
 
         self.model_index = dict()
@@ -122,8 +128,7 @@ class Study:
         :param fpFmt: floating point format for floats
         :return: key
         """
-        # key = self.key(model.parameters, fpFmt=fpFmt)  # Generate key.
-        key = model.key(fpFmt=fpFmt)
+        key = self.key(model.attrs_for_key(), fpFmt=fpFmt)  # Generate key.
         return key
 
     @staticmethod
@@ -137,20 +142,25 @@ class Study:
         """
 
         keys = []
-        paramKeys = sorted(parameters.keys())  # fixed ordering
+        param_keys = sorted(parameters.keys())  # fixed ordering
 
         # deal with variable parameters -- produced by optimisation so have names and values.
-        for k in paramKeys:  # iterate over keys in sorted order.
+        for k in param_keys:  # iterate over keys in sorted order.
             keys.append(k)
             v = parameters[k]
             if isinstance(v, float):
                 keys.append(fpFmt % v)  # float point number so use formatter.
+            elif isinstance(v,str):
+                keys.append(v)  # string so just append
+            elif isinstance(v,pathlib.PurePath): # pathlib object # Path inherits from PurePath
+                keys.append(str(v))  # convert path to string
             else:  # just append the value.
                 keys.append(repr(v))  # use the object repr method.
+
         keys = tuple(keys)  # convert to tuple
         return str(keys)  # and then to a string.
 
-    def get_model(self, parameters: typing.Mapping, fpFmt: str = '%.4g') -> Model:
+    def get_model(self, parameters: typing.Mapping, fpFmt: str = '%.4g') -> typing.Optional[Model]:
         """
         Return model  that matches key generated from parameters or None if not match.
         :param parameters: parameters as a dict
@@ -178,7 +188,7 @@ class Study:
         files = direct.glob("**/" + pattern)
         self.read_model_configs(files)
 
-    def read_model_configs(self, path_list: iter):
+    def read_model_configs(self, path_list: list[pathlib.Path]):
         """
         Read model configurations from path_list and store them in self.model_index
           key will be generated from the model parameters and value will be the model.
@@ -235,7 +245,8 @@ class Study:
 
         return paramsDF
 
-    def obs(self, scale: bool = True, normalize: bool = False) -> pd.DataFrame | None:
+    def obs(self, scale: bool = True, normalize: bool = False,
+            obsNames:typing.Optional[list[str]]=None) -> pd.DataFrame | None:
         """
         Extract the Obs used in the *individual* simulations. If simulation has no observations then it is ignored.
         :param scale If True data will be scaled.
@@ -248,12 +259,16 @@ class Study:
         if len(obs) == 0:  # empty list
             return None
         obsDF = pd.DataFrame(obs)
+        if obsNames is None:
+            obsNames = obsDF.columns.values
+        else:
+            obsDF=obsDF.reindex(columns=obsNames)
 
         if scale:  # scale ?
-            obsDF *= self.config.scales(obsNames=obsDF.columns)
+            obsDF *= self.config.scales(obsNames=obsNames)
 
         if normalize:  # normalize
-            tgt = self.config.targets(scale=scale, obsNames=obsDF.columns)
+            tgt = self.config.targets(scale=scale, obsNames=obsNames)
             obsDF -= tgt  # difference from tgt.
             cov = self.config.Covariances(scale=scale)  # get covariances.
             errCov = cov['CovTotal']  # just want the total
@@ -263,19 +278,22 @@ class Study:
 
         return obsDF
 
-    def cost(self, scale: bool = True) -> pd.Series | None:
+    def cost(self, scale: bool = True,
+             obsNames:typing.Optional[list[str]]=None) -> pd.Series | None:
         """
         compute cost from data.
         :param: scale -- scale data.
         :return pandas series of costs.
         """
-        obs = self.obs(scale=scale)  # get obs
+        obs = self.obs(scale=scale,obsNames=obsNames)  # get obs
         if obs is None:  # no data
             return None
         tMat = self.config.transMatrix(scale=scale,
                                        dataFrame=True)  # which puts us into space where totalError is Identity matrix.
         nObs = len(obs.columns)
-        resid = (obs - self.config.targets(scale=scale)) @ tMat.T
+        target = self.config.targets(scale=scale)  # get targets
+        obs = obs.reindex(columns=target.index)  # reindex obs to match targets.
+        resid = (obs - target) @ tMat.T
         cost = np.sqrt(
             (resid ** 2).sum(1).astype(float) / nObs)  # TODO -- make nObs the number of indep matrices -- len(resid)
         cost = pd.Series(cost, index=obs.index).rename('cost ' + self.name)
@@ -318,10 +336,7 @@ class Study:
 
         """
         newConfig = self.config.copy(filename=filename)  # copy the config.
-        # TODO -- read in and store the covariances. -- maybe already done!
-        # TODO deal with function acting on multiple models,
-        #  Challenge: No easy way of knowing how to combine the simulated observations...
-        #  Perhaps can goup based on identical parameters ???
+
         # But function wants models. So suggests including some meta-data in the model
         # when we do this,
         params = self.params()  # get params & obs
@@ -391,7 +406,9 @@ class Study:
         """
         # get a bunch of annoying messages from matplotlib so turn them off...
         logging.getLogger('matplotlib.font_manager').disabled = True
-        cost = self.cost()
+        obsNames = self.config.obsNames()
+
+        cost = self.cost(obsNames=obsNames)
         if (cost is None) or (len(cost) == 0):
             return  # nothing to plot
         fig, ax = plt.subplots(3, 1, num=figName, figsize=[8.3, 11.7], sharex='col', clear=True)
@@ -425,7 +442,7 @@ class Study:
             a = paramAx.axvline(minp, linestyle='dashed', linewidth=2, color='gray')
 
             # plot norm obs
-            obs = self.obs(scale=True, normalize=True)
+            obs = self.obs(scale=True, normalize=True,obsNames=obsNames)
             X = np.arange(-0.5, obs.shape[1])
             Y = np.arange(-0.5, obs.shape[0])
             cmO = obsAx.pcolormesh(Y, X, obs.T.values, vmin=-4, vmax=4, cmap=cmap)
@@ -454,6 +471,13 @@ class Study:
         if monitorFile is not None:
             fig.savefig(str(monitorFile))  # save the figure
         return fig, (costAx, paramAx, obsAx)
+
+    def reload(self):
+        """
+        reload in place the study.
+        """
+        new_study_dict=vars(self.load(self.config_path))
+        self.fill_attrs(new_study_dict)
 
     # end of Study
 

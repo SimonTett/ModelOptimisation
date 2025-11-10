@@ -1,0 +1,12 @@
+parameter,type,filepath,namelist,nl_var,default,name,function_name
+RUN_NAME,um_rose,rose-suite.conf,jinja2:suite.rc,RUNID_USR,,,
+RUNID,um_rose,rose-suite.conf,jinja2:suite.rc,RUNID,,,
+RUN_TARGET,um_rose,rose-suite.conf,jinja2:suite.rc,EXPT_RUNLEN,,,
+RESUB_TIME,um_rose,rose-suite.conf,jinja2:suite.rc,EXPT_RESUB,,,
+runCode,um_rose,rose-suite.conf,jinja2:suite.rc,ARCHER2_GROUP,,,
+runUser,um_rose,rose-suite.conf,jinja2:suite.rc,ARCHER2_USERNAME,,,
+MODEL_CONFIG,um_rose,rose-suite.conf,jinja2:suite.rc,MODEL_CONFIG,,,
+runEnvSetup,um_rose,rose-suite.conf,jinja2:suite.rc,PY_ENV_SETUP,,,
+OPTCLIM_ARGS,um_rose,rose-suite.conf,jinja2:suite.rc,OPTCLIM_ARGS,,,
+OPTCLIM_SET_STATUS_SCRIPT,um_rose,rose-suite.conf,jinja2:suite.rc,OPTCLIM_SET_STATUS_SCRIPT,,,
+OPTCLIMTOP,um_rose,rose-suite.conf,jinja2:suite.rc,OPTCLIMTOP,,,

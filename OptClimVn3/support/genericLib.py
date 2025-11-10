@@ -12,21 +12,23 @@ import shutil
 import stat
 import pathlib
 import typing
+import importlib
 
 import numpy as np
 import pandas as pd
 import logging
 import logging.config
 import copy
+import sys
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 
-def setup_logging(level:typing.Optional[int] = None,
+def setup_logging(level:typing.Optional[typing.Union[int,str]] = None,
                   rootname:typing.Optional[str] = None,
                   log_config:typing.Optional[dict]=None):
     """
     Setup logging. 
-    :param: level: level of logging . If None logging.WARNING will be used
+    :param: level: level of logging. If None logging.WARNING will be used
     :param: rootname: rootname for logging. if None OPTCLIM will be used. 
     :param: log_config config dict for logging.config --
           see https://docs.python.org/3/library/logging.config.html
@@ -59,11 +61,60 @@ def setup_logging(level:typing.Optional[int] = None,
     formatter = logging.Formatter(fmt)
     console_handler.setFormatter(formatter)
 
-    optclim_logger.addHandler(console_handler) # turning this on gives duplicate messages. FIXME.
-    optclim_logger.propagate = False # stop propogation to root level.
+    optclim_logger.addHandler(console_handler) # turning this on gives duplicate messages.
+    optclim_logger.propagate = False # stop propogation to root level which suppresses duplicate messages.
 # see https://jdhao.github.io/2020/06/20/python_duplicate_logging_messages/
     return optclim_logger
-        
+
+def init_log(
+        log: logging.Logger,
+        level: str,
+        log_file: typing.Optional[typing.Union[pathlib.Path, str]] = None,
+        datefmt: typing.Optional[str] = '%Y-%m-%d %H:%M:%S',
+        mode: str = 'a'
+) -> logging.Logger:
+    """
+    Set up logging on a logger! Will clear any existing logging.
+    :param log: logger to be changed
+    :param level: level to be set.
+    :param log_file:  if provided pathlib.Path to log to file
+    :param mode: mode to open log file with (a  -- append or w -- write)
+    :param datefmt: date format for log.
+    :return: nothing -- existing log is modified.
+    """
+    log.handlers.clear()
+    log.setLevel(level)
+    formatter = logging.Formatter('%(asctime)s %(levelname)s:  %(message)s',
+                                  datefmt=datefmt
+                                  )
+    ch = logging.StreamHandler(sys.stderr)
+    ch.setFormatter(formatter)
+    log.addHandler(ch)
+    # add a file handler.
+    if log_file:
+        if isinstance(log_file, str):
+            log_file = pathlib.Path(log_file)
+        log_file.parent.mkdir(exist_ok=True, parents=True)
+        fh = logging.FileHandler(log_file, mode=mode + 't')  #
+        fh.setLevel(level)
+        fh.setFormatter(formatter)
+        log.addHandler(fh)
+    log.propagate = False
+    return log
+
+def get_fn(mod_fn_str:str) -> typing.Callable:
+    """
+    Load a function from a module.
+    :param mod_fn_str:
+    :return: a callable
+    """
+    mod, fn_name = mod_fn_str.rsplit('.', maxsplit=1)
+    module = importlib.import_module(mod)  # import the module
+    fn = getattr(module, fn_name)
+    if not callable(fn):
+        raise AttributeError(f"{fn_name} is not a callable in {mod}")
+
+    return fn
 def fake_fn(config: "OptClimConfigVn3", params: dict) -> pd.Series:
     """
     Wee test fn for trying out things.
@@ -85,6 +136,7 @@ def fake_fn(config: "OptClimConfigVn3", params: dict) -> pd.Series:
         if k not in pranges.columns:
             params.pop(k)
     param_series = pd.Series(params).combine_first(config.standardParam())  # merge in the std params
+    #TODO fix FutureWarning: The behavior of array concatenation with empty entries is deprecated.
     pscale = (param_series - min_p) / scale_params
     pscale -= 0.5  # tgt is at params = 0.5
     result = 100 * (pscale + pscale ** 2)
@@ -102,6 +154,40 @@ def fake_fn(config: "OptClimConfigVn3", params: dict) -> pd.Series:
     result += tgt
     return result
 
+def seconds_to_isoduration(seconds: int|float) -> str:
+    """
+    Convert seconds to ISO-8601 duration.
+    :param seconds: Seconds (int or float).
+    :return: Iso-duration string (and zeros will be ignored)
+    If seconds is -ve then a value error is raised. This may not be necessary but -ve seconds needs a different
+    processing and - duration.
+    Uses https://github.com/pydantic/pydantic/blob/3704eccce4661455acdda1cdcf716bd4b3382e08/pydantic/deprecated/json.py#L135-L140
+    """
+
+    if seconds < 0:
+        raise ValueError("Seconds must be positive")
+    minutes, seconds = divmod(seconds, 60)
+    minutes = int(minutes) # convert minutes to an int
+    hours, minutes = divmod(minutes, 60)
+    days, hours = divmod(hours, 24)
+    result = 'P'
+    for value,prd,format in zip([days, hours, minutes, seconds],['D','H','M','S'],
+                                ['d','d',f'd',f'2.3f']):
+        if prd == 'H':
+            result += 'T'
+        if value > 0:
+            result += f'{value:{format}}{prd}'
+        elif prd == 'S' and result == 'PT': # if no time then add 0S
+            result += '0S'
+        else:
+            pass
+
+    # remove trailing T (when Hr, min & secs are all zero)
+    if result[-1] == 'T':
+        result = result[:-1]
+
+    return result
+
 def parse_isoduration( s: str | typing.List) -> typing.List|str:
     """ Parse a str ISO-8601 Duration: https://en.wikipedia.org/wiki/ISO_8601#Durations
       OR convert a 6 element list (y m, d, h m s) into a ISO duration.
@@ -112,7 +198,7 @@ def parse_isoduration( s: str | typing.List) -> typing.List|str:
     :return: 6 element list [YYYY,MM,DD,HH,mm,SS.ss] which is suitable for the UM namelists
     """
 
-    def get_isosplit(s, split):
+    def get_isosplit(s:str, split):
         if split in s:
             n, s = s.split(split, 1)
         else:
@@ -126,8 +212,10 @@ def parse_isoduration( s: str | typing.List) -> typing.List|str:
         s = s.split('P', 1)[-1]  # Remove prefix
 
         split = s.split('T')
-        if len(split) == 1:
+        if (len(split) == 1 and 'Y' in split[0]) or 'T' not in s:
             sYMD, sHMS = split[0], ''
+        elif len(split) == 1 :
+            sYMD, sHMS = '', split[0]
         else:
             sYMD, sHMS = split  # pull them out
 
@@ -141,7 +229,7 @@ def parse_isoduration( s: str | typing.List) -> typing.List|str:
             durn.append(float(d))
     elif isinstance(s, list) and len(s) == 6:  # invert list
         durn = 'P'
-        my_logger.debug("Converting {s} to string")
+        my_logger.debug(f"Converting {s} to string")
         for element, chars in zip(s, ['Y', 'M', 'D', 'H', 'M', 'S']):
             if element != 0:
                 if isinstance(element, float) and element.is_integer():
@@ -373,3 +461,62 @@ def setup_env():
     else:
         my_logger.debug(f"OPTCLIMTOP already set to {os.environ['OPTCLIMTOP']}")
     return
+
+def backup_file(path: pathlib.Path,
+                ext: str = '.bak',
+                create: typing.Optional[typing.Literal['copy', 'move']] = None, ) -> typing.Optional[pathlib.Path]:
+    """
+    Create a backup file with the given extension.
+    :param path: Path to the original file.
+    :param ext: Extension for the backup file. Default '.bak'
+    :param create: If  copy -- create backup by copying the file, if move -- create backup by moving the file.
+    If backup file exists then no backup file is created.
+    If None then no backup file is created.
+    :return: Path to the backup file or None if no backup is created.
+    """
+    # check input file exits. If not raise an error
+    if not path.exists():
+        raise FileNotFoundError(f"File {path} does not exist.")
+    backup_path = path.with_suffix(path.suffix + ext)
+    if create is not None:  # create backup
+        if backup_path.exists():
+            my_logger.warning(f'Backup file {backup_path} already exists. Not creating')
+            return None
+        # create the backup file
+        try:
+            if create == 'move':
+                backup_path.parent.mkdir(parents=True, exist_ok=True)
+                path.rename(backup_path)  # move the file to backup path
+            elif create == 'copy':
+                backup_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy(path, backup_path)
+            else:
+                raise ValueError(f'Create {create} not known.')
+            my_logger.debug(f'Backup file created: {backup_path}')
+        except OSError as e:
+            my_logger.error(f'Error creating backup file: {e}')
+
+    return backup_path
+
+def likely_text_file(file_path: pathlib.Path,
+                 sample_size: int = 1024,
+                 encoding: str = 'ascii') -> bool:
+    """
+    Guess if a file is likely a text file by checking if its sample_size bytes can be
+      decoded to only printable or space chars.
+    co-pilot generated.
+    :param file_path: Path to the file.
+    :param sample_size: Number of bytes to read for analysis.
+    :param encoding: Encoding to use for decoding the file.
+    :return: True if the file is likely a text file, False otherwise.
+    """
+    try:
+        with open(file_path, 'rb') as file:
+            sample = file.read(sample_size)
+        # Try decoding the sample
+        decoded_sample = sample.decode(encoding)
+        # Check if all characters in the decoded sample are printable or space
+        return all(char.isprintable() or char.isspace() for char in decoded_sample)
+    except (UnicodeDecodeError, Exception):
+        # If decoding fails or the file cannot be read, assume it's not a text file
+        return False

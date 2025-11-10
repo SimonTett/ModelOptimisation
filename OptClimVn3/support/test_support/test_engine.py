@@ -12,8 +12,24 @@ import genericLib
 from Models import Model
 
 genericLib.setup_env()
+
+my_engine = engine.abstractEngine.guess_engine() # engine we want to use
+args=dict()
+# test if we are on Archer by calling hostname -A and that stdout contains archer2.ac.uk
+stat = subprocess.run(['hostname','-A'],capture_output=True,text=True)
+if (stat.returncode == 0) and 'archer2.ac.uk' in stat.stdout:
+    # Specials needed for archer
+    print("On archer 2")
+    args.update(
+        run_queue='serial', # running in the serial q
+        run_code='n02-terrafirma', # running with no2-terrafirma
+        extra_args=['--qos=serial'] # and need to set qos
+    )
+
 class TestEngine(unittest.TestCase):
     # tests for engines
+    # one time setup
+
 
     def setUp(self) -> None:
 
@@ -21,7 +37,8 @@ class TestEngine(unittest.TestCase):
         self.slurm_engine = engine.slurm_engine()
 
 
-        self.engine = engine.abstractEngine.guess_engine() # engine we want to use
+        self.engine = my_engine
+        self.args=args
 
     def test_expect_instance(self):
         """ Very generic tests. Just checks get expected type.
@@ -75,7 +92,7 @@ class TestEngine(unittest.TestCase):
         # need to make a script file.
         cmd_pth = dpth / 'script.sh'
         with open(cmd_pth, 'wt') as fp:
-            fp.write("#!/bin/env bash \n")
+            fp.write("#!/usr/bin/env bash \n")
             fp.write('echo "The date is "$(date)\n')
 
         cmd_pth.chmod(0o755)
@@ -83,26 +100,26 @@ class TestEngine(unittest.TestCase):
 
         # will submit 4 jobs. 3 held and then submit a release job which releases the first  job.
         cmd1 = self.engine.submit_cmd([str(cmd_pth)], 'datejob', outdir=log_pth,
-                              time=10, mem=500, hold=True)
+                                      time=10, mem=500, hold=True,**self.args)
         print(" ".join(cmd1))
         output = subprocess.check_output(cmd1, text=True)
         jid_1 = self.engine.job_id(output)
         print("job 1 is", jid_1)
         cmd2 = self.engine.submit_cmd([str(cmd_pth)], 'datejob2', outdir=log_pth,
-                              time=10, mem=500, hold=jid_1)
+                                      time=10, mem=500, hold=jid_1,**self.args)
         output2 = subprocess.check_output(cmd2, text=True)
         jid_2 = self.engine.job_id(output2)  # job 2 is held and will run once job 1 runs
         print("job 2 is", jid_2)
         # job 3 depends on job 1 & 2
         cmd3 = self.engine.submit_cmd([str(cmd_pth)], 'datejob3', outdir=log_pth,
-                              time=10, mem=500, hold=[jid_1, jid_2])
+                                      time=10, mem=500, hold=[jid_1, jid_2],**self.args)
         output3 = subprocess.check_output(cmd3, text=True)
         jid_3 = self.engine.job_id(output3)  #
         print("job 3 is", jid_3)
 
         # job 4 just depends on job 1.  -- it should run before job #3
         cmd4 = self.engine.submit_cmd([str(cmd_pth)], 'datejob4', outdir=log_pth,
-                              time=10, mem=500, hold=jid_1)
+                                      time=10, mem=500, hold=jid_1,**self.args)
         output4 = subprocess.check_output(cmd4, text=True)
         jid_4 = self.engine.job_id(output4)
         print("job 4 is", jid_4)
@@ -171,8 +188,9 @@ class TestEngine(unittest.TestCase):
     def test_connect_fn(self):
         eng = engine.abstractEngine.create_engine('SGE',ssh_node='ssh_node')
         result = eng.connect_fn([])
-        self.assertEqual(result[0:2],['ssh','ssh_node'])
-        # cmd 3 includes lots of stuff.
+        expected = ['ssh','-q','-o','batchmode=yes','-o','StrictHostKeyChecking=yes']
+        self.assertEqual(result[0:len(expected)],expected)
+
 
 
 if __name__ == '__main__':

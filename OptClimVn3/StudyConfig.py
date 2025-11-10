@@ -1,4 +1,5 @@
 """
+TODO: (re)sort use of modules as code not nesc in search path.
 Provides classes and methods suitable for manipulating study configurations.  Includes two useful classes:
     fileDict which designed to provide some kind of permanent store across  invocations of the framework. 
 
@@ -12,8 +13,6 @@ Provides classes and methods suitable for manipulating study configurations.  In
     TODO: Consider major re-factorisation of studyConfig -- it has been accreting functionality in an unplanned way.
      Perhaps splitting into core and derived values might be the way to go.
 
-    # TODO: modify pd.read_json calls to wrap data in StringIO
-    #  see https://github.com/pandas-dev/pandas/issues/52271
 
 
 """
@@ -27,8 +26,9 @@ import logging
 import os
 import pathlib
 import re
+import getpass
 
-import generic_json
+
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -37,12 +37,67 @@ from io import StringIO
 import xarray  # TODO -- consider removing dependence on xarray
 
 __version__ = '3.0.0'
+
+import genericLib
+
+
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 type_fixed_param_function: typing.TypeAlias = typing.Callable[
-    [dict[typing.Hashable, 'Model.Model']], typing.Optional[pd.Series]]
+    ["runSubmit",dict[typing.Hashable, typing.Any]], typing.Optional[pd.Series]]
 
 
 # functions available to everything.
+def process_include(dct:dict,files_read:list = []) -> dict:
+    """
+    Process a dict looking for values the form "INCLUDE filename"
+       and read the file using json read and inserting the result into the directory.
+       A comment will be inserted saying what the include path was.
+    :param dct: dict of values to process
+    :param files_read: list of files read so far. Used to avoid recursive includes.
+    :return: dict with includes processed (recursively)
+    """
+    result=dict() # result dict
+    for key,value in dct.items():
+        if isinstance(value, dict):
+            result[key] = process_include(value,files_read=files_read) # recursively process dicts
+        elif isinstance(value, str) and value.startswith('INCLUDE '):
+            # process include statement. TODO -- could make this a regexp.
+            inc, path = value.split(maxsplit=1)
+            pth = genericLib.expand(path).resolve() # expand path
+            if pth in files_read:
+                raise RecursionError(f"Recursive include of {pth} in {files_read[-1]}")
+            files_read.append(pth) # resolve to get full path.
+            my_logger.debug(f"Processing include statement: {value} by reading {pth}")
+            with pth.open('rt') as fp:
+                r = json.load(fp)
+            if isinstance(r, dict):
+                r = process_include(r,files_read=files_read) # recursively process dicts
+            result[key] = r
+            result[key+'_include_path_comment'] = str(pth)
+        else:
+            result[key] = value # just copy value
+    return result
+
+def expand_include(path:typing.Union[pathlib.Path,str],
+                   out_path:typing.Optional[typing.Union[pathlib.Path,str]]=None,**kwargs) -> dict:
+    """
+    Read a json file, expand any INCLUDE filenames found and optionally write out
+      This is to get whole configuration in one file. Really to support debugging.
+    :param path: Path to input json file. Any ~ & shell vars will be expanded
+    :param out_path: Path to output json file. If None will not write out.
+       Any ~ and shell vars will be expanded
+    All other arguments are passed onto json.dump -- recommend specifying indentation.
+    :return: dict of expanded stuff in input json_file
+    """
+    path = genericLib.expand(path) # expand
+    with path.open('rt') as fp:
+        dct = json.load(fp)
+    dct = process_include(dct,files_read=[path.resolve()])
+    if out_path is not None:
+        out_path = genericLib.expand(out_path)
+        with out_path.open('wt') as fp:
+            json.dump(dct,fp,**kwargs)
+    return dct
 
 def readConfig(filename, **kwargs):
     """
@@ -53,9 +108,10 @@ def readConfig(filename, **kwargs):
     """
     path = pathlib.Path(os.path.expandvars(filename)).expanduser()
 
-    if os.path.isfile(path) is False:
-        raise IOError("File %s not found" % filename)
+    if not path.exists():
+        raise FileNotFoundError(f"File {path} not found")
     config = dictFile(filename=path)  # read configuration using rather dumb object.
+
     config = config.to_StudyConfig(**kwargs)  # convert dictFile to appropriate StudyConfig.
     return config
 
@@ -143,6 +199,13 @@ class dictFile(dict):
             path = None
 
         self.Config = Config_dct
+        # now deal with any INCLUDES
+        # process the includes
+        if path is not None:
+            files_read=[path.resolve()]#
+        else:
+            files_read = []
+        self.Config = process_include(self.Config, files_read=files_read)
         self._filename = path
 
     def print_keys(self):
@@ -303,6 +366,9 @@ class OptClimConfig(dictFile):
 
         if add_constraint and self.constraint():  # adding constraint and its defined.
             if self.constraintName() not in obs:
+                cons_name = self.constraintName()  # get constraint name
+                if cons_name is None:
+                    raise ValueError("Constraint name not set in configuration file")
                 obs.append(self.constraintName())
 
         # check for duplicates
@@ -545,12 +611,7 @@ class OptClimConfig(dictFile):
         scalings = self.Config.get('scalings', {})
         if obsNames is None:
             obsNames = self.obsNames()
-        # TODO raise error if any of the scaling names are not in obsNames as a consistency check.
-        missing = {k for k in scalings.keys() if not k.endswith("comment")} - set(obsNames)
-        # removing any keys that end with "comment"
 
-        if missing:
-            raise ValueError("Following scaling keys are not in obsNames: " + " ".join(missing))
         scales = pd.Series([scalings.get(k, 1.0) for k in obsNames], index=obsNames).rename(self.name())
         # get scalings -- if not defined set to 1.
 
@@ -690,10 +751,10 @@ class OptClimConfig(dictFile):
                     cov[k].loc[consName, :] = 0.0
                     cov[k].loc[:, consName] = 0.0
                     cov[k].loc[consName, consName] = v
+
         # scale data
         if scale:
-            obsNames = self.obsNames(
-                add_constraint=useConstraint)  # make sure we have included the constraint (if wanted) in obs
+
             scales = self.scales(obsNames=obsNames)
 
             cov_scale = pd.DataFrame(np.outer(scales, scales), index=scales.index, columns=scales.index)
@@ -705,13 +766,18 @@ class OptClimConfig(dictFile):
         return cov
 
     def transMatrix(self, scale:bool=False, verbose:bool=False,
-                    minEvalue:float=1e-6, dataFrame:bool=True,inverse:bool = False):
+                    minEvalue:float=1e-6,
+                    dataFrame:bool=True,
+                    inverse:bool = False,
+                    warn_scale:float = 1e-1):
         """
         Return matrix that projects data onto eigenvectors of total covariance matrix
         :param scale: (Default False) Scale covariance.
         :param verbose: (default False) Be verbose.
+        :param inverse: return the inverse of the transformation matrix
         :param dataFrame: wrap result up as a dataframe
         :param minEvalue: evalues less than minEvalue * max(eigenvalues) are removed. Meaning a non-square transMatrix
+        :param warn_scale: If the min/max evalue (after truncation) is less than warn_scale a warning is issued.
         :return: Transformation matrix that makes Total covariance matrix I.
         """
 
@@ -735,6 +801,9 @@ class OptClimConfig(dictFile):
             #(np.diag(evalue[indx] ** (-0.5)).dot(evect[:, indx].T))  # what we need to do to transform to
         if not dataFrame:
             transMatrix = transMatrix.values
+        ev_range = evalue.min()/evalue.max()
+        if ev_range < warn_scale:
+            my_logger.warning(f"Eigenvalues range is {ev_range} which is less than {warn_scale} -- can lead to over focus on small errors")
         return transMatrix
 
     def steps(self, steps=None, paramNames=None):
@@ -1535,10 +1604,7 @@ class OptClimConfig(dictFile):
             study['ensembleSize'] = value
             self.setv('study', study)
 
-        ensembleSize = study.get('ensembleSize')
-        # default is ensemble size of 1.
-        if ensembleSize is None:
-            ensembleSize = 1  # do this way as JSON file can have null.
+        ensembleSize = study.get('ensembleSize') or 1 # if ensembleSize is None or 0 set it to 1
 
         return ensembleSize
 
@@ -1686,10 +1752,14 @@ class OptClimConfigVn2(OptClimConfig):
             svalues = (svalues - range.loc['minParam', :]) / range.loc['rangeParam', :]
         return svalues.rename(self.name())
 
-    def paramRanges(self, paramNames=None, values: dict = None):
+    def paramRanges(self, paramNames=None,
+                    values: dict = None,
+                    ensemble: bool = False) -> pd.DataFrame:
         """
         :param paramNames -- a list of the parameters to extract ranges for.
         If not supplied the paramNames method will be used.
+        :values -- if not None then set the minmax values to this dict
+        :param ensemble (default False). If True then include ensembleMember in the parameter names
         :return: a pandas array with rows names minParam, maxParam, rangeParam
         """
         if paramNames is None: paramNames = self.paramNames()
@@ -1701,6 +1771,12 @@ class OptClimConfigVn2(OptClimConfig):
         names = [p for p in paramNames if p in param.columns]
         param = param.loc[:, names]  # just keep the parameters we want and have.
         param = param.astype(float)
+        if ensemble:
+            # add ensemble member parameters if needed.
+            # Only really needed for plotting or similar.
+            # setting range to 0 to ensemble size to avoid division by zero when
+            # ensemble size is 1.
+            param.loc[:,'ensembleMember'] = [0.0, float(self.ensembleSize())]
         param.loc['rangeParam', :] = param.loc['maxParam', :] - param.loc['minParam', :]  # compute range
         return param
 
@@ -2008,32 +2084,13 @@ class OptClimConfigVn3(OptClimConfigVn2):
 
     def __init__(self, config: dictFile, check: bool = True):
         """
-        Process all INCLUDE stuff
+
         Call super class __init__ method and then add comment_end attribute
         set to "_comment"
 
         :param config -- configuration used to initialise
         :param check -- if True check that parameters and observations are self-consistent
         """
-        includes = dict()
-        for key, value in config.Config.items():
-            if isinstance(value, str) and value.startswith("INCLUDE "):
-                my_logger.debug(f"Include from {value}")
-                inc, pth = value.split(maxsplit=1)
-                includes[key + "_INCLUDE_comment"] = pth  # raw path so can see what done
-
-                pth = os.path.expanduser(os.path.expandvars(pth))
-                pth = pathlib.Path(pth)
-                my_logger.debug(f"Reading in {pth}")
-                if not pth.exists():
-                    raise ValueError(f"{pth} does not exist.")
-                with open(pth, 'rt') as fp:
-                    dct = json.load(fp)
-                includes[key] = dct
-        # now have a bunch of stuff in includes which we will use to update config.
-        if (len(includes) > 0):
-            my_logger.info(f"Updating the following keys: {' '.join(includes.keys())}")
-            config.Config.update(includes)
 
         super().__init__(config)  # call super class init
         self.comment_end = '_comment'  # define what a comment looks like.
@@ -2249,24 +2306,47 @@ class OptClimConfigVn3(OptClimConfigVn2):
         """
         Store/return solution to DFOLS run.
         :param solution: solution (from DFOLS) which if not None will be converted to
-           something that can be converted to json
+           something that can be converted to json.
+           In a while remove the old_gen path.
         :return: solution
         """
+        import dfols
         from dfols.solver import OptimResults
+        import generic_json
+
         if solution is not None:
-            # convert solution to something jsonable.
-            conversion = generic_json.dumps(vars(solution))  # use generic_json to convert.
+            # convert the solution to something jsonable.
+            if dfols.__version__ >= '1.5.4': # use the dict conversion.
+                conversion = solution.to_dict(replace_nan=True)
+                conversion.update(dict(dfols_version=dfols.__version__))  # store version
+            else:
+                dct = vars(solution)
+                dct.update(dict(dfols_version=dfols.__version__))  # store version
+                conversion = generic_json.dumps(dct)  # use generic_json to convert.
+                my_logger.warning(f'Using old version of dfols = {dfols.__version__} to serialise soln. Update to more version >= 1.5.4')
+
+
             self.setv('DFOLS_SOLUTION', conversion)
 
-        soln = self.getv('DFOLS_SOLUTION', None)
-        if soln is None:  # not got anything so return None.
-            return soln
-        dct = generic_json.loads(soln)  # now have a dict.
-        soln = OptimResults(*range(0, 9))  # create empty OptimResults object
-        for k, v in dct.items():  # fill in the instances
-            if not hasattr(soln, k):
-                my_logger.warning(f"Would like to set attr {k} in soln but does not exist")
-            setattr(soln, k, v)  # regardless will set the attribute.
+        dct = self.getv('DFOLS_SOLUTION', None).copy() # make sure we do not change the underlying stuff
+        if dct is None:  # not got anything so return None.
+            return dct
+
+        if isinstance(dct,str):
+            dct = generic_json.loads(dct) # convert from a string to a dict
+            
+        dfols_version = dct.pop('dfols_version', '1.5.1')# get the version, If nothing specificed it was old config. Assume 1.5.1
+
+        if dfols_version >= '1.5.4':
+            soln = OptimResults.from_dict(dct)
+        else:
+            my_logger.warning(f'DF-OLS solution generated using old version of dfols = {dfols_version}. Conversion may be incorrect')
+            nargs =11 # use latest version so 11 args.
+            soln = OptimResults(*range(0, nargs))  # create empty OptimResults object.
+            for k, v in dct.items():  # fill in the instances
+                if not hasattr(soln, k):
+                    my_logger.warning(f"Would like to set attr {k} in soln but does not exist")
+                setattr(soln, k, v)  # regardless will set the attribute.
 
         return soln
 
@@ -2281,13 +2361,18 @@ class OptClimConfigVn3(OptClimConfigVn2):
 
     def run_info(self) -> dict:
         """
-        :return run_info dict
+        :return run_info dict. Will set default values if following None or not present:
+          runUser -- set to user
+        These values will modify the underlying config.
         """
 
-        run_info = self.getv("run_info")
-        if run_info is None:  # if it is None set it to an empty dict.
-            self.setv("run_info", {})
-            run_info = self.getv("run_info")
+        run_info = self.getv("run_info",{})
+
+        # values that should exist and so need a default set. Only case is runUser
+        # This will modify the configuration when it gets written out.
+        if run_info.get('runUser') is None:
+            run_info['runUser'] = getpass.getuser()
+            my_logger.info(f"runUser not set in run_info. Setting to {run_info['runUser']}")
 
         return run_info
 
@@ -2388,25 +2473,43 @@ class OptClimConfigVn3(OptClimConfigVn2):
         # no default -- up to calling application to decide what to do..
         return mx
 
-    def strip_comment(self, dct: dict) -> dict:
-        """
-        Recursively remove all keys ending in _comment from a dct. 
-        :param: dct -- dict to have all _comment keys removed. 
-        Defined by self.comment_end
-        :return dct with all keys ending with _comment removed.
-        """
-        result_dct = {}
-        for key, value in dct.items():
-            if isinstance(value, dict):  # a dict -- call strip_comment
-                my_logger.debug(f"Copying {key} as dict")
-                result_dct[key] = self.strip_comment(value)
-            elif isinstance(key, str) and key.endswith(self.comment_end):
-                my_logger.debug(f"Ignoring {key}")
-            else:
-                my_logger.debug(f"Copying {key}")
-                result_dct[key] = value  # just take the value across.
 
-        return result_dct
+
+    def strip_comment(self, dct_lst: dict | list) -> dict|list:
+        """
+        Recursively remove all keys ending in _comment from a dct or values ending in _comment from a list.
+        Only lists or dicts need to be supported as this is what is returned from the json config file.
+        :param: dct_list -- dict or list to have all  keys/values removed that end with self.comment_end (_comment)
+        :return dct or list with all keys or values  ending with self.comment_end removed.
+        """
+
+
+        if isinstance(dct_lst, list):
+            result = [] # dealing with a list so return value is a list
+            for value in dct_lst:
+                if isinstance(value, (list,dict)):  # a dict or list-- call strip_comment
+                    my_logger.debug(f"Striping _comment from list/dict")
+                    result.append(self.strip_comment(value))
+                elif isinstance(value, str) and value.endswith(self.comment_end):
+                    my_logger.debug(f"Ignoring {value}")
+                else:
+                    my_logger.debug(f"Appending {value}")
+                    result.append(value)
+        elif isinstance(dct_lst, dict):
+            result = {}
+            for key, value in dct_lst.items():
+                if isinstance(value, (dict,list)):  # a dict or list -- call strip_comment
+                    my_logger.debug(f"Copying {key} as dict")
+                    result[key] = self.strip_comment(value)
+                elif isinstance(key, str) and key.endswith(self.comment_end):
+                    my_logger.debug(f"Ignoring {key}")
+                else:
+                    my_logger.debug(f"Copying {key}")
+                    result[key] = value  # just take the value across.
+        else:
+            raise ValueError(f"Expected dict or list got {type(dct_lst)}")
+
+        return result
 
     def logging_config(self, cfg: typing.Optional[dict] = None) -> typing.Optional[dict]:
         """
@@ -2453,42 +2556,35 @@ class OptClimConfigVn3(OptClimConfigVn2):
             initial["initParams"] = begin
             initial["initScale"] = False
 
-        begin = initial.get('initParams')
-        scaleRange = initial.get("initScale")  # want to scale ranges?
-
         if paramNames is None:
             paramNames = self.paramNames()
-        beginValues = {}  # empty dict
+        begin = initial.get('initParams',{}) # get the begin values which should be a dict
+        scale_range = initial.get("initScale")  # want to scale ranges?
+        param_range = self.paramRanges(paramNames=paramNames)  # get param range
+        begin = pd.Series(begin).reindex(paramNames)
+        if scale_range:
+            begin = begin * param_range.loc['rangeParam', :] + param_range.loc['minParam', :]
+        # now fill in any None values with standard values.
         standard = self.standardParam(paramNames=paramNames)
-
-        range = self.paramRanges(paramNames=paramNames)  # get param range
-
-        for p in paramNames:  # list below is probably rather slow and could be sped up!
-            beginValues[p] = begin.get(p)
-            if beginValues[p] is None:
-                beginValues[p] = standard[p]  # Will trigger an error if standard[p] does not exist
-            else:
-                if scaleRange:  # values are specified as 0-1
-                    beginValues[p] = beginValues[p] * range.loc['rangeParam', p] + range.loc['minParam', p]
-            if scale:  # want to return params  in range 0-1
-                beginValues[p] = (beginValues[p] - range.loc['minParam', p]) / range.loc['rangeParam', p]
-
-        beginValues = pd.Series(beginValues, dtype=float)[paramNames]  # order in the same way for everything.
+        begin = begin.fillna(standard)  # fill in any None values with standard values.
+        # fill in any None values with standard values.
+        if scale: # want to return params  in range 0-1
+            begin = (begin - range.loc['minParam', :]) / range.loc['rangeParam', :]
 
         # verify values are within range
         if scale:
-            L = beginValues.gt(1.0) | beginValues.lt(0.0)
+            L = (begin > 1.0 )| (begin < 0.0)
         else:
-            L = range.loc['maxParam', :].lt(beginValues) | beginValues.lt(range.loc['minParam', :])
+            L =( begin > param_range.loc['maxParam', :]) | (begin < param_range.loc['minParam', :])
 
         if np.any(L):
             print("L  \n", L)
-            print("begin: \n", beginValues)
-            print("range: \n", range)
-            print("Parameters out of range", beginValues[L].index)
+            print("begin: \n", begin)
+            print("range: \n", param_range)
+            print("Parameters out of range", begin[L].index)
             raise ValueError("Parameters out of range: ")
 
-        return beginValues.astype(float).rename(self.name())
+        return begin.astype(float).rename(self.name())
 
     def fixedParams_keys(self) -> typing.List[typing.Hashable]:
         """
@@ -2506,18 +2602,29 @@ class OptClimConfigVn3(OptClimConfigVn2):
 
     def fixed_param_function(self) -> typing.Optional[type_fixed_param_function]:
         """
-        Extract the function from string. Note will import the module that contains the function.
+        Extract the function from string. Note will import the file that contains the function.
         Be very careful...
 
         :return: function or None if no multiple_function found.
         """
-        import importlib
+        import importlib.util
+        import sys
         fn_test = self.getv('initial').get('fixedParams', {}).get('multiple_function', None)
         if fn_test is None:
             return fn_test
-        module, fn_name = fn_test.rsplit('.', 1)
-        mod = importlib.import_module(module)  # import the module
-        fn: type_fixed_param_function = getattr(mod, fn_name)  # extract the function
+        path, fn_name = fn_test.rsplit('.', 1)
+        path = self.expand(path+'.py')  # expand it
+        if not path.is_file():  # path is a file so use that
+            my_logger.warning(f"Cannot find file {path} for fixed parameter function")
+            return None
+
+
+
+        spec = importlib.util.spec_from_file_location('noname_module_at_all', path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        fn: type_fixed_param_function = getattr(module, fn_name)  # extract the function
         return fn
 
     def set_none_std(self, params: dict) -> dict:
@@ -2628,8 +2735,8 @@ class OptClimConfigVn3(OptClimConfigVn2):
         if constraint is None:
             useConstraint = self.constraint()  # work out if we have a constraint or not.
 
-        if obsNames is None: obsNames = self.obsNames(
-            add_constraint=False)  # don't want constraint here. Included later
+        if obsNames is None:
+            obsNames = self.obsNames(add_constraint=False)  # don't want constraint here. Included later
         cov = {}  # empty dict to return things in
         covInfo = self.getv('study', {}).get('covariance', {})
         # extract the covariance matrix and optionally diagonalise it.
@@ -2643,7 +2750,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
                     try:
                         cov[k] = self.readCovariances(fname, obsNames=obsNames, trace=trace, dirRewrite=dirRewrite)
                         cov[k + "File"] = fname  # store the filename
-                        if cov[k] is not None:  # got some thing to further process
+                        if cov[k] is not None:  # got something to further process
                             if covInfo.get(k + "Diagonalise", False):  # want to diagonalise the covariance
                                 # minor pain is that np.diag returns a numpy array so we have to remake the DataFrame
                                 cov[k] = pd.DataFrame(np.diag(np.diag(cov[k])), index=obsNames, columns=obsNames,
@@ -2676,35 +2783,43 @@ class OptClimConfigVn3(OptClimConfigVn2):
 
         # set up values from values passed in  overwriting values if necessary
         cov = self.getv(matrix_key)
-        if CovTotal is not None:
-            my_logger.debug("Setting covTotal")
-            cov['CovTotal'] = CovTotal
-            cov['CovTotal' + 'File'] = 'Overwritten '
-        if CovIntVar is not None:
-            my_logger.debug("Setting covIntVar")
-            cov['CovIntVar'] = CovIntVar
-            cov['CovIntVar' + 'File'] = 'Overwritten '
-        if CovObsErr is not None:
-            my_logger.debug("Setting covObsErr")
-            cov['CovObsErr'] = CovObsErr
-            cov['CovObsErr' + 'File'] = 'Overwritten '
+        set_obsNames = set(obsNames)
+        for key,UpdatedCov in zip(['CovTotal', 'CovIntVar', 'CovObsErr'], [CovTotal, CovIntVar, CovObsErr]):
+            if UpdatedCov is not None:
+                my_logger.debug(f"Setting key")
+                if (set_obsNames != set(UpdatedCov.index)) or (set_obsNames != set(UpdatedCov.columns)):
+                    raise ValueError(f"Observations in {key} do not match expected {obsNames}")
+                cov[key] = UpdatedCov
+                cov['key' + 'File'] = 'Overwritten '
 
         cov = copy.deepcopy(self.getv(matrix_key))  # copy from stored covariances.
         # Need a deep copy as cov is a dict pointing to datarrays. As the dataarrays get modified then
         # that would modify the underlying cached values.
-
         # apply constraint.
         if useConstraint:
             # want to have constraint wrapped in to covariance matrices. Rather arbitrary for all but
             # Total!
             consValue = 2.0 * self.optimise()['mu']
             consName = self.constraintName()
+
             for k, v in zip(keys, (consValue, consValue / 100., consValue)):
                 # Include the constraint value. Rather arbitrary choice for internal variability
                 if k in cov:
+                    if consName in cov[k].index:  # raise error  when have constraint and value in covariances
+                        raise ValueError(f'Constraint {consName} already in {k}')
                     cov[k].loc[consName, :] = 0.0
                     cov[k].loc[:, consName] = 0.0
                     cov[k].loc[consName, consName] = v
+        # extract to obsNames
+        obsNames = self.obsNames(add_constraint=useConstraint)
+        # make sure we have included the constraint (if wanted) in obs
+        for k in keys:
+            if k in cov and cov[k] is not None:
+                cov[k] = cov[k].reindex(index=obsNames, columns=obsNames)
+                if cov[k].isnull().values.any():
+                    raise ValueError(
+                        f"Covariance {k} has missing values after reindexing -- probably missing observations")
+                my_logger.debug(f'Extracted cov {k} to {", ".join(obsNames)}')
         # scale data
         if scale:
             obsNames = self.obsNames(
@@ -2716,6 +2831,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
                 if k in cov and cov[k] is not None:
                     cov[k] = cov[k] * cov_scale
                     my_logger.debug(f"Scaling {k}")
+
 
         return cov
 
@@ -2741,6 +2857,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
         except ValueError as exception:  # missing some errors
             bad += ['scales have problems ' + str(exception)]
 
+
         if len(bad):  # something went wrong. So report all the trapped errors with a failure.
             for m in bad:
                 my_logger.warning(m)
@@ -2750,31 +2867,52 @@ class OptClimConfigVn3(OptClimConfigVn2):
     def check_params(self) -> bool:
         """
         Check parameter related configuration is consistent.
-        checks begin, default and ranges
+        checks  begin, default, ranges & ensemble size
         Raises warnings if not consistent
         :return: True if OK, False if Not
         """
         bad = []
-        expected_params = self.paramNames()
-        my_logger.debug(f'Expected params are: {expected_params}')
+
+        errors_to_catch = (KeyError, ValueError)
+
+        try:
+            expected_params = self.paramNames()
+            my_logger.debug(f'Expected params are: {expected_params}')
+        except errors_to_catch:  # some error
+            bad += ['Problem running paramNames']
+            expected_params = []  # so other tests do not fail.
         try:
             default = self.standardParam(paramNames=expected_params)
             if default.isnull().any():
                 bad += ['Missing values for standard: ' + ", ".join(default[default.isnull()].index)]
-        except (KeyError, ValueError):
+        except errors_to_catch:
             bad += ['Problem running standardParam']
         try:
             range = self.paramRanges(paramNames=expected_params)
             if range.isnull().any().any():
                 bad += ['Missing values for range: ' + ", ".join(range.loc[:, range.isnull().any()].columns)]
-        except (KeyError, ValueError):
+        except errors_to_catch:
             bad += ['Problem running paramRanges']
         try:
             begin = self.beginParam(paramNames=expected_params)
             if begin.isnull().any():
                 bad += ['Missing values for begin: ' + ", ".join(begin[begin.isnull()].index)]
-        except (KeyError, ValueError):  # some error
+        except errors_to_catch:  # some error
             bad += ['Problem running beginParam']
+
+        try:
+            ensembleSize = self.ensembleSize()
+            if ensembleSize < 1:
+                bad += [f'ensembleSize {ensembleSize} < 1']
+        except (KeyError, ValueError):  # some error
+            bad += ['Problem running ensembleSize']
+
+        try:
+            fixed = self.fixedParams()
+            if not isinstance(fixed, dict):
+                bad += ['fixedParams is not a dict']
+        except (KeyError,ValueError):  # some error
+            bad += ['Problem running fixedParams']
 
         if len(bad) > 0:
             for m in bad:
@@ -2782,12 +2920,49 @@ class OptClimConfigVn3(OptClimConfigVn2):
 
         return len(bad) == 0
 
-    def check(self):
+    def check(self) -> bool:
         """
         Check configuration is consistent. Raise ValueError if not
         :return: True if OK, False if not
         """
-        OK = self.check_params() and self.check_obs()
-        if not OK:
+        ok = self.check_params() and self.check_obs()
+
+        if not ok:
             raise ValueError("Configuration has problems")
-        return OK
+        return ok
+
+    def obsNames(self,
+                 obsNames:typing.Optional[list[str]]=None,
+                 add_constraint:bool=True,
+                 strip_comments:bool=True):
+        """
+
+        :param obsNames  If not None set obsNames to values
+        :param  add_constraint -- if True add the constraint name to the list of obs
+        :param strip_comments -- if True then remove any comments from obsNames using strip_comment
+        :return: a list  of observation names from the configuration files
+        """
+        if obsNames is None:
+            obs = self.getv('study', {}).get('ObsList', [])[:]  # return a copy of the array.
+
+        else:
+            self.getv('study', {})['ObsList'] = list(obsNames)[:]  # need to copy not have a reference.
+            obs = obsNames[:]
+
+        if strip_comments:
+            obs = self.strip_comment(obs)  # remove any comments in obs.
+
+        if add_constraint and self.constraint():  # adding constraint and its defined.
+            cons_name = self.constraintName()
+            if cons_name  in obs:
+                raise ValueError(f'Constrain {cons_name} already in obsNames')
+            obs.append(cons_name)
+
+        # check for duplicates
+        dup_obs = set([ob for ob in obs if obs.count(ob) > 1])
+
+        if len(dup_obs) > 0:
+            msg = "Have duplicate observations for :" + " ".join(dup_obs)
+            raise ValueError(msg)
+
+        return obs

@@ -1,4 +1,7 @@
-from __future__ import annotations
+# TODO add some checking.
+# 1) All namelists return the same types for a file
+# 2) functions also!
+#from __future__ import annotations
 
 import logging
 import pathlib
@@ -7,12 +10,14 @@ import typing
 import numpy as np
 import pandas as pd
 
-from model_base import model_base
-from namelist_var import namelist_var
+import genericLib
+#from namelist_var import namelist_var
+from namelist_var import NamelistVar
+
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}") # so this module has its own logging.
 
 
-class param_info(model_base):
+class ParamInfo():
     """
     Provides support for parameters that map to namelists and functions that return namelists (or nothing).
     This is used in Model.
@@ -29,13 +34,19 @@ class param_info(model_base):
 
     Example:
     """
-    def __init__(self):
+
+    #file_info: dict[pathlib.Path,str] = dict()# holds all the file info. Indexed by filename.
+    def __init__(self,cls_name:typing.Optional[str] = None):
         """
         Initialise the params instance by setting param_constructors to an empty dict
         """
         self.param_constructors = dict()  # information on parameters -- currently namelist_var or functions
         self.got_vars = set()  # set of the known variables (namelist or functions)
         self.known_functions = dict()  # known functions indexed by __qualname__
+        self.file_info = dict() # where we store indexed by the relative filenames the expected type. Will be used to check things are as expected.
+        self.cls_name = cls_name  # name of the class this is for. Used in debugging and logging.
+
+
 
     def update(self, other_param_info):
         """
@@ -74,7 +85,14 @@ class param_info(model_base):
                         self.known_functions.pop(v.__qualname__, None)
             except KeyError:
                 pass
-
+        # add the new type to file_info. Triggering an error if not.
+        if isinstance(var_to_set, NamelistVar):
+            type_name = var_to_set.type_name
+            if var_to_set.filepath in self.file_info:
+                if self.file_info[var_to_set.filepath] != type_name:
+                    raise ValueError(f"File {var_to_set.filepath} has multiple types {self.file_info[var_to_set.filepath]} and {type_name}")
+            else:
+                self.file_info[var_to_set.filepath] = type_name
         if var_to_set in self.got_vars:
             raise ValueError(f"Already got var {var_to_set}. No duplicates allowed")
         self.got_vars.add(var_to_set)
@@ -88,87 +106,13 @@ class param_info(model_base):
             my_logger.debug(f"Parameter {parameter} uses method {fname} ")
         else:
             my_logger.debug(f"Set {parameter} to {var_to_set}")
+        return
 
-    def read_param(self, model, parameter: str):
-        """
-        Read parameter value from model instance.
-        :param model: model instance. Only used if method first element in parameter defn,
-        :param parameter: parameter wanted
-        :return: value. Depends on what is in the model...
-        """
-        try:
-            stuff = self.param_constructors[parameter][0]  # just want first element of list.
-        except KeyError:
-            raise KeyError(f"Parameter {parameter} not found.\n Allowed parameters are: " +
-                           " ".join(list(self.param_constructors.keys())))
-        if callable(stuff):  # is it a callable
-            result = stuff(model, None)  # callable. Run it in inverse mode.
-            my_logger.debug(f"Called {stuff.__qualname__} with inverse and got {result} ")
-
-        elif isinstance(stuff, namelist_var):
-            result = stuff.read_value(dirpath=model.model_dir)
-            my_logger.debug(f"Read data from {stuff}")
-        else:
-            raise NotImplementedError(f"Do not know how to deal with {stuff} of type {type(stuff)}")
-        return result
-
-    def param(self, model, parameter: str, value) -> list:
-        """
-        Return parameter information for a specific value as namelist/value tuple. Later functions will actually set them
-        :param model: the model instance -- only used if method used
-        :param parameter: parameter name
-        :param value: value to be set and passed to method
-
-        :return:
-        """
-        stuff = self.param_constructors[parameter]  # will fail if parameter does not exist.
-        if not isinstance(stuff, list):
-            raise ValueError(f"Parameter {parameter} did not return list but returned {stuff}")
-
-        result = []
-        for s in stuff:
-            if callable(s):  # function.
-                err_msg = f"Parameter {parameter} with {value} and method {s}  returned odd output. Should  either be: " \
-                          f"None, a tuple (nl,value) or list of such tuples "
-                r = s(model, value)  # run the function
-                my_logger.debug(f"Parameter {parameter} called {s.__qualname__} with {value} and returned {r}")
-                # check output.
-                if r is None:  # function did something but returned nothing.
-                    continue
-                elif isinstance(r, tuple) and (len(r) == 2):  # returned a 2-element tuple
-                    result.append(r)
-                elif isinstance(r, list):  # list -- check each element.
-                    for el in r:
-                        if not (isinstance(el, tuple) and (len(el) == 2)):
-                            raise ValueError(err_msg)
-                        result.append(el)
-                else:  # something else. Error!
-                    raise ValueError(err_msg)
-
-            else:  # singleton so extend result with tuple (s, value)
-                result.append((s, value))
-                my_logger.debug(f"Parameter {parameter} set {s} to {value}")
-
-        return result
-
-    def gen_parameters(self, model, **kwargs):
-        """
-        Generate parameter settings.
-        :param model: model (needed for call to param)
-        :param kwargs: parameter/values
-        :return:list of things to be actually set. That actually should be done by the model
-        """
-
-        stuff_to_set = []
-        for parameter, value in kwargs.items():
-            stuff_to_set.extend(self.param(model, parameter, value))
-
-        return stuff_to_set  # this is a list of (variable_set_info, value)
 
     def to_DataFrame(self):
         """
         Convert parameter info to a pandas dataframe. Any functions will be ignored as they get defined at model instance time.
-        Currently, only deals with namelist_var. Extend if you need different or additional types.
+        Currently, only deals with NameListVar. Extend if you need different or additional types.
         :return: df
         """
         series = []
@@ -178,80 +122,24 @@ class param_info(model_base):
                     d = dict(parameter=param, type='function')
                     d.update(function_name=value.__qualname__)
                     series.append(pd.Series(d))
-                elif isinstance(value, namelist_var):
-                    d = dict(parameter=param, type='namelist_var')
+                elif isinstance(value, NamelistVar):
+                    d = dict(parameter=param)
                     d.update(value.to_dict())
                     d['filepath'] = str(d['filepath'])
-                    series.append(pd.Series(d))
+                    d = pd.Series(d).rename({'type_name':'type'})
+                    series.append(d)
                 else:
                     my_logger.warning(f"Do not how to deal with type {type(value)}")
         df = pd.DataFrame(series)
         # want fixed ordering of columns in df.
         ordering = ['parameter', 'type']
         ordering.extend(
-            namelist_var.__dataclass_fields__.keys())  # namelist_var is a dataclass so that is how we get the keys
+            NamelistVar.__dataclass_fields__.keys())  # namelist_var is a dataclass so that is how we get the keys
+        ordering.remove('type_name')  # don't want this in the output.
         ordering.append('function_name')
+
         df = df.reindex(columns=pd.Index(ordering))
         return df
-
-    def update_from_file(self, filepath: pathlib.Path|str, duplicate: bool = False, **kwargs):
-        """
-        Add parameters from file.
-        :param filepath: path to csv file (can be anything accepted by pandas.read_csv).
-          parameter type  filepath namelist nl_var name -- extend for different types.
-          For this implementation type **must** be namelist_var. Extend for different ways of specifing parameters.
-          All four parameters needed to create a namelist_var must be present
-        :param duplicate: If True allow duplicates otherwise final parameter found is used.
-        :param kwargs -- all remaining arguments are passed to read_csv.
-        :return: Nothing.Modifies self in place
-        """
-        def str_to_ifb(value:typing.Optional[str]) -> typing.Optional[bool,float,int]:
-            """
-            Convert a string to a bool, float or int. If None passed return None
-            :param value: value to be converted
-            :return: converted value
-            """
-            if value is None:
-                return None
-            if value.lower() == 'true':
-                result = True
-            elif value.lower() == 'false':
-                result = False
-            elif '.' in value:
-                result = float(value)
-            else:
-                result = int(value)
-
-            return result
-
-        parameter_df = pd.read_csv(self.expand(filepath), **kwargs)
-        parameter_df = parameter_df.replace({np.nan:None}) # replace any Nan with None. (on write out None get written as nan)
-        for indx, row in parameter_df.iterrows():
-            param, typ = row.loc[['parameter', 'type']]
-            if typ == 'namelist_var':
-                name = row.loc['name']
-                if pd.isnull(name):  # no name defined set it to param.
-                    name = param
-                # convert default
-                default = row.loc['default']
-                if isinstance(default,str):
-                    default = str_to_ifb(default)
-
-                nl = namelist_var(filepath=pathlib.Path(row.loc['filepath']), namelist=row.loc['namelist'],
-                                  nl_var=row.loc['nl_var'], default=default,name=name)
-                self.register(param, nl, duplicate=duplicate)
-                my_logger.debug(f"Registered {nl} for parameter {param}")
-            elif typ == 'function':
-                # check we have it and warn if not.
-                fname = row.loc["function_name"]
-                if fname not in self.known_functions.keys():
-                    my_logger.warning(f"Function {fname} not found. Likely some discrepancy")
-                my_logger.debug(f"Got function {fname} for parameter {param}")
-                continue
-            else:
-                raise NotImplementedError(f"No implementation for type {type}")
-
-        my_logger.info(f"Registered {len(parameter_df.index)} parameters")
 
     def print_parameters(self):
         """
@@ -273,8 +161,10 @@ class param_info(model_base):
         Generate a dictionary rep using param_constructors. If callable the function name will be returned.
         Otherwise will be left alone.
         :return: dict
+        TODO: Check if actually used. SFBT thinks it is never used in anger.
         """
-        dct = {}
+        my_logger.warning('Calling to_dict.')
+        dct=dict()
         for key, lst in self.param_constructors.items():
             dct[key] = []
             for value in lst:
@@ -290,6 +180,7 @@ class param_info(model_base):
         Tricky part is need to ignore the functions.
         :return: object
         """
+
         obj = cls()  # follow std initialisation.
         for key, lst in dct.items():
             values = obj.param_constructors.get(key, [])  # empty list of not already defined
@@ -311,3 +202,94 @@ class param_info(model_base):
         :return:
         """
         return list(self.param_constructors.keys())
+
+
+    def update_from_file(self, filepath: pathlib.Path|str, duplicate: bool = False, **kwargs):
+        """
+        Add parameters from file.
+        :param filepath: path to csv file (can be anything accepted by pandas.read_csv).
+          parameter type  filepath namelist nl_var name -- extend for different types.
+          For this implementation type **must** be namelist_var. Extend for different ways of specifing parameters.
+          All four parameters needed to create a namelist_var must be present
+        :param duplicate: If True allow duplicates otherwise final parameter found is used.
+        :param kwargs -- all remaining arguments are passed to read_csv.
+        :return: Nothing.Modifies self in place
+        """
+
+        def str_to_ifb(value:typing.Optional[str]) -> typing.Optional[typing.Union[bool,float,int]]:
+            """
+            Convert a string to a bool, float or int. If None passed return None
+            :param value: value to be converted.
+            :return: converted value.
+            """
+            if value is None:
+                return None
+            if value.lower() == 'true':
+                result = True
+            elif value.lower() == 'false':
+                result = False
+            elif '.' in value:
+                result = float(value)
+            else:
+                result = int(value)
+
+            return result
+
+        parameter_df = pd.read_csv(genericLib.expand(filepath), **kwargs)
+        parameter_df = parameter_df.replace({np.nan:None}) # replace any Nan with None. (on write out None get written as nan)
+
+        for indx, row in parameter_df.iterrows():
+            param, typ = row.loc[['parameter', 'type']]
+            if typ == 'function':
+                # check we have it and warn if not.
+                fname = row.loc["function_name"]
+                if fname not in self.known_functions.keys():
+                    my_logger.warning(f"Function {fname} not found. Likely some discrepancy")
+                else:
+                    my_logger.debug(f"Got function {fname} for parameter {param}")
+            else:
+                name = row.loc['name']
+                if pd.isnull(name):  # no name defined set it to param.
+                    name = param
+                # convert default
+                default = row.loc['default']
+                if isinstance(default,str):
+                    default = str_to_ifb(default)
+
+                nl = NamelistVar(type_name=typ, filepath=pathlib.Path(row.loc['filepath']),
+                                              namelist=row.loc['namelist'],
+                                              nl_var=row.loc['nl_var'], default=default, name=name)
+
+                self.register(param, nl, duplicate=duplicate)
+                my_logger.debug(f"Registered {nl} for parameter {param}")
+
+        my_logger.info(f"Registered {len(parameter_df.index)} parameters")
+
+    def check_ok(self)-> bool:
+        """
+        Check that params are OK:
+        1) Namelists are all the same type for a file.
+        """
+        from namelist_var import NamelistVar
+        file_nls:dict[pathlib.Path:NamelistVar]=dict() # store the first NameListVar for a file.
+        bad_nls=dict()
+        for key, lst in self.param_constructors.items():
+            for value in lst:
+                if callable(value): # Not possible to test these without an instantiated model.
+                    continue
+                elif isinstance(value,NamelistVar):
+                    filep = value.filepath
+                    if filep not in file_nls:
+                        file_nls[filep]=value
+                    else:
+                        if file_nls[filep].type_name != value.type_name:
+                            bad_nls[filep] = True
+                            # warn that we have multiple types for same file.
+                            my_logger.warning(f'File {filep} has multiple types {file_nls[filep].type_name} and {value.type_name}')
+                else:
+                    my_logger.error(f"Unknown type {value} for {key}")
+        if len(bad_nls) > 0: # got some bad nls. So trigger an error.
+            raise ValueError(f"Multiple types for following files: {' '.join([str(k) for k in bad_nls.keys()])}")
+        return True
+
+

@@ -6,7 +6,6 @@ NEED to define OPTCLIMTOP & python path.
 """
 
 import HadCM3 as HadCM3
-import Submit as Submit
 import StudyConfig as StudyConfig
 import os
 runid='a9999' 

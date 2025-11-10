@@ -1,0 +1,148 @@
+# This file is a place holder for new sites to add appropriate resources for
+# running this AMIP climate experiment.
+#
+# Only the compulsory families have been included, those that exist in the
+# suite.rc file. Any other families required can also be added. See other
+# site files for examples on how this can work.
+#
+# Useful examples of how to switch off tasks that cannot be run at a particular
+# site (mainly archiving related) are in nci_raijin.rc, see family
+# NCI_NOT_SUPPORTED.
+#
+# Examples of jinja2 macros will be in most site files.
+#
+# The best practise would be to make a copy of this file (or a more
+# appropriately matched example) with a name for the computer that is being
+# used. This should then also be added to the list of acceptable values in the
+# jinja2 variable SITE in meta/rose-meta.conf.
+#
+# In order to get this site added to the master suite (u-az257), please take a
+# branch copy of this suite, e.g.
+#
+# rosie checkout u-az257
+# cd $HOME/roses/u-az257
+# fcm bc -s <branch_name>
+#
+# This will leave you in a branch of the original suite. Once you have made
+# the changes described above, commit them and email the suite owner
+# (currently paul.earnshaw@metoffice.gov.uk) to get the changes merged onto
+# the trunk of the suite.
+#
+# Thank you,
+# Paul Earnshaw
+
+{# Set up start dumps #}
+{% set AINITIAL_DIR = '<some_path>/' %}
+{% if EXPT_HORIZ == 'n96e' %}
+{% set AINITIAL = AINITIAL_DIR + 'ab642a.da19880901_00' %}
+{% elif EXPT_HORIZ == 'n216e' %}
+{% set AINITIAL = AINITIAL_DIR + 'ab680a.da19880901_00' %}
+{% elif EXPT_HORIZ == 'n512e' %}
+{% set AINITIAL = AINITIAL_DIR + 'ab680a.da19880901_00' %}
+{% endif %}
+
+    # Used to state resources required for extracting code from (mirrored)
+    # MOSRS repositories.
+    #
+    # Where used: fcm_make_um, fcm_make_pp
+    #
+    [[EXTRACT_RESOURCE]]
+
+    # Used to state the build configuration for the UM, where CONFIG is the
+    # fcm-make profile to use, OPENMP is whether using OPNEMP in code, OPTIM is
+    # the optimisation level (usually one of high, safe, debug or rigourous),
+    # PREBUILD is the full path of the prebuilt UM code for the CONFIG, OPENMP
+    # and OPTIM settings. Must be left blank if not using prebuilds.
+    #
+    # Where used: fcm_make_um, fcm_make2_um
+    #
+    [[UMBUILD]]
+        [[[environment]]]
+            CONFIG = # meto-xc40-cce
+            OPENMP= # true
+            OPTIM = # safe
+            PREBUILD = # $UMDIR/cylc-run/vn11.2_prebuilds/share/fcm_make_meto_xc40_cce_um_safe_omp
+
+    # The resources used for building the UM code.
+    #
+    # Where used: fcm_make2_um
+    #
+    [[UMBUILD_RESOURCE]]
+
+    # The paths of any start dumps for the UM, each labeled by resolution
+    #
+    # Where used: UM, and hence all UM-based tasks.
+    #
+    [[STARTDUMP]]
+        [[[environment]]]
+            AINITIAL = {{AINITIAL}}
+
+    # The resources used for installing various files appropriate to the
+    # configuration and resolution. This needs to access fcm:ancil.xm and
+    # to place the ancil in $ROSE_DATA/etc on the machine which runs the UM.
+    #
+    # Where used: install_cold, install_ancil
+    #
+    [[INSTALL_RESOURCE]]
+
+    # The resources used to run reconfiguration. This should make decisions
+    # based on the requested processor decomposition in the rose-suite.conf
+    # file, i.e. jinja2 variables OMPTHR_RCF, RCF_PROCX and RCF_PROCY.
+    # It is advisable to make use of jinja2 macros to achieve this.
+    #
+    # Where used: recon
+    #
+    [[RCF_RESOURCE]]
+
+    # The resources used to run the forecast. This should make decisions
+    # based on the requested processor decomposition in the rose-suite.conf
+    # file, i.e. jinja2 variables OMPTHR_ATM, ATM_PROCX and ATM_PROCY.
+    # The wallclock time limit is available from variable CLOCK. If using the
+    # IO server then the variable IOS_NPROC should also be taken into account.
+    # It is advisable to make use of jinja2 macros to achieve this.
+    #
+    # Where used: atmos_main, ATMOS_NCRUN_RESOURCE, ATMOS_PE_RESOURCE
+    #
+    [[ATMOS_RESOURCE]]
+
+    # The resources used for building the postproc code.
+    #
+    # Where used: fcm_make2_pp
+    #
+    [[PPBUILD_RESOURCE]]
+
+    # The resources used to run postproc (archiving)
+    #
+    # Where used: postproc
+    #
+    [[POSTPROC_RESOURCE]]
+
+    # The resources used to run pptransfer (data storage)
+    #
+    # Where used: pptransfer
+    #
+    [[PPTRANSFER_RESOURCE]]
+
+    # The resources used to calculate the supermeans
+    #
+    # Where used: supermean
+    #
+    [[SUPERMEAN_RESOURCE]]
+
+    # The resources used to archive suite run logs
+    #
+    # Where used: rose_arch_logs
+    #
+    [[LOGS_RESOURCE]]
+
+    # The resources used to archive wallclock times file
+    #
+    # Where used: rose_arch_wallclock
+    #
+    [[WALLCLOCK_RESOURCE]]
+
+    # The resources used to run housekeeping
+    #
+    # Where used: housekeeping
+    #
+    [[HOUSEKEEP_RESOURCE]]

@@ -1,0 +1,153 @@
+{% macro cpus(x,y,i=0,nt=1) -%}
+    {{ (x*y+i)*nt }}
+{%- endmacro %}
+
+{% macro mem(x,y,i=0,nt=1,per_cpu=1800) -%}
+    {{ ( cpus(x,y,i,nt) | int ) * per_cpu }}mb
+{%- endmacro %}
+
+{# Set up start dumps #}
+{% set AINITIAL = NCI_AINITIAL_DIR + '/' + AINITIAL_FILE %}
+
+    [[NCI_NOT_SUPPORTED]]
+        script = """
+            echo 'Task not supported at NCI' >&2
+            false
+        """
+        [[[ job ]]]
+            # No need to submit to the queue
+            batch system = background
+
+    [[LINUX]]
+        [[[ job ]]]
+            batch system = background
+        [[[ remote ]]]
+            host = localhost
+
+    [[EXTRACT_RESOURCE]]
+        inherit = LINUX
+
+    [[HPC]]
+        pre-script = """
+            module purge
+            module load openmpi/1.10.2
+            module use ~access/modules
+            module load fcm
+            module load subversion/1.9.0
+            module list -l
+            ulimit -s unlimited
+            ulimit -a
+        """
+        [[[ job ]]]
+            batch system = pbs
+            execution time limit = PT1H
+        [[[ directives ]]]
+            -q          = express
+            -l ncpus    = 1
+            -l mem      = 1gb
+            -l jobfs    = 1gb
+        [[[ remote ]]]
+            host = raijin
+        [[[ environment ]]]
+            UMDIR = ~access/umdir
+            PLATFORM = linux
+            ROSE_TASK_N_JOBS = ${PBS_NCPUS:-1}
+
+    [[UMBUILD]]
+        [[[environment]]]
+            CONFIG = nci-x86-ifort
+            OPENMP= true
+            OPTIM = safe
+            PREBUILD = /g/data/access/cylc-run/vn11.2_prebuilds/fcm_make_nci_um_safe_omp
+
+
+    [[UMBUILD_RESOURCE]]
+        inherit = HPC
+        pre-script = """
+            module purge
+            module use ~access/modules
+            module load intel-cc/15.0.1.133
+            module load intel-fc/15.0.1.133
+            module load openmpi/1.10.2
+            module load gcom/6.6_ompi.1.10.2
+            module unload netcdf
+            module load netcdf/4.3.0
+            module load grib-api/1.10.4
+            module load drhook
+            module load fcm
+            module load shumlib/2018.06.1
+        """
+        [[[ directives ]]]
+            -l ncpus    = 6
+            -l mem      = 12gb
+            -l software = intel-compiler
+        [[[ environment ]]]
+            ROSE_TASK_OPTIONS = -f fcm-make2.cfg
+
+    [[STARTDUMP]]
+        [[[environment]]]
+            AINITIAL = {{AINITIAL}}
+
+    [[INSTALL_RESOURCE]]
+        # Just a file copy here
+        inherit = HPC
+        [[[ job ]]]
+            batch system = background
+
+    [[RCF_RESOURCE]]
+        inherit = HPC
+        [[[ environment ]]]
+            OMP_STACKSIZE = 2G
+            RECON_LAUNCHER = mpirun
+        [[[ directives ]]]
+            -l ncpus = {{ cpus(MAIN_RCF_PROCX, MAIN_RCF_PROCY, nt=MAIN_OMPTHR_RCF) }}
+            -l mem   = {{ mem(MAIN_RCF_PROCX, MAIN_RCF_PROCY, nt=MAIN_OMPTHR_RCF) }}
+
+    [[ATMOS_RESOURCE]]
+        inherit = HPC
+        [[[ environment ]]]
+            OMP_STACKSIZE = 2G
+	    # Required for 1.10.2
+            OMPI_MCA_mpi_leave_pinned = 0
+	    # For multithreaded
+            OMPI_MCA_hwloc_base_mem_alloc_policy = local_only
+            ROSE_LAUNCHER_PREOPTS = -n {{ cpus(MAIN_ATM_PROCX, MAIN_ATM_PROCY, MAIN_IOS_NPROC, 1) }} --map-by slot:PE={{MAIN_OMPTHR_ATM}}
+        [[[ directives ]]]
+            -q       = {{NCI_QUEUE}}
+            -l ncpus = {{ cpus(MAIN_ATM_PROCX, MAIN_ATM_PROCY, MAIN_IOS_NPROC, MAIN_OMPTHR_ATM) }}
+            -l mem   = {{ mem(MAIN_ATM_PROCX, MAIN_ATM_PROCY, MAIN_IOS_NPROC, MAIN_OMPTHR_ATM) }}
+        [[[job]]]
+            execution time limit = {{ MAIN_CLOCK }}
+
+    [[PPBUILD_RESOURCE]]
+        inherit = HPC
+        pre-script = """
+            module purge
+            module use ~access/modules
+            module load fcm
+            module list -l
+        """
+        [[[ job ]]]
+            batch system = background
+        [[[ environment ]]]
+            ROSE_TASK_OPTIONS = -f fcm-make2.cfg
+
+    [[POSTPROC_RESOURCE]]
+        inherit = LINUX, NCI_NOT_SUPPORTED
+        [[[environment]]]
+            MOOPROJECT = ''
+
+    [[PPTRANSFER_RESOURCE]]
+        inherit = LINUX, NCI_NOT_SUPPORTED
+
+    [[SUPERMEAN_RESOURCE]]
+        inherit = LINUX, NCI_NOT_SUPPORTED
+
+    [[LOGS_RESOURCE]]
+        inherit = LINUX, NCI_NOT_SUPPORTED
+
+    [[WALLCLOCK_RESOURCE]]
+        inherit = HPC, NCI_NOT_SUPPORTED
+
+    [[HOUSEKEEP_RESOURCE]]
+        inherit = LINUX

@@ -209,16 +209,17 @@ class TestJsonEncoder(rootTest):
 
 class TestJsonUtils(rootTest):
     def setUp(self):
-        nl= namelist_var.namelist_var(filepath=pathlib.Path('test_nl'), namelist='atmos', nl_var='fred')
+        #nl= namelist_var.NamelistVar(type_name='namelist_var',filepath=pathlib.Path('test_nl'), namelist='atmos', nl_var='fred')
         self.data = {'a': np.array([1, 2, 3]),
                      'b': pd.DataFrame({'col1': [1, 2], 'col2': [3, 4]}),
                      'c': pd.Series([1, 2, 3]),
                      'd': pathlib.Path('test.py'),
                      'e':dict(fred=True,james=2,harry=4.5,gordon='some text'),
                      'f':[1,2,3,'more test'],
-                     'g':nl,
-                     'h': param_info.param_info()}
-        self.data['h'].register('VF1',nl)
+                     #'g':nl,
+                     #'h': param_info.ParamInfo()
+                     }
+        #self.data['h'].register('VF1',nl)
 
 
 

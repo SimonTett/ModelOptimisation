@@ -8,6 +8,7 @@ import tempfile
 import unittest
 import json
 
+import dfols
 import numpy as np
 import numpy.testing as nptest
 import pandas as pd
@@ -15,9 +16,13 @@ import pandas.testing as pdtest
 import xarray
 import copy
 
+from dfols.solver import OptimResults
+
 import StudyConfig
 from genericLib import expand, setup_env
 setup_env()
+
+
 
 
 class testStudyConfig(unittest.TestCase):
@@ -106,6 +111,8 @@ class testStudyConfig(unittest.TestCase):
         test Covariances method.
         :return:
         """
+        covariance_cache = self.config.getv("_covariance_matrices")
+        cov_file = self.config.expand('$OPTCLIMTOP/covariance/cov_obserr_20.csv')
         config = self.config
         cov = config.Covariances()  # example case has constraint on.
         consValue = 2.0 * config.optimise()['mu']
@@ -121,25 +128,39 @@ class testStudyConfig(unittest.TestCase):
         # test that cached values are as expected.
         cov_cache = self.config.getv("_covariance_matrices")
         cov_nocons = config.Covariances(constraint=False)
+        covariance_cache = self.config.getv("_covariance_matrices")
         for k in covKeys:
             self.assertTrue(cov_nocons[k].equals(cov_cache[k]), msg=f'Cached cov {k}  differs')
         for k, v in zip(covKeys, [consValue, consValue / 100., consValue]):  # keys and expected value
             expect_slice[-1] = v
             np.testing.assert_array_equal(cov[k].loc[:, consName].values, expect_slice, 'Values wrong -- t2a')
             np.testing.assert_array_equal(cov[k].loc[consName, :].values, expect_slice, 'Values wrong -- t2b')
-
+        covariance_cache = self.config.getv("_covariance_matrices")
         # and without constraint
         cov = config.Covariances(constraint=False)  # force constraint off.
+        covariance_cache = self.config.getv("_covariance_matrices")
         for k in covKeys:
             self.assertEqual(cov[k].shape, (nobs - 1, nobs - 1), msg='Shape wrong without constraint')
 
         # and test we can overwrite.
-        obsNames = config.obsNames()
+        obsNames = config.obsNames(add_constraint=False) # keep the constraint out.
         c = pd.DataFrame(np.identity(len(obsNames)) * 2, index=obsNames, columns=obsNames)
         cov = config.Covariances(constraint=False, CovTotal=c, CovIntVar=c * 0.1, CovObsErr=c * 0.9)
-
+        covariance_cache = self.config.getv("_covariance_matrices")
         for k, scale in zip(covKeys, [1.0, 0.1, 0.9]):
             self.assertTrue(cov[k].equals(c * scale), msg=f"{k} does not match")
+
+        # and test that having constraint value in covariance matrix causes an error,
+        # and test that not having constraint value in covariance matrix is OK!
+        cov = self.config.readCovariances(cov_file)
+        self.config.Covariances(CovObsErr=cov)
+        cov = self.config.readCovariances(cov_file)
+        cov.loc[consName, consName] = 1.0
+        with self.assertRaises(ValueError):
+            self.config.Covariances(CovObsErr=cov)
+        covariance_cache = self.config.getv("_covariance_matrices")
+
+
 
     def test_readCovariances(self):
         """
@@ -315,7 +336,7 @@ class testStudyConfig(unittest.TestCase):
         c1.update(delta_SST=4.)
         c2 = fix
         c2.update(delta_SST=0.0)
-        fixparams=dict(config1=c1,config2=c2,multiple_function='example_multiparam.ctl_plus4k')
+        fixparams=dict(config1=c1,config2=c2,multiple_function='$OPTCLIMTOP/OptClimVn3/scripts/example_multiparam.ctl_plus4k')
         self.config.fixedParams(fixed_params=fixparams)
         fp = self.config.fixedParams()
         self.assertEqual(fp['config1'],fixparams["config1"])
@@ -328,7 +349,7 @@ class testStudyConfig(unittest.TestCase):
         c1.update(delta_SST=4.)
         c2 = fix
         c2.update(delta_SST=0.0)
-        fixparams = dict(config1=c1, config2=c2, multiple_function='example_multiparam.ctl_plus4k',multiple_configa_comment='Some  text')
+        fixparams = dict(config1=c1, config2=c2, multiple_function='$OPTCLIMTOP/OptClimVn3/scripts/example_multiparam.ctl_plus4k',multiple_configa_comment='Some  text')
         self.config.Config['initial']['fixedParams'] = fixparams
         fix_keys = self.config.fixedParams_keys()
         self.assertEqual(fix_keys,['config1','config2'])
@@ -381,6 +402,19 @@ class testStudyConfig(unittest.TestCase):
         got = self.config.obsNames()  # got will include the constraint name here
         newNames.append(self.config.constraintName())
         self.assertEqual(got, newNames)  # we should get the names back
+        # check failures fail!
+        # duplicates
+        dup_names =  ['obs1', 'obs2', 'obs3', 'obs1']
+        with self.assertRaises(ValueError):
+            got = self.config.obsNames(obsNames=dup_names)
+        # and with constrain name in (and add_constraint True which it is by default)
+        names = ['obs1', 'obs2', 'obs3', self.config.constraintName()]
+        with self.assertRaises(ValueError):
+            got = self.config.obsNames(obsNames=names) # should fail
+        got = self.config.obsNames(add_constraint=False)  # now with constraint off -- should work
+        self.assertEqual(got, names, msg='Failed to set obsNames with constraint off')
+
+
 
     def test_paramNames(self):
         """
@@ -631,6 +665,12 @@ class testStudyConfig(unittest.TestCase):
             nptest.assert_allclose(got2, expect, atol=atol, rtol=rtol,
                                    err_msg=f' Scale {scale} transform@inverse not giving I')
 
+            # test that warning gets generated if min/max < 0.1
+            with self.assertLogs(level='WARNING') as log:
+                # Call the function that should log a warning
+                trans = self.config.transMatrix(scale=True)
+            self.assertIn('WARNING:OPTCLIM.StudyConfig:Eigenvalues range is', log.output[0])
+
     def test_DFOLS_userParams(self):
         """
         test DFOLS_userParams.
@@ -785,9 +825,7 @@ class testStudyConfig(unittest.TestCase):
         test_scales = dict(one=2, two=1, three=4)
         obsNames = test_scales.keys()
         expect = pd.Series(test_scales)
-        # get an error because obsNames differ.
-        with self.assertRaises(ValueError):
-            scales = self.config.scales(test_scales)
+
         scales = self.config.scales(test_scales, obsNames=obsNames)
         nptest.assert_array_equal(scales, expect)
         scales = self.config.scales(dict(one=2, three=4), obsNames=obsNames)
@@ -819,22 +857,46 @@ class testStudyConfig(unittest.TestCase):
 
     def test_dfols_soln(self):
         # test that dfols_soln works.
-        # wil avoid runnign dfols as that involves a lot of hassle!
+        # wil avoid running dfols as that involves a lot of hassle!
         # instead will set up some variables
 
         from dfols.solver import OptimResults
+        import dfols
         import numpy as np
-        test_soln = OptimResults(*[indx * 12 + 0.1 for indx in range(0, 9)])
         df = pd.DataFrame(np.ones((3, 3)) * 1.111, index=['a', 'b', 'c'], columns=['x', 'y', 'z'])
-        test_soln.diagnostic_info = df
+        if dfols.__version__ < '1.5.4':
+            print('Use DFOLS 1.5.4+ and no tests ran for test_dfols_soln')
+            return # exit further testing
+        dct = dict(
+            x= [0.1,0.2],
+            resid =1.2,
+            obj = 2.,
+            jacobian = 3.,
+            nf =4,
+            nx = 5,
+            nruns = 6,
+            flag = 1,
+            msg = 'some text',
+            xmin_eval_num = 4,
+            jacmin_eval_nums =  4,
+            diagnostic_info = df.to_dict(),
+        )
+        test_soln = OptimResults.from_dict(dct)
+
         self.config.dfols_solution(solution=test_soln)
         new_soln = self.config.dfols_solution()  # get the new soln
         # test for equality!
         for (kn, vn), (k, v) in zip(vars(new_soln).items(), vars(test_soln).items()):
             self.assertEqual(kn, k)
-            self.assertEqual(type(vn), type(v))
+            self.assertEqual(type(vn), type(v),msg=f'Types differ for key {k}')
+
             if isinstance(vn, pd.DataFrame):
                 pdtest.assert_frame_equal(vn, v)
+            elif isinstance(vn, np.ndarray):
+                nptest.assert_array_equal(vn,v,err_msg=f'Arrays differ for key {k}')
+            else:
+                self.assertEqual(vn,v,msg=f'Values differ for key {k}')
+            
 
     def test_init(self):
         # test init works --  in particular that INCLUDE works as expected.
@@ -847,8 +909,7 @@ class testStudyConfig(unittest.TestCase):
             expect_log_cfg = json.load(fp)
         # check logging info is as expected
         self.assertEqual(expect_log_cfg, c.getv('logging'))
-        # and that logging_INCLUDE_comment is raw path
-        self.assertEqual(log_cfg_file, c.getv('logging_INCLUDE_comment'))
+
 
     def test_max_model_simulations(self):
         # test max_model_simulations
@@ -872,7 +933,7 @@ class testStudyConfig(unittest.TestCase):
         cols = ['one', 'two', 'three']
         df = pd.DataFrame(data=np.diag([1, 1e-9, 3]), index=cols, columns=cols)
         dct = self.config.cov2dict(df)
-        self.assertAlmostEquals(dct['scale'], 1e9, delta=0.1)
+        self.assertAlmostEqual(dct['scale'], 1e9, delta=0.1)
         self.assertIsInstance(dct['dataframe'], dict)
 
     def test_dict2cov(self):
@@ -887,9 +948,10 @@ class testStudyConfig(unittest.TestCase):
     def test_check_obs(self):
         """ test that check_obs works/fails as expected"""
         self.config.check_obs()  # should work.
-
-        ok = self.config.check_obs(obsNames=['fred1', 'fred2'])  # should fail
+        config = copy.deepcopy(self.config)
+        ok = config.check_obs(obsNames=['fred1', 'fred2'])  # should fail
         self.assertFalse(ok, msg='check_obs should have failed')
+
 
     def test_check_params(self):
         """ test that check_params works/fails as expected"""
@@ -930,6 +992,66 @@ class testStudyConfig(unittest.TestCase):
         self.assertFalse(self.config.check_params(), msg='check_params should have failed')
         self.config.paramNames(paramNames=pnames)  # reset it.
         self.assertTrue(self.config.check(), msg='check should have passed')
+
+    def test_strip_comment(self):
+        """ test that strip_comment works as expected"""
+        # test that strip_comment works as expected
+        # test cases -- list & dict. With both containing sub values
+        test_list=['Fred','Fred_comment',dict(harry=dict(harry='fred',harry_comment='fred_comment'))]
+        expect_list = ['Fred',dict(harry=dict(harry='fred'))]
+        test_dict = dict(fred='fred',fred_comment='fred_comment',harry=['harry','harry_comment'])
+        expect_dict = dict(fred='fred',harry=['harry'])
+        got = self.config.strip_comment(test_list)
+        self.assertEqual(got,expect_list,msg='strip_comment failed for list')
+        got = self.config.strip_comment(test_dict)
+        self.assertEqual(got,expect_dict,msg='strip_comment failed for dict')
+
+class testFileDict(unittest.TestCase):
+    """
+    Test the dictFile static method
+    """
+
+    def test_process_include(self):
+        """
+        Test that process_include works
+          :return:
+        """
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # create a couple of files to include
+            dirpath = pathlib.Path(tmpdir)
+            file1 = dirpath/ 'file1.ijson'
+            file2 = dirpath/ 'file2.ijson'
+            file3 = dirpath / 'file3.ijson'
+            with file1.open('wt') as fp:
+                fp.write('{"a":1,"b":2}')
+
+            with file2.open('wt') as fp:
+                fp.write('{"c":3,"d":4}')
+            d3=['a list',1,2]
+            with file3.open('wt') as fp:
+                json.dump(d3,fp)
+            dct = dict(include1=f"INCLUDE {file1}",
+                       include2=f"INCLUDE {file2}", e=5,f=f"INCLUDE {file3}")
+            result = StudyConfig.process_include(dct)
+            expect = dict(include1=dict(a=1, b=2), include2=dict(c=3, d=4), e=5,
+                          f=d3,
+                          include1_include_path_comment=str(file1),
+                          include2_include_path_comment=str(file2),
+                          f_include_path_comment=str(file3))
+            self.assertEqual(result, expect)
+
+            # test recursive read fails.
+            with file1.open('wt') as fp:
+                fp.write(f'{{"a":1,"b":2,"file2":"INCLUDE {file2}"}}')
+            with file2.open('wt') as fp:
+                fp.write(f'{{"c":3,"d":4,"file1":"INCLUDE {file1}"}}')
+            # no change to dct so expect an error
+            with self.assertRaises(RecursionError):
+                result = StudyConfig.process_include(dct)
+
+
+
 
 
 

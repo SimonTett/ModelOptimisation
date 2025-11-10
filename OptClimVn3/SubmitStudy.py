@@ -6,20 +6,14 @@ Porting hints:
 3) System assumes your model is setup to run on your cluster using a script which is setup for whatever Q system
    your computer uses.
 
-# TODO: Have some way of copying configuration somewhere else which handles messy business of changing paths.
-# Mainly so can run a model with different obs making use of the existing simulations.
-# Can use archive functionality...
-# have an UPDATE method which updates all model simulated observations by rerunning the processing with, potentially, updated
-# configuation file/code.
-# Will update the obs too.
 """
 from __future__ import annotations
 
 import copy
-import json
+
 import logging
 import pathlib
-import platform
+
 import string
 import sys
 import tempfile
@@ -27,7 +21,7 @@ import typing
 import shutil
 import importlib
 import tarfile
-import os
+
 
 from typing import Optional, List, Callable, Mapping
 
@@ -39,7 +33,8 @@ import generic_json
 from Model import Model
 from model_base import model_base, journal
 from Study import Study
-from StudyConfig import OptClimConfigVn3, dictFile
+#from StudyConfig import OptClimConfigVn3, dictFile
+from StudyConfig import dictFile
 
 # check we are version 3.8 or above.
 
@@ -62,7 +57,7 @@ class SubmitStudy(Study, model_base, journal):
     name_values: typing.Optional[list[int]]
     iter_keys: dict
     next_iter_cmd: typing.Optional[list[str]]
-    next_iter_jids: list
+    next_iter_jids: list[str]
 
     """
      provides methods to support working out which models need to be submitted. Creates new models and submits them.
@@ -78,6 +73,10 @@ class SubmitStudy(Study, model_base, journal):
         iter_keys -- dict indexed by key with iteration count.
         next_iter_cmd -- the command to run the next iteration.
         next_iter_jids -- the jobs ids of all submitted next_iter_cmd jobs
+    """
+
+    """
+    Issues: 1) loading should change the config path or make it an absolute paths.
     """
 
     fn_type = Callable[[Mapping], pd.Series]  # type hint for fakeFn
@@ -111,13 +110,14 @@ class SubmitStudy(Study, model_base, journal):
             refDir = self.expand(str(config.referenceConfig()))
         self.refDir = refDir
 
-        if model_name is not None:  # This is fixed. Even if configuation changed the model_name is fixed.
+        if model_name is not None:  # This is fixed. Even if configuration changed the model_name is fixed.
             self.model_name = model_name
         else:
             self.model_name = config.model_name()
 
         self.module_name = None
         # see if we have model_name in the list of known models. If we don't then try and load from module
+        # TODO: make this more robust so that it can handle models that are not in the list of known models and uses syntax Module.class
         if self.model_name not in Model.known_models():
             self.module_name = config.module_name(model_name=self.model_name)
             my_logger.info(f"Loading {self.module_name}")
@@ -126,7 +126,7 @@ class SubmitStudy(Study, model_base, journal):
             my_logger.info(f"Already have {self.model_name} so not loading module")
 
         self.run_info = copy.deepcopy(config.run_info())  # copy run_info as modifying it.
-        # Set up submi engine for this node.
+        # Set up submit engine for this node.
         eng_name = self.run_info.pop('submit_engine',None)
         ssh_node = self.run_info.pop('ssh_node', None)
         if eng_name is None:
@@ -181,11 +181,13 @@ class SubmitStudy(Study, model_base, journal):
     def create_model(self, params: dict, dump: bool = True) -> typing.Optional[Model]:
         """
         Create a model, update list of created models and index of models.
+        name is generated using self.gen_name() and will be checked to see if it already exists.
+        If it does then a new name will be generated (and so on).
 
         :param   params: dictionary of parameters to create the model.
          The following parameters are special and handled differently:
            * reference -- the reference directory. If not there (or None) then self.refDir is used.
-           * model_name -- the model type to be created. If not in params then then self.model_name is used.
+           * model_name -- the model type to be created. If not in params then  self.model_name is used.
            These support more complex algorithms where multiple models need to be ran.
         These will be augmented by fixedParams
         If you need functionality beyond this you may want to inherit from SubmitStudy and
@@ -193,17 +195,22 @@ class SubmitStudy(Study, model_base, journal):
         :param dump: If True dump  self (using self.dump_config method)
         :return: Model created (or model that already exists). Returns None if would make more than max_model_sims
         """
-
-        name = self.gen_name()
+        existing_names = [model.name for model in self.model_index.values() ] # list of existing model names
+        while True: # loop until we find a name that does not exist.
+            name = self.gen_name()
+            if name not in existing_names:
+                break
+            else:
+                my_logger.debug(f"Name {name} already exists. Generating new name")
         model_dir = self.rootDir / name
         if model_dir.exists():
             raise ValueError(f"model_dir {model_dir} already exists")
         config_path = model_dir / (name + '.mcfg')  # create model config in model dir
         if config_path.exists():
             raise ValueError(f"config_path {config_path} already exists")
-        paramDir = copy.deepcopy(params)
-        reference = self.expand(paramDir.pop('reference', self.refDir))
-        model_name = paramDir.pop('model_name', self.model_name)
+        param_dir = copy.deepcopy(params)
+        reference = self.expand(param_dir.pop('reference', str(self.refDir)))
+        model_name = param_dir.pop('model_name', self.model_name)
         post_process = self.config.getv('postProcess')
         run_info = self.config.run_info()
         study = self.to_study()  # convert SubmitStudy to Study
@@ -211,7 +218,7 @@ class SubmitStudy(Study, model_base, journal):
                                  reference=reference,
                                  model_dir=model_dir,
                                  config_path=config_path,
-                                 parameters=paramDir,
+                                 parameters=param_dir,
                                  post_process=post_process,
                                  study=study,
                                  engine=self.engine,
@@ -286,6 +293,7 @@ class SubmitStudy(Study, model_base, journal):
         Load a SubmitStudy (or anything that inherits from it) from a file.
         The object will have its config_path replaced by config_path passed in.
         :param config_path: path to configuration to load
+        :param error -- how to handle errors when loading. See generic_json.load for details.
         :param Study: If True return a Study object. These are read-only (unless you modify by hand the attributes)
         :return: object
         """
@@ -294,7 +302,7 @@ class SubmitStudy(Study, model_base, journal):
 
         obj:SubmitStudy = cls.load(config_path,check_types=[SubmitStudy],error=error)
 
-        #TODO -- consider removing these as archive handles the rewritting needed to make work.
+        #TODO -- consider removing these statements below as archive handles the rewriting needed to make work.
         # Instead trigger an error???
         if (not isinstance(obj.config_path,pathlib.PurePath) and
                 obj.config_path.exists() and not config_path.samefile(obj.config_path)):
@@ -375,6 +383,19 @@ class SubmitStudy(Study, model_base, journal):
         """
         return [model for model in self.model_index.values() if model.is_submitted()]
 
+    def processed_models(self) -> List[Model]:
+        """
+
+        :return: List of models that have processed
+        """
+        return [model for model in self.model_index.values() if model.is_processed()]
+
+    def succeeded_models(self) -> List[Model]:
+        """
+        :return: List of models that have succeeded
+        """
+        return [model for model in self.model_index.values() if model.is_succeeded()]
+
     def to_dict(self) -> dict:
         """
         Convert StudyConfig instance to dict. engine will be saved with the computer name
@@ -439,9 +460,18 @@ class SubmitStudy(Study, model_base, journal):
                 # verify key is as expected.
                 model = Model.load_model(path)  # load the model.
                 got_key = obj.key_for_model(model)
-                if key != got_key:  # key changed. TODO. deal with ensembleMember which seems to be truncated.
-                    raise ValueError(f"Key has changed from {key} to {got_key} for model {model}")
-                model_index[key] = model
+                if key != got_key:  # key changed.
+                    # Code update means key generation has changed with one change being addition of reference path to the key.
+                    fixed_key = key[0:-1]
+                    ref = ('reference', str(model.reference))
+                    fixed_key += ", "+str(ref)[1:]
+                    fixed_key = fixed_key.replace('"','') # strip out the " that come from str(str)!
+
+                    if fixed_key != got_key:
+                        raise ValueError(f"Key has changed from {key} to {got_key} for model {model}")
+                    else:
+                        my_logger.info(f"Key for model {model} has reference added to it")
+                model_index[got_key] = model
             else:
                 my_logger.warning(f"Failed to find {path} so ignoring.")
 
@@ -453,29 +483,19 @@ class SubmitStudy(Study, model_base, journal):
         Clean up SubmitStudy configuration by deleting all models and removing self.config_path.
         The Internal structure will be updated so gen_name goes back to start and will return xxxx0...0
         """
-        # Step 1 -- delete models
+        self.kill()   #  step 1 -- kill any  jobs
+        # Step 2 -- delete models
         for key, model in self.model_index.items():
             model.delete()  # delete the model.
         self.model_index = dict()
         self.iter_keys = dict()
         # step 2 -- update internal state
-
         # remove the config_path.
         self.config_path.unlink(missing_ok=True)  # remove the config path.
         # remove the directory.
         shutil.rmtree(self.rootDir, ignore_errors=True)
-
         # reset values count (used to generate name) to 0.
         self.name_values = None  # start again!
-        # kill any resubmission job running
-        if len(self.next_iter_jids) > 0:
-            curr_resub_id = self.next_iter_jids[-1]
-            status = self.engine.job_status(curr_resub_id)
-            if status not in ['notFound']:
-                cmd = self.engine.kill_job(curr_resub_id)
-                self.run_cmd(cmd)
-                my_logger.info(f"Killed resubmission job id:{curr_resub_id}")
-
         self.update_history("Deleted")
 
     def copy(self,direct:pathlib.Path,
@@ -580,13 +600,13 @@ class SubmitStudy(Study, model_base, journal):
         # initialisation
 
         base = self.config.baseRunID()  # get the baserun
-        maxDigits = self.config.maxDigits()  # get the maximum length of string for model.
+        max_digits = self.config.maxDigits()  # get the maximum length of string for model.
         chars = string.digits + string.ascii_lowercase  # windows does not case distinguish. Silly windows.
         radix = len(chars)
         # increment counter or restart
         if (reset is True) or (self.name_values is None):  # reset the counter
-            self.name_values = [0] * maxDigits
-        elif (maxDigits > 0):  # increase the values if we have digits.
+            self.name_values = [0] * max_digits
+        elif (max_digits > 0):  # increase the values if we have digits.
             self.name_values[0] += 1
             for indx in range(0, len(self.name_values)):
                 if self.name_values[indx] >= radix:
@@ -606,7 +626,7 @@ class SubmitStudy(Study, model_base, journal):
 
         # give a warning if run out of names
 
-        if (maxDigits > 0) & (self.name_values == [radix] * maxDigits):
+        if (max_digits > 0) & (self.name_values == [radix] * max_digits):
             my_logger.warning(f"Ran out of names name_values = {self.name_values}")
         return name  # return name
 
@@ -625,7 +645,6 @@ class SubmitStudy(Study, model_base, journal):
 
         This algorithm is not particularly robust to failure -- if anything fails the various jobs will be sitting around
         Releasing them will be quite tricky! You can always kill everything, remove any continuing models and start again.
-        TODO: make this a bit more robust.
         The models and study will contain info on jobs so you might be able to fix/kill by hand.
         """
 
@@ -688,13 +707,14 @@ class SubmitStudy(Study, model_base, journal):
 
         if (self.next_iter_cmd is not None) and (len(pp_jids) > 0):
             # submit the next job in the iteration if have one and submitted post-processing.
-            run_info = config.run_info()
-            runCode = config.runCode()  # NB with current implementation this is the same as run_info.get('runCode')
+            run_info = config.run_info() # get out the run_info
+            submit_params = self.engine.extract_job_submission_params(run_info) # and extract the submission parameters
             iter_count = np.max(list(self.iter_keys.values()))  # iteration we are at.
             next_job_name = f"{configName}_{iter_count}"
-            run_next_submit = self.engine.submit_cmd(self.next_iter_cmd, next_job_name, outdir=output_dir,
-                                                     run_code=runCode,
-                                                     hold=pp_jids)
+            run_next_submit = self.engine.submit_cmd(self.next_iter_cmd, next_job_name,
+                                                     outdir=output_dir,
+                                                     hold=pp_jids,
+                                                     **submit_params)
             output = self.run_cmd(run_next_submit)
             my_logger.info(f"Next iteration cmd is {run_next_submit} with output:{output}")
             jid = self.engine.job_id(output)  # extract the actual job id.
@@ -737,6 +757,67 @@ class SubmitStudy(Study, model_base, journal):
                 setattr(study, key, copy.deepcopy(var))  # make a copy of var and add it as an attribute to study
 
         return study
+
+    def process(self,
+                reprocess:bool = False) -> list[Model]:
+        """
+        Process the study by running model.process on all models that are in SUCCEEDED state and for which the
+          pp_jid is NotFound or None.
+        :param reprocess: If True then in addition re-run the post-processing that are PROCESSED.
+        This method is really for dealing with cases where the post-processing has, for some reason, failed.
+        :return: list of models that were processed or re-processed.
+        """
+
+        # deal with models that need processing.
+        models = self.succeeded_models() # list of succeeded models.
+        # only want those models that have a pp_jid that is None or NotFound. These are in error state.
+        #TODO -- add error state to model so when it fails it stores that.
+        models = [model for model in models if (model.pp_job_status() == 'notFound' )or (model.pp_job_status() is None)]
+        if reprocess:  # reprocess all models that have processed as well as those that have succeeded.
+            models  += self.processed_models()
+        for model in models: # actually process the models.
+            model.process()
+
+        count_models_processed = len(models)  # count how many models we processed.
+        if count_models_processed > 0: # processed any models?
+            my_logger.info(f"Processed {count_models_processed} models")
+            self.update_history(f"Processed {count_models_processed} models")
+            self.dump_config() # and write ourselves out
+        return models
+
+    def resub_status(self) -> typing.Optional[str]:
+        """"
+        Get the status of the next iteration job.
+        :return: status of the next iteration job. If no next iteration job then return None
+        """
+        if len(self.next_iter_jids) == 0:
+            return None
+        curr_resub_id = self.next_iter_jids[-1]
+        status = self.engine.job_status(curr_resub_id)
+        return status
+
+    def kill(self) -> List[str]:
+        """
+        Kill all jobs that are running or submitted.
+           This implementation calls model.kill() for each model in the model_index and kills the next iteration job
+        :return: list of job ids that we attempted to kill.
+        """
+        killed = []
+        for model in self.model_index.values():
+            killed += model.kill() # record the job ids that were killed.
+        # kill next iteration job
+        status = self.resub_status()  # get the status of the next iteration job
+        if  ((status is not  None) and (status != 'notFound')):
+            curr_resub_id = self.next_iter_jids[-1]
+            cmd = self.engine.kill_job(curr_resub_id)
+            self.run_cmd(cmd)
+            killed.append(curr_resub_id)
+            my_logger.info(f'Killed resubmission job id:{curr_resub_id}')
+            self.update_history(f"Killed resubmission job id:{curr_resub_id}")
+
+        my_logger.info(f"Killed {len(killed)} jobs")
+        return killed
+
 
 
 

@@ -1,0 +1,8 @@
+Recipie for adding a new model.
+
+1) Inherit from Model or sub class.
+2) Implement the following methods:
+   a) __init__ -- first call the super class init method then do your own stuff.
+      Setup self.submit_script & self.continue_script
+   b) modify_model -- modify the reference model for specific model needs.
+   c) submit_cmd -- should return the command that submits the model.

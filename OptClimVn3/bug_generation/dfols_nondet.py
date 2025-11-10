@@ -8,11 +8,15 @@ import tempfile
 from Model import Model
 import platform
 import shutil
+import genericLib
 
 import copy
 
+
+
 import StudyConfig
 from runSubmit import runSubmit # so we can test if we have one!
+genericLib.setup_env()
 script_dir = Model.expand("$OPTCLIMTOP/OptClimVn3/scripts")
 # std config first
 config_pth = Model.expand("$OPTCLIMTOP/OptClimVn3/configurations/dfols14param_opt3.json")
@@ -71,7 +75,7 @@ for num,(std,good) in enumerate(zip(std_sconfig.model_index.keys(),good_sconfig.
 
 # lets work out the iter size for the std case
 for itc,it in enumerate(std_sconfig.iterations()):
-    if std in [i.key() for i in it]:
+    if std in [i.attrs_for_key() for i in it]:
         print(itc,len(it))
 
 

@@ -1,13 +1,5 @@
   {
   "_comment": "Parameters to control optimisation. This is used within DFOLS optimisation routines AND not by framework",
-  "provisional":
-    {
-      "provisional_comment":"Options to control provisional evaluation. This gives parallel simulations.",
-      "max_provisional_cases":20,
-      "max_provisional_cases_comment":"The Max number of provisional cases to do. If null no provisional cases are done",
-      "rng_seed":1234567,
-      "rng_seed_comment":"The seed for the random number generator. If null a default value is used. "
-    },
   "algorithm": "DFOLS",
   "algorithm_comment": "Algorithm wanted.",
   "sigma": true,
