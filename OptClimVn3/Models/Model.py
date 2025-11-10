@@ -48,6 +48,18 @@ Do write tests for your new Model testing your new and modified methods.
 """
 
 
+
+"""
+Failure modes and solutions:
+1) Post-processing times out. Model state is SUCCEEDED but no post-processing done.
+    PP job id will not exist.
+    Solution: re-run post-processing only. 
+    runAlgorithm --process 
+    
+    Complain to archer2 help desk -- job has 30 mins time limit and runs in about 3 mins interactively. 
+"""
+
+
 import copy
 import functools
 import logging
@@ -70,6 +82,7 @@ from model_base import journal
 from ModelBaseClass import ModelBaseClass, register_param
 from namelist_var import NamelistVar,GroupConfig,type_allowed_fortran
 from engine import abstractEngine
+import shlex
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 
@@ -101,9 +114,11 @@ class Model(ModelBaseClass, journal):
     set_status_script: typing.Union[pathlib.Path, pathlib.PurePath]
     status: type_status
     simulated_obs: typing.Optional[pd.Series]
+    remote_directory: typing.Optional[pathlib.PurePath]
     _post_process_input: typing.Optional[str]
     _post_process_output: typing.Optional[str]
     configs: GroupConfig
+    remote: dict[str,str|pathlib.PurePath]
 
     """
     Abstract model class. Any class that inherits from this will have name lookup.
@@ -129,6 +144,7 @@ class Model(ModelBaseClass, journal):
         configs - cache of configuration files (namelists or equivalent)
         pertub_count -- no of times model has been perturbed.
         submission_count -- no of times model has been submitted.
+        remote -- dict containing info on remote machine and directory if needed. Keys are machine and directory respectively.
         
         Private attributes:
           _post_process_input -- name of input file for post-procesing
@@ -185,6 +201,7 @@ class Model(ModelBaseClass, journal):
                  engine: typing.Optional[abstractEngine] = None,
                  run_info: typing.Optional[dict] = None,
                  fake: bool = False,
+                 config_dir: typing.Optional[pathlib.Path] = None,
                  study: typing.Optional["Study"] = None):
         # TODO add in verbose option so that set_model_status script has verbose options provided in.
         """
@@ -194,8 +211,10 @@ class Model(ModelBaseClass, journal):
         :param reference -- reference directory. Should be a pathlib.Path
                 keyword arguments
         :param model_dir --- where model will be created and any files written.
-             Should be a pathlib.Path. Will, if needed, be created. If node cwd will be used.
+             Should be a pathlib.Path. Will, if needed, be created. If none cwd will be used.
              Must be different from reference
+        :param config_dir -- where configuration files are written. This should be relative to model_dir.
+          If None then config files stored in model_dir
         :param config_path: Where configuration will be created.
                If not defined (or None) will be model_dir/(self.name+".mcfg")
         :param status -- model status. Default = "CREATED"
@@ -217,6 +236,7 @@ class Model(ModelBaseClass, journal):
             runTime -- the time (seconds) for job
             runCode  -- the code to use to run the job.
             runUser -- the UserId to run the job with.
+
         :param fake -- if True then model is faked. No submission will be done.
         :param study -- a study. This is there in case model wants to interrogate it at init time.
         It is recommended that study **not** be stored as an attribute.
@@ -245,6 +265,12 @@ class Model(ModelBaseClass, journal):
 
         self.reference = reference
         self.model_dir = model_dir
+        if config_dir is None:
+            self.config_dir = model_dir
+        elif model_dir is not None:
+            self.config_dir = model_dir/config_dir # config_dir **relative** to model_dir
+        else:
+            raise ValueError("config_dir must be specified if model_dir is None")
         if status not in self.allowed_status:
             raise ValueError(f"Status {status} not in " + " ".join(self.allowed_status))
 
@@ -298,13 +324,23 @@ class Model(ModelBaseClass, journal):
         script_pth = root / "scripts/set_model_status.py"
         self.set_status_script = script_pth
 
+
+            # and simulated obs.
+        self.simulated_obs = None
+        self.configs = GroupConfig(root_dir=self.config_dir) # grouped configs for writing out generic namelists
+        # Set up remote stuff.
+        remote_machine = self.run_info.get('remote_machine', None)
+        remote_model_dir = self.expand(self.run_info.get('remote_model_dir', None),local=False)
+        local_root_dir = self.expand(self.run_info.get('local_root_dir', None))
+        if remote_model_dir is not None:
+            remote_model_dir = self.new_path(self.model_dir, remote_model_dir, root_dir=local_root_dir)
+
+
+        self.remote = dict(remote_machine=remote_machine, remote_model_dir=remote_model_dir) # remote info
         # Set status
         self.status = status
         if self.status == 'CREATED':  # creating model for the first time
             self.update_history("CREATING model")
-            # and simulated obs.
-        self.simulated_obs = None
-        self.configs = GroupConfig(root_dir=self.model_dir) # grouped configs for writing out generic namelists
 
     @classmethod
     def get_param_info(cls,parameter:str) -> list[NamelistVar|typing.Callable]:
@@ -520,7 +556,7 @@ class Model(ModelBaseClass, journal):
         :return:nothing.
         """
         if direct is None:
-            direct = self.model_dir
+            direct = self.config_dir
         direct.mkdir(parents=True, exist_ok=True)  # create the directory if needed.
         my_logger.info(f"Created {direct}")
         if not self.fake:
@@ -571,6 +607,7 @@ class Model(ModelBaseClass, journal):
          implementations of create_model, modify_model and set_params.
         Will verify that (if defined) post-processing script exists failing if not
         Also, should make any changes needed to those files.
+        Also runs install_remote using run_info['remote_machine'] and run_info['remote_dir'] if they are not None.
         :return:
         """
         self.fake = self.fake or fake
@@ -584,8 +621,20 @@ class Model(ModelBaseClass, journal):
             for file in [self.submit_script, self.continue_script]:
                 if file is not None:
                     (self.model_dir / file).chmod(0o755)  # set permission
+            # install remote if needed.
+
+            cmds=self.install_remote_command(remote_machine=self.remote.get('remote_machine'),
+                                             remote_model_dir=self.remote.get('remote_model_dir'))
+            # expect list of cmds to run. make dir and then do rsync
+            if cmds is not None:
+                for cmd in cmds:
+                    output=self.run_cmd(cmd,convert_to_posix=True,quote=False)
+                my_logger.debug(f"Installed model remotely with {cmd} and got {output}")
+
+
         else:
             self.fake = True # we are faking now!
+        # possibly do remote_install
 
         self.set_status('INSTANTIATED')
 
@@ -707,6 +756,11 @@ class Model(ModelBaseClass, journal):
         # Model has been modified so that will run model.set_status("SUCCEEDED")
         # which will release the post-processing job.
         cmd = self.submit_cmd()  # cmd that submits the model.
+        remote_machine = self.remote.get('remote_machine')
+        remote_dir= self.remote.get('remote_model_dir')
+        if remote_dir is not None:
+            remote_dir = pathlib.PurePath(remote_dir) # remote_dir should be a string
+        cmd = self.ssh_command(cmd,remote_machine=remote_machine,remote_model_dir=remote_dir)
         output = self.run_cmd(cmd)  # and run the command
         jid = self.engine.job_id(output)  # and work out the job id.
         self.submitted_jid = jid  # model will
@@ -725,7 +779,7 @@ class Model(ModelBaseClass, journal):
         """
         # TODO -- As Model should never be directly instantiated then
         #  consider moving this into simple_model and just having very generic version for Model case.
-        # Then indiviudal model classes can run the generic code first and then do their own thing.
+        # Then individual model classes can run the generic code first and then do their own thing.
         if self.status in ['INSTANTIATED', 'PERTURBED']:
             script = self.submit_script
         elif self.status == 'CONTINUE':
@@ -733,28 +787,30 @@ class Model(ModelBaseClass, journal):
         else:
             raise ValueError(f"Status {self.status} not expected ")
         runCode = self.run_info.get('runCode')
-        runTime = self.run_info.get('runTime', 2000)  # 2000 seconds as default.
+        runTime = self.run_info.get('runTime', 2000)  # 2000 seconds as default
         # need to (potentially) modify model script so runTime and runCode are set.
         # but in this case just use the submit.
         outdir = self.model_dir / 'model_output'
         outdir.mkdir(parents=True, exist_ok=True)
         my_logger.debug(f"Created {outdir}")
 
-        cmd = self.engine.submit_cmd([str(self.model_dir / script)], f"{self.name}{len(self.model_jids):05d}", outdir,
+        cmd = self.engine.submit_cmd([pathlib.PurePath(self.model_dir / script)], f"{self.name}{len(self.model_jids):05d}", outdir,
                                      run_code=runCode, time=runTime, rundir=self.model_dir)
         return cmd
 
-    def running(self) -> typing.Optional[str]:
+    def running(self,jid:typing.Optional[str]=None) -> typing.Optional[str]:
         """
         Set status to running, store current job id
+        : jid -- if not None then use this as job id. Otherwise get job id from engine.
+           This allows this method to be called from versions that do more.
         :return: current job id
         """
-        if not self.fake:  # faking so no job id.
+        if not self.fake and (jid is None):  # not faking and don't have a jid
             my_jid = self.engine.my_job_id()
             my_logger.debug(f"My jobid is {my_jid}")
 
         else:
-            my_jid = None
+            my_jid = jid
 
         self.model_jids.append(my_jid)
 
@@ -1403,6 +1459,121 @@ class Model(ModelBaseClass, journal):
         :return: string representing the calendar for this model which will be 'standard'
         """
         return 'standard'
+
+
+    def ssh_command(self,cmd:list[str|pathlib.PurePath],
+                    remote_machine:typing.Optional[str] = None,
+                    remote_model_dir:typing.Optional[pathlib.PurePath]= None) -> list[str]:
+        """
+        generate  cmd to run via ssh on remote system. Does not actually run it. Use self.run_cmd to do that.
+        :param cmd: command to be run on remote machine as a list of strings.
+        :param remote_machine: remote machine name. Any form that ssh accepts.
+            If None then input cmd is returned as is.
+        :param remote_model_dir: remote path for model_dir. Should be a PurePath.
+         If provided then any element of cmd that begins with value of model_dir on local machine
+         will be replaced with remote_model_dir and whole thing converted to posix path for remote machine.
+
+
+        :return: command (a list of strings) that will run cmd on remote_machine via ssh.
+        :raises ValueError: if remote_machine is not None and not a str or
+        if remote_model_dir is not None and not a PurePath
+        """
+        if remote_machine is None:
+            return cmd  # nothing to be done.
+
+        # check variable types are correct.
+        if not isinstance(remote_machine, str):
+            raise ValueError(f"remote_node {remote_machine} is not a str")
+        if (remote_model_dir is not None) and (not isinstance(remote_model_dir, pathlib.PurePath)):
+            raise ValueError(f"remote_model_dir {remote_model_dir} is not a PurePath")
+        # generate the remote command.
+        remote_cmd:list[str] = []
+        for c in cmd:
+            if not isinstance(c, (str,pathlib.PurePath)):
+                raise ValueError(f"Element {c} of cmd is not a string or a pure path")
+            if (remote_model_dir is not None) and isinstance(c,pathlib.PurePath) and c.is_relative_to(self.model_dir):
+                # have remote_model_dir and c is a PurePath that is relative to self.model_dir
+                # need to replace local model_dir with remote_model_dir
+                relative_path = c.relative_to(self.model_dir)
+                remote_path = remote_model_dir / relative_path
+                remote_cmd.append(remote_path.as_posix()) # convert to posix path for remote machine
+            elif isinstance(c,pathlib.PurePath):
+                remote_cmd.append(c.as_posix())  # convert to posix path for remote machine
+            else:
+                remote_cmd.append(c)  # just use as is.
+
+        remote_cmd=' '.join(remote_cmd)  # make into a single string
+        cmd = ['ssh','-q','-o','batchmode=yes','-o','StrictHostKeyChecking=yes', remote_machine, remote_cmd]
+        return cmd #
+
+    @staticmethod
+    def new_path(path: pathlib.PurePath,
+                 target_dir: pathlib.PurePath,
+                 root_dir: typing.Optional[pathlib.PurePath] = None) -> pathlib.PurePath:
+        """
+        Create a new path by replacing the root_dir in path with target_dir.
+        :param path:path to be modified
+        :param target_dir: Target directory to replace root_dir with.
+            If root_dir is None or path is not relative to root_dir then path.name is appended to target_dir
+        :param root_dir:root dir to use
+        :return:new_path with root_dir replaced by target_dir or target_dir/path.name if root_dir is None or path is not relative to root_dir
+          AND add_path which is the part added to target_dir.
+        """
+        if root_dir is not None and path.is_relative_to(root_dir):
+            add_path = path.relative_to(root_dir)
+        else:
+            add_path = path.name
+        new_path = target_dir / add_path
+        return new_path
+
+    def install_remote_command(self,
+                               remote_machine:typing.Optional[str]=None,
+                               remote_model_dir:typing.Optional[pathlib.PurePath]=None) -> typing.Optional[list[list[str|pathlib.PurePath]]]:
+        """
+        Generate cmd to install on remote machine. Use run_cmd to actually do it.
+        WIll return None if no remote machine or remote_dir
+        :param remote_machine: remote machine -- remote machine to install on.
+        :param remote_model_dir: remote directory to install to.
+        if either remote_machine or remote_model_dir is None then nothing is done and None is returned.
+        :param local_root_dir: local root dir. If provided and self.model_dir is relative to this then that part
+         will be replaced when generating remote path. Otherwise, only self.model_dir.name is used.
+         For example if local_root_dir is /home/user/models and self.model_dir is /home/user/models/model1
+         then on remote system remote_model_dir/model1 will be used.
+          self.model_dir will be copied to remote_machine:remote_dir
+         uses rsync to copy model directory to remote system.
+        If remote_dir is None then nothing is done and True is returned.
+        First creates remote_dir on remote_machine using ssh cmd
+        Assumed that rsync will create remote_dir if it does not exist.
+        :raises ValueError: if remote_dir is not Nome and not a PurePath or remote_dir is not None and not a str
+
+        Thoughts -- could work with remote_machine not set by just returning cmd to rsync to remote_model_dir (with potential path adjustment).
+        But for now require both to be set.
+         A more generic way of doing this is to have a script that gets runs to do the installation.
+           That then offloads the details of how to do the install to that script. For example could use rsync or scp or globus
+
+        :return: list of commands to run. Each element is a  list of strings/purePaths to run.
+        """
+        if (remote_model_dir is None) or (remote_machine is None):
+            my_logger.debug(f"Remote machine or  remote dir are not set.")
+            return None # nothing to be done.
+        # check variable types are correct.
+        if not isinstance(remote_model_dir, pathlib.PurePath):
+            raise ValueError(f"remote_dir {remote_model_dir} is not a PurePath")
+        if not isinstance(remote_machine,str):
+            raise  ValueError(f"remote_machine {remote_machine} is not a string")
+
+        my_logger.debug(f"Will install {self.model_dir} to {remote_model_dir} on {remote_machine}")
+
+        remote_path = remote_model_dir.as_posix().rstrip('/') # get as posix path for remote machine.
+        cmd0 = self.ssh_command(['mkdir', '-p', remote_path], remote_machine=remote_machine)  # cmd to create remote dir if needed.
+        # now create cmd to rsync the model dir to the remote dir. rsync will create remote_dir if it does not exist.
+        ssh_opts = ["-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes"] # run in batch mode with strict host key checking
+        ssh_command = "ssh " + " ".join(shlex.quote(opt) for opt in ssh_opts)
+        cmd = ['rsync','-a','-q',"-e",ssh_command,str(self.model_dir)+'/',f"{remote_machine}:{remote_path}"]
+        # note no trailing slash so we copy the model_dir to remote_path NOT into remote_path (as would happen with a trailing slash)
+
+        return [cmd0,cmd]
+
 
 
 Model.register_class(Model)  # register ourselves!

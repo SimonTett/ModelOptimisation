@@ -7,6 +7,7 @@ import numpy as np
 import subprocess
 import typing
 import datetime
+import shlex
 
 import generic_json
 
@@ -112,10 +113,14 @@ class journal:
                 print(f"Command {' '.join(str_cmd)} stored at {key} returned {dct['result']}")
         return
 
-    def run_cmd(self, cmd: list, **kwargs) -> str:
+    def run_cmd(self, cmd: list[str|pathlib.PurePath],
+                convert_to_posix:bool = False,
+                quote:bool=True,
+                **kwargs) -> str:
         """
         Run a command using subprocess.check_output and record output.
-        :param cmd: command to run. Any shell variables ($VARNAME) in the cmd will be expanded at the time of running.
+        :param cmd: command to run. Any shell variables ($VARNAME) in the cmd will be expanded at the time of running. Should be a list of strings or PurePaths
+        :param convert_to_posix: If True any pathlib.PurePath in cmd will be converted to posix style strings before running.
         **kwargs -- kwargs to be passed to subprocess.check_output. Will update defaults which is just text=True and stderr=subprocess.DEVNULL
         :return: output from running command
         """
@@ -123,30 +128,45 @@ class journal:
         # issue is that fileNotFound will get returned if a file does not exist. Would need to
         # convert to subprocess.CalledProcessError
         args.update(**kwargs)
-        cmd_to_run = [os.path.expandvars(c) for c in cmd]
-        cmd_report = " ".join(cmd_to_run)
-        # using expandvars so any shell variables in command are expanded.
+        cmd_to_run: list[str] = []
+        for c in cmd:
+            if not isinstance(c,(str,pathlib.PurePath)):
+                raise ValueError(f"cmd element {c} is not str or PurePath")
+            if isinstance(c,pathlib.PurePath):
+                if convert_to_posix:
+                    c = c.as_posix() # convert to posix str for running.
+                else:
+                    c = str(c) # convert to str for running.
+            c = os.path.expandvars(c)  # expand any shell variables
+            if quote:
+                c = shlex.quote(c)  # make it a bit safer.
+            cmd_to_run.append(c)
+
+
+
+        cmd_report = " ".join(cmd_to_run) # if something goes wrong report this command.
+        # Makes it easier to run command and see what happened.
         try:
-            my_logger.debug(f"Running {' '.join(cmd_to_run)}")
+            my_logger.debug(f"Running {cmd_report}")
             output = subprocess.check_output(cmd_to_run, **args)  # run cmd
         except subprocess.CalledProcessError as e:
-            str=f"""{cmd_report} failed.
+            s=f"""{cmd_report} failed.
             STDOUT 
             {e.output}
             {"=" * 60}
             STDERR 
             { e.stderr}"""
-            my_logger.warning(str)
+            my_logger.warning(s)
             raise
         except FileNotFoundError as e:  # cmd not found
             raise subprocess.CalledProcessError(
                 returncode=e.errno,
-                cmd=cmd,
+                cmd=cmd_to_run,
                 output=None,
                 stderr=e.strerror,
             ) from None
 
-        self.store_output(cmd, output)
+        self.store_output(cmd_to_run, output) # and store the output.
         return output
 
 
@@ -381,14 +401,21 @@ class model_base:
 
 
     @classmethod
-    def expand(cls, filestr: typing.Optional[str]) -> typing.Optional[pathlib.Path]:
+    def expand(cls, filestr: typing.Optional[str],
+               local:bool = True) -> typing.Optional[pathlib.Path|pathlib.PurePath]:
         """
         Expand any env vars, convert to path and then expand any user constructs.
         :param filestr: path like string or None
+        :param local: whether to expand user constructs like ~ and make a Path
+        If False then only env vars are expanded and conversion to a PurePath is done.
         :return:expanded path or, if filestr is None, None.
         """
         if filestr is None:
             return None
         path = os.path.expandvars(filestr)
-        path = pathlib.Path(path).expanduser()
+        if local:
+            path = os.path.expanduser(path)
+            path = pathlib.Path(path)
+        else:
+            path = pathlib.PurePath(path)
         return path
