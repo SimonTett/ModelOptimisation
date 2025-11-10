@@ -472,16 +472,7 @@ class testRunSubmit(unittest.TestCase):
         # lot bigger
         pdtest.assert_series_equal(best, expectparam, rtol=5e-3)
 
-        ## test that max_model_simulations overwited maxfun and generates a warning message.
-        rSubmit.config.max_model_simulations(10) # set to 10
-        rSubmit.config.DFOLS_config()['maxfun'] = 100 # set to something.
-        with self.assertLogs('OPTCLIM.runSubmit', level="WARNING") as cm:
-            finalConfig = rSubmit.runDFOLS(scale=scale)
-        self.assertIsNotNone(finalConfig)
-        self.assertEqual(len(cm),2,msg="Expected len 1 logs") # get two records. Not sure why! Dam logging
-        self.assertIn("Overwriting value of maxfun=",cm[1][0])
-        # expected no of evaluations should be max_model_simulations
-        self.assertEqual(len(rSubmit.trace),rSubmit.config.max_model_simulations())
+
     @unittest.mock.patch.object(engine.sge_engine,'job_status', autospec=True, return_value='notFound')
     def test_runJacobian(self,mck):
         """

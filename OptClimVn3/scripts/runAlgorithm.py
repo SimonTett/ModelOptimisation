@@ -292,7 +292,7 @@ while True:  # loop indefinitely so can have fake_fn. This really to test code/a
         if dry_run:  # nothing gets submitted or faked. So exit
             my_logger.info(f"dry_run -- exiting")
             break
-        if stop: # stopping. Raise error if any runs to be submitted. This could change in future.
+        if args.stop: # stopping. Raise error if any runs to be submitted. This could change in future.
             if iter_count > 0:
                 raise ValueError("Stopping but Instantiating  {iter_count} cases")
             my_logger.info('Stopping')
