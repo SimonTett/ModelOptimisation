@@ -1546,26 +1546,22 @@ class Model(ModelBaseClass, journal):
                                remote_machine:typing.Optional[str]=None,
                                remote_model_dir:typing.Optional[pathlib.PurePath]=None) -> typing.Optional[list[list[str|pathlib.PurePath]]]:
         """
-        Generate cmd to install on remote machine. Use run_cmd to actually do it.
+        Generate list of cmds to install on remote machine. Use run_cmd to actually do it.
         WIll return None if no remote machine or remote_dir
         :param remote_machine: remote machine -- remote machine to install on.
         :param remote_model_dir: remote directory to install to.
         if either remote_machine or remote_model_dir is None then nothing is done and None is returned.
-        :param local_root_dir: local root dir. If provided and self.model_dir is relative to this then that part
-         will be replaced when generating remote path. Otherwise, only self.model_dir.name is used.
-         For example if local_root_dir is /home/user/models and self.model_dir is /home/user/models/model1
-         then on remote system remote_model_dir/model1 will be used.
-          self.model_dir will be copied to remote_machine:remote_dir
-         uses rsync to copy model directory to remote system.
-        If remote_dir is None then nothing is done and True is returned.
-        First creates remote_dir on remote_machine using ssh cmd
-        Assumed that rsync will create remote_dir if it does not exist.
+        Commands returned are
+        1) Create remote dir
+        2) rsync model_dir to remote_dir
+
         :raises ValueError: if remote_dir is not Nome and not a PurePath or remote_dir is not None and not a str
 
         Thoughts -- could work with remote_machine not set by just returning cmd to rsync to remote_model_dir (with potential path adjustment).
         But for now require both to be set.
-         A more generic way of doing this is to have a script that gets runs to do the installation.
-           That then offloads the details of how to do the install to that script. For example could use rsync or scp or globus
+         A more generic way of doing this is to have a script that gets ran to do the installation.
+           That then offloads the details of how to do the install to that script.
+           For example could use rsync or scp or globus
 
         :return: list of commands to run. Each element is a  list of strings/purePaths to run.
         """
