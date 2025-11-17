@@ -168,15 +168,11 @@ class Model(ModelBaseClass, journal):
     allowed_status = set(status_info.keys())
     _known_parameters_cache: typing.Optional[set[str]] = None  # cache for known parameters.
     @classmethod
-    def load_model(cls, model_path: pathlib.Path,
-                   parameters: typing.Optional[list] = None,):
+    def load_model(cls, model_path: pathlib.Path):
         """
         Load a configuration
         :param model_path:  where the configuration is stored
-        :param parameters: list of parameters to use. If provided will read all parameters from model config.
-          config_path will be set to model_path
-          model_dir will be set to model_path.parent.
-          warnings given if these are changes.
+
 
         :return: loaded model
         """
@@ -189,18 +185,7 @@ class Model(ModelBaseClass, journal):
         if not model.model_dir.samefile(model_path.parent):
             my_logger.warning(f"Model {model} model_dir changed to {model_path.parent} ")
             model.model_dir = model_path.parent # update directory with where we actually loaded it from.
-        if parameters is not None:
-            # read all parameters from model config.
-            all_params = model.read_params(parameters, fail=True)
-            for p in all_params:
-                if p in model.parameters:
-                    if model.parameters[p] != all_params[p]:
-                        my_logger.warning(f"Model {model} parameter {p} changed from "
-                                          f"{model.parameters[p]} to {all_params[p]}")
-                else:
-                    my_logger.warning(f"Model {model} parameter {p} added with value {all_params[p]}")
-            model.parameters.update(all_params)  # update parameters with read values.
-            raise NotImplementedError("Model.load_model with parameters not implemented yet. Implement testing")
+
         return model
 
 
@@ -1087,58 +1072,37 @@ class Model(ModelBaseClass, journal):
 
 
     def copy(self, direct: pathlib.Path,
-             extra_files: typing.Optional[typing.List[pathlib.Path | str]] = None,
-             link_paths: typing.Optional[typing.List[pathlib.Path | str]] = None):
+             update_parameters:typing.Union[bool,list[str]]=False) -> "Model":
         """
-        Copy model to new place
+        Copy model to new place and return
 
         :param direct: Where new model_dir is
-        :param extra_files: Extra files to be copied
-        :param link_paths: Paths to be linked (rather than copied). Useful, for large files that will be read.
-           On some OS's links are only allowed if you are on the same filesystem.
+        :param update_parameters: If True update all parameters in new model from config.
+            If list of str then update those parameters + existing parameters in new model.
+
         :return: Modified model.
         """
-        if extra_files is None:
-            extra_files = []
-        if link_paths is None:
-            link_paths = []
 
         if direct.samefile(self.model_dir):  # Check we are not wiping out ourselves.
             raise ValueError(f"Copying {direct} to {self.model_dir} which is the same path")
 
-        # make needed directories. Do in one go so to speed things up (a bit).
-        dirs_to_make = {direct} | \
-                       {(direct / p).parent for p in extra_files} | \
-                       {(direct / p).parent for p in link_paths}  # unique set of directories needed
-        for direct in dirs_to_make:
-            direct.mkdir(exist_ok=True, parents=True)  # make any needed directories.
-            my_logger.debug(f"Created {dir}")
+        shutil.copytree( self.model_dir,direct, symlinks=True, dirs_exist_ok=True)  # copy the model dir
+        my_logger.debug(f"Copied {self.model_dir} to {direct}")
 
         cp_model = copy.deepcopy(self)
         cp_model.model_dir = direct
         cp_model.config_path = direct / self.config_path.relative_to(self.model_dir)
-
-        # copy extra paths + post_process_output
-        paths_to_copy = [self.model_dir / self._post_process_output] + [self.model_dir / p for p in extra_files]
-        for path in paths_to_copy:
-            if path.exists():
-                cp_path = direct / path.relative_to(self.model_dir)  # where it goes
-                shutil.copy2(path, cp_path)  # copy it
-                msg = f"Copied {path} to {cp_path}"
-                my_logger.debug(msg)
-                cp_model.update_history(msg)
-
-        # Do links. Note potential problems with filesystems. Will fix if they are a problem.
-        for p in link_paths:
-            path = self.model_dir / p
-            new_path = direct / p
-            path.hardlink_to(new_path)
-            msg = f"Linked {new_path} to {path}"
-            my_logger.debug(msg)
-            cp_model.update_history(msg)
-
         cp_model.update_history(f"Copied from {self.config_path} to {cp_model.config_path}")
-        cp_model.dump_model()
+
+        # deal with parameters. Using the copy which will read values from the new model dir.
+        if update_parameters:
+            params_to_update = list(self.parameters.keys())
+            if isinstance(update_parameters,list):
+                params_to_update = params_to_update+update_parameters
+            new_params = self.read_params(params_to_update, fail=True)
+            cp_model.parameters.update(new_params)
+            cp_model.update_history(f"Updated parameters {params_to_update}")
+        cp_model.dump_model() # dump it out!
         return cp_model
 
     def archive(self,

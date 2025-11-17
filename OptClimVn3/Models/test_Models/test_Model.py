@@ -808,8 +808,8 @@ class ModelTestCase(unittest.TestCase):
 
     def test_copy(self):
         # test copy works
-        logging.warning("test_copy not implemented")
-        #raise NotImplementedError
+
+        raise NotImplementedError("Implement tests for copy method")
 
     def test_reprocess(self):
         # test reprocessing works
