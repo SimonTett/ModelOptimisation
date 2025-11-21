@@ -788,12 +788,7 @@ class runSubmit(SubmitStudy):
             # will remove the last case in self.trace and self.model_index if that happens.
             # this is  a hack and hopefully DFOLS gets updated to avoid this.
             n_inst_models = len(self.models_to_instantiate())
-            if trap_two_evals and (n_inst_models == 2 ) and (len(self.model_index) > 2): 
-                my_logger.warning("*** DFOLS generated two evaluations. Hacking a fix while waiting for DFOLS to be fixed.***")
-                key=self.trace.pop() # remove the last key from trace
-                self.model_index.pop(key) # and the model.
-                
-            n_inst_models = len(self.models_to_instantiate())
+
             my_logger.info(f"Have just generated {n_inst_models} to instantiate")
             raise optclim_exceptions.submitModel("dfols failed with lin alg error")
             # this is how DFOLS tells us it got NaN which then triggers running the next set of simulations.
