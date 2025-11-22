@@ -1107,12 +1107,12 @@ class Model(ModelBaseClass, journal):
 
     def archive(self,
                 archive: tarfile.TarFile,
-                rootDir: pathlib.Path,
+                root_dir: pathlib.Path,
                 extra_files: typing.Optional[typing.List[pathlib.Path | str]] = None):
         """
 
         :param archive: archive to be added to
-        :param rootDir: root to which all files (in archive file) are stored relative to.
+        :param root_dir: root to which all files (in archive file) are stored relative to.
            If not None, then the name in the archive will be relative to this path.
         :param extra_files -- extra model things to archive. Should be relative to self.model_dir
         :return: None
@@ -1134,14 +1134,14 @@ class Model(ModelBaseClass, journal):
             # handle models that were read in and so, potentially, outside rootDir
             tmpfile = pathlib.Path(tmpdir) / self.config_path.name
             self.dump(tmpfile)
-            arc_path = self.config_path.relative_to(rootDir)
+            arc_path = self.config_path.relative_to(root_dir)
             archive.add(tmpfile, arc_path)
             my_logger.debug(f"Added {self} to archive as {arc_path}")
 
         paths_to_archive = [self.model_dir / self._post_process_output] + [self.model_dir / p for p in extra_files]
 
         for path in paths_to_archive:
-            arc_path = path.relative_to(rootDir)
+            arc_path = path.relative_to(root_dir)
             if path.exists():
                 archive.add(path, arc_path)  # archive the file with name relative to root
                 my_logger.debug(f"Added {path} to archive as {arc_path}")

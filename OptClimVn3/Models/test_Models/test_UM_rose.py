@@ -3,15 +3,15 @@ import unittest
 from unittest.mock import patch, MagicMock
 
 import metomi.rose.config
-from aiofiles.ospath import samefile
-from scipy.constants import value
 
-from UM_rose import UM_rose, UKESM1_1, UKESM1_1_c8, config_dir
+
+from UM_rose import UM_rose, UKESM1_1, UKESM1_1_c8
 import copy
 import tempfile
 import pathlib
 import genericLib
 import shutil
+import tarfile
 
 
 
@@ -342,6 +342,44 @@ and even more text
             self.assertEqual('some_test_dir',model.parameters_no_key['transfer_dir'] )
             # check suite_name is as expected.
             self.assertEqual('fred/X001test',model.suite_name, )
+
+
+    def test_archive(self):
+        # Test that archive method works. Rather similar to test_Model.test_archive
+        model = self.model
+        model.instantiate()
+        model.set_status('SUCCEEDED',check_existing=False)
+        archive_file = self.testDir / 'test_archive.tar'
+        pp_file = model.model_dir / self.model._post_process_output
+        with tarfile.open(archive_file, "w", dereference=True) as archive:
+            self.model.archive(archive, self.testDir,
+                               extra_files=[self.model._post_process_output])  # archive the model
+
+        # now can try and read it.
+        script_dir = model.model_dir / model.script_dir
+        expect_paths = ([model.config_path,model.config_dir,script_dir] + list(model.config_dir.rglob('*'))+
+                        list(script_dir.rglob('*')))
+        expected_names = sorted([p.relative_to(model.model_dir) for p in expect_paths])
+
+        with tarfile.open(archive_file, "r") as archive:
+            names = sorted([pathlib.Path(n) for n in archive.getnames()])  # list of names
+            self.assertEqual(expected_names, names)
+
+        # now create some obs... and test that works.
+        import json
+        test_obs = dict(obs1=2.2, obs2=1.0, obs4=True)
+        with open(pp_file, 'wt') as fp:
+            json.dump(test_obs, fp)
+        with tarfile.open(archive_file, "w") as archive:
+            model.archive(archive, self.testDir)  # archive the model
+        expected_names += [pp_file.relative_to(model.model_dir)]
+        expected_names = sorted(expected_names)
+
+        with tarfile.open(archive_file, "r") as archive:
+            names = sorted([pathlib.Path(n) for n in archive.getnames()] ) # list of names
+
+            self.assertEqual(expected_names, names)
+
 
 
     def no_test_guess_prebuild(self):

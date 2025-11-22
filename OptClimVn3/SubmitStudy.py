@@ -302,13 +302,7 @@ class SubmitStudy(Study, model_base, journal):
 
         obj:SubmitStudy = cls.load(config_path,check_types=[SubmitStudy],error=error)
 
-        #TODO -- consider removing these statements below as archive handles the rewriting needed to make work.
-        # Instead trigger an error???
-        if (not isinstance(obj.config_path,pathlib.PurePath) and
-                obj.config_path.exists() and not config_path.samefile(obj.config_path)):
-            my_logger.info(f"Modifying config path from  {obj.config_path} to {config_path}")
-            obj.config_path = config_path
-            obj.update_history(f"Modified config path from  {obj.config_path} to {config_path}")
+        obj.config_path=config_path # modify config path
 
         if not config_path.parent.samefile(obj.rootDir):
             my_logger.info(f"Modifying config rootDir from  {obj.rootDir} to {config_path.parent}")

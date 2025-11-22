@@ -68,8 +68,13 @@ def process_include(dct:dict,files_read:list = []) -> dict:
                 raise RecursionError(f"Recursive include of {pth} in {files_read[-1]}")
             files_read.append(pth) # resolve to get full path.
             my_logger.debug(f"Processing include statement: {value} by reading {pth}")
-            with pth.open('rt') as fp:
-                r = json.load(fp)
+            try:
+                with pth.open('rt') as fp:
+                    r = json.load(fp)
+            except json.decoder.JSONDecodeError as e: # failed to process file. Provide some helpful info.
+                my_logger.warning(f"Failed to parse {pth}: {e.msg}")
+                raise(e)
+                
             if isinstance(r, dict):
                 r = process_include(r,files_read=files_read) # recursively process dicts
             result[key] = r

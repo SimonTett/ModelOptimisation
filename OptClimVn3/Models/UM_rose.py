@@ -52,6 +52,7 @@ import functools
 import logging
 import os
 import re
+import tarfile
 import typing
 import shutil
 import subprocess
@@ -497,6 +498,25 @@ class UM_rose(Model):
         cmd = [self.model_dir/script]
 
         return cmd
+
+    def archive(self,
+                archive: tarfile.TarFile,
+                root_dir: pathlib.Path,
+                extra_files: typing.Optional[typing.List[pathlib.Path | str]] = None):
+        """
+        Archive method for UM_rose class. Calls the super-class method adding config_dir and scripts dir to the archive.
+        :param archive: archive to be added to
+        :param root_dir: root to which all files (in archive file) are stored relative to.
+           If not None, then the name in the archive will be relative to this path.
+        :param extra_files -- extra model things to archive. Should be relative to self.model_dir
+        :return: None
+        """
+        files_to_add =[ self.script_dir, self.config_dir.relative_to(self.model_dir) ]
+        # TODO_relative_paths -- eventually make all paths relative to model_dir.
+        if extra_files is not None:
+            files_to_add += extra_files
+        super().archive(archive, root_dir, extra_files=files_to_add) # call the super class archive method.
+
 
     # TODO (when needed). Add a delete method to kill the suite and delete the suite_dir
     # Cmd for killing the suite is cylc stop --now SUITE_NAME but needs to run on puma2.
