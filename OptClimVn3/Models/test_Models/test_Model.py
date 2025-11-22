@@ -809,7 +809,33 @@ class ModelTestCase(unittest.TestCase):
     def test_copy(self):
         # test copy works
 
-        raise NotImplementedError("Implement tests for copy method")
+        # easy test. Copy model somewhere else and check they are the same.
+        dest_dir = self.testDir / 'copy_model'
+        model = self.model
+        model.instantiate()
+        model.copy(dest_dir)
+        # now load in the copied model
+        cmodel = myModel.load_model(dest_dir / f"{self.model.name}.mcfg")
+        attrs_not_same = ['model_dir','config_path','_history']
+        for attr in vars(model).keys():
+            if attr in attrs_not_same:
+                continue
+            self.assertEqual(getattr(model, attr), getattr(cmodel, attr), f"Attribute {attr} not the same")
+
+        # hard test update the parameters in copied model and check original not changed.
+        direct2 = self.testDir / 'copy_model2'
+        cmodel2 = model.copy(direct2,update_parameters=['ENTCOEF','ICE_SIZE']) # update some params.
+        expect_params = model.parameters.copy()
+        expect_params.update(model.read_params(['ENTCOEF','ICE_SIZE']))
+        self.assertEqual(expect_params, cmodel2.parameters)
+
+        # now try and write over itself. Should raise an error!
+        with self.assertRaises(FileExistsError):
+            model.copy(model.model_dir)
+
+
+
+
 
     def test_reprocess(self):
         # test reprocessing works

@@ -1082,9 +1082,9 @@ class Model(ModelBaseClass, journal):
 
         :return: Modified model.
         """
-
-        if direct.samefile(self.model_dir):  # Check we are not wiping out ourselves.
-            raise ValueError(f"Copying {direct} to {self.model_dir} which is the same path")
+        direct.mkdir(parents=True, exist_ok=True) # create the directory if needed.
+        if self.model_dir.samefile(direct):  # Check we are not wiping out ourselves.
+            raise FileExistsError(f"Copying {direct} to {self.model_dir} which is the same path")
 
         shutil.copytree( self.model_dir,direct, symlinks=True, dirs_exist_ok=True)  # copy the model dir
         my_logger.debug(f"Copied {self.model_dir} to {direct}")
