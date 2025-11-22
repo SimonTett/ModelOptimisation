@@ -908,6 +908,23 @@ class testRunSubmit(unittest.TestCase):
         pdtest.assert_index_equal(got.index, expected_obs_df.index)
         # no need to test normalised versions as that is done above.
 
+    def test_copy(self):
+        # test that copy method works correctly
+        tmpDir = tempfile.TemporaryDirectory()
+        tmp_dir = pathlib.Path(tmpDir.name)
+        submit_dir = tmp_dir/'reference_copy_test'
+        from archive_study import archive_study
+        pth = expand("$OPTCLIMTOP/OptClimVn3/test_data/archive_dfols4p.tar.gz")
+        arc, run_submit = archive_study.extract_archive(pth,submit_dir)
+        copy_dir =tmp_dir/'copy_test'
+        run_submit_copy = run_submit.copy(copy_dir)
+        self.assertIsInstance(run_submit_copy,runSubmit.runSubmit)
+        self.assertEqual(run_submit.config, run_submit_copy.config)
+        new_parms=['ENTCOEF']
+        copy_dir2= tmp_dir/'copy_test2'
+        run_submit_copy2 = run_submit.copy(copy_dir2, update_parameters=new_parms)
+
+
 class TestRunParams(unittest.TestCase):
 
     def setUp(self):

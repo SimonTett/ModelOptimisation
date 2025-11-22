@@ -837,7 +837,7 @@ class ModelTestCase(unittest.TestCase):
 
 
 
-    def test_reprocess(self):
+    def no_test_reprocess(self):
         # test reprocessing works
         logging.warning("test_reprocessing not implemented")
         #raise NotImplementedError

@@ -455,7 +455,23 @@ class runSubmit(SubmitStudy):
         self._logical_info.cost[name]=(obs**2).sum()/n_obs # store the avg cost
         return obs
 
+    def copy(self, direct: pathlib.Path,
+             update_parameters: typing.Union[bool, list[str]] = False) -> runSubmit:
+        """
+        Copy the runSubmit to a new directory.
+        :param direct: directory to copy to.
+        :param update_parameters: If True or list of parameter names then update those parameters in the config.
+          If True then update all parameters in the config.
+          If list of parameter names then update those parameters in the config.
+          If False then do not update any parameters.
+        :return: new runSubmit object.
+        """
+        new_submit:runSubmit = super().copy(direct)
+        # update logical info if needed.
+        if update_parameters:
+            raise NotImplementedError("Updating parameters in logical_info not implemented yet.")
 
+        return new_submit
 
     def stdFunction(self, params: np.ndarray,
                     df: bool = False,

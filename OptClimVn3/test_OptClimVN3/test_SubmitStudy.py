@@ -90,6 +90,49 @@ class MyTestCase(unittest.TestCase):
         sub2 = self.submit.load(self.submit.config_path)
         self.assertEqual(self.submit, sub2)
 
+    def test_copy(self):
+        # test that we can copy a SubmitStudy object
+        submit = self.submit
+        submit.instantiate()
+        copy_dir = self.testDir / 'copy_test'
+        sub2 = submit.copy(copy_dir)
+        self.assertIsInstance(sub2,SubmitStudy.SubmitStudy)
+        attrs_different = ['rootDir','config_path','_history']
+        for attr in vars(submit).keys():
+            val1 = getattr(submit,attr)
+            val2 = getattr(sub2,attr)
+            if attr in attrs_different:
+                self.assertNotEqual(val1,val2,msg=f"Attribute {attr} should be different")
+            elif attr == 'model_index':
+                # keys same, models different because different paths and history changes
+                self.assertEqual(set(val1.keys()),set(val2.keys()),msg="Model index keys should be the same")
+            else:
+                self.assertEqual(val1,val2,msg=f"Attribute {attr} should be the same")
+
+
+        # make another copy where we update parameters
+        params_to_update = ['ENTCOEF','ICE_SIZE']
+        copy_dir = self.testDir / 'copy_test2'
+        sub3 = submit.copy(copy_dir, update_parameters=params_to_update)
+
+        # check that the parameters have been updated in all models
+        param_values = None
+        for key,model in sub3.model_index.items():
+            self.assertEqual(key, sub3.key_for_model(model))
+            if param_values is None:
+                param_values = {param: model.parameters[param] for param in params_to_update}
+            else:
+                got = {param: model.parameters[param] for param in params_to_update}
+                self.assertEqual(got,param_values,msg="Parameters should be the same across models")
+
+
+
+
+
+
+
+
+
 
 
     @unittest.mock.patch.object(SubmitStudy.SubmitStudy, 'now', side_effect=times)

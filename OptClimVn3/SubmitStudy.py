@@ -33,9 +33,8 @@ import generic_json
 from Model import Model
 from model_base import model_base, journal
 from Study import Study
-#from StudyConfig import OptClimConfigVn3, dictFile
 from StudyConfig import dictFile
-
+import genericLib
 # check we are version 3.8 or above.
 
 if (sys.version_info.major < 3) or (sys.version_info.major == 3 and sys.version_info.minor < 8):
@@ -493,47 +492,59 @@ class SubmitStudy(Study, model_base, journal):
         self.update_history("Deleted")
 
     def copy(self,direct:pathlib.Path,
-             extra_paths: typing.Optional[List[pathlib.Path]] = None,
-             extra_model_paths: typing.Optional[List[pathlib.Path]] = None,
-             ):
+             update_parameters:typing.Union[bool,list[str]]=False) -> SubmitStudy:
         """
         Copy
         :param direct: directory where study is to be copied. Will be created if it does not exist
-        :param extra_paths: extra paths to be copied. Should be provided relative to rootDir
-        :param extra_model_paths: extra_paths for each model to be copied. Passed into model.copy()
-        :return: Nada
+        :param update_parameters -- If True then all existing parameters will be updated from the model values
+          If a list then these (and the existing parameters) will be updated from the model values.
+        :return: Copied SubmitStudy. Will copy all *files* in the config directory to the new directory and then
+          all models.
         """
 
-        if extra_paths is None:
-            extra_paths = []
-        direct.mkdir(parents=True,exist_ok=True)
-        my_logger.debug(f"Created {direct}") 
 
-        pth = direct/(self.config_path.relative_to(self.rootDir))
-        cp = copy.deepcopy(self)
-        cp.rootDir = direct
-        cp.config_path = pth
+        direct.mkdir(parents=True,exist_ok=True) # make it so we check it is not same as config dir
+        config_dir = self.config_path.parent
+        if direct.samefile(config_dir):
+            raise FileExistsError(f"Cannot copy to same directory {direct}")
 
-        # copy the extra_paths acoss
-        for path in extra_paths:
-            full_path = self.rootDir / path
-            if full_path.exists():
-                tgt_path = direct/path# tgt path
-                tgt_path.parent.mkdir(parents=True,exist_ok=True) # make directory if needed
-                my_logger.debug(f"Created {tgt_path.parent}") 
-                shutil.copy2(full_path,tgt_path)
-                my_logger.info(f"Copied  {full_path} to {tgt_path} ")
-                cp.update_history(f'Copied {full_path} to {tgt_path}')
+        # remove all existing files in direct
+        genericLib.delete_dir_contents(direct) # remove all existing files in direct
+        my_logger.debug(f"Created {direct}")
+
+        cp_submit_study = copy.deepcopy(self)
+        cp_submit_study.rootDir = direct
+        cp_submit_study.config_path = cp_submit_study.rootDir/self.config_path.name
+
+        files_to_copy = [file for file in self.rootDir.iterdir() if file.is_file()]
+        files_to_copy += [self.config_path]  # make sure config file is included.
+        for file in set(files_to_copy): # just the unique files.
+            tgt_path = direct/file.name
+            if tgt_path.exists(): # should not happen as we have deleted everything in direct
+                raise FileExistsError(f"File {tgt_path} already exists")
+            shutil.copy2(file,tgt_path)
+            my_logger.debug(f"Copied  {file} to {tgt_path} ")
 
         # now copy the model(s) to the new directory
+        cp_submit_study.model_index = dict()  # reset model index
         for key,model in self.model_index.items():
-            new_dir = direct/model.model_dir.relative_to(self.rootDir) # new directory for model.
-            cp.model_index[key] = model.copy(new_dir,extra_paths=extra_model_paths) # model path(s) changed so need to change model.
+            new_dir = direct/model.model_dir.name # new directory for model.
+            cp_submit_study.model_index[key] = model.copy(new_dir,update_parameters=update_parameters) # model path(s) changed so need to change model.
+
+        # if updating parameters then update the keys.
+        if update_parameters:
+            model_index= dict()
+            for key,model in cp_submit_study.model_index.items():
+                new_key = cp_submit_study.key_for_model(model)
+                model_index[new_key] = model
+            cp_submit_study.model_index = model_index
 
         # dump the config.
-        cp.update_history(f"Copied from {self.rootDir} to {direct}")
-        cp.dump_config(dump_models=True)
+        cp_submit_study.update_history(f"Copied from {self.rootDir} to {direct}")
+        cp_submit_study.dump_config(dump_models=True)
         # and we are done!
+        return cp_submit_study
+
     def archive(self,
                 archive: tarfile.TarFile,
                 extra_paths: typing.Optional[List[pathlib.Path]] = None):

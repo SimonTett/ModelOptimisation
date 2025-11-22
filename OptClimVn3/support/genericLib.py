@@ -300,6 +300,30 @@ def delDirContents(dir):
             elif entry.is_dir():  # directory -- remove everything in it.
                 shutil.rmtree(entry.path, onerror=errorRemoveReadonly)  # remove all directories
 
+def delete_dir_contents(direct:pathlib.Path):
+    """
+    Recursively Delete the contents of a directory
+    :param direct: path to directory to have all contents removed.
+    :return: Nada
+    """
+    # from stack exchange
+    # https://stackoverflow.com/questions/185936/how-to-delete-the-contents-of-a-folder-in-python
+
+    if not direct.exists():  # doesn't exist so return
+        return
+    if not direct.is_dir():
+        raise ValueError(f"{direct} is not a directory")
+
+    for entry in direct.iterdir():
+        if entry.is_file() or entry.is_symlink():
+            try:
+                entry.chmod(stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)
+            except WindowsError:  # dam windows.
+                entry.chmod(stat.S_IWRITE)
+            entry.unlink() # and remove it
+        elif entry.is_dir():  # directory -- remove everything in it.
+            shutil.rmtree(entry, onerror=errorRemoveReadonly)  # remove all directories
+
 
 def get_default(dct, key, default):
     """
