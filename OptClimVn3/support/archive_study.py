@@ -1,3 +1,8 @@
+"""
+Small class to support archving of studys.
+ Provides methods to archive and extract.
+__init__ stores info on the platform ran on.
+"""
 from model_base import model_base,journal
 import typing
 import pathlib
@@ -37,18 +42,21 @@ class archive_study(model_base, journal):
 
     def archive(self, submit:SubmitStudy,
                 archive_path: typing.Optional[pathlib.Path] = None,
-                extra_paths: typing.Optional[typing.List[pathlib.Path]] = None):
+                extra_paths: typing.Optional[typing.List[pathlib.Path]] = None,
+                compress:bool=True):
         """
         Archive a SubmitStudy (or anything that has an archive method)
         :param submit: SubmitStudy to be archived
-        :param archive_path: name of the archive file. If None then submit.roodDir/archive.tar is used.
+        :param archive_path: name of the archive file. 
+                   If None then submit.roodDir/archive.tar.gz is used.
         :param extra_paths: Extra files to be archived. Passed to SubmitStudy.archive.
+        File will be compressed using gzip if file name ends in .gz
         :return: archive_path
         """
         with tempfile.TemporaryDirectory() as tmpdir:
             submit.dump(pathlib.Path(tmpdir)/submit.config_path.name) # dump it to tmpdir. Note no changes made.
             if archive_path is None:
-                archive_path = submit.rootDir/ f'archive_{submit.name}.tar'
+                archive_path = submit.rootDir/ f'archive_{submit.name}.tar.gz'
 
             self.update_history(f"Archiving data for {submit.config_path}")
             self.archive_path = archive_path
@@ -58,7 +66,11 @@ class archive_study(model_base, journal):
             apath = pathlib.Path(tmpdir)/'archive.acfg'
             self.dump(apath)
 
-            with tarfile.open(archive_path,mode='w') as archive:
+            mode='w'
+            if archive_path.suffix == '.gz':
+                mode+=':gz'
+            my_logger.debug(f'Write data to {archive_path} using mode {mode}')
+            with tarfile.open(archive_path,mode=mode) as archive:
                 archive.add(apath,apath.name)  # archive the archive info.
                 submit.archive(archive,extra_paths=extra_paths)  # now archive the SubmitStudy.
 
@@ -77,7 +89,11 @@ class archive_study(model_base, journal):
         """
         if direct is None:
             direct = pathlib.Path.cwd()
-        with tarfile.open(archive_path, 'r') as archive:
+        mode='r'
+        if archive_path.suffix == '.gz':
+            mode+=':gz'
+        my_logger.debug(f'Reading data from {archive_path} using mode {mode}')
+        with tarfile.open(archive_path, mode) as archive:
             archive.extractall(path=direct)  # extract all data
             archive_config: archive_study = model_base.load(direct / 'archive.acfg', check_types=[archive_study])
             cfg_path = direct / archive_config.config_file
