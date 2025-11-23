@@ -125,6 +125,26 @@ class MyTestCase(unittest.TestCase):
                 got = {param: model.parameters[param] for param in params_to_update}
                 self.assertEqual(got,param_values,msg="Parameters should be the same across models")
 
+        # and another copy where paths are not updated! Shoudl eb identical but check have model dirs in copy
+        copy_dir = self.testDir / 'copy_test3'
+        sub4 = submit.copy(copy_dir, update_paths=False)
+        self.assertEqual(submit, sub4)
+        for model in sub4.model_index.values():
+            model.reload() # force reload which will flush various cached paths
+
+            # and the copy model should be identical.
+            pth = copy_dir/(model.config_path.relative_to(submit.rootDir))
+            mcopy = Model.load(pth) # using load so no path changes.
+            for key in vars(model).keys():
+                val1 = getattr(model,key)
+                val2 = getattr(mcopy,key)
+                if val1 != val2:
+                    pass # put breakpoint here
+                self.assertEqual(val1,val2,msg=f"Attribute {key} should be identical between model and loaded copy")
+            #self.assertEqual(model,mcopy,msg="Model in copy should be identical to loaded model from path")
+
+
+
 
 
 

@@ -170,7 +170,7 @@ class Model(ModelBaseClass, journal):
     @classmethod
     def load_model(cls, model_path: pathlib.Path):
         """
-        Load a configuration
+        Load a configuration and update paths if needed.
         :param model_path:  where the configuration is stored
 
 
@@ -1072,37 +1072,53 @@ class Model(ModelBaseClass, journal):
 
 
     def copy(self, direct: pathlib.Path,
-             update_parameters:typing.Union[bool,list[str]]=False) -> "Model":
+             extra_files: typing.Optional[list[pathlib.Path]] = None,
+             update_parameters: typing.Union[bool, list[str]] = False,
+             update_paths: bool = True) -> "Model":
         """
-        Copy model to new place and return
+        Copy Model to a new directory. Different Model classes may well want to override this by adding their own extra_files
+        This basic version will only copy the model config file and the post-processing output file.
+           All files must in self.model_dir
+        :param direct: directory where Model  is to be copied. Will be created if it does not exist
+        :param extra_files: list of extra files (paths provided relative to self.model_dir) to be copied to new directory.
+        :param update_parameters -- If True then all existing parameters will be updated from the model config
+          If a list then these (and the existing parameters) will be updated from the model values.
+        :param update_paths -- If True then any path parameters will be updated to reflect new directory structure.
+           If False and update_parameters is Truety then ValueError will be raised.
+        :return: Copied Model. Will copy only Model config & post process unless extra_files provided.
 
-        :param direct: Where new model_dir is
-        :param update_parameters: If True update all parameters in new model from config.
-            If list of str then update those parameters + existing parameters in new model.
-
-        :return: Modified model.
         """
-        direct.mkdir(parents=True, exist_ok=True) # create the directory if needed.
-        if self.model_dir.samefile(direct):  # Check we are not wiping out ourselves.
-            raise FileExistsError(f"Copying {direct} to {self.model_dir} which is the same path")
+        if (not update_paths) and update_parameters:
+            raise ValueError("If update_parameters is Truthy then update_paths must be True")
+        files_to_copy = [self.config_path.relative_to(self.model_dir), self._post_process_output]
 
-        shutil.copytree( self.model_dir,direct, symlinks=True, dirs_exist_ok=True)  # copy the model dir
-        my_logger.debug(f"Copied {self.model_dir} to {direct}")
+        if extra_files is not None:
+            files_to_copy = files_to_copy + extra_files
 
-        cp_model = copy.deepcopy(self)
-        cp_model.model_dir = direct
-        cp_model.config_path = direct / self.config_path.relative_to(self.model_dir)
-        cp_model.update_history(f"Copied from {self.config_path} to {cp_model.config_path}")
+        files_copied = genericLib.copy_files(self.model_dir, direct, files_to_copy)
+        cp_model = copy.deepcopy(self)  # make a copy of self
+        miss_files = set(files_to_copy) - set(files_copied)
+        if len(miss_files) > 0:
+            my_logger.warning(f"{miss_files} missing and not copied")
 
-        # deal with parameters. Using the copy which will read values from the new model dir.
+        # deal with parameters. Using existing version which will read values from the old  model dirs.
         if update_parameters:
             params_to_update = list(self.parameters.keys())
             if isinstance(update_parameters,list):
-                params_to_update = params_to_update+update_parameters
+                params_to_update = set(params_to_update+update_parameters) # want unique params
             new_params = self.read_params(params_to_update, fail=True)
             cp_model.parameters.update(new_params)
             cp_model.update_history(f"Updated parameters {params_to_update}")
-        cp_model.dump_model() # dump it out!
+
+
+        if update_paths:
+            cp_config_path = direct / (self.config_path.relative_to(self.model_dir))
+            cp_model.update_history(f'Copied {len(files_copied)} from {self.model_dir} to {direct}')
+            cp_model.model_dir = direct
+            cp_model.config_path = cp_config_path
+            cp_model.update_history(f"Updated model_dir and config_path")
+            cp_model.dump(cp_config_path) # dump it out! (needed as have changed things so orig copy will have old values)
+
         return cp_model
 
     def archive(self,
@@ -1126,25 +1142,21 @@ class Model(ModelBaseClass, journal):
         with tarfile.open(archive_file, "w") as archive:
             model.archive(archive, rootDir=pathlib.Path("my_root_dir")
         """
-        if extra_files is None:
-            extra_files = []
+
         # dump the model. TODO: Make dump take a fp or a path. If it has a fileptr then just write to it.
         with tempfile.TemporaryDirectory() as tmpdir:
             # dump the model (but no change to internal values)
             # handle models that were read in and so, potentially, outside rootDir
-            tmpfile = pathlib.Path(tmpdir) / self.config_path.name
-            self.dump(tmpfile)
-            arc_path = self.config_path.relative_to(root_dir)
-            archive.add(tmpfile, arc_path)
-            my_logger.debug(f"Added {self} to archive as {arc_path}")
+            tmpdir_pth = pathlib.Path(tmpdir) / self.config_path.name
+            self.copy(direct=tmpdir_pth, extra_files=extra_files,update_paths=False)
 
-        paths_to_archive = [self.model_dir / self._post_process_output] + [self.model_dir / p for p in extra_files]
-
-        for path in paths_to_archive:
-            arc_path = path.relative_to(root_dir)
-            if path.exists():
-                archive.add(path, arc_path)  # archive the file with name relative to root
+            for path in tmpdir_pth.rglob("*"): # get all files in the copied  model dir.
+                if path.is_dir():
+                    continue  # skip dirs
+                arc_path = path.relative_to(tmpdir_pth)
+                archive.add(path, arc_path)
                 my_logger.debug(f"Added {path} to archive as {arc_path}")
+
 
     def reprocess(self, post_process: typing.Optional[dict] = None) -> pd.Series:
         """

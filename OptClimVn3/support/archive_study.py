@@ -56,7 +56,10 @@ class archive_study(model_base, journal):
         with tempfile.TemporaryDirectory() as tmpdir:
             submit.dump(pathlib.Path(tmpdir)/submit.config_path.name) # dump it to tmpdir. Note no changes made.
             if archive_path is None:
-                archive_path = submit.rootDir/ f'archive_{submit.name}.tar.gz'
+                if compress:
+                    archive_path = submit.rootDir/ f'archive_{submit.name}.tar.gz'
+                else:
+                    archive_path = submit.rootDir/ f'archive_{submit.name}.tar'
 
             self.update_history(f"Archiving data for {submit.config_path}")
             self.archive_path = archive_path

@@ -499,7 +499,32 @@ class UM_rose(Model):
 
         return cmd
 
-    def archive(self,
+    def copy(self, direct: pathlib.Path,
+             extra_files: typing.Optional[list[pathlib.Path]] = None,
+             update_parameters: typing.Union[bool, list[str]] = False,
+             update_paths: bool = True) -> "Um_rose":
+
+        """
+        Copy method for UM_rose class. Calls the super-class method with extra files
+            All files must in self.model_dir
+        :param direct: directory where Model  is to be copied. Will be created if it does not exist
+        :param extra_files: list of extra files (paths provided relative to self.model_dir) to be copied to new directory.
+        :param update_parameters -- If True then all existing parameters will be updated from the model config
+          If a list then these (and the existing parameters) will be updated from the model values.
+        :param update_paths -- If True then any path parameters will be updated to reflect new directory structure.
+           If False and update_parameters is Truety then ValueError will be raised.
+        :return: Copied Model. Will copy only Model config & post process unless extra_files provided.
+        """
+
+        files_to_add = [self.script_dir, self.config_dir.relative_to(self.model_dir)]
+        # TODO_relative_paths -- eventually make all paths relative to model_dir.
+        if extra_files is not None:
+            files_to_add += extra_files
+        cp_obj = super().copy(direct=direct,extra_files=files_to_add,
+                              update_parameters=update_parameters,update_paths=update_paths)
+        return cp_obj  # return the copied object.
+
+    '''def archive(self,
                 archive: tarfile.TarFile,
                 root_dir: pathlib.Path,
                 extra_files: typing.Optional[typing.List[pathlib.Path | str]] = None):
@@ -516,7 +541,7 @@ class UM_rose(Model):
         if extra_files is not None:
             files_to_add += extra_files
         super().archive(archive, root_dir, extra_files=files_to_add) # call the super class archive method.
-
+    '''
 
     # TODO (when needed). Add a delete method to kill the suite and delete the suite_dir
     # Cmd for killing the suite is cylc stop --now SUITE_NAME but needs to run on puma2.

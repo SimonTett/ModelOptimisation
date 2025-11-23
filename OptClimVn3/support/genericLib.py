@@ -544,3 +544,72 @@ def likely_text_file(file_path: pathlib.Path,
     except (UnicodeDecodeError, Exception):
         # If decoding fails or the file cannot be read, assume it's not a text file
         return False
+
+try_symlinks = True # try to use symlinks
+
+def copy_files(in_direct:pathlib.Path,
+               out_direct: pathlib.Path,
+               files: list[pathlib.Path],
+               symlinks: bool = False
+               ) -> list[pathlib.Path]:
+    """
+
+    Only the files specified in files will be copied. Will ignore directories.
+    :param in_direct: directory where study is currently located
+    :param out_direct: directory where study is to be copied. Will be created if it does not exist and emptied if it does.
+    :param files: list of  files (paths provided relative to in_direct) to be copied to new directory.
+    :param symlinks: if True then rather than copying files, symlinks will be created.
+      This should be faster but is less reliable
+
+    :return: Copied object and list of files copied. (which should be inheriting from model_base)
+    """
+    global try_symlinks # have to be global vars
+
+    out_direct.mkdir(parents=True, exist_ok=True)  # make it so we check it is not same as config dir
+    if in_direct.samefile(out_direct):
+        raise FileExistsError(f"Cannot copy to same directory {out_direct}")
+
+    # remove all existing files in out_direct
+    delete_dir_contents(out_direct)  # remove all existing files in direct
+    my_logger.debug(f"Created and cleaned {out_direct}")
+
+    files_to_copy = []
+
+    files_to_copy = set(files)  # just the unique files.
+    files_copied = []
+    for file in files_to_copy:
+        in_file = in_direct / file
+        if not in_file.exists():
+            my_logger.warning(f"File {in_file} does not exist")
+            continue
+
+        tgt_path = out_direct / file
+        tgt_path.parent.mkdir(parents=True, exist_ok=True) # make parent dirs
+        if in_file.is_dir():
+            # work recursively to copy directory
+            copy_files(in_file, tgt_path, symlinks=symlinks, files=list(p.relative_to(in_file) for p in in_file.glob('*')))
+            files_copied.append(in_file)
+        else: # its a file
+            if tgt_path.exists():  # should not happen as we have deleted everything in direct
+                raise FileExistsError(f"File {tgt_path} already exists")
+            # rather complex logic to try and create symlink first, then use path.copy if available
+            copy_file = True
+            if symlinks and try_symlinks: # want symlinks and no exception from trying symlinks yet
+                try:
+                    tgt_path.symlink_to(in_file) # need elev priv on windows so may fail
+                    copy_file = False # have worked so no need to copy
+                except OSError as e:
+                    my_logger.warning(f"Could not create symlink from {in_file} to {tgt_path}. Error: {e}. Copying instead.")
+                    try_symlinks = False # no more trying symlinks.
+            if copy_file: # need to copy the file
+                if  hasattr(in_file, 'copy'):
+                    in_file.copy(tgt_path) # works on py 3.14+
+                else:
+                    shutil.copy2(in_file, tgt_path) #TODO remove this when we move to python 3.14+ (py pi :-)
+
+
+
+            files_copied += [file]  # record relative path copied
+            my_logger.debug(f"Copied  {in_file} to {tgt_path} ")
+
+    return files_copied

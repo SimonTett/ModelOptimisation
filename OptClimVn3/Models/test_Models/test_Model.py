@@ -775,7 +775,7 @@ class ModelTestCase(unittest.TestCase):
                                extra_files=[self.model._post_process_output])  # archive the model
 
         # now can try and read it.
-        expected_names = [p.relative_to(self.testDir) for p in [self.model.config_path]]  # ,]]
+        expected_names = [p.relative_to(self.model.model_dir) for p in [self.model.config_path]]  # ,]]
         with tarfile.open(archive_file, "r") as archive:
             names = [pathlib.Path(n) for n in archive.getnames()]  # list of names
             self.assertEqual(expected_names, names)
@@ -787,9 +787,9 @@ class ModelTestCase(unittest.TestCase):
             json.dump(test_obs, fp)
         with tarfile.open(archive_file, "w") as archive:
             self.model.archive(archive, self.testDir)  # archive the model
-        expected_names = [p.relative_to(self.testDir) for p in [self.model.config_path, pp_file]]
+        expected_names = sorted([p.relative_to(self.model.model_dir) for p in [self.model.config_path, pp_file]])
         with tarfile.open(archive_file, "r") as archive:
-            names = [pathlib.Path(n) for n in archive.getnames()]  # list of names
+            names = sorted([pathlib.Path(n) for n in archive.getnames()])  # list of names
             self.assertEqual(expected_names, names)
 
         # check extra works.
@@ -799,11 +799,11 @@ class ModelTestCase(unittest.TestCase):
             print("Line 1", file=fp)
             print("Line 2", file=fp)
 
-        expected_names = [p.relative_to(self.testDir) for p in [self.model.config_path, pp_file, test_file]]
+        expected_names = sorted([p.relative_to(self.model.model_dir) for p in [self.model.config_path, pp_file, test_file]])
         with tarfile.open(archive_file, "w") as archive:
             self.model.archive(archive, self.testDir, extra_files=['test.txt'])  # archive the model
         with tarfile.open(archive_file, "r") as archive:
-            names = [pathlib.Path(n) for n in archive.getnames()]  # list of names
+            names = sorted([pathlib.Path(n) for n in archive.getnames()])  # list of names
             self.assertEqual(expected_names, names)
 
     def test_copy(self):
@@ -832,6 +832,8 @@ class ModelTestCase(unittest.TestCase):
         # now try and write over itself. Should raise an error!
         with self.assertRaises(FileExistsError):
             model.copy(model.model_dir)
+
+
 
 
 

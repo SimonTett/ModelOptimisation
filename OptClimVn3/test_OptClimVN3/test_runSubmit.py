@@ -923,6 +923,7 @@ class testRunSubmit(unittest.TestCase):
         new_parms=['ENTCOEF']
         copy_dir2= tmp_dir/'copy_test2'
         run_submit_copy2 = run_submit.copy(copy_dir2, update_parameters=new_parms)
+        raise NotImplementedError("Implement test for update_parameters in copy")
 
 
 class TestRunParams(unittest.TestCase):

@@ -43,9 +43,9 @@ class TestArchive(unittest.TestCase):
         archive_file = arc.archive(sub)
         self.assertEqual(expected_archive_file,archive_file)
         expected_files=[sub.config_path]+[m.config_path for m in sub.model_index.values()]
-        expected_files = [pathlib.Path("archive.acfg")]+[pathlib.Path(file).relative_to(sub.rootDir) for file in expected_files]
+        expected_files = sorted([pathlib.Path("archive.acfg")]+[pathlib.Path(file).relative_to(sub.rootDir) for file in expected_files])
         with tarfile.open(archive_file,'r') as archive:
-            got_files = [pathlib.Path(file) for file in archive.getnames()]
+            got_files = sorted([pathlib.Path(file) for file in archive.getnames()])
             self.assertEqual(expected_files,got_files)
 
 

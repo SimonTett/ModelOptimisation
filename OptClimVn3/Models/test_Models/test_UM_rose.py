@@ -39,14 +39,15 @@ class test_umRose(unittest.TestCase):
         # create a model and store it.
         self.refDir = ref_dir
         filepath =os.environ['OPTCLIMTOP']+'/OptClimVn3/configurations/example_UM_rose/references/u-db898/OptClimVn3/configurations/example_UM_rose/references/u-db898'
-        post_process = dict(script='$OPTCLIMTOP/OptClimVn3/scripts/comp_obs.py', output_file='obs.json')
+        post_process = dict(script='$OPTCLIMTOP/OptClimVn3/scripts/comp_obs.py', output_file='obs.nc')
         self.post_process = post_process
         self.model = UKESM1_1(name='testM', reference=ref_dir,
-                            model_dir=test_dir, config_dir='suite',post_process=post_process,
+                            model_dir=test_dir/'model1', config_dir='suite',post_process=post_process,
                             parameters=parameters)
 
-        self.config_path = self.model.config_path
 
+        self.config_path = self.model.config_path
+        self.model.model_dir.mkdir()
         shutil.copy(sim_obs_dir / '01_GN' / 'h0101' / 'observables.nc',
                     self.model.model_dir / 'obs.nc')  # copy over a netcdf file of observations.
 
@@ -343,9 +344,29 @@ and even more text
             # check suite_name is as expected.
             self.assertEqual('fred/X001test',model.suite_name, )
 
+    def test_copy(self):
+        # test that copy method works
+        # Only need to check that have workflow and scripts copied over.
+        model = self.model
+        model.instantiate()
+        cp_dir = self.testDir / 'copy_model'
+        model_copy = model.copy(cp_dir)
+        # check that the workflow and scripts are copied over.
+        for dct in [model_copy.model_dir,model_copy.model_dir/model_copy.script_dir,model_copy.config_dir]:
+            self.assertTrue(dct.is_dir(),msg=f'Directory {dct} not copied correctly')
 
-    def test_archive(self):
+
+        orig_files = list(model.model_dir.rglob('*'))
+        copy_files = list(model_copy.model_dir.rglob('*'))
+
+        # get relative paths for comparison
+        orig_rel_paths = sorted([f.relative_to(model.model_dir) for f in orig_files])
+        copy_rel_paths = sorted([f.relative_to(model_copy.model_dir) for f in copy_files])
+        self.assertEqual(orig_rel_paths, copy_rel_paths, msg=f"Files in {model.model_dir} not copied correctly")
+
+    def no_test_archive(self):
         # Test that archive method works. Rather similar to test_Model.test_archive
+        # no longer needed as uses Model version and its own copy
         model = self.model
         model.instantiate()
         model.set_status('SUCCEEDED',check_existing=False)

@@ -456,7 +456,9 @@ class runSubmit(SubmitStudy):
         return obs
 
     def copy(self, direct: pathlib.Path,
-             update_parameters: typing.Union[bool, list[str]] = False) -> runSubmit:
+             extra_files:typing.Optional[list[pathlib.Path]]=None,
+             update_parameters:typing.Union[bool,list[str]]=False,
+             update_paths:bool = True) -> runSubmit:
         """
         Copy the runSubmit to a new directory.
         :param direct: directory to copy to.
@@ -466,7 +468,10 @@ class runSubmit(SubmitStudy):
           If False then do not update any parameters.
         :return: new runSubmit object.
         """
-        new_submit:runSubmit = super().copy(direct)
+        new_submit:runSubmit = super().copy(direct,
+                                            extra_files=extra_files,
+                                            update_parameters=update_parameters,
+                                            update_paths=update_paths)
         # update logical info if needed.
         if update_parameters:
             raise NotImplementedError("Updating parameters in logical_info not implemented yet.")
@@ -971,7 +976,7 @@ class runSubmit(SubmitStudy):
         warnings.warn("No testing done for pysot")
         raise NotImplementedError('pysot not well implemented. ')
         configData = self.config
-        optimise = configData.optimise().copy()  # get optimisation info
+        optimise = configData.optimise().copy_files()  # get optimisation info
         tMat = configData.transMatrix()
         optFn = self.genOptFunction(transform=tMat, residual=True)  # need scale??
         paramNames = self.paramNames()
