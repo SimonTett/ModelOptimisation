@@ -1071,9 +1071,8 @@ class Model(ModelBaseClass, journal):
         return None
 
 
-    def copy(self, direct: pathlib.Path,
+    def copyConfig(self, direct: pathlib.Path,
              extra_files: typing.Optional[list[pathlib.Path]] = None,
-             update_parameters: typing.Union[bool, list[str]] = False,
              update_paths: bool = True) -> "Model":
         """
         Copy Model to a new directory. Different Model classes may well want to override this by adding their own extra_files
@@ -1081,15 +1080,20 @@ class Model(ModelBaseClass, journal):
            All files must in self.model_dir
         :param direct: directory where Model  is to be copied. Will be created if it does not exist
         :param extra_files: list of extra files (paths provided relative to self.model_dir) to be copied to new directory.
-        :param update_parameters -- If True then all existing parameters will be updated from the model config
-          If a list then these (and the existing parameters) will be updated from the model values.
+
         :param update_paths -- If True then any path parameters will be updated to reflect new directory structure.
            If False and update_parameters is Truety then ValueError will be raised.
         :return: Copied Model. Will copy only Model config & post process unless extra_files provided.
 
         """
-        if (not update_paths) and update_parameters:
-            raise ValueError("If update_parameters is Truthy then update_paths must be True")
+
+        # check tgt direct path is abs and if not make it abs.
+        if not direct.is_absolute():
+            direct = pathlib.Path.cwd() / direct
+            my_logger.info("Made direct absolute to " + str(direct))
+        direct.mkdir(parents=True, exist_ok=True)  # create the directory if needed.
+
+
         files_to_copy = [self.config_path.relative_to(self.model_dir), self._post_process_output]
 
         if extra_files is not None:
@@ -1101,24 +1105,15 @@ class Model(ModelBaseClass, journal):
         if len(miss_files) > 0:
             my_logger.warning(f"{miss_files} missing and not copied")
 
-        # deal with parameters. Using existing version which will read values from the old  model dirs.
-        if update_parameters:
-            params_to_update = list(self.parameters.keys())
-            if isinstance(update_parameters,list):
-                params_to_update = set(params_to_update+update_parameters) # want unique params
-            new_params = self.read_params(params_to_update, fail=True)
-            cp_model.parameters.update(new_params)
-            cp_model.update_history(f"Updated parameters {params_to_update}")
-
-
+        cp_config_path = direct / (self.config_path.relative_to(self.model_dir))
         if update_paths:
-            cp_config_path = direct / (self.config_path.relative_to(self.model_dir))
+
             cp_model.update_history(f'Copied {len(files_copied)} from {self.model_dir} to {direct}')
             cp_model.model_dir = direct
             cp_model.config_path = cp_config_path
             cp_model.update_history(f"Updated model_dir and config_path")
-            cp_model.dump(cp_config_path) # dump it out! (needed as have changed things so orig copy will have old values)
 
+        cp_model.dump(cp_config_path) # dump it out! (needed as have changed things so orig copy will have old values)
         return cp_model
 
     def archive(self,
@@ -1148,7 +1143,7 @@ class Model(ModelBaseClass, journal):
             # dump the model (but no change to internal values)
             # handle models that were read in and so, potentially, outside rootDir
             tmpdir_pth = pathlib.Path(tmpdir) / self.config_path.name
-            self.copy(direct=tmpdir_pth, extra_files=extra_files,update_paths=False)
+            self.copyConfig(direct=tmpdir_pth, extra_files=extra_files,update_paths=False)
 
             for path in tmpdir_pth.rglob("*"): # get all files in the copied  model dir.
                 if path.is_dir():
@@ -1562,6 +1557,30 @@ class Model(ModelBaseClass, journal):
 
         return [cmd0,cmd]
 
+    def update_params(self, parameters:typing.Optional[list[str]]=None,
+                      update:bool = True) -> pd.Series:
+        """
+        Update the parameters in a model by reading them from disk.
+        Model is not written to disk.
+        :param parameters: parameters to update. Existing parameters will be updated too.
+        :param update: If True then update the model. If False just return the updated parameters.
+        :return: Pandas series containing updated values
+        """
+        # check been instantiated!
+        if self.is_instantiable():
+            raise ValueError("Model not instantiated. Cannot update parameters.")
+        if parameters is None:
+            parameters = []
+        params_to_update = set(list(self.parameters.keys())+parameters) # list of unique params
+        new_params = self.read_params(list(params_to_update), fail=True) # read the param values
+        my_logger.debug(f'Updated params are {params_to_update}')
+        if update:
+            self.parameters.update(new_params) # update
+            self.update_history(f"Updated parameters {params_to_update}")
+        result = pd.Series(new_params).rename(self.name)
+
+
+        return result
 
 
 Model.register_class(Model)  # register ourselves!

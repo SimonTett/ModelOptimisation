@@ -1,0 +1,68 @@
+    [[ROSE_ANA_RESOURCE]]
+        inherit = HPC_SERIAL
+        execution time limit = PT10M
+
+    [[UMBUILD_NOOMP]]
+        inherit = UMBUILD
+        [[[environment]]]
+            OPENMP= false
+            PREBUILD = /home/users/umadmin/cylc-run/vn{{VN}}_prebuilds/share/fcm_make_ex1a_cce_um_safe_noomp
+
+    [[ATMOS_TEST_RESOURCE]]
+        inherit = ATMOS_RESOURCE
+         execution time limit = PT2H
+
+    [[ATMOS_NCRUN_RESOURCE]]
+        inherit = ATMOS_RESOURCE
+        execution time limit = {{NCRUN_CLOCK}}
+
+{% if TEST_PE %}
+  {% set PE_TASKS_ATM = PE_ATM_PROCX * PE_ATM_PROCY + PE_IOS_NPROC %}
+  {% set PE_NODE_ATM = node(PE_TASKS_ATM, PE_OMPTHR_ATM, PE_HYPTHR_ATM, CORES_PER_NODE) %}
+  {% set PE_TPNODE_ATM = tpnode(PE_OMPTHR_ATM, PE_HYPTHR_ATM, CORES_PER_NODE) %}
+    [[ATMOS_PE_RESOURCE]]
+        inherit = ATMOS_TEST_RESOURCE
+        [[[directives]]]
+            -l select={{PE_NODE_ATM}}:ncpus={{CPUS_PER_NODE}}:coretype={{CORE_EX}}:subproject={{SUBPROJECT}}:funding={{FUNDING}}
+        [[[environment]]]
+            ROSE_LAUNCHER_PREOPTS = --cpu-bind=depth -n {{PE_TASKS_ATM}} -ppn {{PE_TPNODE_ATM}} -d {{PE_OMPTHR_ATM}}
+{% endif %}
+
+{% if TEST_OMP %}
+  {% set OMP_TASKS_ATM = OMP_ATM_PROCX * OMP_ATM_PROCY + OMP_IOS_NPROC %}
+  {% set OMP_NODE_ATM = node(OMP_TASKS_ATM, OMP_OMPTHR_ATM, OMP_HYPTHR_ATM, CORES_PER_NODE) %}
+  {% set OMP_TPNODE_ATM = tpnode(OMP_OMPTHR_ATM, OMP_HYPTHR_ATM, CORES_PER_NODE) %}
+    [[ATMOS_OMP_RESOURCE]]
+        inherit = ATMOS_TEST_RESOURCE
+         execution time limit = PT3H
+        [[[directives]]]
+            -l select={{OMP_NODE_ATM}}:ncpus={{CPUS_PER_NODE}}:coretype={{CORE_EX}}:subproject={{SUBPROJECT}}:funding={{FUNDING}}
+        [[[environment]]]
+            ROSE_LAUNCHER_PREOPTS = --cpu-bind=depth -n {{OMP_TASKS_ATM}} -ppn {{OMP_TPNODE_ATM}} -d {{OMP_OMPTHR_ATM}}
+{% endif %}
+
+{% if TEST_NOOMP %}
+  {% set NOOMP_TASKS_ATM = MAIN_ATM_PROCX * MAIN_ATM_PROCY + MAIN_IOS_NPROC %}
+  {% set NOOMP_NODE_ATM = node(NOOMP_TASKS_ATM, 1, 1, CORES_PER_NODE) %}
+  {% set NOOMP_TPNODE_ATM = tpnode(1, 1, CORES_PER_NODE) %}
+    [[ATMOS_NOOMP_RESOURCE]]
+        inherit = ATMOS_TEST_RESOURCE
+	[[[directives]]]
+            -l select={{NOOMP_NODE_ATM}}:ncpus={{CPUS_PER_NODE}}:coretype={{CORE_EX}}
+        [[[environment]]]
+            ROSE_LAUNCHER_PREOPTS = -n {{TASKS_ATM}} -ppn {{NOOMP_TPNODE_ATM}}
+{% endif %}
+
+    [[MULE_RESOURCE]]
+        pre-script = """
+        module load scitools/production-os46-3
+        module load um_tools/2023.08.1/no-openmp
+        export ROSE_PYTHONPATH="$PYTHONPATH"
+        module list 2>&1
+        """
+
+    [[INCS_TEST_RESOURCE]]
+        inherit = HPC_SERIAL
+        execution time limit = PT20M
+        [[[directives]]]
+            -l select=1:ncpus=1:mem=5gb

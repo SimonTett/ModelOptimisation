@@ -806,14 +806,14 @@ class ModelTestCase(unittest.TestCase):
             names = sorted([pathlib.Path(n) for n in archive.getnames()])  # list of names
             self.assertEqual(expected_names, names)
 
-    def test_copy(self):
+    def test_copyConfig(self):
         # test copy works
 
         # easy test. Copy model somewhere else and check they are the same.
         dest_dir = self.testDir / 'copy_model'
         model = self.model
         model.instantiate()
-        model.copy(dest_dir)
+        model.copyConfig(dest_dir)
         # now load in the copied model
         cmodel = myModel.load_model(dest_dir / f"{self.model.name}.mcfg")
         attrs_not_same = ['model_dir','config_path','_history']
@@ -822,16 +822,9 @@ class ModelTestCase(unittest.TestCase):
                 continue
             self.assertEqual(getattr(model, attr), getattr(cmodel, attr), f"Attribute {attr} not the same")
 
-        # hard test update the parameters in copied model and check original not changed.
-        direct2 = self.testDir / 'copy_model2'
-        cmodel2 = model.copy(direct2,update_parameters=['ENTCOEF','ICE_SIZE']) # update some params.
-        expect_params = model.parameters.copy()
-        expect_params.update(model.read_params(['ENTCOEF','ICE_SIZE']))
-        self.assertEqual(expect_params, cmodel2.parameters)
 
-        # now try and write over itself. Should raise an error!
         with self.assertRaises(FileExistsError):
-            model.copy(model.model_dir)
+            model.copyConfig(model.model_dir)
 
 
 
@@ -1121,6 +1114,24 @@ class ModelTestCase(unittest.TestCase):
         result = self.model.ssh_command(cmd, remote_machine=remote_machine, remote_model_dir=remote_dir)
         self.assertEqual(result, expected_cmd)
 
+    def test_update_params(self):
+        """"
+        Test that update_params works.
+        """
+        model = self.model
+        # try and update but not instantiated should fail
+        with self.assertRaises(ValueError):
+            got_params = model.update_params(['ENTCOEF', 'ICE_SIZE'])
+
+        # test update params works
+        model.instantiate()
+        got_params = model.update_params(['ENTCOEF','ICE_SIZE'])
+        expect_params = model.parameters.copy()
+        expect_params.update(model.read_params(['ENTCOEF','ICE_SIZE']))
+        expect_params = pd.Series(expect_params).rename(model.name)
+
+
+        self.assertTrue(expect_params.equals(got_params.reindex(expect_params.index)))
 
 
 

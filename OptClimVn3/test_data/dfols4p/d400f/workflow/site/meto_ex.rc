@@ -1,0 +1,185 @@
+{% set CORES_PER_NODE = 128 if (CORE_EX == 'milan') else 192 if ( CORE_EX == 'genoa') %}
+{% set CPUS_PER_NODE = (CORES_PER_NODE*2) %}
+
+{% set SUBPROJECT = METO_SUBPROJECT_OTHER if METO_SUBPROJECT == 'other' else METO_SUBPROJECT %}
+{% set FUNDING = METO_FUNDING_OTHER if METO_FUNDING == 'other' else METO_FUNDING %}
+
+{% set PREBUILDS = '/home/users/umadmin/cylc-run/vn{{VN}}_prebuilds/share' %}
+
+    [[RETRIES]]
+        execution retry delays = 2*PT30M, 2*PT1H, PT3H, 3*PT6H
+
+    [[LINUX]]
+        platform = localhost
+        [[[environment]]]
+            UMDIR = ~umadmin
+
+    [[SPICE]]
+        platform = spice
+        [[[directives]]]
+            --qos = 'normal'
+
+    [[EXTRACT_RESOURCE]]
+        platform = spice
+        execution time limit = PT5M
+        [[[directives]]]
+            --mem=1G
+            --ntasks=1
+
+    [[HPC]]
+        pre-script = """
+            module switch PrgEnv-cray PrgEnv-cray/8.4.0
+            module load cpe/23.05
+            module swap cce cce/15.0.0
+            module load craype-x86-milan
+            module load cray-hdf5/1.12.2.3
+            module load cray-netcdf/4.9.0.3
+            module list 2>&1
+        """
+        platform = {{HOST_EX}}
+        submission retry delays = 2*PT30S,PT5M,PT15M,PT30M,PT1H
+        [[[environment]]]
+            PLATFORM = ex1a
+	    {% if HOST_EX == 'exz' %}
+	      CMIP6_ANCILS = /data/d06/marc.stringer/ancils/cmip6/ancils
+	      CORE_DUMPS_DIR = /data/d06/marc.stringer/startdumps
+	      EX_UMDIR_OVERRIDE = /common/umdir
+	    {% else %}
+	      CMIP6_ANCILS = /common/internal/cmip6/ancils
+              CORE_DUMPS_DIR = /data/users/stephen.pring/startdumps
+	      EX_UMDIR_OVERRIDE = /common/internal/umdir
+            {% endif %}
+        [[[directives]]]
+	    -q = shared
+
+    [[HPC_SERIAL]]
+        inherit = HPC
+	[[[directives]]]
+            -l select=1:ncpus=1
+        [[[environment]]]
+            ROSE_TASK_N_JOBS = 1
+
+    [[HPC_SERIAL_MASSQ]]
+        inherit = HPC_SERIAL
+        [[[directives]]]
+            -q = mass
+
+    [[UMBUILD]]
+        [[[environment]]]
+            CONFIG   = meto-ex1a-cce
+	    OPENMP   = true
+            OPTIM    = safe
+            PREBUILD = {{PREBUILDS}}/fcm_make_ex1a_cce_um_safe_omp
+
+    [[UMBUILD_RESOURCE]]
+        inherit = HPC
+        execution time limit = PT30M
+        [[[environment]]]
+            ROSE_TASK_N_JOBS = 6
+        [[[directives]]]
+            -l ncpus   = 6
+            -l mem     = 20GB
+            -l tmpsize = 20GB
+
+    [[INSTALL_RESOURCE]]
+        inherit = HPC_SERIAL
+        execution time limit = PT1M
+
+    [[UM_PARALLEL]]
+        inherit = HPC
+        [[[environment]]]
+            {% if MAIN_IOS_NPROC is defined and MAIN_IOS_NPROC > 0 %}
+              UM_THREAD_LEVEL    = MULTIPLE
+            {% endif %}
+	    FI_CXI_RX_MATCH_MODE = software
+	    MPICH_ENV_DISPLAY    = 1
+            OMP_STACKSIZE        = 2G
+            ROSE_LAUNCHER        = mpiexec
+
+    [[RCF_RESOURCE]]
+        inherit = UM_PARALLEL
+        execution time limit = PT10M
+        [[[directives]]]
+            -l select=1:ncpus={{MAIN_RCF_PROCX * MAIN_RCF_PROCY}}:mpiprocs={{MAIN_RCF_PROCX * MAIN_RCF_PROCY}}:mem=6gb:coretype=milan
+	[[[environment]]]
+            ROSE_LAUNCHER_PREOPTS = -n {{MAIN_RCF_PROCX * MAIN_RCF_PROCY}}
+
+{% set TASKS_ATM = MAIN_ATM_PROCX * MAIN_ATM_PROCY + MAIN_IOS_NPROC %}
+{% set NODE_ATM = node(TASKS_ATM, MAIN_OMPTHR_ATM, MAIN_HYPTHR_ATM, CORES_PER_NODE) %}
+{% set TPNODE_ATM = tpnode(MAIN_OMPTHR_ATM, MAIN_HYPTHR_ATM, CORES_PER_NODE) %}
+    [[ATMOS_RESOURCE]]
+        inherit = UM_PARALLEL
+        execution time limit = {{MAIN_CLOCK}}
+        [[[directives]]]
+            -l select={{NODE_ATM}}:ncpus={{CPUS_PER_NODE}}:coretype={{CORE_EX}}
+            -q = normal
+	[[[environment]]]
+            ROSE_LAUNCHER_PREOPTS = --cpu-bind=depth -n {{TASKS_ATM}} -ppn {{TPNODE_ATM}} -d {{MAIN_OMPTHR_ATM}}
+
+    [[PPBUILD_RESOURCE]]
+        inherit = HPC_SERIAL
+        execution time limit = PT5M
+
+    [[POSTPROC_RESOURCE]]
+        inherit = HPC_SERIAL
+        pre-script = """
+        ulimit -s unlimited; ulimit -n 4096
+        module load scitools/production-os46-3
+        module load nccmp
+        module load cray-hdf5
+        module load um_tools
+{% if HOST_EX == 'exz' %}
+        module load metoffice/moose-client
+{% else %}
+        module load moose-client
+{% endif %}
+        module list 2>&1
+        """
+        execution time limit = PT1H
+        execution retry delays = PT10M, PT1H, PT3H, P1D
+        [[[environment]]]
+            MODELBASIS = $BASIS_UM_PT
+            CYCLEPERIOD = {{EXPT_RESUB}}
+            DATAM = $ROSE_DATA/{{DATAM}}
+            ROSE_TASK_N_JOBS = 1
+            HDF5_DISABLE_VERSION_CHECK = 1
+
+    [[POSTPROC_TRANSFORM_RESOURCE]]
+        inherit = POSTPROC_RESOURCE
+        [[[directives]]]
+	    -l select=1:ncpus=1:mem=24gb
+
+    [[POSTPROC_ARCHIVE_RESOURCE]]
+        inherit = POSTPROC_RESOURCE
+        [[[directives]]]
+            -q = mass
+            -l select=1:ncpus=1:mem=8Gb
+
+    [[SUPERMEAN_RESOURCE]]
+        inherit = SPICE, RETRIES
+        execution retry delays = PT1H
+        execution time limit = PT2H
+        [[[directives]]]
+            --mem-per-cpu = 2048
+            --ntasks = 1
+	[[[environment]]]
+            ROSE_APP_OPT_CONF_KEYS = {{"azspice" if ROSE_ORIG_HOST[0:3] == "caz" else ""}}
+
+    [[LOGS_RESOURCE]]
+        inherit = LINUX, RETRIES
+
+    [[WALLCLOCK_RESOURCE]]
+        inherit = HPC_SERIAL_MASSQ, RETRIES
+        {% if HOST_EX == 'exz' %}
+          pre-script = module load metoffice/moose-client
+        {% else %}
+          pre-script = module load moose-client
+        {% endif %}
+        execution time limit = PT2M
+
+    [[HOUSEKEEP_RESOURCE]]
+        inherit = LINUX
+
+{% if TASK_RUN and TASK_TESTS %}
+  {% include 'site/meto_ex-tests.rc' %}
+{% endif %}

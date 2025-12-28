@@ -13,6 +13,8 @@ import numpy.testing as nptest
 import pandas as pd
 import pandas.testing as pdtest
 import json
+
+import Model
 import StudyConfig
 import optclim_exceptions
 import runSubmit
@@ -908,22 +910,81 @@ class testRunSubmit(unittest.TestCase):
         pdtest.assert_index_equal(got.index, expected_obs_df.index)
         # no need to test normalised versions as that is done above.
 
-    def test_copy(self):
-        # test that copy method works correctly
+    def test_update_logical_params(self):
+        """
+        Test that update_logical_params works as expected.
+
+        Test cases:
+          1) With set of parameters returns pandas series with new values.
+             Getting the parameters for the specified name gives same values
+
+        """
+        ## setup
         tmpDir = tempfile.TemporaryDirectory()
         tmp_dir = pathlib.Path(tmpDir.name)
         submit_dir = tmp_dir/'reference_copy_test'
         from archive_study import archive_study
         pth = expand("$OPTCLIMTOP/OptClimVn3/test_data/archive_dfols4p.tar.gz")
         arc, run_submit = archive_study.extract_archive(pth,submit_dir)
+        name ='I3_i0'
+        params = run_submit.logical_params().loc[name]
+
+        new_expected = dict(a_ent_2=0.056,cape_timescale=3600.0)
+
+        update_params = params.index.to_list() + list(new_expected.keys())
+        expected_params = pd.concat([params,pd.Series(new_expected)]).rename(params.name)
+        got_params = run_submit.update_logical_params(name,parameters=update_params)
+        expected_params = expected_params.reindex(got_params.index)
+        self.assertTrue(got_params.equals(expected_params),msg='pandas series differ')
+
+        ## test get an error if models don't have same parameter values...
+        # which means modifying the underlying model...
+        models = run_submit.logical_models(name) # is a dict of models
+        k = list(models.keys())[1]
+        models[k].set_params(dict(a_ent_2=0.057),backup=False)
+        models[k].update_params()
+        with self.assertRaises(ValueError):
+            run_submit.update_logical_params(name,parameters=update_params)
+
+        # would be good to have a case with single model run....
+
+
+    def test_copyConfig(self):
+        # test that copy method works correctly
+        tmpDir = tempfile.TemporaryDirectory()
+        tmp_dir = pathlib.Path(tmpDir.name)
+        pth = expand("$OPTCLIMTOP/OptClimVn3/test_data/dfols4p/dfols4p.scfg")
+        run_submit = runSubmit.runSubmit.load(pth,check_types=[runSubmit.runSubmit])
         copy_dir =tmp_dir/'copy_test'
-        run_submit_copy = run_submit.copy(copy_dir)
+        run_submit_copy = run_submit.copyConfig(copy_dir)
         self.assertIsInstance(run_submit_copy,runSubmit.runSubmit)
         self.assertEqual(run_submit.config, run_submit_copy.config)
-        new_parms=['ENTCOEF']
-        copy_dir2= tmp_dir/'copy_test2'
-        run_submit_copy2 = run_submit.copy(copy_dir2, update_parameters=new_parms)
-        raise NotImplementedError("Implement test for update_parameters in copy")
+        # check logical info models consistent with model_info
+        for name, model_dct in run_submit_copy._logical_info.models.items():
+            for model_name, model in model_dct.items():
+                key = run_submit_copy.key_for_model(model)
+                self.assertIs(run_submit_copy.model_index[key],model,msg=f'{model_name}:{model} with key:{key} not same as in model_index')
+                self.assertIsInstance(run_submit_copy.model_index[key],Model.Model)
+
+
+
+
+
+    def test_from_dict(self):
+        """
+        Test from_dict method.
+        Runs it and tests that rSubmit._logical_info.models exists and are lists of keys which exist in the model_info .
+        :return:
+        """
+        rSubmit = runSubmit.runSubmit.load(expand('$OPTCLIMTOP/OptClimVn3/test_data/dfols4p/dfols4p.scfg'),
+                                           check_types=[runSubmit.runSubmit])
+        dct = rSubmit.to_dict() #
+        dct['_logical_info'] = runSubmit.LogicalInfo.from_dict(dct['_logical_info'].to_dict()) # magic needed for LogicalInfo
+        new_rSubmit = runSubmit.runSubmit.from_dict(dct)
+        self.assertIsInstance(new_rSubmit,runSubmit.runSubmit)
+        self.assertEqual(rSubmit,new_rSubmit)
+
+
 
 
 class TestRunParams(unittest.TestCase):
@@ -1020,6 +1081,8 @@ class TestRunParams(unittest.TestCase):
 
 
 
+
+
 class TestLogicalInfo(unittest.TestCase):
     """
     Test the logical_info method of runSubmit class.
@@ -1027,7 +1090,10 @@ class TestLogicalInfo(unittest.TestCase):
     This test case sets up a runSubmit instance with predefined parameters and observations,
     simulates model runs, and verifies that the logical_info method returns the expected DataFrame.
     """
-
+    def setUp(self):
+        pth = expand("$OPTCLIMTOP/OptClimVn3/test_data/dfols4p/dfols4p.scfg")
+        run_submit = runSubmit.runSubmit.load(pth,check_types=[runSubmit.runSubmit])
+        self.run_submit = run_submit
 
 
     def test_logical_name(self):
@@ -1071,5 +1137,47 @@ class TestLogicalInfo(unittest.TestCase):
         self.assertEqual(name6, 'I1_i0')
         # and check that .parameters is a three member dict.
         self.assertEqual(len(logical_info.parameters), 3)
+
+    def test_update_params(self):
+        """
+        Test that update_params works correctly.
+        Tests are:
+          Create logical_info and add three param sets.
+          Modify one of the param sets and call update_params
+          Check that the parameters have been updated correctly.
+        """
+        param_list = [dict(CT=1e-4, EACF=0.5, ENTCOEF=3, ICE_SIZE=3e-5, RHCRIT=0.7, VF1=0.5, CW=2e-4),
+                      dict(CT=1e-4, EACF=0.5, ENTCOEF=3, ICE_SIZE=3e-5, RHCRIT=0.7, VF1=0.5, CW=2e-4,
+                           ensembleMember=2),
+                      dict(CT=1e-4, EACF=0.5, ENTCOEF=3, ICE_SIZE=3e-5, RHCRIT=0.7, VF1=0.5, CW=2e-4,
+                           ensembleMember=3)]
+        logical_info = runSubmit.LogicalInfo()
+        names = []
+        for params in param_list:
+            name = logical_info.name(params)
+            names.append(name)
+        # modify second param set
+        new_params = param_list[1].copy()
+        new_params['NEW_PARAM'] = 2.0  # add new param
+        new_params = pd.Series(new_params)
+        logical_info.update_params(names[1],new_params)
+        # check that parameters have been updated
+        updated_params = logical_info.parameters[names[1]]
+        self.assertTrue(updated_params.equals(new_params), msg='Parameters not updated correctly in logical_info')
+
+
+    def test_to_dict(self):
+        # test that to_dict works correctly
+        logical_info = self.run_submit._logical_info
+        dct = logical_info.to_dict()
+        self.assertIsInstance(dct, dict)
+        self.assertIn('parameters', dct)
+        self.assertIn('models', dct)
+        # check that model keys exist
+        for name, model_dct in dct['models'].items():
+            for model_name,model_key in model_dct.items():
+                self.assertIsInstance(model_key, str)
+                expect_model = self.run_submit.model_index[model_key]
+                self.assertEqual(self.run_submit.key_for_model(expect_model), model_key)
 
 

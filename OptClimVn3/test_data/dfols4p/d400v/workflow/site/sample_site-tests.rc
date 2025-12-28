@@ -1,0 +1,83 @@
+# This file is a place holder for new sites to add appropriate resources for
+# running the testing components for the AMIP climnate experiment.
+#
+# Only the compulsory families have been included, those that exist in the
+# suite.rc file. Any other families required can also be added. See other
+# site files for examples on how this can work.
+#
+# The best practise would be to make a copy of this file (or a more
+# appropriately matched example) with a name for the computer that is being
+# used. This should then also be added to the list of acceptable values in the
+# jinja2 variable SITE in meta/rose-meta.conf.
+#
+# In order to get this site added to the master suite (u-az257), please take a
+# branch copy of this suite, e.g.
+#
+# rosie checkout u-az257
+# cd $HOME/roses/u-az257
+# fcm bc -s <branch_name>
+#
+# This will leave you in a branch of the original suite. Once you have made
+# the changes described above, commit them and email the suite owner
+# (currently paul.earnshaw@metoffice.gov.uk) to get the changes merged onto
+# the trunk of the suite.
+#
+# Thank you,
+# Paul Earnshaw
+
+    # The resources used to run the rose_ana tasks
+    #
+    # Where used: ROSE_ANA, and hence any rose_ana_* task
+    #
+    [[ROSE_ANA_RESOURCE]]
+
+    # The resources used to run the CRUN and NRUN test case. This should use
+    # the same resources as atmos_main, except for the alternate wallclock
+    # time limit NCRUN_CLOCK, hence the inherited ATMOS_RESOURCE.
+    #
+    # Where used: atmos_crun and atmos_nrun
+    #
+    [[ATMOS_NCRUN_RESOURCE]]
+        inherit = ATMOS_RESOURCE
+
+    # The resources used to run the processor decomposition test case. This
+    # should use the same resources as atmos_main, except for the alternate
+    # processor decomposition PE_ATM_PROCX, PE_ATM_PROCY and PE_IOS_NPROC,
+    # hence the inherited ATMOS_RESOURCE.
+    #
+    # Where used: atmos_pe
+    #
+    [[ATMOS_PE_RESOURCE]]
+        inherit = ATMOS_RESOURCE
+
+    # The resources used to run the OpenMP threads test case. This
+    # should use the same resources as atmos_main, except for the alternate
+    # OpenMP threads and hyperthreads OMP_OMOPTHR_ATM and OMP_HYPTHR_ATM,
+    # hence the inherited ATMOS_RESOURCE.
+    #
+    # Where used: atmos_omp
+    #
+    [[ATMOS_OMP_RESOURCE]]
+        inherit = ATMOS_RESOURCE
+
+    # The resources used to run the no OpenMP test case. This
+    # should use the same resources as atmos_main, except for switching off
+    # OpenMP, hence the inherited UMBUILD and ATMOS_RESOURCE.
+    #
+    # Where used: fcm_make_um_noomp and atmos_noomp
+    #
+    [[UMBUILD_NOOMP]]
+        inherit = UMBUILD
+        [[[environment]]]
+            OPENMP= false
+
+    [[ATMOS_NOOMP_RESOURCE]]
+        inherit = ATMOS_RESOURCE
+
+    # The environment required to use Mule in rose-ana tasks
+    #
+    # Where used: ROSE_ANA, and hence any rose_ana_* task
+    #
+    [[MULE_RESOURCE]]
+        [[[environment]]]
+            PYTHONPATH=${PYTHONPATH}:${UMDIR}/lib/python2.7

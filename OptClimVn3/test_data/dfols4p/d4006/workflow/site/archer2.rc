@@ -1,0 +1,172 @@
+{# There are 8 (128/16) NUMA regions per node #}
+{% set NUMA = 8 %}
+{% set CORES_PER_NODE = 128 %}
+{% set TASKS_RCF = MAIN_RCF_PROCX * MAIN_RCF_PROCY %}
+{% set TASKS_ATM = MAIN_ATM_PROCX * MAIN_ATM_PROCY + MAIN_IOS_NPROC %}
+{% set NODE_RCF = ((TASKS_RCF/CORES_PER_NODE) | round(0,'ceil') | int) %}
+{% set NODE_ATM = ((TASKS_ATM*MAIN_OMPTHR_ATM)/(CORES_PER_NODE*MAIN_HYPTHR_ATM))|round(0,"ceil")|int %}
+{% set TPNUMA_RCF = (TASKS_RCF/NODE_RCF/NUMA)|round(0,'ceil')|int %}
+{% set TPNUMA_ATM = (TASKS_ATM/NODE_ATM/NUMA)|round(0,'ceil')|int %}
+
+    [[NCAS_NOT_SUPPORTED]]
+        script = """
+            echo 'Task not supported at NCAS' >&2
+            false
+        """
+        platform = localhost
+
+    [[RETRIES]]
+        execution retry delays = 2*PT30M, 2*PT1H, PT3H, 3*PT6H
+
+    [[SUBMIT_RETRIES]]
+        submission retry delays = PT1M, 2*PT5M, 2*PT30M, 4*PT3H
+
+    [[LINUX]]
+        platform = localhost
+        [[[environment]]]
+            PLATFORM = linux
+            UMDIR = ~um
+
+    [[EXTRACT_RESOURCE]]
+        inherit = LINUX
+
+
+
+    [[HPC]]
+        pre-script = """
+                     ulimit -s unlimited
+                     TOMP_NUM_THREADS=${OMP_NUM_THREADS:-}
+                     module load um
+                     module list 2>&1
+                     export OMP_NUM_THREADS=$TOMP_NUM_THREADS
+                     """
+	platform = archer2
+        [[[directives]]]
+            --chdir=/work/n02/n02/{{ARCHER2_USERNAME}}
+            --partition=standard
+            --qos={{ARCHER2_QUEUE}}
+            --account={{ARCHER2_GROUP}}
+        [[[environment]]]
+            PLATFORM = cce
+	    CORE_DUMPS_DIR = /work/n02/n02/marc/startdumps
+            CMIP6_ANCILS = $UMDIR/CMIP6_ANCIL/data/ancils
+
+    [[HPC_SERIAL]]
+        inherit = None, HPC
+	execution time limit = PT30M
+        [[[directives]]]
+	    --partition=serial
+	    --qos=serial
+	    --ntasks=1
+        [[[environment]]]
+            ROSE_TASK_N_JOBS = 1
+
+    [[REMOTE_SETUP_RESOURCE]]
+        platform = archer2-bg
+
+    [[UMBUILD]]
+        [[[environment]]]
+            CONFIG = ncas-ex-cce
+	    OPENMP = true
+            OPTIM = safe
+            PREBUILD =
+
+    [[UMBUILD_RESOURCE]]
+        inherit = HPC_SERIAL
+        execution time limit = PT3H
+        [[[directives]]]
+	    --mem=25G
+
+    [[INSTALL_RESOURCE]]
+        inherit = HPC_SERIAL
+        execution time limit = PT5M # increased to 5 mins to stop occasional timeout 
+
+    [[UM_PARALLEL]]
+        inherit = HPC
+        [[[environment]]]
+            ATP_ENABLED = 1
+            ROSE_LAUNCHER = srun
+	    OMP_PLACES = cores
+
+    [[RCF_RESOURCE]]
+        inherit = UM_PARALLEL
+        execution time limit = PT20M
+        [[[directives]]]
+            --nodes={{NODE_RCF}}
+            --ntasks= {{TASKS_RCF}}
+            --tasks-per-node={{NUMA*TPNUMA_RCF}}
+            --cpus-per-task=1
+        [[[environment]]]
+            OMP_NUM_THREADS=1
+            ROSE_LAUNCHER_PREOPTS = --cpu-bind=cores
+
+    [[ATMOS_RESOURCE]]
+        inherit = UM_PARALLEL, SUBMIT_RETRIES
+        execution time limit = {{MAIN_CLOCK}}
+        [[[environment]]]
+	    {% if MAIN_OMPTHR_ATM > 1 %}
+	      ROSE_LAUNCHER_PREOPTS = --nodes={{NODE_ATM}} --ntasks={{TASKS_ATM}} --tasks-per-node={{NUMA*TPNUMA_ATM}} --cpus-per-task={{MAIN_OMPTHR_ATM}} --hint=nomultithread --distribution=block:block --export=all,OMP_NUM_THREADS={{MAIN_OMPTHR_ATM}},HYPERTHREADS={{MAIN_HYPTHR_ATM}},OMP_PLACES=cores
+            {% else %}
+              ROSE_LAUNCHER_PREOPTS = --nodes={{NODE_ATM}} --ntasks={{TASKS_ATM}} --tasks-per-node={{NUMA*TPNUMA_ATM}} --cpus-per-task={{MAIN_OMPTHR_ATM}} --cpu-bind=cores --export=all,OMP_NUM_THREADS=1,HYPERTHREADS={{MAIN_HYPTHR_ATM}}
+            {% endif %}
+	[[[directives]]]
+            --nodes={{NODE_ATM}}
+
+    [[PPBUILD_RESOURCE]]
+        inherit = HPC_SERIAL
+        execution time limit = PT5M
+
+    [[POSTPROC_RESOURCE]]
+        inherit = HPC_SERIAL, RETRIES
+        pre-script = """module load postproc
+                        module list 2>&1
+                        ulimit -s unlimited
+                     """
+        execution time limit = PT3H
+	[[[directives]]]
+            --mem = 30Gb
+
+    # for completeness, different settings for Transform and Archive
+    # on Meto_EX
+    [[POSTPROC_TRANSFORM_RESOURCE]]
+        inherit = POSTPROC_RESOURCE
+
+    [[POSTPROC_ARCHIVE_RESOURCE]]
+        inherit = POSTPROC_RESOURCE
+
+    [[PPTRANSFER_RESOURCE]]
+        inherit = POSTPROC_RESOURCE
+
+    [[SUPERMEAN_RESOURCE]]
+        inherit = LINUX, NCAS_NOT_SUPPORTED
+
+    [[LOGS_RESOURCE]]
+        inherit = LINUX, NCAS_NOT_SUPPORTED
+
+    [[WALLCLOCK_RESOURCE]]
+        inherit = HPC_SERIAL, NCAS_NOT_SUPPORTED
+
+    [[HOUSEKEEP_RESOURCE]]
+        inherit = LINUX
+
+{# ************ JASMIN RESOURCES ************* #}
+
+    [[JASMIN]]
+        platform = sci-vm
+        [[[environment]]]
+            PLATFORM = Linux
+            UMDIR = ~um
+            OCEANDIR = ~um
+
+    [[PPBUILD_RESOURCE_ARCHIVE_HOST]]
+        inherit = JASMIN
+        execution time limit = PT20M
+
+    [[JDMA_RESOURCE]]
+        inherit = JASMIN
+        pre-script = "PS1=${PS1:-}; source /home/users/umshared/venvs/jdma_venv_py3/bin/activate"
+        execution time limit = PT1H
+
+{% if TASK_RUN and TASK_TESTS %}
+  {% include 'site/archer2-tests.rc' %}
+{% endif %}

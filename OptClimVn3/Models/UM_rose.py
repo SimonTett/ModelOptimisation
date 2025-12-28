@@ -501,7 +501,6 @@ class UM_rose(Model):
 
     def copy(self, direct: pathlib.Path,
              extra_files: typing.Optional[list[pathlib.Path]] = None,
-             update_parameters: typing.Union[bool, list[str]] = False,
              update_paths: bool = True) -> "Um_rose":
 
         """
@@ -509,10 +508,7 @@ class UM_rose(Model):
             All files must in self.model_dir
         :param direct: directory where Model  is to be copied. Will be created if it does not exist
         :param extra_files: list of extra files (paths provided relative to self.model_dir) to be copied to new directory.
-        :param update_parameters -- If True then all existing parameters will be updated from the model config
-          If a list then these (and the existing parameters) will be updated from the model values.
         :param update_paths -- If True then any path parameters will be updated to reflect new directory structure.
-           If False and update_parameters is Truety then ValueError will be raised.
         :return: Copied Model. Will copy only Model config & post process unless extra_files provided.
         """
 
@@ -520,28 +516,10 @@ class UM_rose(Model):
         # TODO_relative_paths -- eventually make all paths relative to model_dir.
         if extra_files is not None:
             files_to_add += extra_files
-        cp_obj = super().copy(direct=direct,extra_files=files_to_add,
-                              update_parameters=update_parameters,update_paths=update_paths)
+        cp_obj = super().copyConfig(direct=direct,extra_files=files_to_add,update_paths=update_paths)
         return cp_obj  # return the copied object.
 
-    '''def archive(self,
-                archive: tarfile.TarFile,
-                root_dir: pathlib.Path,
-                extra_files: typing.Optional[typing.List[pathlib.Path | str]] = None):
-        """
-        Archive method for UM_rose class. Calls the super-class method adding config_dir and scripts dir to the archive.
-        :param archive: archive to be added to
-        :param root_dir: root to which all files (in archive file) are stored relative to.
-           If not None, then the name in the archive will be relative to this path.
-        :param extra_files -- extra model things to archive. Should be relative to self.model_dir
-        :return: None
-        """
-        files_to_add =[ self.script_dir, self.config_dir.relative_to(self.model_dir) ]
-        # TODO_relative_paths -- eventually make all paths relative to model_dir.
-        if extra_files is not None:
-            files_to_add += extra_files
-        super().archive(archive, root_dir, extra_files=files_to_add) # call the super class archive method.
-    '''
+
 
     # TODO (when needed). Add a delete method to kill the suite and delete the suite_dir
     # Cmd for killing the suite is cylc stop --now SUITE_NAME but needs to run on puma2.
