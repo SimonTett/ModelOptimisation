@@ -35,12 +35,34 @@ def fake_run(rSubmit: runSubmit, scale: bool = True) -> typing.Callable:
     return fake_function
 
 import engine
-
+import archive_study
 class testRunSubmit(unittest.TestCase):
     """
     Test cases for runSubmit. There should be one for every method in runSubmit.
 
     """
+    @classmethod
+    def setUpClass(cls):
+        """
+        Class level setup
+        """
+        tmpDir = tempfile.TemporaryDirectory()
+        tdir = pathlib.Path(tmpDir.name)
+        arc, cfg = archive_study.archive_study.extract_archive(
+            runSubmit.runSubmit.expand('$OPTCLIMTOP/OptClimVn3/test_data/archive_dfols4p.tar.gz'),
+            direct=tdir)
+        cls.extract_runSubmit = cfg # store for use in tests.
+        cls._tmpDir = tmpDir
+
+    @classmethod
+    def tearDownClass(cls):
+        # cleanup
+        cls._tmpDir.cleanup()
+        del cls.extract_runSubmit
+
+
+
+
 
 
     def setUp(self):
@@ -920,12 +942,8 @@ class testRunSubmit(unittest.TestCase):
 
         """
         ## setup
-        tmpDir = tempfile.TemporaryDirectory()
-        tmp_dir = pathlib.Path(tmpDir.name)
-        submit_dir = tmp_dir/'reference_copy_test'
-        from archive_study import archive_study
-        pth = expand("$OPTCLIMTOP/OptClimVn3/test_data/archive_dfols4p.tar.gz")
-        arc, run_submit = archive_study.extract_archive(pth,submit_dir)
+
+        run_submit = copy.deepcopy(self.extract_runSubmit)
         name ='I3_i0'
         params = run_submit.logical_params().loc[name]
 
@@ -953,8 +971,7 @@ class testRunSubmit(unittest.TestCase):
         # test that copy method works correctly
         tmpDir = tempfile.TemporaryDirectory()
         tmp_dir = pathlib.Path(tmpDir.name)
-        pth = expand("$OPTCLIMTOP/OptClimVn3/test_data/dfols4p/dfols4p.scfg")
-        run_submit = runSubmit.runSubmit.load(pth,check_types=[runSubmit.runSubmit])
+        run_submit = copy.deepcopy(self.extract_runSubmit)
         copy_dir =tmp_dir/'copy_test'
         run_submit_copy = run_submit.copyConfig(copy_dir)
         self.assertIsInstance(run_submit_copy,runSubmit.runSubmit)
@@ -976,13 +993,12 @@ class testRunSubmit(unittest.TestCase):
         Runs it and tests that rSubmit._logical_info.models exists and are lists of keys which exist in the model_info .
         :return:
         """
-        rSubmit = runSubmit.runSubmit.load(expand('$OPTCLIMTOP/OptClimVn3/test_data/dfols4p/dfols4p.scfg'),
-                                           check_types=[runSubmit.runSubmit])
+        rSubmit =  copy.deepcopy(self.extract_runSubmit)
         dct = rSubmit.to_dict() #
         dct['_logical_info'] = runSubmit.LogicalInfo.from_dict(dct['_logical_info'].to_dict()) # magic needed for LogicalInfo
         new_rSubmit = runSubmit.runSubmit.from_dict(dct)
         self.assertIsInstance(new_rSubmit,runSubmit.runSubmit)
-        self.assertEqual(rSubmit,new_rSubmit)
+        self.assertEqual(rSubmit,new_rSubmit) # FIXME. Failing here as model reference types differ. rSubmit -- it is posic path, while new_rSubmit it is pureWindowsPath
 
 
 
@@ -1090,10 +1106,28 @@ class TestLogicalInfo(unittest.TestCase):
     This test case sets up a runSubmit instance with predefined parameters and observations,
     simulates model runs, and verifies that the logical_info method returns the expected DataFrame.
     """
+
+    @classmethod
+    def setUpClass(cls):
+        """
+        Class level setup
+        """
+        tmpDir = tempfile.TemporaryDirectory()
+        tdir = pathlib.Path(tmpDir.name)
+        arc, cfg = archive_study.archive_study.extract_archive(
+            runSubmit.runSubmit.expand('$OPTCLIMTOP/OptClimVn3/test_data/archive_dfols4p.tar.gz'),
+            direct=tdir) # quite slow -- extract the archive
+        cls.extract_runSubmit = cfg  # store for use in tests.
+        cls._tmpDir = tmpDir
+
+    @classmethod
+    def tearDownClass(cls):
+        # cleanup
+        cls._tmpDir.cleanup()
+        del cls.extract_runSubmit
     def setUp(self):
-        pth = expand("$OPTCLIMTOP/OptClimVn3/test_data/dfols4p/dfols4p.scfg")
-        run_submit = runSubmit.runSubmit.load(pth,check_types=[runSubmit.runSubmit])
-        self.run_submit = run_submit
+
+        self.run_submit = copy.deepcopy(self.extract_runSubmit)
 
 
     def test_logical_name(self):
