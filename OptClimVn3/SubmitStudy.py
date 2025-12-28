@@ -468,7 +468,7 @@ class SubmitStudy(Study, model_base, journal):
                         my_logger.info(f"Key for model {model} has been fixed")
                 model_index[got_key] = model
             else:
-                raise ValueError(f"Path {path} not found in model_index")
+
                 my_logger.warning(f"Failed to find {path} so ignoring.")
 
         obj.model_index = model_index  # overwrite the index

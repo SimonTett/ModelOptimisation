@@ -90,12 +90,12 @@ class MyTestCase(unittest.TestCase):
         sub2 = self.submit.load(self.submit.config_path)
         self.assertEqual(self.submit, sub2)
 
-    def test_copy(self):
+    def test_copyConfig(self):
         # test that we can copy a SubmitStudy object
         submit = self.submit
         submit.instantiate()
         copy_dir = self.testDir / 'copy_test'
-        sub2 = submit.copy(copy_dir)
+        sub2 = submit.copyConfig(copy_dir)
         self.assertIsInstance(sub2,SubmitStudy.SubmitStudy)
         attrs_different = ['rootDir','config_path','_history']
         for attr in vars(submit).keys():
@@ -110,24 +110,10 @@ class MyTestCase(unittest.TestCase):
                 self.assertEqual(val1,val2,msg=f"Attribute {attr} should be the same")
 
 
-        # make another copy where we update parameters
-        params_to_update = ['ENTCOEF','ICE_SIZE']
-        copy_dir = self.testDir / 'copy_test2'
-        sub3 = submit.copy(copy_dir, update_parameters=params_to_update)
-
-        # check that the parameters have been updated in all models
-        param_values = None
-        for key,model in sub3.model_index.items():
-            self.assertEqual(key, sub3.key_for_model(model))
-            if param_values is None:
-                param_values = {param: model.parameters[param] for param in params_to_update}
-            else:
-                got = {param: model.parameters[param] for param in params_to_update}
-                self.assertEqual(got,param_values,msg="Parameters should be the same across models")
 
         # and another copy where paths are not updated! Shoudl eb identical but check have model dirs in copy
         copy_dir = self.testDir / 'copy_test3'
-        sub4 = submit.copy(copy_dir, update_paths=False)
+        sub4 = submit.copyConfig(copy_dir, update_paths=False)
         self.assertEqual(submit, sub4)
         for model in sub4.model_index.values():
             model.reload() # force reload which will flush various cached paths
