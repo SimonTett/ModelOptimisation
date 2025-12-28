@@ -392,7 +392,7 @@ class runSubmit(SubmitStudy):
          # now construct dataframe.
         df = pd.DataFrame(self._logical_info.parameters).T
         if normalize: # Normalize by param ranges
-            ranges = self.config.paramRanges(ensemble=True).reindex(columns=df.columns)
+            ranges = self.config.paramRanges(df.columns,ensemble=True).reindex(columns=df.columns)
             df = (df-ranges.loc['minParam', :]) / ranges.loc['rangeParam', :]
         return df
 
@@ -633,7 +633,8 @@ class runSubmit(SubmitStudy):
         :return: None
         """
         super().update_params(update_parameters) # call the super  class method.
-        for name in self._logical_info.names.values(): # sort out the logical info
+        names = list(self._logical_info.names.values())
+        for name in names: # sort out the logical info
             self.update_logical_params(name,update_parameters)
 
     def copyConfig(self,direct:pathlib.Path,

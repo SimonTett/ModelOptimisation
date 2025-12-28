@@ -553,7 +553,7 @@ class SubmitStudy(Study, model_base, journal):
 
         model_info = dict()
         for model in self.model_index.values():
-            model.update_parameters(update_parameters)
+            model.update_params(update_parameters)
             key = self.key_for_model(model)
             model_info[key] = model
         self.model_index = model_info # update the model index
