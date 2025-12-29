@@ -359,8 +359,9 @@ class Model(ModelBaseClass, journal):
                     my_logger.debug(f'Found parameter {parameter} in {bcls.__name__}')
                     break # exit the loop as we have found the parameter.
         if stuff is None:
-            raise KeyError(f"Parameter {parameter} not found.\n Allowed parameters are: " +
-                           " ".join(cls.known_parameters()))
+            params_known=sorted(cls.known_parameters())
+            raise KeyError(f"Parameter {parameter} not found.\n Allowed parameters are: " +"\n"+
+                           " ".join(params_known))
         elif not isinstance(stuff, list):
             raise ValueError(f"Parameter {parameter} did not return list but returned {stuff}")
         return stuff
