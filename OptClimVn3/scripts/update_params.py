@@ -32,5 +32,6 @@ if config is None:
 output_direct = args.output
 new_config = config.copyConfig(output_direct)
 new_config.update_params(args.parameters)
+new_config.dump_config(dump_models=True)
 my_logger.info(f"Updated configuration saved to {output_direct}")
 

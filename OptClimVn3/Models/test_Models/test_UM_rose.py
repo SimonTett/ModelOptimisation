@@ -350,7 +350,7 @@ and even more text
         model = self.model
         model.instantiate()
         cp_dir = self.testDir / 'copy_model'
-        model_copy = model.copy(cp_dir)
+        model_copy = model.copyConfig(cp_dir)
         # check that the workflow and scripts are copied over.
         for dct in [model_copy.model_dir,model_copy.model_dir/model_copy.script_dir,model_copy.config_dir]:
             self.assertTrue(dct.is_dir(),msg=f'Directory {dct} not copied correctly')
@@ -482,9 +482,9 @@ class TestUKESM1ParamFunctions(unittest.TestCase):
             'n_lai_exposed': 27.0, # namelist differently understood in UKESM1_1
             'unload_rate_u': 2.31e-6,
             'cca_md_knob': 0.1, # UKESM1_1 default value
-            'aparam': [0.07, 0.0066], # UKESM1_1 default values for aparam and liu_latent. Note default value different from MO value.
-            'rho_snow_fresh': [109.0,41.], # UKESM1_1 default value
-            'starticetkelvin': [263.15, 0.48717948717948645]  # UKESM1_1 default value
+            'aparam': dict(aparam=0.07, liu_latent=0.00681), # UKESM1_1 default values for aparam and liu_latent. Note default value different from MO value.
+            'rho_snow_fresh': dict(rho_snow_fresh=109.0,rho_snow_et_crit_delta=41.), # UKESM1_1 default value
+            'starticetkelvin': dict(start_icet_kelvin=263.15, all_icet_degc_0to1= 0.48717948717948645)  # UKESM1_1 default value
 
         }
         default_nl_values= {
@@ -497,7 +497,7 @@ class TestUKESM1ParamFunctions(unittest.TestCase):
             'n_lai_exposed': [2.0,2.0,27.0,1.0,2.0]+6*[27.0]+[6.0,6.0], # h
             'unload_rate_u': [0.0,0.0,0.0,2.31e-06,2.31e-06]+8*[0.0],
             'cca_md_knob': [0.1,0.1],
-            'aparam': [0.07, -0.14 ],  # UKESM1_1 default value
+            'aparam': [0.07,-0.14],  # UKESM1_1 default value
             'rho_snow_fresh': [109.0, 150.],  # UKESM1_1 default value
             'starticetkelvin':[263.15,-20.0]
         }
@@ -509,10 +509,16 @@ class TestUKESM1ParamFunctions(unittest.TestCase):
                     value = model.read_param(param)
                     # check the value is as expected.
                     if isinstance(value, list):
+                        raise ValueError("No lists allowed anymore...")
                         self.assertEqual(len(value), len(expected))
                         for idx in range(0,len(value)):
                             self.assertAlmostEqual(value[idx], expected[idx],
                                                    msg=f"{param} at index {idx} did not match reference value")
+                    elif isinstance(value,dict):
+                        self.assertEqual(len(value), len(expected))
+                        for key,v in value.items():
+                            self.assertAlmostEqual(v, expected[key],
+                                                   msg=f"{v} at  {key} did not match reference value {expected[key]}")
                     else:
                         self.assertAlmostEqual(value, expected, msg=f"{param} did not match reference value")
                     # read in the values from the namelist.

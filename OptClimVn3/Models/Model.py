@@ -521,7 +521,14 @@ class Model(ModelBaseClass, journal):
 
         for parameter in set(parameters):  # set means we iterate over unique parameters
             try:
-                result[parameter] = self.read_param(parameter)
+                param = self.read_param(parameter)
+                if isinstance(param,dict): # got multiple values back
+                    result.update(param) # update the result
+                elif parameter in result:
+                    my_logger.warning(f"Already got {parameter}. Skipping")
+                    pass
+                else:
+                    result[parameter] = param
             except (KeyError, FileNotFoundError):
                 if fail:
                     raise

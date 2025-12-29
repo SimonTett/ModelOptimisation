@@ -573,7 +573,6 @@ def copy_files(in_direct:pathlib.Path,
     delete_dir_contents(out_direct)  # remove all existing files in direct
     my_logger.debug(f"Created and cleaned {out_direct}")
 
-    files_to_copy = []
 
     files_to_copy = set(files)  # just the unique files.
     files_copied = []
@@ -588,7 +587,7 @@ def copy_files(in_direct:pathlib.Path,
         if in_file.is_dir():
             # work recursively to copy directory
             copy_files(in_file, tgt_path, symlinks=symlinks, files=list(p.relative_to(in_file) for p in in_file.glob('*')))
-            files_copied.append(in_file)
+            files_copied.append(file)
         else: # its a file
             if tgt_path.exists():  # should not happen as we have deleted everything in direct
                 raise FileExistsError(f"File {tgt_path} already exists")

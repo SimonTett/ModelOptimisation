@@ -32,8 +32,8 @@ def register_param(name: str) -> typing.Callable:
     return decorator
 
 
-
-type_param_fn = typing.Union[list[tuple['NamelistVar', typing.Union[list[float],float]]], typing.Union[float,list[float]]]
+# type defn for functions ran to produce parameters
+type_param_fn = typing.Union[list[tuple['NamelistVar', typing.Union[list[float],float]]], typing.Union[float,dict[str,float]]]
 
 class ModelBaseClass(model_base):
     # T

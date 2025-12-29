@@ -512,7 +512,7 @@ class SubmitStudy(Study, model_base, journal):
         direct.mkdir(parents=True, exist_ok=True)  # create directory if need be.
 
 
-        files_to_copy = [self.config_path.relative_to(self.rootDir)]
+        files_to_copy = [self.config_path.resolve().relative_to(self.rootDir)]
         if extra_files is not None:
             files_to_copy += extra_files
 
