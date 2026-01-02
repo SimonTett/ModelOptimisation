@@ -949,7 +949,7 @@ class UKESM1_params(Model):
             # If we don't have it then need to run the inverse calculation to get it from ref config.
             all_icet_degc_0to1 = self.parameters.get('allicetdegc0to1', None)  # default is None.
             if all_icet_degc_0to1 is None:  # if not set then calculate it.
-                all_icet_degc_0to1 = self.cloud_ice( transform=True)['all_icet_degc_0to1']  # call ourselves  to get the value.
+                all_icet_degc_0to1 = self.cloud_ice( transform=True)['allicetdegc0to1']  # call ourselves  to get the value.
             start_ice_x = dist_start_icet_kelvin.cdf(start_icet_kelvin)  # where in the dist are we?
             all_ice_x = start_ice_x * all_icet_degc_0to1  # where in the dist are we for all_ice?
             all_icet_degc = dist_all_icet_degc.ppf(all_ice_x)  # get the value from the distribution.

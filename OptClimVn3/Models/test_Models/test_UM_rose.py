@@ -484,7 +484,7 @@ class TestUKESM1ParamFunctions(unittest.TestCase):
             'cca_md_knob': 0.1, # UKESM1_1 default value
             'aparam': dict(aparam=0.07, liu_latent=0.00681), # UKESM1_1 default values for aparam and liu_latent. Note default value different from MO value.
             'rho_snow_fresh': dict(rho_snow_fresh=109.0,rho_snow_et_crit_delta=41.), # UKESM1_1 default value
-            'starticetkelvin': dict(start_icet_kelvin=263.15, all_icet_degc_0to1= 0.48717948717948645)  # UKESM1_1 default value
+            'starticetkelvin': dict(starticetkelvin=263.15, allicetdegc0to1= 0.48717948717948645)  # UKESM1_1 default value
 
         }
         default_nl_values= {
@@ -516,6 +516,7 @@ class TestUKESM1ParamFunctions(unittest.TestCase):
                                                    msg=f"{param} at index {idx} did not match reference value")
                     elif isinstance(value,dict):
                         self.assertEqual(len(value), len(expected))
+                        self.assertEqual(list(value.keys()), list(expected.keys()))
                         for key,v in value.items():
                             self.assertAlmostEqual(v, expected[key],
                                                    msg=f"{v} at  {key} did not match reference value {expected[key]}")
