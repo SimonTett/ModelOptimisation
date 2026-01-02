@@ -953,7 +953,6 @@ class UKESM1_params(Model):
             start_ice_x = dist_start_icet_kelvin.cdf(start_icet_kelvin)  # where in the dist are we?
             all_ice_x = start_ice_x * all_icet_degc_0to1  # where in the dist are we for all_ice?
             all_icet_degc = dist_all_icet_degc.ppf(all_ice_x)  # get the value from the distribution.
-
             return [(nl, v) for nl, v in zip(nls, [start_icet_kelvin, all_icet_degc])]  # return a list of tuples (NamelistVar, value) to set.
 
 
