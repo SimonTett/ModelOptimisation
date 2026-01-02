@@ -939,10 +939,10 @@ class UKESM1_params(Model):
                     else:
                         all_icet_degc_0to1 = all_ice_x/start_ice_x
                     if not (0.0 <= all_icet_degc_0to1 <= 1.0):
-                        raise ValueError(f'allicetdegc0to1 {allicetdegc0to1} not in range 0 to 1')
+                        raise ValueError(f'allicetdegc0to1 {all_icet_degc_0to1} not in range 0 to 1')
                     result = dict(starticetkelvin=start_icet_kelvin, allicetdegc0to1=all_icet_degc_0to1)  # return the values.
                 else:
-                    result = dict(starticetkelvin=starticetkelvin, allicetdegc=all_icet_degc)
+                    result = dict(starticetkelvin=start_icet_kelvin, allicetdegc=all_icet_degc)
                 return result # return the values.
 
             # values to set. Need to get the latent parameter allicedegc0to1 from the parameters.
