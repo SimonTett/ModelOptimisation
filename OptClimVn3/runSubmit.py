@@ -16,6 +16,10 @@ import optclim_exceptions
 import warnings
 import functools
 
+import dfols # needed for DFOLS stuff. Eventaully move into class defn.
+import warnings
+import random
+
 
 my_logger=logging.getLogger(f"OPTCLIM.{__name__}")
 
@@ -234,7 +238,7 @@ class runSubmit(SubmitStudy):
                  config_path: typing.Optional[pathlib.Path] = None,
                  next_iter_cmd: typing.Optional[typing.List[str]] = None):
         super().__init__(config, name, rootDir, refDir, models, model_name, config_path, next_iter_cmd)
-        self.trace:list[str] = []
+        self.trace:list[str] = [] # TODO remove this and prev_trace.
         self.prev_trace:list[str] = []
         # _logical_info holds information for per optimisation parameter info.
         # Currently, largely a bag of attributes which this class reaches into as it needs to.
@@ -269,6 +273,7 @@ class runSubmit(SubmitStudy):
         If None then will be set to 'error'
         :return: None
         """
+        raise NotImplementedError("No longer in use...")
         if test_nondetermin is None:
             test_nondetermin='error'
         allowed = runSubmit.test_nondetermin_status.__args__
@@ -908,7 +913,117 @@ class runSubmit(SubmitStudy):
         finalConfig = self.runConfig(scale=scale,transJacobian=jac)  # get the configuration.
         return finalConfig
 
-    def runDFOLS(self, scale=True,stop=False):
+    ## TODO make runDFOLS its own class.
+
+    # handy fns for runDFOLS. Once DFOLS has its own class these can be turned into methods.
+    def dfols_eval_db(self,
+                      scale: bool = True) -> typing.Optional[dfols.EvaluationDatabase]:
+        """
+        Create an EvaluationDatabase object for DFOLS using the current logical observations and costs.
+        See:
+           https://numericalalgorithmsgroup.github.io/dfols/build/html/userguide.html#using-initial-evaluation-database
+
+        Uses self.config.dfols_config()['evaluation_database'] which should contain:
+
+         parameters: Path to csv file of previous parameter values. Header should be param names, col 0 names
+         simulated_observations: Path to csv file of previous simulated obs. Header should be obs names, col 0 names
+         start_index: If specified then index of first row to use from csv files.
+           If None then use initParams. If minimum use minimum value from database.
+
+        :param scale: if True (default) apply scaling.
+        :return: dfols.EvaluationDatabase object or None if self.config.dfols_config()['evaluation_database'] not found
+        """
+        param_names = self.config.paramNames()
+        obs_names = self.config.obsNames()
+        transform= self.config.transMatrix(scale=scale)
+        eval_config = self.config.DFOLS_config().get('evaluation_database')
+        if eval_config is None:
+            return None
+        my_logger.info("Using evaluation database")
+        # get the parameter values by reading from csv file and reindex to get wanted params in right order.
+        params = pd.read_csv(eval_config['parameters'], index_col=0).reindex(param_names, axis=1)
+        if params.isnull().any().any():  # check params
+            raise ValueError("Some parameters in evaluation database are missing. Check parameter names.")
+        my_logger.debug(f"parameters shape: {params.shape} ")
+        obs = pd.read_csv(eval_config['simulated_observations'], index_col=0).reindex(obs_names, axis=1)
+        if obs.isnull().any().any():  # check obs
+            raise ValueError("Some observations in evaluation database are missing. Check observation names.")
+        my_logger.debug(f"Simulated_obs shape: {obs.shape} ")
+        trans_obs = [ self.transform_check(o, transform=transform, scale=scale, residual=True) for name, o in obs.iterrows()]
+        trans_obs = pd.DataFrame(trans_obs)
+        if trans_obs.isnull().any().any():  # check transformed obs
+            raise ValueError(
+                "Some transformed observations in evaluation database are NaN. Check transform matrix etc.")
+
+        # Work out how to start dfols.
+        how_to_start = eval_config.get('start_index', None)
+        my_logger.debug(f"start index: {how_to_start}")
+
+        init_params = self.config.beginParam()  # init params to match against if needed.
+        if how_to_start is None:  # use initParams
+            mask = (params == init_params).all(axis=1)  # maybe do close match???
+            # this will trigger an error in params differ. This is wanted behaviour!
+            idx = mask[mask].index[0] if mask.any() else None  # index of init_params in params
+
+        elif how_to_start == 'minimum':  # use minimum cost from database
+            cost =  (trans_obs ** 2).sum(axis=1)
+            idx = cost.idxmin()
+        else:  # use specified index
+            idx = how_to_start
+
+        # check that idx is in params (if not None)
+        if (idx is not None) and (idx not in params.index):
+            raise ValueError(f"Index {idx} not found in parameters")
+
+        # now create the evaluation database
+        eval_db = dfols.EvaluationDatabase()
+        count_start = 0
+        for index, row in params.iterrows():
+            if index == idx:
+                count_start += 1
+                if count_start > 1:
+                    raise ValueError(f"Start index {idx} found multiple times in evaluation database")
+                my_logger.info(f"DFOLS evaluation database: starting evaluation at index {index}")
+            eval_db.append(row.values, trans_obs.loc[index].values,make_starting_eval=(index==idx))
+        # check that we found the starting evaluation
+        if idx is None:  # No starting evaluation
+            my_logger.info("DFOLS evaluation database: no starting evaluation found; using default start")
+            eval_db.append(row.values, None,make_starting_eval=True)
+        elif count_start != 1:
+            raise ValueError(f"Start index {idx} not found in evaluation database")
+        else:  # we are OK and nothing to do.
+            pass
+
+        return eval_db
+
+    ## end of eval_db function
+
+    def dfols_write_final_config(self, solution, scale: bool = True):
+        """
+        Write out the final configuration after DFOLS has completed.
+        Uses runConfig to generate the configuration and then adds in DFOLS solution information.
+        Saves the configuration to a json file.
+        :param self:
+        :param solution: dfols solution object
+        :param scale: scaling or not
+        :return: final configuration saved to file.
+        """
+        tMat = self.config.transMatrix(scale=scale)
+        var_param_names = self.config.paramNames()
+        filename = self.rootDir / (self.config.fileName().stem + "_final.json")  # final config
+        best = pd.Series(solution.x, index=var_param_names)  # best soln from DFOLS
+        # now compute jacobian and wrap it up as a dataframe.
+        jacobian = solution.jacobian
+        jacobian = pd.DataFrame(jacobian, columns=var_param_names, index=tMat.index)
+        # create the final configuration
+        finalConfig = self.runConfig(scale=scale, add_cost=True, filename=filename, transJacobian=jacobian,
+                                     best=best)  # get final runInfo
+        solution.diagnostic_info.index = range(0, solution.diagnostic_info.shape[0])
+        finalConfig.dfols_solution(solution=solution)
+        finalConfig.save()  # save the config
+        return finalConfig
+
+    def runDFOLS(self, scale=True,stop=False) -> OptClimConfigVn3:
         """
         run DFOLS algorithm. It runs until new models need to be ran or DFOLS complets.
                 If new models are needed then runModelError will be raised.
@@ -917,7 +1032,8 @@ class runSubmit(SubmitStudy):
                 should trap that error and then run the necessary models using Submit.submit.
 
         :param scale (default True). If True scale data for transform matrix and in calculations of obs
-        :param stop If True stop the algorithm by setting 
+        :param stop If True stop the algorithm by setting maxfn to 1+current no of logical observations.
+
         See StudyConfig.scalings()
         It should not make any difference if scale is True or False. But if regularisation is done
         then it is better to have all (diagonal) elements of the covariance matrix have roughly the same mag
@@ -936,15 +1052,25 @@ class runSubmit(SubmitStudy):
             runs runCost & runConfig to provide  info. (See documentation of those methods for what they provide)
 
         """
-        import dfols
-        import warnings
-        import random
-        random.seed(123456)  # make sure rng as used by DFOLS takes same values every time it is run.
+
+
+
+        rng_seed = 123456 # will potentially run dfols twice so can get intermediate results from it.
+        random.seed(rng_seed)  # make sure rng as used by DFOLS takes same values every time it is run.
         configData = self.config
-        varParamNames = configData.paramNames()
+        var_param_names = configData.paramNames()
         dfols_config = configData.DFOLS_config()
-        test_nondetermin = configData.run_info().get("test_nondetermin")
-        start = configData.beginParam()
+        raise_error = dfols_config.get("raise_error",False)
+        if raise_error is None:
+            raise_error= False
+        # setup transform matrix and optFn
+        tMat = configData.transMatrix(scale=scale)
+        optFn = self.genOptFunction(transform=tMat, residual=True, raiseError=raise_error, scale=scale)
+
+        # deal with Evaluation database
+        x0 = self.dfols_eval_db(scale=scale) # will return evaluation database if key exists or None if it doesn't
+        if x0 is  None: # use beginaram to get intial values
+            x0 = configData.beginParam(paramNames=var_param_names).values # initial parameter values
         # Sensible defaults  for DFOLS -- which can be overwritten by config file
         userParams = {'logging.save_diagnostic_info': True,
                       'logging.save_xk': True,
@@ -954,43 +1080,51 @@ class runSubmit(SubmitStudy):
                       'interpolation.throw_error_on_nans': True,  # make an error happen!
                       }
 
-        prange = configData.paramRanges(paramNames=varParamNames)
+        prange = configData.paramRanges(paramNames=var_param_names)
         prange = (prange.loc['minParam',:].values,prange.loc['maxParam',:].values)
         # update the user parameters from the configuration.
         userParams = configData.DFOLS_userParams(userParams=userParams)
-        tMat = configData.transMatrix(scale=scale)  # scaling on transform matrix and in optfn  needs to be the same.
-        # hacky stuff for dfols
-        trap_two_evals = dfols_config.get("trap_two_evals",False) # deal with bad number of evals
-        if trap_two_evals is None:
-            trap_two_evals = False
+        rhobeg = dfols_config.get('rhobeg', 1e-1)
+        rhoend = dfols_config.get('rhoend', 1e-3)
 
-        raise_error = dfols_config.get("raise_error",False)
-        if raise_error is None:
-            raise_error= False
-        optFn = self.genOptFunction(transform=tMat, residual=True, raiseError=raise_error, scale=scale)
+
         if stop:
             dfols_config['maxfun']=len(self.logical_cost())+1
             self.update_history(f"DFOLS stopped with maxfun = {dfols_config['maxfun']}")
             # +1 allows cases that have been run but not added to logical obs/cost
             self.config.DFOLS_config(dfols_config) # store modified config
+
+        # Now actually run DFOLS
         try:
             with warnings.catch_warnings():  # catch the complaints from DFOLS about NaNs encountered...
                 warnings.filterwarnings('ignore')  # Ignore all warnings...
-                self.restart(test_nondetermin=test_nondetermin) # mark state for restart and test non deterministic behaviour.
-                solution = dfols.solve(optFn, start.values, do_logging=False,
+                solution = dfols.solve(optFn, x0, do_logging=False,
                                        objfun_has_noise=True,
                                        bounds=prange, scaling_within_bounds=True,
                                        maxfun=dfols_config.get('maxfun', 100),
-                                       rhobeg=dfols_config.get('rhobeg', 1e-1),
-                                       rhoend=dfols_config.get('rhoend', 1e-3),
+                                       rhobeg=rhobeg,
+                                       rhoend=rhoend,
                                        user_params=userParams)
 
         except np.linalg.linalg.LinAlgError:
-            # will remove the last case in self.trace and self.model_index if that happens.
-            # this is  a hack and hopefully DFOLS gets updated to avoid this.
             n_inst_models = len(self.models_to_instantiate())
-
             my_logger.info(f"Have just generated {n_inst_models} to instantiate")
+            neval = len(self.logical_cost())
+            if neval > 1: # got some evaluations
+                # Run DFOLS again with reduced number of fn evals to provide some diagnostic info.
+                random.seed(rng_seed)  # reset rng seed back to first value.
+                with warnings.catch_warnings():  # catch the complaints from DFOLS about NaNs encountered...
+                    warnings.filterwarnings('ignore')  # Ignore all warnings...
+                    solution = dfols.solve(optFn, x0, do_logging=False,
+                                           objfun_has_noise=True,
+                                           bounds=prange, scaling_within_bounds=True,
+                                           maxfun= len(self.logical_cost()), # should get it to terminate.
+                                           rhobeg=rhobeg,
+                                           rhoend=rhoend,
+                                           user_params=userParams)
+                # this will give diagnostic info from DFOLS now to use it.
+                # need to wrap the best sol and put in other information into the final results file.
+                finalConfig = self.dfols_write_final_config(solution,scale=scale)
             raise optclim_exceptions.submitModel("dfols failed with lin alg error")
             # this is how DFOLS tells us it got NaN which then triggers running the next set of simulations.
 
@@ -1000,18 +1134,8 @@ class runSubmit(SubmitStudy):
             print("dfols failed with flag %i error : %s" % (solution.flag, solution.msg))
             raise Exception("Problem with dfols")
 
-        # need to wrap the best sol and put in other information into the final results file.
-        filename= self.rootDir/(self.config.fileName().stem+"_final.json") # final config
-        best = pd.Series(solution.x, index=varParamNames) # best soln from DFOLS
-        # now compute jacobian and wrap it up as a dataframe.
-        jacobian = solution.jacobian
-        jacobian = pd.DataFrame(jacobian, columns=varParamNames, index=tMat.index)
-        # create the final configuration
-        finalConfig = self.runConfig(scale=scale, add_cost=True,filename=filename,transJacobian=jacobian,best=best)  # get final runInfo
-        solution.diagnostic_info.index = range(0, solution.diagnostic_info.shape[0])
-        finalConfig.dfols_solution(solution=solution)
-        print(f"DFOLS completed: Solution status: {solution.msg}")
-        finalConfig.save() # save the config
+        finalConfig = self.dfols_write_final_config(solution,scale=scale)
+
         return finalConfig
 
     def runGaussNewton(self, verbose=False, scale=True):
@@ -1153,7 +1277,6 @@ class runSubmit(SubmitStudy):
 
         # pySOT -- probably won't work without some work. conda install conda-forge pysot will install it.
         import pySOT
-        warnings.warn("No testing done for pysot")
         raise NotImplementedError('pysot not well implemented. ')
         configData = self.config
         optimise = configData.optimise().copy_files()  # get optimisation info

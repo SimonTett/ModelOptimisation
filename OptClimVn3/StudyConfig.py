@@ -2574,7 +2574,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
         begin = begin.fillna(standard)  # fill in any None values with standard values.
         # fill in any None values with standard values.
         if scale: # want to return params  in range 0-1
-            begin = (begin - range.loc['minParam', :]) / range.loc['rangeParam', :]
+            begin = (begin - param_range.loc['minParam', :]) / param_range.loc['rangeParam', :]
 
         # verify values are within range
         if scale:
