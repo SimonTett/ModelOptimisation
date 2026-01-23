@@ -941,11 +941,11 @@ class runSubmit(SubmitStudy):
             return None
         my_logger.info("Using evaluation database")
         # get the parameter values by reading from csv file and reindex to get wanted params in right order.
-        params = pd.read_csv(eval_config['parameters'], index_col=0).reindex(param_names, axis=1)
+        params = pd.read_csv(self.expand(eval_config['parameters']), index_col=0).reindex(param_names, axis=1)
         if params.isnull().any().any():  # check params
             raise ValueError("Some parameters in evaluation database are missing. Check parameter names.")
         my_logger.debug(f"parameters shape: {params.shape} ")
-        obs = pd.read_csv(eval_config['simulated_observations'], index_col=0).reindex(obs_names, axis=1)
+        obs = pd.read_csv(self.expand(eval_config['simulated_observations']), index_col=0).reindex(obs_names, axis=1)
         if obs.isnull().any().any():  # check obs
             raise ValueError("Some observations in evaluation database are missing. Check observation names.")
         my_logger.debug(f"Simulated_obs shape: {obs.shape} ")
@@ -1098,7 +1098,8 @@ class runSubmit(SubmitStudy):
         try:
             with warnings.catch_warnings():  # catch the complaints from DFOLS about NaNs encountered...
                 warnings.filterwarnings('ignore')  # Ignore all warnings...
-                solution = dfols.solve(optFn, x0, do_logging=False,
+                # TODO consider rewrtting this so a dict gets setup and passed in.
+                solution = dfols.solve(optFn, x0, do_logging=dfols_config.get('do_logging',False),
                                        objfun_has_noise=True,
                                        bounds=prange, scaling_within_bounds=True,
                                        maxfun=dfols_config.get('maxfun', 100),

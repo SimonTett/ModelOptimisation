@@ -13,5 +13,5 @@ pytest~=8.3
 metomi-rose==2.2.0 # avoid most recent version.
 f90nml~=1.4.3
 matplotlib # needed for plotting
-PqQt5 # needed for interactive plotting
+#PqQt5 # needed for interactive plotting
 
