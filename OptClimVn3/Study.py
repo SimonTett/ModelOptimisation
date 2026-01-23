@@ -38,7 +38,7 @@ class Study:
     model_index -- dict containing models indexed by model keys. 
     """
 
-    def __init__(self, config: OptClimConfigVn3,
+    def __init__(self, config: "OptClimConfigVn3",
                  name: typing.Optional[str] = None,
                  rootDir: typing.Optional[pathlib.Path] = None,
                  models: typing.Optional[typing.List[Model]] = None):
@@ -81,7 +81,7 @@ class Study:
                     raise ValueError(f"Got duplicate key {key}")
                 self.model_index[key] = model
 
-    def update_config(self, config: OptClimConfigVn3):
+    def update_config(self, config: "OptClimConfigVn3"):
         """
         Add config to self and derive what needed from config to include in self.
 
@@ -121,14 +121,15 @@ class Study:
             f" Status: {status} Model_Types:{model_types}"
         return s
 
-    def key_for_model(self, model: Model, fpFmt: str = '%.4g') -> str:
+    @classmethod
+    def key_for_model(cls,model: Model, fpFmt: str = '%.4g') -> str:
         """
         Generate key from model
         :param model: model for which key gets generated. Uses parameters to generate the key.
         :param fpFmt: floating point format for floats
         :return: key
         """
-        key = self.key(model.attrs_for_key(), fpFmt=fpFmt)  # Generate key.
+        key = cls.key(model.attrs_for_key(), fpFmt=fpFmt)  # Generate key.
         return key
 
     @staticmethod
@@ -153,12 +154,31 @@ class Study:
             elif isinstance(v,str):
                 keys.append(v)  # string so just append
             elif isinstance(v,pathlib.PurePath): # pathlib object # Path inherits from PurePath
-                keys.append(str(v))  # convert path to string
+                #keys.append(str(v))  # convert path to string
+                keys.append(v.as_posix())
             else:  # just append the value.
                 keys.append(repr(v))  # use the object repr method.
 
         keys = tuple(keys)  # convert to tuple
         return str(keys)  # and then to a string.
+    @staticmethod
+    def key_to_dict(key:str) -> dict[str,str]:
+        """
+        Convert key back to dict though values will be strings.
+         A bit of a hack and really only there to support updating keys from old versions...
+        :param key: string to be converted back to dict
+        :return: dict of parameters & str repr of values.
+        """
+        # convert key back to dict.
+
+        values = [k[1:-1] for k in key[1:-1].split(', ')]
+        # remove any ' in values
+        values = [v.replace("'","") for v in values]
+
+        if len(values) % 2 != 0:
+            raise ValueError(f'Expected even number of keys, got {len(values)}')
+        result = dict(zip(values[0::2], values[1::2]))
+        return result
 
     def get_model(self, parameters: typing.Mapping, fpFmt: str = '%.4g') -> typing.Optional[Model]:
         """
@@ -188,11 +208,13 @@ class Study:
         files = direct.glob("**/" + pattern)
         self.read_model_configs(files)
 
-    def read_model_configs(self, path_list: list[pathlib.Path]):
+    def read_model_configs(self, path_list: list[pathlib.Path]) -> typing.List[Model]:
         """
         Read model configurations from path_list and store them in self.model_index
           key will be generated from the model parameters and value will be the model.
+        :param path_list: list of paths to read model configurations from.
         :return: models read in
+
         """
         models = []
         for f in path_list:
@@ -308,7 +330,7 @@ class Study:
                   jacobian:typing.Optional[pd.DataFrame] = None,
                   jacobian_comment:typing.Optional[str] = None,
                   hessian:typing.Optional[pd.DataFrame] = None,
-                  hessian_comment:typing.Optional[str] = None) -> OptClimConfigVn3:
+                  hessian_comment:typing.Optional[str] = None) -> "OptClimConfigVn3":
         """
         **copy** self.config and add parameters and obs to it. Modified config is returned
         :param filename - pathlib to file (or None). Will override filepath in new config

@@ -113,6 +113,15 @@ if verbose == 1:
 if verbose > 1:
     level=logging.DEBUG
 
+## set up the default logging.
+fmt = '%(levelname)s:%(name)s:%(funcName)s: %(message)s'
+logging.basicConfig(
+    level=level,
+    stream=sys.stdout,
+    format=fmt,
+    force=True
+)
+
 my_logger = genericLib.setup_logging(
     level=level,
     log_config=configData.logging_config()

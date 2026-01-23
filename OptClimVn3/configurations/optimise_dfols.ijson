@@ -7,8 +7,7 @@
   "mu": 0.01,
   "mu_comment": "The inverse weighting given to the constraint -- it gets wt 1/(2mu). If Null then no constraint should be applied",
   "dfols":{
-  "growing.ndirs_initial": null,
-  "growing.ndirs_initial_comment": "the number of perturbations on first iteration. If not specified then will make Nparm perturbtions",
+
   "rhobeg": 0.18,
   "rhobeg_comment": "Radius of parameter trust region at start",
   "rhoend": 0.1,
@@ -19,8 +18,8 @@
   "scaling_within_bounds_comment": "Scale internally so all in range 0 to 1",
   "raise_error":null,
   "raise_error_comment":"If True then allow optimise function to raise error rather than DFOLS. Default is false",
-  "trap_two_evals":true,
-  "trap_two_evals_comment":"If true then if dfols generates two evaluations (which is should not) then the last one will be ignored. Default value is False.",
+  "do_logging": true,
+  "do_logging_comment": "If true then dfols logs",
   "namedSettings": {
       "logging.save_poisedness": true,
       "logging.save_poisedness_comment": "whether or not  to calculate geometry statistics as part of diagnostic information",
@@ -38,6 +37,8 @@
       "noise.quit_on_noise_level_comment": "quit/restart if all trial evaluations are within noise level of last iteration",
       "general.check_objfun_for_overflow": false,
       "general.check_objfun_for_overflow_comment": "Presumably check that function behaves itself",
+      "growing.ndirs_initial": null,
+      "growing.ndirs_initial_comment": "the number of perturbations on first iteration. If not specified then will make Nparm perturbtions",
       "slow.history_for_slow": 2,
       "slow.history_for_slow_comment": "No of past successful iterations to look at to decide if slow or not",
       "slow.thresh_for_slow": 0.1,

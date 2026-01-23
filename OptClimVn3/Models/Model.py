@@ -170,11 +170,10 @@ class Model(ModelBaseClass, journal):
     @classmethod
     def load_model(cls, model_path: pathlib.Path):
         """
-        Load a configuration
+        Load a configuration and update paths if needed.
         :param model_path:  where the configuration is stored
-          config_path will be set to model_path
-          model_dir will be set to model_path.parent.
-          warnings given if these are changes.
+
+
         :return: loaded model
         """
         model = super().load(model_path)  # Using json "magic". See generic_json for what actually happens.
@@ -186,6 +185,7 @@ class Model(ModelBaseClass, journal):
         if not model.model_dir.samefile(model_path.parent):
             my_logger.warning(f"Model {model} model_dir changed to {model_path.parent} ")
             model.model_dir = model_path.parent # update directory with where we actually loaded it from.
+
         return model
 
 
@@ -359,8 +359,9 @@ class Model(ModelBaseClass, journal):
                     my_logger.debug(f'Found parameter {parameter} in {bcls.__name__}')
                     break # exit the loop as we have found the parameter.
         if stuff is None:
-            raise KeyError(f"Parameter {parameter} not found.\n Allowed parameters are: " +
-                           " ".join(cls.known_parameters()))
+            params_known=sorted(cls.known_parameters())
+            raise KeyError(f"Parameter {parameter} not found.\n Allowed parameters are: " +"\n"+
+                           " ".join(params_known))
         elif not isinstance(stuff, list):
             raise ValueError(f"Parameter {parameter} did not return list but returned {stuff}")
         return stuff
@@ -521,7 +522,14 @@ class Model(ModelBaseClass, journal):
 
         for parameter in set(parameters):  # set means we iterate over unique parameters
             try:
-                result[parameter] = self.read_param(parameter)
+                param = self.read_param(parameter)
+                if isinstance(param,dict): # got multiple values back
+                    result.update(param) # update the result
+                elif parameter in result:
+                    my_logger.warning(f"Already got {parameter}. Skipping")
+                    pass
+                else:
+                    result[parameter] = param
             except (KeyError, FileNotFoundError):
                 if fail:
                     raise
@@ -1071,69 +1079,59 @@ class Model(ModelBaseClass, journal):
         return None
 
 
-    def copy(self, direct: pathlib.Path,
-             extra_files: typing.Optional[typing.List[pathlib.Path | str]] = None,
-             link_paths: typing.Optional[typing.List[pathlib.Path | str]] = None):
+    def copyConfig(self, direct: pathlib.Path,
+             extra_files: typing.Optional[list[pathlib.Path]] = None,
+             update_paths: bool = True) -> "Model":
         """
-        Copy model to new place
+        Copy Model to a new directory. Different Model classes may well want to override this by adding their own extra_files
+        This basic version will only copy the model config file and the post-processing output file.
+           All files must in self.model_dir
+        :param direct: directory where Model  is to be copied. Will be created if it does not exist
+        :param extra_files: list of extra files (paths provided relative to self.model_dir) to be copied to new directory.
 
-        :param direct: Where new model_dir is
-        :param extra_files: Extra files to be copied
-        :param link_paths: Paths to be linked (rather than copied). Useful, for large files that will be read.
-           On some OS's links are only allowed if you are on the same filesystem.
-        :return: Modified model.
+        :param update_paths -- If True then any path parameters will be updated to reflect new directory structure.
+           If False and update_parameters is Truety then ValueError will be raised.
+        :return: Copied Model. Will copy only Model config & post process unless extra_files provided.
+
         """
-        if extra_files is None:
-            extra_files = []
-        if link_paths is None:
-            link_paths = []
 
-        if direct.samefile(self.model_dir):  # Check we are not wiping out ourselves.
-            raise ValueError(f"Copying {direct} to {self.model_dir} which is the same path")
+        # check tgt direct path is abs and if not make it abs.
+        if not direct.is_absolute():
+            direct = pathlib.Path.cwd() / direct
+            my_logger.info("Made direct absolute to " + str(direct))
+        direct.mkdir(parents=True, exist_ok=True)  # create the directory if needed.
 
-        # make needed directories. Do in one go so to speed things up (a bit).
-        dirs_to_make = {direct} | \
-                       {(direct / p).parent for p in extra_files} | \
-                       {(direct / p).parent for p in link_paths}  # unique set of directories needed
-        for direct in dirs_to_make:
-            direct.mkdir(exist_ok=True, parents=True)  # make any needed directories.
-            my_logger.debug(f"Created {dir}")
 
-        cp_model = copy.deepcopy(self)
-        cp_model.model_dir = direct
-        cp_model.config_path = direct / self.config_path.relative_to(self.model_dir)
+        files_to_copy = [self.config_path.relative_to(self.model_dir), self._post_process_output]
 
-        # copy extra paths + post_process_output
-        paths_to_copy = [self.model_dir / self._post_process_output] + [self.model_dir / p for p in extra_files]
-        for path in paths_to_copy:
-            if path.exists():
-                cp_path = direct / path.relative_to(self.model_dir)  # where it goes
-                shutil.copy2(path, cp_path)  # copy it
-                msg = f"Copied {path} to {cp_path}"
-                my_logger.debug(msg)
-                cp_model.update_history(msg)
+        if extra_files is not None:
+            files_to_copy = files_to_copy + extra_files
 
-        # Do links. Note potential problems with filesystems. Will fix if they are a problem.
-        for p in link_paths:
-            path = self.model_dir / p
-            new_path = direct / p
-            path.hardlink_to(new_path)
-            msg = f"Linked {new_path} to {path}"
-            my_logger.debug(msg)
-            cp_model.update_history(msg)
+        files_copied = genericLib.copy_files(self.model_dir, direct, files_to_copy)
+        cp_model = copy.deepcopy(self)  # make a copy of self
+        miss_files = set(files_to_copy) - set(files_copied)
+        if len(miss_files) > 0:
+            my_logger.warning(f"{miss_files} missing and not copied")
 
-        cp_model.update_history(f"Copied from {self.config_path} to {cp_model.config_path}")
-        cp_model.dump_model()
+        cp_config_path = direct / (self.config_path.relative_to(self.model_dir))
+        if update_paths:
+
+            cp_model.update_history(f'Copied {len(files_copied)} from {self.model_dir} to {direct}')
+            cp_model.model_dir = direct
+            cp_model.config_path = cp_config_path
+            cp_model.update_history(f"Updated model_dir and config_path")
+
+        cp_model.dump(cp_config_path) # dump it out! (needed as have changed things so orig copy will have old values)
         return cp_model
 
     def archive(self,
                 archive: tarfile.TarFile,
-                rootDir: pathlib.Path,
+                root_dir: pathlib.Path,
                 extra_files: typing.Optional[typing.List[pathlib.Path | str]] = None):
         """
 
         :param archive: archive to be added to
-        :param rootDir: root to which all files (in archive file) are stored relative to.
+        :param root_dir: root to which all files (in archive file) are stored relative to.
            If not None, then the name in the archive will be relative to this path.
         :param extra_files -- extra model things to archive. Should be relative to self.model_dir
         :return: None
@@ -1147,24 +1145,21 @@ class Model(ModelBaseClass, journal):
         with tarfile.open(archive_file, "w") as archive:
             model.archive(archive, rootDir=pathlib.Path("my_root_dir")
         """
-        if extra_files is None:
-            extra_files = []
+
         # dump the model. TODO: Make dump take a fp or a path. If it has a fileptr then just write to it.
         with tempfile.TemporaryDirectory() as tmpdir:
             # dump the model (but no change to internal values)
-            tmpfile = pathlib.Path(tmpdir) / self.config_path.name
-            self.dump(tmpfile)
-            arc_path = self.config_path.relative_to(rootDir)
-            archive.add(tmpfile, arc_path)
-            my_logger.debug(f"Added {self} to archive as {arc_path}")
+            # handle models that were read in and so, potentially, outside rootDir
+            tmpdir_pth = pathlib.Path(tmpdir) / self.config_path.name
+            self.copyConfig(direct=tmpdir_pth, extra_files=extra_files,update_paths=False)
 
-        paths_to_archive = [self.model_dir / self._post_process_output] + [self.model_dir / p for p in extra_files]
-
-        for path in paths_to_archive:
-            arc_path = path.relative_to(rootDir)
-            if path.exists():
-                archive.add(path, arc_path)  # archive the file with name relative to root
+            for path in tmpdir_pth.rglob("*"): # get all files in the copied  model dir.
+                if path.is_dir():
+                    continue  # skip dirs
+                arc_path = path.relative_to(tmpdir_pth)
+                archive.add(path, arc_path)
                 my_logger.debug(f"Added {path} to archive as {arc_path}")
+
 
     def reprocess(self, post_process: typing.Optional[dict] = None) -> pd.Series:
         """
@@ -1530,26 +1525,22 @@ class Model(ModelBaseClass, journal):
                                remote_machine:typing.Optional[str]=None,
                                remote_model_dir:typing.Optional[pathlib.PurePath]=None) -> typing.Optional[list[list[str|pathlib.PurePath]]]:
         """
-        Generate cmd to install on remote machine. Use run_cmd to actually do it.
+        Generate list of cmds to install on remote machine. Use run_cmd to actually do it.
         WIll return None if no remote machine or remote_dir
         :param remote_machine: remote machine -- remote machine to install on.
         :param remote_model_dir: remote directory to install to.
         if either remote_machine or remote_model_dir is None then nothing is done and None is returned.
-        :param local_root_dir: local root dir. If provided and self.model_dir is relative to this then that part
-         will be replaced when generating remote path. Otherwise, only self.model_dir.name is used.
-         For example if local_root_dir is /home/user/models and self.model_dir is /home/user/models/model1
-         then on remote system remote_model_dir/model1 will be used.
-          self.model_dir will be copied to remote_machine:remote_dir
-         uses rsync to copy model directory to remote system.
-        If remote_dir is None then nothing is done and True is returned.
-        First creates remote_dir on remote_machine using ssh cmd
-        Assumed that rsync will create remote_dir if it does not exist.
+        Commands returned are
+        1) Create remote dir
+        2) rsync model_dir to remote_dir
+
         :raises ValueError: if remote_dir is not Nome and not a PurePath or remote_dir is not None and not a str
 
         Thoughts -- could work with remote_machine not set by just returning cmd to rsync to remote_model_dir (with potential path adjustment).
         But for now require both to be set.
-         A more generic way of doing this is to have a script that gets runs to do the installation.
-           That then offloads the details of how to do the install to that script. For example could use rsync or scp or globus
+         A more generic way of doing this is to have a script that gets ran to do the installation.
+           That then offloads the details of how to do the install to that script.
+           For example could use rsync or scp or globus
 
         :return: list of commands to run. Each element is a  list of strings/purePaths to run.
         """
@@ -1574,6 +1565,30 @@ class Model(ModelBaseClass, journal):
 
         return [cmd0,cmd]
 
+    def update_params(self, parameters:typing.Optional[list[str]]=None,
+                      update:bool = True) -> pd.Series:
+        """
+        Update the parameters in a model by reading them from disk.
+        Model is not written to disk.
+        :param parameters: parameters to update. Existing parameters will be updated too.
+        :param update: If True then update the model. If False just return the updated parameters.
+        :return: Pandas series containing updated values
+        """
+        # check been instantiated!
+        if self.is_instantiable():
+            raise ValueError("Model not instantiated. Cannot update parameters.")
+        if parameters is None:
+            parameters = []
+        params_to_update = set(list(self.parameters.keys())+parameters) # list of unique params
+        new_params = self.read_params(list(params_to_update), fail=True) # read the param values
+        my_logger.debug(f'Updated params are {params_to_update}')
+        if update:
+            self.parameters.update(new_params) # update
+            self.update_history(f"Updated parameters {params_to_update}")
+        result = pd.Series(new_params).rename(self.name)
+
+
+        return result
 
 
 Model.register_class(Model)  # register ourselves!

@@ -13,6 +13,8 @@ import numpy.testing as nptest
 import pandas as pd
 import pandas.testing as pdtest
 import json
+
+import Model
 import StudyConfig
 import optclim_exceptions
 import runSubmit
@@ -33,12 +35,34 @@ def fake_run(rSubmit: runSubmit, scale: bool = True) -> typing.Callable:
     return fake_function
 
 import engine
-
+import archive_study
 class testRunSubmit(unittest.TestCase):
     """
     Test cases for runSubmit. There should be one for every method in runSubmit.
 
     """
+    @classmethod
+    def setUpClass(cls):
+        """
+        Class level setup
+        """
+        tmpDir = tempfile.TemporaryDirectory()
+        tdir = pathlib.Path(tmpDir.name)
+        arc, cfg = archive_study.archive_study.extract_archive(
+            runSubmit.runSubmit.expand('$OPTCLIMTOP/OptClimVn3/test_data/archive_dfols4p.tar.gz'),
+            direct=tdir)
+        cls.extract_runSubmit = cfg # store for use in tests.
+        cls._tmpDir = tmpDir
+
+    @classmethod
+    def tearDownClass(cls):
+        # cleanup
+        cls._tmpDir.cleanup()
+        del cls.extract_runSubmit
+
+
+
+
 
 
     def setUp(self):
@@ -471,6 +495,249 @@ class testRunSubmit(unittest.TestCase):
         #    expect to be within 0.01% of the expected soln. If random covariance done then this will be a
         # lot bigger
         pdtest.assert_series_equal(best, expectparam, rtol=5e-3)
+        #
+
+
+
+
+    def test_dfols_eval_db(self):
+        """
+        Test dfols_eval_db
+
+        Will need some values for obs and params
+        Tests:
+        1) actually run, has values and start is same as begin.
+        2) Set idx to minimum. Should get min value back as starting values
+        3) set idx to some  value and this should be the starting value.
+
+
+        eval_db methods -- from use of dir and running..
+         append -- add in values of x and fn(x) to db
+         apply_scaling ??
+        get_eval -- get eval values for given idx
+        get_rx - returns the obs for given idx
+        get_starting_eval_idx -- return the starting index
+        get_x -- return the x (param) values for given idx
+        select_starting_evals -- ?? prob for internal use
+        set_starting_eval -- ?? set the starting  eval. Prob for internal use!
+        starting_eval -- another way of getting the starting eval
+        :return:
+        """
+        import dfols
+        from numpy import random
+        from genericLib import fake_fn # need the generic lib version
+        import logging
+        import sys
+
+        #1) create fake obs and params. Will just make them random for testing purposes.
+        # very very tedious to setup.  Good to work out how to do this in a more sensible way.
+        rng_seed = 987654321
+        rng = random.default_rng(rng_seed)
+        config = copy.deepcopy(self.config)  # copy the config
+        param_names = config.paramNames()
+        # make 6 sets of params  all with different values using the rng between 0 and 1
+        n_set = len(param_names) # how many do we want?
+        params = rng.uniform(low=0.4, high=0.6, size=(n_set,len(param_names))) # set up param values near 0.5
+        params = pd.DataFrame(params, columns=param_names)
+        prange = config.paramRanges()
+        params = params*prange.loc['rangeParam']+prange.loc['minParam']
+        obs = [fake_fn(self.config,prow.to_dict()).rename(name) for name,prow in params.iterrows()]
+        obs = pd.DataFrame(obs)
+
+        tgt = config.targets(scale=False) # stick to SI units
+        obs += tgt
+
+
+        # now have "simulated" obs and params that go with them,
+        # Note these obs do not make much physical sense
+
+        # dump arrays to file.
+        param_file = self.rootDir / 'test_params.csv'
+        obs_file = self.rootDir / 'test_obs.csv'
+        params.to_csv(param_file)
+        obs.to_csv(obs_file)
+
+        eval_db_dict = dict(
+            parameters=str(param_file),
+            simulated_observations=str(obs_file)
+        )
+        config.DFOLS_config()['evaluation_database'] = eval_db_dict
+
+
+        # test 1. Running works and start idx == 7 as new idx.
+        rSubmit = copy.deepcopy(self.rSubmit)
+        rSubmit.config = config
+        eval_db = rSubmit.dfols_eval_db(scale=True)
+        self.assertEqual(eval_db.get_starting_eval_idx(),n_set)
+
+        # test 2. set idx to min and get back min params
+        # FIXME this test is failing -- need to investigate. Get 13 when should get 9.
+        trans_obs = obs - tgt
+        scales = config.scales()
+        trans_obs *= scales  # scale obs
+        tMat = config.transMatrix(scale=True)
+        trans_obs = trans_obs @ tMat.T  # get transformed obs and then work out cost
+        cost = (trans_obs ** 2).sum(axis=1)
+        min_indx = cost.idxmin()
+        eval_db_dict = dict(
+            parameters=str(param_file),
+            simulated_observations=str(obs_file),
+            start_index='minimum'
+
+        )
+        config.DFOLS_config()['evaluation_database'] = eval_db_dict
+        eval_db = rSubmit.dfols_eval_db(scale=True)
+        self.assertEqual(eval_db.get_starting_eval_idx(),min_indx)
+
+        # test 3 specifiy an index.
+        indx=3
+        eval_db_dict = dict(
+            parameters=str(param_file),
+            simulated_observations=str(obs_file),
+            start_index=indx
+
+        )
+        config.DFOLS_config()['evaluation_database'] = eval_db_dict
+        eval_db = rSubmit.dfols_eval_db(scale=True)
+        self.assertEqual(eval_db.get_starting_eval_idx(),indx)
+
+        ## run dfols with evaluation_databse. Need to run dfols directly to get values.
+        # Doing this here as using runSubmit.runDFOLS is very slow (probably due to file IO).
+        scale = True  # applying scaling or not. Need to apply consistently
+
+        configData = copy.deepcopy(self.config)
+
+        # Set begin to max value.
+        maxP = configData.paramRanges().loc['maxParam', :]
+        begin = configData.beginParam(maxP)  # can truncate here using .iloc[0:x] if wanted.
+        obs = configData.obsNames()
+        nobs = len(obs)
+        # for expected params should get back array close to 0
+        # run DFOLS "naked"
+        # set up DFOLS
+        logging.basicConfig(
+            stream=sys.stdout,
+            level=logging.DEBUG,
+            format='%(asctime)s %(levelname)s %(name)s %(message)s'
+        )
+        dfols_config = configData.DFOLS_config()
+        dfols_config['rhobeg'] = 5e-3
+        dfols_config['rhoend'] = 1e-3
+        dfols_config['do_logging'] = True
+
+        config_dfols = {k:v for k,v in dfols_config.items() if not k.endswith('_comment') }  # invert for DFOLS
+        config_dfols.pop('namedSettings')
+        config_dfols.pop('raise_error')
+
+        # general configuration of DFOLS -- which can be overwritten by config file
+        userParams = {'logging.save_diagnostic_info': True,
+                      'logging.save_xk': True,
+                      'logging.save_rk':True,
+                      'noise.additive_noise_level': nobs * 1e-4,  # upper est of noise.
+                      'general.check_objfun_for_overflow': False,
+                      'init.run_in_parallel': False,
+                      'interpolation.throw_error_on_nans': True,  # make an error happen!
+                      "logging.n_to_print_whole_x_vector": 20,
+                      'noise.quit_on_noise_level': None,
+                      'noise.additive_noise_level': nobs * 1e-4,
+                      }
+
+        # update the user parameters from the configuration.
+
+        userParams = configData.DFOLS_userParams(userParams=userParams)
+        # and update the config...
+        configData.DFOLS_config(dfols_config)
+        configData.DFOLS_userParams(updateParams=userParams)
+
+        ## directly run dfols
+        np.random.seed(123456)  # make sure RNG is initialised to same value for first eval of dfols.
+        # This should be the same seed as used in runDFOLS
+        tgt = configData.targets(scale=scale)
+        Tmat = configData.transMatrix(scale=scale)
+        param_names = configData.paramNames()
+        obs_names = configData.obsNames()[0:len(param_names)] # truncate obs so problem is not overdetermined.
+        configData.obsNames(obs_names) # reset obsNames
+
+
+        # use a very simple optimisation function to test the eval db
+        # Note that the std fake_fn seems to give some odd results here.
+        def fn_opt(param_v, config):
+            pDict = dict(zip(param_names, param_v))
+            params = pd.Series(pDict)
+            param_range = config.paramRanges()
+            # scale params
+            scale_p = (params - param_range.loc['minParam']) / param_range.loc['rangeParam']
+            sim_obs = ((scale_p - 0.5) ** 2) * 1000.
+            sim_obs.index = [f'observation_{i}' for i in range(len(sim_obs))]
+
+            return sim_obs
+
+        prange = configData.paramRanges(paramNames=param_names)
+        minP = prange.loc['minParam', :].values
+        maxP = prange.loc['maxParam', :].values
+        bounds = (minP, maxP)
+        solution = dfols.solve(fn_opt, begin.values,argsf=(configData,),bounds=bounds,
+                               **config_dfols
+                               , user_params=userParams
+                               )
+
+        if solution.flag not in (solution.EXIT_SUCCESS, solution.EXIT_MAXFUN_WARNING):
+            print("dfols failed with flag %i error : %s" % (solution.flag, solution.msg))
+            raise Exception("Problem with dfols")
+
+
+        shutil.rmtree(self.rootDir)  # clean out rootdir
+        self.rootDir.mkdir(parents=True, exist_ok=True)
+        params_file = self.rootDir / 'params.csv'
+        obs_file = self.rootDir / 'obs.csv'
+        # construct the params and obs...
+        param_names = configData.paramNames()
+        # generate intiatial and perturbation values
+        ## now try using the evaluation database
+        # but we need to add in the initial "jacobian" calculations to the database
+        begin_scale = configData.beginParam(scale=True)
+        pert_v = pd.Series(0.18, index=begin_scale.index)
+        pert_v = pert_v.where(begin_scale < 0.5, -0.18)
+        jac_evals =  [
+            begin_scale.where(begin_scale.index != idx, begin_scale[idx] + v).rename(index + 1)
+            for index, (idx, v) in enumerate(pert_v.items())]
+        jac_evals = pd.DataFrame(jac_evals)
+        # unscale the data
+        pranges = configData.paramRanges()
+        minP = pranges.loc['minParam', :]
+        maxP = pranges.loc['maxParam', :]
+        jac_evals = jac_evals * (maxP - minP) + minP  # this is now unscaled jacobian points.
+
+        sim_obs = [fn_opt(row.values,configData) for _, row in jac_evals.iterrows()]
+        sim_obs += [fn_opt(row,configData)  for row in solution.diagnostic_info.xk]
+        sim_obs = pd.DataFrame(sim_obs)
+        sim_obs.columns= obs_names
+        params = pd.DataFrame([v for v in solution.diagnostic_info.xk])
+        params.columns = jac_evals.columns
+        params = pd.concat([jac_evals,params], axis=0)
+        params.index = range(params.shape[0])
+        sim_obs.index = range(params.shape[0]) # hopefully triggers error if size wrong
+
+        params.to_csv(params_file)
+        sim_obs.to_csv(obs_file)
+
+        eval_db_dict = dict(
+            parameters=str(params_file),
+            simulated_observations=str(obs_file),
+            start_index=int(params.iloc[-1].name)
+        )
+        config = copy.deepcopy(configData)
+        config.DFOLS_config()['evaluation_database'] = eval_db_dict
+        config.DFOLS_config()['rhobeg']=0.01  # smaller rhobeg.
+        rSubmit = runSubmit.runSubmit(config, 'test_DFOLS2',
+                                      rootDir=self.rootDir, refDir=self.refDir)
+        with self.assertRaises(optclim_exceptions.submitModel) as context:
+            finalConfig = rSubmit.runDFOLS(scale=scale)  # run it
+        # should be trying to run a single new case.
+        self.assertEqual(1,len(rSubmit.models_to_instantiate()),msg=f'Expect one model to be created. rhobeg = {rSubmit.config.DFOLS_config()["rhobeg"]}')
+        # evaluate the values we got!
+        params = list(rSubmit.models_to_instantiate()[0].parameters.values())
+        sim_obs_eval = fn_opt(params,config)
 
 
     @unittest.mock.patch.object(engine.sge_engine,'job_status', autospec=True, return_value='notFound')
@@ -908,6 +1175,77 @@ class testRunSubmit(unittest.TestCase):
         pdtest.assert_index_equal(got.index, expected_obs_df.index)
         # no need to test normalised versions as that is done above.
 
+    def test_update_logical_params(self):
+        """
+        Test that update_logical_params works as expected.
+
+        Test cases:
+          1) With set of parameters returns pandas series with new values.
+             Getting the parameters for the specified name gives same values
+
+        """
+        ## setup
+
+        run_submit = copy.deepcopy(self.extract_runSubmit)
+        name ='I3_i0'
+        params = run_submit.logical_params().loc[name]
+
+        new_expected = dict(a_ent_2=0.056,cape_timescale=3600.0)
+
+        update_params = params.index.to_list() + list(new_expected.keys())
+        expected_params = pd.concat([params,pd.Series(new_expected)]).rename(params.name)
+        got_params = run_submit.update_logical_params(name,parameters=update_params)
+        expected_params = expected_params.reindex(got_params.index)
+        self.assertTrue(got_params.equals(expected_params),msg='pandas series differ')
+
+        ## test get an error if models don't have same parameter values...
+        # which means modifying the underlying model...
+        models = run_submit.logical_models(name) # is a dict of models
+        k = list(models.keys())[1]
+        models[k].set_params(dict(a_ent_2=0.057),backup=False)
+        models[k].update_params()
+        with self.assertRaises(ValueError):
+            run_submit.update_logical_params(name,parameters=update_params)
+
+        # would be good to have a case with single model run....
+
+
+    def test_copyConfig(self):
+        # test that copy method works correctly
+        tmpDir = tempfile.TemporaryDirectory()
+        tmp_dir = pathlib.Path(tmpDir.name)
+        run_submit = copy.deepcopy(self.extract_runSubmit)
+        copy_dir =tmp_dir/'copy_test'
+        run_submit_copy = run_submit.copyConfig(copy_dir)
+        self.assertIsInstance(run_submit_copy,runSubmit.runSubmit)
+        self.assertEqual(run_submit.config, run_submit_copy.config)
+        # check logical info models consistent with model_info
+        for name, model_dct in run_submit_copy._logical_info.models.items():
+            for model_name, model in model_dct.items():
+                key = run_submit_copy.key_for_model(model)
+                self.assertIs(run_submit_copy.model_index[key],model,msg=f'{model_name}:{model} with key:{key} not same as in model_index')
+                self.assertIsInstance(run_submit_copy.model_index[key],Model.Model)
+
+
+
+
+
+    def test_from_dict(self):
+        """
+        Test from_dict method.
+        Runs it and tests that rSubmit._logical_info.models exists and are lists of keys which exist in the model_info .
+        :return:
+        """
+        rSubmit =  copy.deepcopy(self.extract_runSubmit)
+        dct = rSubmit.to_dict() #
+        dct['_logical_info'] = runSubmit.LogicalInfo.from_dict(dct['_logical_info'].to_dict()) # magic needed for LogicalInfo
+        new_rSubmit = runSubmit.runSubmit.from_dict(dct)
+        self.assertIsInstance(new_rSubmit,runSubmit.runSubmit)
+        self.assertEqual(rSubmit,new_rSubmit) # FIXME. Failing here as model reference types differ. rSubmit -- it is posic path, while new_rSubmit it is pureWindowsPath
+
+
+
+
 class TestRunParams(unittest.TestCase):
 
     def setUp(self):
@@ -1002,6 +1340,8 @@ class TestRunParams(unittest.TestCase):
 
 
 
+
+
 class TestLogicalInfo(unittest.TestCase):
     """
     Test the logical_info method of runSubmit class.
@@ -1010,6 +1350,27 @@ class TestLogicalInfo(unittest.TestCase):
     simulates model runs, and verifies that the logical_info method returns the expected DataFrame.
     """
 
+    @classmethod
+    def setUpClass(cls):
+        """
+        Class level setup
+        """
+        tmpDir = tempfile.TemporaryDirectory()
+        tdir = pathlib.Path(tmpDir.name)
+        arc, cfg = archive_study.archive_study.extract_archive(
+            runSubmit.runSubmit.expand('$OPTCLIMTOP/OptClimVn3/test_data/archive_dfols4p.tar.gz'),
+            direct=tdir) # quite slow -- extract the archive
+        cls.extract_runSubmit = cfg  # store for use in tests.
+        cls._tmpDir = tmpDir
+
+    @classmethod
+    def tearDownClass(cls):
+        # cleanup
+        cls._tmpDir.cleanup()
+        del cls.extract_runSubmit
+    def setUp(self):
+
+        self.run_submit = copy.deepcopy(self.extract_runSubmit)
 
 
     def test_logical_name(self):
@@ -1053,5 +1414,47 @@ class TestLogicalInfo(unittest.TestCase):
         self.assertEqual(name6, 'I1_i0')
         # and check that .parameters is a three member dict.
         self.assertEqual(len(logical_info.parameters), 3)
+
+    def test_update_params(self):
+        """
+        Test that update_params works correctly.
+        Tests are:
+          Create logical_info and add three param sets.
+          Modify one of the param sets and call update_params
+          Check that the parameters have been updated correctly.
+        """
+        param_list = [dict(CT=1e-4, EACF=0.5, ENTCOEF=3, ICE_SIZE=3e-5, RHCRIT=0.7, VF1=0.5, CW=2e-4),
+                      dict(CT=1e-4, EACF=0.5, ENTCOEF=3, ICE_SIZE=3e-5, RHCRIT=0.7, VF1=0.5, CW=2e-4,
+                           ensembleMember=2),
+                      dict(CT=1e-4, EACF=0.5, ENTCOEF=3, ICE_SIZE=3e-5, RHCRIT=0.7, VF1=0.5, CW=2e-4,
+                           ensembleMember=3)]
+        logical_info = runSubmit.LogicalInfo()
+        names = []
+        for params in param_list:
+            name = logical_info.name(params)
+            names.append(name)
+        # modify second param set
+        new_params = param_list[1].copy()
+        new_params['NEW_PARAM'] = 2.0  # add new param
+        new_params = pd.Series(new_params)
+        logical_info.update_params(names[1],new_params)
+        # check that parameters have been updated
+        updated_params = logical_info.parameters[names[1]]
+        self.assertTrue(updated_params.equals(new_params), msg='Parameters not updated correctly in logical_info')
+
+
+    def test_to_dict(self):
+        # test that to_dict works correctly
+        logical_info = self.run_submit._logical_info
+        dct = logical_info.to_dict()
+        self.assertIsInstance(dct, dict)
+        self.assertIn('parameters', dct)
+        self.assertIn('models', dct)
+        # check that model keys exist
+        for name, model_dct in dct['models'].items():
+            for model_name,model_key in model_dct.items():
+                self.assertIsInstance(model_key, str)
+                expect_model = self.run_submit.model_index[model_key]
+                self.assertEqual(self.run_submit.key_for_model(expect_model), model_key)
 
 

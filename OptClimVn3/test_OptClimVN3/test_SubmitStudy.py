@@ -90,6 +90,55 @@ class MyTestCase(unittest.TestCase):
         sub2 = self.submit.load(self.submit.config_path)
         self.assertEqual(self.submit, sub2)
 
+    def test_copyConfig(self):
+        # test that we can copy a SubmitStudy object
+        submit = self.submit
+        submit.instantiate()
+        copy_dir = self.testDir / 'copy_test'
+        sub2 = submit.copyConfig(copy_dir)
+        self.assertIsInstance(sub2,SubmitStudy.SubmitStudy)
+        attrs_different = ['rootDir','config_path','_history']
+        for attr in vars(submit).keys():
+            val1 = getattr(submit,attr)
+            val2 = getattr(sub2,attr)
+            if attr in attrs_different:
+                self.assertNotEqual(val1,val2,msg=f"Attribute {attr} should be different")
+            elif attr == 'model_index':
+                # keys same, models different because different paths and history changes
+                self.assertEqual(set(val1.keys()),set(val2.keys()),msg="Model index keys should be the same")
+            else:
+                self.assertEqual(val1,val2,msg=f"Attribute {attr} should be the same")
+
+
+
+        # and another copy where paths are not updated! Shoudl eb identical but check have model dirs in copy
+        copy_dir = self.testDir / 'copy_test3'
+        sub4 = submit.copyConfig(copy_dir, update_paths=False)
+        self.assertEqual(submit, sub4)
+        for model in sub4.model_index.values():
+            model.reload() # force reload which will flush various cached paths
+
+            # and the copy model should be identical.
+            pth = copy_dir/(model.config_path.relative_to(submit.rootDir))
+            mcopy = Model.load(pth) # using load so no path changes.
+            for key in vars(model).keys():
+                val1 = getattr(model,key)
+                val2 = getattr(mcopy,key)
+                if val1 != val2:
+                    pass # put breakpoint here
+                self.assertEqual(val1,val2,msg=f"Attribute {key} should be identical between model and loaded copy")
+            #self.assertEqual(model,mcopy,msg="Model in copy should be identical to loaded model from path")
+
+
+
+
+
+
+
+
+
+
+
 
 
     @unittest.mock.patch.object(SubmitStudy.SubmitStudy, 'now', side_effect=times)

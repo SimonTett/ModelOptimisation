@@ -148,7 +148,7 @@ class TestStudy(unittest.TestCase):
 
     def test_key_for_model(self):
         p_dict = {'zz': 1.02, 'aa': 1, 'nn': [0, 1]}
-        expect = str(('aa', '1', 'nn', '[0, 1]','reference',str(self.reference), 'zz', '1.02'))
+        expect = str(('aa', '1', 'nn', '[0, 1]','reference',self.reference.as_posix(), 'zz', '1.02'))
         model = Model(name='test_model',reference=self.reference,parameters=p_dict)
         mkey = self.study.key_for_model(model)
         self.assertEqual(expect,mkey)

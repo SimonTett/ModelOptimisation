@@ -52,6 +52,7 @@ import functools
 import logging
 import os
 import re
+import tarfile
 import typing
 import shutil
 import subprocess
@@ -498,6 +499,28 @@ class UM_rose(Model):
 
         return cmd
 
+    def copyConfig(self, direct: pathlib.Path,
+             extra_files: typing.Optional[list[pathlib.Path]] = None,
+             update_paths: bool = True) -> "Um_rose":
+
+        """
+        Copy method for UM_rose class. Calls the super-class method with extra files
+            All files must in self.model_dir
+        :param direct: directory where Model  is to be copied. Will be created if it does not exist
+        :param extra_files: list of extra files (paths provided relative to self.model_dir) to be copied to new directory.
+        :param update_paths -- If True then any path parameters will be updated to reflect new directory structure.
+        :return: Copied Model. Will copy only Model config & post process unless extra_files provided.
+        """
+
+        files_to_add = [self.script_dir, self.config_dir.relative_to(self.model_dir)]
+        # TODO_relative_paths -- eventually make all paths relative to model_dir.
+        if extra_files is not None:
+            files_to_add += extra_files
+        cp_obj = super().copyConfig(direct=direct,extra_files=files_to_add,update_paths=update_paths)
+        return cp_obj  # return the copied object.
+
+
+
     # TODO (when needed). Add a delete method to kill the suite and delete the suite_dir
     # Cmd for killing the suite is cylc stop --now SUITE_NAME but needs to run on puma2.
     # Can remove the suite dir on archer2/local machine.
@@ -675,6 +698,9 @@ class UKESM1_params(Model):
     # 901-925 - Glacier/Icesheet model ice surface on elevation classes(1-25)
     # 926-950 - Glacier/Icesheet model rock surface on elevation classes(1-25)
 
+    # variable containing PFT names
+    PFT_names = ['BLT_d','BLT_eg_trop','BLT_eg_temp','NLT_d','NLT_eg','C3_grass','C3_crop', 'C3_pasture',
+                 'C4_grass','C4_crop','C4_pasture','Shrub_d','Shrub_eg']
 
 
     # service function for parameters that don't do anything!
@@ -691,10 +717,11 @@ class UKESM1_params(Model):
         """
         if value is None:
             # if value is None then read the value from the namelist.
-            value = self.parameters[param]
+            value = self.parameters.get(param)
             return value
         else:
             return None # fn does not do anything so return None.
+        
     #  service function to scale parameters.
     def scale_param(self,
                     value: typing.Optional[float]=None,
@@ -913,20 +940,19 @@ class UKESM1_params(Model):
                         all_icet_degc_0to1 = all_ice_x/start_ice_x
                     if not (0.0 <= all_icet_degc_0to1 <= 1.0):
                         raise ValueError(f'allicetdegc0to1 {all_icet_degc_0to1} not in range 0 to 1')
-                    result = [start_icet_kelvin, all_icet_degc_0to1]  # return the values.
+                    result = dict(starticetkelvin=start_icet_kelvin, allicetdegc0to1=all_icet_degc_0to1)  # return the values.
                 else:
-                    result = [start_icet_kelvin, all_icet_degc]
+                    result = dict(starticetkelvin=start_icet_kelvin, allicetdegc=all_icet_degc)
                 return result # return the values.
 
             # values to set. Need to get the latent parameter allicedegc0to1 from the parameters.
             # If we don't have it then need to run the inverse calculation to get it from ref config.
             all_icet_degc_0to1 = self.parameters.get('allicetdegc0to1', None)  # default is None.
             if all_icet_degc_0to1 is None:  # if not set then calculate it.
-                _,all_icet_degc_0to1 = self.cloud_ice( transform=True)  # call ourselves  to get the value.
+                all_icet_degc_0to1 = self.cloud_ice( transform=True)['allicetdegc0to1']  # call ourselves  to get the value.
             start_ice_x = dist_start_icet_kelvin.cdf(start_icet_kelvin)  # where in the dist are we?
             all_ice_x = start_ice_x * all_icet_degc_0to1  # where in the dist are we for all_ice?
             all_icet_degc = dist_all_icet_degc.ppf(all_ice_x)  # get the value from the distribution.
-
             return [(nl, v) for nl, v in zip(nls, [start_icet_kelvin, all_icet_degc])]  # return a list of tuples (NamelistVar, value) to set.
 
 
@@ -941,19 +967,23 @@ class UKESM1_params(Model):
         nls = [NamelistVar('um_rose', filepath=self.um_namelist_file,
                          namelist='namelist:run_radiation', nl_var=nl_var) for nl_var in ['aparam', 'bparam']]
 
-        # get the liu_latent  value from the parameters. Default value is 0.00681.
+
 
         if aparam is None:
             aparam,bparam = (float(self.read_nl_value(nl)) for nl in nls) # read the namelist values
             if transform:
                 # Compute liu_latent from aparam & bparam.
-                liu_latent = bparam+0.19-0.62*aparam  # inverse from linear regression -- see below.
-                result = [aparam,liu_latent] # aparam is the first element.
+                liu_latent = bparam+0.19-0.617*aparam  # inverse from linear regression -- see below.
+                result = dict(aparam=aparam,liu_latent=liu_latent)
             else:
-                result = [aparam, bparam]
+                result = dict(aparam=aparam,bparam=bparam)
             return result
         # if we have a value then set the bparam value.
-        liu_latent = self.parameters.get('liu_latent', 0.0066)  # default value is 0.0066 in UKESM1.1
+        liu_latent = self.parameters.get('liu_latent') # latent so read from param. If None then just read it.
+        if liu_latent is None:
+            pvalues = self.aerosol_cld(None) # run ourselves to get value
+            liu_latent = pvalues['liu_latent']
+
         bparam  = -0.19+0.617*aparam+liu_latent # worked out from linear regression on GA8 parameter data.
         return [(nl,v) for nl,v in zip(nls,[aparam, bparam])]  # return a list of tuples (NamelistVar, value) to set.
 
@@ -970,11 +1000,13 @@ class UKESM1_params(Model):
                for nl_var in ['rho_snow_fresh', 'rho_snow_et_crit']]
 
         if rho_snow_fresh is None:  # pass None to read_nl_value ie. invert the value.
-            result:list[float] = [float(self.read_nl_value(nl)) for nl in nls]  # read the namelist values
+            result:list[float] =  [float(self.read_nl_value(nl)) for nl in nls]  # read the namelist values
             if transform:
                 rho_snow_fresh= result[0]  # want the 1st element of the values.
                 rho_snow_et_crit_delta = result[1]-result[0]  # want the 2nd element of the values.
-                result = [rho_snow_fresh, rho_snow_et_crit_delta]  # return the rho_snow_fresh and rho_snow_et_crit_delta values.
+                result = dict(rho_snow_fresh=rho_snow_fresh,rho_snow_et_crit_delta=rho_snow_et_crit_delta)  # return the rho_snow_fresh and rho_snow_et_crit_delta values.
+            else:
+                result=dict(rho_snow_fresh=result[0], rho_snow_et_crit=result[1])
             return result
         # if we have a value then set the rho_snow_et_crit value.
         rho_snow_et_crit_delta = self.parameters.get('rho_snow_et_crit_delta', 41.0)
@@ -999,6 +1031,8 @@ class UKESM1_params(Model):
             value:list[float] = self.read_nl_value(nl)
             if transform:
                 value:float = float(value[0])  # want the 1st element of the tuple.
+            else:
+                value = dict(zip(self.PFT_names,value))
             return value
         result = 13*[value] # UKESM1.1 has 13 PFTs
         return [(nl,result)]
@@ -1017,6 +1051,8 @@ class UKESM1_params(Model):
             value:list[float] = self.read_nl_value(nl)
             if transform:
                 value:float = float(value[2])
+            else:
+                value = dict(zip(self.PFT_names,value))
             return value
         result = [0.00000,0.00000,1.00000e-2]+11*[1.00000e+6]  # UKESM1.1 default value
         result[2] = value  # set the 2nd element (bare soil) to value.
@@ -1039,6 +1075,8 @@ class UKESM1_params(Model):
             value: list[float] = self.read_nl_value(nl)
             if transform:
                 value:float = float(value[5])   # want the 6th element corresponding to PFT index = 3 = grass.
+            else:
+                value = dict(zip(self.PFT_names,value))
             return value
 
         # from vn13.8 have the following:
@@ -1063,6 +1101,8 @@ class UKESM1_params(Model):
             value: list[float] = self.read_nl_value(nl)
             if transform:
                 value:float = float(value[3])  # want the 3rd element of the list = needleleaf trees.
+            else:
+                value = dict(zip(self.PFT_names,value))
             return value
 
 
@@ -1102,11 +1142,12 @@ for name,default in defaults.items():
             nl=nl_jules(nl_var=name))
 
 # handle the latent parameters which do not directly set a parameter but are used in other functions.
-for latent_param in ['liu_latent', 'allicetdegc0to1', 'rho_snow_et_crit_delta']:
+for latent_param  in ['liu_latent', 'allicetdegc0to1', 'rho_snow_et_crit_delta']:
     UKESM1_params.register_param_with_partial(
         latent_param,  # name to register the function as.
         UKESM1_params.no_param,  # using no_param as the base function.
-        param=latent_param  # parameter name to use.
+        param=latent_param,         # parameter name to use.
+
     )
 
 # and on functions where there are dependencies on other parameters.

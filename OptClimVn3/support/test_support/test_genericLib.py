@@ -115,6 +115,34 @@ class genericLib_test(unittest.TestCase):
         self.assertIsNone(got_backup)
 
 
+    def test_copy_files(self):
+        # test copy_files works
+        init_dir = self.tmp_path/'init'
+        dest_dir = self.tmp_path/'dest'
+        init_dir.mkdir()
+        files=[pathlib.Path(f) for f in ['file1.txt', 'file2.txt', 'file3.txt']]
+        # test symlink False & True
+        for symlink in [False, True]:
+            dest_subdir = dest_dir/f'symlink_{symlink}'
+
+            for file in files:
+                with (init_dir/file).open('w') as f:
+                    f.write(f'This is {file}')
+            genericLib.copy_files(init_dir, dest_dir, files, symlinks=symlink)
+            for file in files:
+                self.assertTrue((dest_dir/file).exists())
+                # test file contents are identical
+                with (dest_dir/file).open('r') as f:
+                    dcontent = f.read()
+                with (init_dir/file).open('r') as f:
+                    icontent = f.read()
+                self.assertEqual(icontent, dcontent, msg=f'File contents differ for {file} with symlink={symlink}')
+
+
+        #
+
+
+
 
 
 

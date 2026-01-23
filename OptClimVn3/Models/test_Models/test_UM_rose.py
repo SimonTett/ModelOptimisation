@@ -3,15 +3,15 @@ import unittest
 from unittest.mock import patch, MagicMock
 
 import metomi.rose.config
-from aiofiles.ospath import samefile
-from scipy.constants import value
 
-from UM_rose import UM_rose, UKESM1_1, UKESM1_1_c8, config_dir
+
+from UM_rose import UM_rose, UKESM1_1, UKESM1_1_c8
 import copy
 import tempfile
 import pathlib
 import genericLib
 import shutil
+import tarfile
 
 
 
@@ -39,14 +39,15 @@ class test_umRose(unittest.TestCase):
         # create a model and store it.
         self.refDir = ref_dir
         filepath =os.environ['OPTCLIMTOP']+'/OptClimVn3/configurations/example_UM_rose/references/u-db898/OptClimVn3/configurations/example_UM_rose/references/u-db898'
-        post_process = dict(script='$OPTCLIMTOP/OptClimVn3/scripts/comp_obs.py', output_file='obs.json')
+        post_process = dict(script='$OPTCLIMTOP/OptClimVn3/scripts/comp_obs.py', output_file='obs.nc')
         self.post_process = post_process
         self.model = UKESM1_1(name='testM', reference=ref_dir,
-                            model_dir=test_dir, config_dir='suite',post_process=post_process,
+                            model_dir=test_dir/'model1', config_dir='suite',post_process=post_process,
                             parameters=parameters)
 
-        self.config_path = self.model.config_path
 
+        self.config_path = self.model.config_path
+        self.model.model_dir.mkdir()
         shutil.copy(sim_obs_dir / '01_GN' / 'h0101' / 'observables.nc',
                     self.model.model_dir / 'obs.nc')  # copy over a netcdf file of observations.
 
@@ -343,6 +344,64 @@ and even more text
             # check suite_name is as expected.
             self.assertEqual('fred/X001test',model.suite_name, )
 
+    def test_copy(self):
+        # test that copy method works
+        # Only need to check that have workflow and scripts copied over.
+        model = self.model
+        model.instantiate()
+        cp_dir = self.testDir / 'copy_model'
+        model_copy = model.copyConfig(cp_dir)
+        # check that the workflow and scripts are copied over.
+        for dct in [model_copy.model_dir,model_copy.model_dir/model_copy.script_dir,model_copy.config_dir]:
+            self.assertTrue(dct.is_dir(),msg=f'Directory {dct} not copied correctly')
+
+
+        orig_files = list(model.model_dir.rglob('*'))
+        copy_files = list(model_copy.model_dir.rglob('*'))
+
+        # get relative paths for comparison
+        orig_rel_paths = sorted([f.relative_to(model.model_dir) for f in orig_files])
+        copy_rel_paths = sorted([f.relative_to(model_copy.model_dir) for f in copy_files])
+        self.assertEqual(orig_rel_paths, copy_rel_paths, msg=f"Files in {model.model_dir} not copied correctly")
+
+    def no_test_archive(self):
+        # Test that archive method works. Rather similar to test_Model.test_archive
+        # no longer needed as uses Model version and its own copy
+        model = self.model
+        model.instantiate()
+        model.set_status('SUCCEEDED',check_existing=False)
+        archive_file = self.testDir / 'test_archive.tar'
+        pp_file = model.model_dir / self.model._post_process_output
+        with tarfile.open(archive_file, "w", dereference=True) as archive:
+            self.model.archive(archive, self.testDir,
+                               extra_files=[self.model._post_process_output])  # archive the model
+
+        # now can try and read it.
+        script_dir = model.model_dir / model.script_dir
+        expect_paths = ([model.config_path,model.config_dir,script_dir] + list(model.config_dir.rglob('*'))+
+                        list(script_dir.rglob('*')))
+        expected_names = sorted([p.relative_to(model.model_dir) for p in expect_paths])
+
+        with tarfile.open(archive_file, "r") as archive:
+            names = sorted([pathlib.Path(n) for n in archive.getnames()])  # list of names
+            self.assertEqual(expected_names, names)
+
+        # now create some obs... and test that works.
+        import json
+        test_obs = dict(obs1=2.2, obs2=1.0, obs4=True)
+        with open(pp_file, 'wt') as fp:
+            json.dump(test_obs, fp)
+        with tarfile.open(archive_file, "w") as archive:
+            model.archive(archive, self.testDir)  # archive the model
+        expected_names += [pp_file.relative_to(model.model_dir)]
+        expected_names = sorted(expected_names)
+
+        with tarfile.open(archive_file, "r") as archive:
+            names = sorted([pathlib.Path(n) for n in archive.getnames()] ) # list of names
+
+            self.assertEqual(expected_names, names)
+
+
 
     def no_test_guess_prebuild(self):
         # check _guess_prebuild works. Turned off aas not using guess_prebuild
@@ -423,9 +482,9 @@ class TestUKESM1ParamFunctions(unittest.TestCase):
             'n_lai_exposed': 27.0, # namelist differently understood in UKESM1_1
             'unload_rate_u': 2.31e-6,
             'cca_md_knob': 0.1, # UKESM1_1 default value
-            'aparam': [0.07, 0.0066], # UKESM1_1 default values for aparam and liu_latent. Note default value different from MO value.
-            'rho_snow_fresh': [109.0,41.], # UKESM1_1 default value
-            'starticetkelvin': [263.15, 0.48717948717948645]  # UKESM1_1 default value
+            'aparam': dict(aparam=0.07, liu_latent=0.00681), # UKESM1_1 default values for aparam and liu_latent. Note default value different from MO value.
+            'rho_snow_fresh': dict(rho_snow_fresh=109.0,rho_snow_et_crit_delta=41.), # UKESM1_1 default value
+            'starticetkelvin': dict(starticetkelvin=263.15, allicetdegc0to1= 0.48717948717948645)  # UKESM1_1 default value
 
         }
         default_nl_values= {
@@ -438,7 +497,7 @@ class TestUKESM1ParamFunctions(unittest.TestCase):
             'n_lai_exposed': [2.0,2.0,27.0,1.0,2.0]+6*[27.0]+[6.0,6.0], # h
             'unload_rate_u': [0.0,0.0,0.0,2.31e-06,2.31e-06]+8*[0.0],
             'cca_md_knob': [0.1,0.1],
-            'aparam': [0.07, -0.14 ],  # UKESM1_1 default value
+            'aparam': [0.07,-0.14],  # UKESM1_1 default value
             'rho_snow_fresh': [109.0, 150.],  # UKESM1_1 default value
             'starticetkelvin':[263.15,-20.0]
         }
@@ -450,10 +509,17 @@ class TestUKESM1ParamFunctions(unittest.TestCase):
                     value = model.read_param(param)
                     # check the value is as expected.
                     if isinstance(value, list):
+                        raise ValueError("No lists allowed anymore...")
                         self.assertEqual(len(value), len(expected))
                         for idx in range(0,len(value)):
                             self.assertAlmostEqual(value[idx], expected[idx],
                                                    msg=f"{param} at index {idx} did not match reference value")
+                    elif isinstance(value,dict):
+                        self.assertEqual(len(value), len(expected))
+                        self.assertEqual(list(value.keys()), list(expected.keys()))
+                        for key,v in value.items():
+                            self.assertAlmostEqual(v, expected[key],
+                                                   msg=f"{v} at  {key} did not match reference value {expected[key]}")
                     else:
                         self.assertAlmostEqual(value, expected, msg=f"{param} did not match reference value")
                     # read in the values from the namelist.

@@ -47,7 +47,7 @@ class myModel(Model):
         ]
         if value is None:
             result:list[float,float] = [self.read_nl_value(var) for var in multi_var]
-            return result
+            return result[0]
 
         else:
             result = [(a,value) for a in multi_var]

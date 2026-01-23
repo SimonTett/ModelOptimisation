@@ -339,6 +339,8 @@ class model_base:
         """
         if self is other:
             return True
+
+
         if type(other) != type(self):
             print(f"Types differ = {type(self), type(other)}")
             return False
@@ -352,7 +354,11 @@ class model_base:
                 raise ValueError("Something wrong")
             if k in vars_to_ignore: # ignore this variable
                 continue
-            if type(v) != type(v2):  # types differ so different
+            if isinstance(v, pathlib.PurePath) and isinstance(v2, pathlib.PurePath):
+                if v.as_posix() != v2.as_posix():
+                    print(f"Paths for {k} differ")
+                    return False  # paths differ
+            elif type(v) != type(v2):  # types differ so different
                 print(f"Types for {k} differ")
                 return False  # types differ -- return False
             elif callable(v):  # callable function so check names are the same.

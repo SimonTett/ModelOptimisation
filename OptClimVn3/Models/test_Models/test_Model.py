@@ -775,7 +775,7 @@ class ModelTestCase(unittest.TestCase):
                                extra_files=[self.model._post_process_output])  # archive the model
 
         # now can try and read it.
-        expected_names = [p.relative_to(self.testDir) for p in [self.model.config_path]]  # ,]]
+        expected_names = [p.relative_to(self.model.model_dir) for p in [self.model.config_path]]  # ,]]
         with tarfile.open(archive_file, "r") as archive:
             names = [pathlib.Path(n) for n in archive.getnames()]  # list of names
             self.assertEqual(expected_names, names)
@@ -787,9 +787,9 @@ class ModelTestCase(unittest.TestCase):
             json.dump(test_obs, fp)
         with tarfile.open(archive_file, "w") as archive:
             self.model.archive(archive, self.testDir)  # archive the model
-        expected_names = [p.relative_to(self.testDir) for p in [self.model.config_path, pp_file]]
+        expected_names = sorted([p.relative_to(self.model.model_dir) for p in [self.model.config_path, pp_file]])
         with tarfile.open(archive_file, "r") as archive:
-            names = [pathlib.Path(n) for n in archive.getnames()]  # list of names
+            names = sorted([pathlib.Path(n) for n in archive.getnames()])  # list of names
             self.assertEqual(expected_names, names)
 
         # check extra works.
@@ -799,19 +799,40 @@ class ModelTestCase(unittest.TestCase):
             print("Line 1", file=fp)
             print("Line 2", file=fp)
 
-        expected_names = [p.relative_to(self.testDir) for p in [self.model.config_path, pp_file, test_file]]
+        expected_names = sorted([p.relative_to(self.model.model_dir) for p in [self.model.config_path, pp_file, test_file]])
         with tarfile.open(archive_file, "w") as archive:
             self.model.archive(archive, self.testDir, extra_files=['test.txt'])  # archive the model
         with tarfile.open(archive_file, "r") as archive:
-            names = [pathlib.Path(n) for n in archive.getnames()]  # list of names
+            names = sorted([pathlib.Path(n) for n in archive.getnames()])  # list of names
             self.assertEqual(expected_names, names)
 
-    def test_copy(self):
+    def test_copyConfig(self):
         # test copy works
-        logging.warning("test_copy not implemented")
-        #raise NotImplementedError
 
-    def test_reprocess(self):
+        # easy test. Copy model somewhere else and check they are the same.
+        dest_dir = self.testDir / 'copy_model'
+        model = self.model
+        model.instantiate()
+        model.copyConfig(dest_dir)
+        # now load in the copied model
+        cmodel = myModel.load_model(dest_dir / f"{self.model.name}.mcfg")
+        attrs_not_same = ['model_dir','config_path','_history']
+        for attr in vars(model).keys():
+            if attr in attrs_not_same:
+                continue
+            self.assertEqual(getattr(model, attr), getattr(cmodel, attr), f"Attribute {attr} not the same")
+
+
+        with self.assertRaises(FileExistsError):
+            model.copyConfig(model.model_dir)
+
+
+
+
+
+
+
+    def no_test_reprocess(self):
         # test reprocessing works
         logging.warning("test_reprocessing not implemented")
         #raise NotImplementedError
@@ -1093,6 +1114,24 @@ class ModelTestCase(unittest.TestCase):
         result = self.model.ssh_command(cmd, remote_machine=remote_machine, remote_model_dir=remote_dir)
         self.assertEqual(result, expected_cmd)
 
+    def test_update_params(self):
+        """"
+        Test that update_params works.
+        """
+        model = self.model
+        # try and update but not instantiated should fail
+        with self.assertRaises(ValueError):
+            got_params = model.update_params(['ENTCOEF', 'ICE_SIZE'])
+
+        # test update params works
+        model.instantiate()
+        got_params = model.update_params(['ENTCOEF','ICE_SIZE'])
+        expect_params = model.parameters.copy()
+        expect_params.update(model.read_params(['ENTCOEF','ICE_SIZE']))
+        expect_params = pd.Series(expect_params).rename(model.name)
+
+
+        self.assertTrue(expect_params.equals(got_params.reindex(expect_params.index)))
 
 
 

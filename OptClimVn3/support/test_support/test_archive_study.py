@@ -39,13 +39,13 @@ class TestArchive(unittest.TestCase):
         # and the archive file should be called
         arc = self.arc
         sub = self.submit
-        expected_archive_file = sub.rootDir/(f"archive_{sub.name}.tar") # what the archive_file is called.
+        expected_archive_file = sub.rootDir/(f"archive_{sub.name}.tar.gz") # what the archive_file is called.
         archive_file = arc.archive(sub)
         self.assertEqual(expected_archive_file,archive_file)
         expected_files=[sub.config_path]+[m.config_path for m in sub.model_index.values()]
-        expected_files = [pathlib.Path("archive.acfg")]+[pathlib.Path(file).relative_to(sub.rootDir) for file in expected_files]
+        expected_files = sorted([pathlib.Path("archive.acfg")]+[pathlib.Path(file).relative_to(sub.rootDir) for file in expected_files])
         with tarfile.open(archive_file,'r') as archive:
-            got_files = [pathlib.Path(file) for file in archive.getnames()]
+            got_files = sorted([pathlib.Path(file) for file in archive.getnames()])
             self.assertEqual(expected_files,got_files)
 
 

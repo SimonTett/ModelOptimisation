@@ -179,7 +179,7 @@ class simple_model_pars_json(Model):
 
     def archive(self,
                 archive: "tarfile.TarFile",
-                rootDir: pathlib.Path,
+                root_dir: pathlib.Path,
                 extra_files: typing.Optional[typing.List[typing.Union[pathlib.Path,str]]] = None):
         
         if extra_files is None:
@@ -192,7 +192,7 @@ class simple_model_pars_json(Model):
                                           "model_output.json",
                                           "input.json"]
 
-        return super().archive(archive,rootDir, 
+        return super().archive(archive, root_dir,
                                extra_files=files_to_archive)
 
 

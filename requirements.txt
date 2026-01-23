@@ -1,6 +1,6 @@
 # should be in a python 3.9-3.11 env as current cf-units version is not compatible with python 3.12
 ipython
-DFO-LS # always have the most current version of DFO-LS.
+DFO-LS>=1.6.2 # always have at least DFO-LS 1.6.2+
 numpy~=1.26 # TODO upgrade to 2+
 #cf-units~=3.2
 #scitools-iris~=3.8
@@ -13,5 +13,5 @@ pytest~=8.3
 metomi-rose==2.2.0 # avoid most recent version.
 f90nml~=1.4.3
 matplotlib # needed for plotting
-PqQt5 # needed for interactive plotting
+#PqQt5 # needed for interactive plotting
 
