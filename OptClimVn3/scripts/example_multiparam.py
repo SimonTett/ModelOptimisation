@@ -15,15 +15,16 @@ def ctl_plus4k(run_submit_instance,
      delta values have index beginning delta_
     """
     models = dict()
-    obs = dict()
+
     # get models and simulated obs. This case has no dependencies between models so is straightforward.
     # a more complex case would be where one model depends on another.
     # in that case would need to run models in expected order checking that they exist before running dependent models.
     # more complex cases could be handled by modifying parameters in models based on results from other models.
     for name, param_dict in parameter_dict.items():
-        models[name] = run_submit_instance.make_model(param_dict)
+        models[name] = run_submit_instance.make_model(param_dict,reference_name=name)
         # this will create a new model or return an existing one.
-        #obs[name]: typing.Optional[pd.Series] = models[name].simulated_obs
+
+
     # get the simulated obs for this model. If None model not been run yet.
     # test that all models ran and produced obs. Any that are None will mean can't compute result.
     # This implies no dependencies between models. If there are dependencies then return None when

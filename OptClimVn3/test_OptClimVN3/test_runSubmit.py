@@ -266,6 +266,17 @@ class testRunSubmit(unittest.TestCase):
         self.assertEqual(len(rSubmit._logical_info.parameters),2,'Expected 2 logical params')
         self.assertEqual(len(rSubmit._logical_info.obs),2,'Expected 2 logical obs')
 
+        # check model names are as expected
+        for l_name in rSubmit.logical_params().index:
+            models = rSubmit.logical_models(l_name)
+            self.assertEqual(len(models),2,'Expected 2 models')
+            for name in ['control','plus4k']:
+                k = name +'#0' # ensemble 0
+                if models[k].reference_name != name:
+                    breakpoint() # temp so can figure out what is going on
+                self.assertEqual(models[k].reference_name,name)
+
+
 
     # end test case for stdFunction
 

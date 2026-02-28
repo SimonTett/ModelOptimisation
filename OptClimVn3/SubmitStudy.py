@@ -177,7 +177,7 @@ class SubmitStudy(Study, model_base, journal):
 
         return s
 
-    def create_model(self, params: dict, dump: bool = True) -> typing.Optional[Model]:
+    def create_model(self, params: dict, dump: bool = True,reference_name:typing.Optional[str]=None) -> typing.Optional[Model]:
         """
         Create a model, update list of created models and index of models.
         name is generated using self.gen_name() and will be checked to see if it already exists.
@@ -192,6 +192,7 @@ class SubmitStudy(Study, model_base, journal):
         If you need functionality beyond this you may want to inherit from SubmitStudy and
           override create_model to meet your needs
         :param dump: If True dump  self (using self.dump_config method)
+        :param reference_name: Nmae of the reference config. If None the default Model behaviour is used.
         :return: Model created (or model that already exists). Returns None if would make more than max_model_sims
         """
         existing_names = [model.name for model in self.model_index.values() ] # list of existing model names
@@ -215,6 +216,7 @@ class SubmitStudy(Study, model_base, journal):
         study = self.to_study()  # convert SubmitStudy to Study
         model = Model.model_init(model_name, name=name,
                                  reference=reference,
+                                 reference_name=reference_name,
                                  model_dir=model_dir,
                                  config_path=config_path,
                                  parameters=param_dir,

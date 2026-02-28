@@ -96,6 +96,7 @@ class Model(ModelBaseClass, journal):
     name: str
     config_path: typing.Union[pathlib.Path, pathlib.PurePath]
     reference:typing.Union[pathlib.Path, pathlib.PurePath]
+    reference_name: typing.Optional[str]
     model_dir: typing.Union[pathlib.Path, pathlib.PurePath]
     post_process: dict
     post_process_cmd_script: typing.Optional[list[str]]
@@ -129,6 +130,7 @@ class Model(ModelBaseClass, journal):
     public attributes: (Be careful if you  change them)
         model_dir -- directory where model information is stored
         reference --  where the reference configuration came from.
+        reference_name -- name of the reference model config. If None then reference.name is used.
         config_path -- where the configuration is to be written to (or was read from).
         name -- name of the model
         status -- status of the model
@@ -193,6 +195,7 @@ class Model(ModelBaseClass, journal):
     def __init__(self,
                  name: str,
                  reference: pathlib.Path,
+                 reference_name: typing.Optional[str] = None,
                  post_process: typing.Optional[dict] = None,
                  model_dir: pathlib.Path = pathlib.Path.cwd(),
                  config_path: typing.Optional[pathlib.Path] = None,
@@ -210,6 +213,7 @@ class Model(ModelBaseClass, journal):
         :param name -- name of model
         :param reference -- reference directory. Should be a pathlib.Path
                 keyword arguments
+        :param reference_name -- name of reference model. If None then reference.name is used.
         :param model_dir --- where model will be created and any files written.
              Should be a pathlib.Path. Will, if needed, be created. If none cwd will be used.
              Must be different from reference
@@ -264,6 +268,9 @@ class Model(ModelBaseClass, journal):
             raise ValueError(f"Model_dir {model_dir} is the same as reference {reference}")
 
         self.reference = reference
+        if reference_name is None:
+            reference_name = reference.name
+        self.reference_name = reference_name
         self.model_dir = model_dir
         if config_dir is None:
             self.config_dir = model_dir
@@ -399,13 +406,27 @@ class Model(ModelBaseClass, journal):
             output_file -- name of output file for post-processing. If None will be sim_obs.json
                 This is where simulated observations go (which are then read in).
                 Will be stored in self._post_process_output
+            Can also include per reference.name post_processing info which overwrites anything in the main dict.
         post_process will be deep-copied to self.post_process with script, interp, input_file, output_file removed
         self.post_process_cmd_script will hold the command to run the post-processing.
         :return: None
         """
         if post_process is None:
             return
+
         pp = copy.deepcopy(post_process)
+
+        # now deal with reference_name if needed.
+        pp_for_ref = pp.pop('post_process_for_reference',None) # individual post processing wanted?
+        if  pp_for_ref is not None: # have per reference post-processing info
+            if self.reference_name is None:
+                raise ValueError('post_process_for_reference present but reference_name is None')
+            my_logger.debug(f"Using post_process_per_reference for {self.reference_name}")
+            dct:typing.Optional[dict] = pp_for_ref[self.reference_name] #  Will trigger error if self.reference_name not in dict.
+            if dct is not None: # actually got something for this reference name.
+                pp.update(pp_for_ref[self.reference_name])  # update with per reference info.
+
+        # then set up script    etc.
         script = pp.pop('script', None)
         if script is None:
             raise ValueError("No script in post_process")
@@ -493,8 +514,9 @@ class Model(ModelBaseClass, journal):
         last_hist_key = self.last_history_key()
         if last_hist_key is None:
             last_hist_key = "Never"
-        s = f"Type: {self.class_name()} Name: {self.name}" \
-            f" Status: {self.status} Nparams: {len(self.parameters)} Last Modified:{last_hist_key}"
+        s = f"Type: {self.class_name()} Config Name: {self.config_name()} Name: {self.name}" \
+            f" Status: {self.status} " \
+            "Nparams: {len(self.parameters)} Last Modified:{last_hist_key}"
         return s
 
     def dump_model(self):
@@ -1589,6 +1611,15 @@ class Model(ModelBaseClass, journal):
 
 
         return result
+
+    def config_name(self)  -> str:
+        """
+        Returns the configuration name which is the reference_name + ensembleMemmber (or 0)
+        :return: name
+        """
+        ensemble_member = self.parameters.get('ensembleMemmber',0)
+        config_name = f"{self.reference_name}#{ensemble_member}"
+        return config_name
 
 
 Model.register_class(Model)  # register ourselves!

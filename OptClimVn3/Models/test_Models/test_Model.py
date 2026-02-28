@@ -13,6 +13,7 @@ import unittest.mock
 import tarfile
 import shlex
 
+import Model
 import StudyConfig  # so can read in a config for fake_fn.
 import numpy as np
 import numpy.testing as nptest
@@ -105,6 +106,27 @@ class ModelTestCase(unittest.TestCase):
                 nptest.assert_equal(value, value2)
             else:
                 self.assertEqual(value, value2)
+
+
+    def test_init(self):
+        """
+        Test that model init works
+        :return:
+        """
+        pardict = dict(fred=2, james=3)
+        model = Model.Model('name=test_model', reference=self.refDir, model_dir=self.testDir / 'study', post_process=self.post_process,
+                             parameters=dict(RHCRIT=2, VF1=2.5, CT=2,G0=10,ANVIL_FACTOR=0.5,multi_var=2.0),
+                             engine=self.engine)
+        self.assertEqual(model.name, 'name=test_model')
+        self.assertEqual(model.reference_name,self.refDir.name)
+
+        model = Model.Model('name=test_model', reference=self.refDir, reference_name='control',model_dir=self.testDir / 'study', post_process=self.post_process,
+                             parameters=dict(RHCRIT=2, VF1=2.5, CT=2,G0=10,ANVIL_FACTOR=0.5,multi_var=2.0),
+                             engine=self.engine)
+
+        self.assertEqual(model.reference_name, 'control')
+
+
 
     def test_inherit(self):
         """
@@ -206,7 +228,8 @@ class ModelTestCase(unittest.TestCase):
         model = myModel('test_model', self.refDir, post_process=self.post_process,
                       model_dir=self.testDir, parameters=pardict)
         cmd = [model.expand(self.post_process['script']), 'input.json', self.post_process['output_file']]
-        expected_dct = dict(name='test_model', reference=pathlib.PurePath(self.refDir),
+        ref=pathlib.PurePath(self.refDir)
+        expected_dct = dict(name='test_model', reference=ref,reference_name=ref.name,
                             model_dir=pathlib.PurePath(self.testDir), config_dir=pathlib.PurePath(self.testDir),
                             parameters=pardict,
                             post_process={}, _output={},
@@ -747,6 +770,18 @@ class ModelTestCase(unittest.TestCase):
         pp.pop('script')
         with self.assertRaises(ValueError):
             model = myModel('fred', self.refDir, post_process=pp)
+
+        # test per reference_name works
+        script2 = model.expand('$OPTCLIMTOP/OptClimVn3/Models/scripts/pp_script_test2.py')
+        pp = copy.deepcopy(self.post_process)
+        pp['interp'] = 'python'
+        pp['post_process_for_reference'] = {'control': dict(script=script2,process_options='some process options')}
+        expect_pp  = dict(process_options = 'some process options')
+        model = myModel('fred', self.refDir, post_process=pp,reference_name='control')
+        self.assertEqual(model.post_process_cmd_script, ['python',script2, input, output])
+        self.assertEqual(model._post_process_output, output)
+        self.assertEqual(model._post_process_input, input)
+        self.assertEqual(model.post_process, expect_pp)
 
     def test_attrs_for_key(self):
         """

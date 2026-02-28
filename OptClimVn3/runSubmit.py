@@ -52,7 +52,7 @@ class LogicalInfo(model_base):
         self.count_within_iteration: int = 0  # count of models within an iteration. Used in generating logical names.
         self.names: dict[str, str] = dict()  # dict of logical names indexed by key generated from parameters.
         self.parameters: dict[str, pd.Series] = dict()  # dict of logical parameters indexed by logical name.
-        self.models: dict[str, dict[str,Model.Model]] = dict()  # dict of dicts of models indexed by logical_name Each dict contains model names and Model objects.
+        self.models: dict[str, list[Model.Model]] = dict()  # dict of list of models indexed by logical_name.
         self.obs: dict[str, pd.Series] = dict()  # dict of obs indexed by logical name.
         self.cost: dict[str, float] = dict()  # dict of cost indexed by logical name.
 
@@ -131,40 +131,51 @@ class LogicalInfo(model_base):
         """
 
         dct = super().to_dict()
-        model_dct = dct.pop('models', {})  # get models dict
-        models_as_keys: dict[str,list[str]]= {}
-        for name,model_dct in model_dct.items():
-            dct_models = {k:runSubmit.key_for_model(m) for k,m in model_dct.items()} # convert models to keys
-            models_as_keys[name] = dct_models
+        model_dct = dct.pop('models', {})  # get models dict (key is logical name, values are list of models)
+        models_as_keys: dict[str:list] = {}
+        for logical_name, model_list in model_dct.items():
+            models_as_keys[logical_name]=[runSubmit.key_for_model(m) for m in model_list]
         dct['models']= models_as_keys # store the keys
         return dct
 
     @classmethod
     def from_dict(cls, dct: dict) -> LogicalInfo:
         """
-        Create LogicalInfo from a dictionary. Uses super class method. Updates "old" format which used list of 'keys' to dict of 'models'.
+        Create LogicalInfo from a dictionary. Uses super class method.
+        Updates "old" format which used list of 'keys' to dict of 'models'.
         :param dct: dictionary to parse.
         :return: LogicalInfo object.
         """
         # deal with old version which uses keys and set models to it.
         # This code can be removed once old keys based data is no longer in use or has been converted.
         if 'keys' in dct and 'models' not in dct:
-            my_logger.warning("LogicalInfo.from_dict -- found 'keys' in dict -- converting to 'models'")
-            keys_attr: dict[str,list[str]] = dct.pop('keys')
-            # now to fix up models dict.
-            models_from_keys = dict()
-            for name, key_list in keys_attr.items():
-                models_from_keys[name] = {f'Model{count}':v for count,v in enumerate(key_list)} # set models to None -- will be fixed up in runSubmit.from_dict
-            # keys
-            dct['models'] = models_from_keys
-            my_logger.warning('LogicalInfo.from_dict -- converting keys to models -- please update saved data to new format')
+           dct['models'] = dct.pop('keys')
+           my_logger.warning('LogicalInfo.from_dict -- converting keys to models -- please update saved data to new format')
 
         elif 'keys' in dct and 'models' in dct:
             raise ValueError("LogicalInfo.from_dict -- found both 'keys' and 'models' in dict -- cannot proceed")
         else:
             pass # we are good!
 
+        #for a while models was a dict of dicts with the inner dict being model names + keys.
+        # if this is so need to flatten them.
+        model_dct={}
+        convert_message=True
+        for logical_name,models in dct['models'].items():
+            if isinstance(models,dict):
+                model_dct[logical_name] =models.values() # just want the values
+                if convert_message:
+                    my_logger.warning('Converting model keys from dict to list')
+                    convert_message=False # only want message to come out once
+
+
+            else:
+                model_dct[logical_name] = models
+            dct['models'] = model_dct # replaced with updated dct.
+
+
         obj:LogicalInfo = super().from_dict(dct)
+        # conversion of keys to models (by pointing by reference to models in model_list handled in runSubmit.from_dict
         return obj
 
     def keys_to_models(self,model_index:dict[str,Model.Model],
@@ -176,19 +187,19 @@ class LogicalInfo(model_base):
         :param model_index: dict of models indexed by key.
         :return: Nada as models updated inplace.
         """
-        for name,model_dct in self.models.items():
-            dct = {}
-            for model_name, model_or_key in model_dct.items():
+        for name,model_list in self.models.items():
+            final_model_list=[]
+            for model_or_key in model_list:
                 if update_models:
                     key = runSubmit.key_for_model(model_or_key)
                 else:
                     key = model_or_key
                 try:
-                    dct[model_name] = model_index[key]
+                    final_model_list += [model_index[key]] # this is a model
                 except KeyError:
                     raise ValueError(f"Key {key} for model {model_name} not found in model_index")
             # done dealing with models for this logical name.
-            self.models[name] = dct # update models to be Model objects.
+            self.models[name] = final_model_list # update models to be Model objects.
 
 
 
@@ -298,11 +309,12 @@ class runSubmit(SubmitStudy):
         self.prev_trace = self.trace[:]
         self.trace = []
 
-    def make_model(self,params:dict )-> Model.Model:
+    def make_model(self,params:dict, reference_name:typing.Optional[str] = None )-> Model.Model:
         """
         Make a model from a dictionary of parameters. If model already exists then return that model.
         # Will add keys to self._tmp_keys if model already exists and is processed.
         :param params: dictionary of parameters
+        :param reference_name: name of reference model to use. Pass None if want Model default behaviour.
         :return: Model object
         """
 
@@ -311,17 +323,10 @@ class runSubmit(SubmitStudy):
             params['reference'] = self.refDir
         model = self.get_model(params)
         if model is None:  # no model so time to create one.
-            model = self.create_model(params)  # returns None if no model was created.
+            model = self.create_model(params,reference_name=reference_name)  # returns None if no model was created.
             if model is None:
                 raise optclim_exceptions.submitModel
                 # Immediately raise exception as None means no model created and nothing else can be done
-                # FIXME One issue here is that we are terminating the algorithm without the algorithm itself knowing this
-                # so then the algorithm can't do any clean up or capture diagnostics.
-                # This is tricky as really per-algorithm -- we want it to complete but there is no general way of doing this
-                # one approach would be to pass in a fn which gets run here. For DFOLS (and other opt cases) it could do this by returning obs values = target
-                # That would terminate but then jacobian etc would be stuffed as would use this last state. A better approach might be to set
-                # self.exceeded_max_models to True. Then rerun the algorithm with maxFn set to max_model_simulations.
-                # OR set maxFn to min(max_model_simulations,maxFn).
         elif model.status in  ["INSTANTIATED"]:  # model exists but needs submitting
             my_logger.debug(f"Model {model} has been instantiated but not run -- need to submit")
             raise optclim_exceptions.submitModel
@@ -555,8 +560,6 @@ class runSubmit(SubmitStudy):
         ## Try and compute all observations wanted.
         obs = [] # where we will store the obs for each ensemble member.
         self._tmp_keys=set() # temporary set of keys created during this call.
-        # see make_model where these keys get added to _tmp_keys
-        model_names=[]
         for ens_member in range(n_ensemble): # loop over ensemble members
             # We try and get all the ensemble members and then return None if any need running.
             # Do this so have a full list of cases to run to allow parallelism.
@@ -567,13 +570,11 @@ class runSubmit(SubmitStudy):
 
             # note that ensembleMember will be overwritten if it is in fixed_params or params. Checked above.
             if multi_config_fn is None: # simple calculation
-                model_names += [f'Simulation#{ens_member}']
                 full_params = ens_param|params|fixed_params # needs to be using  python 3.9+ for | operator.
                 full_params.update(reference=self.expand(full_params.get('reference',self.refDir)).as_posix()) # add in reference params if they are there.
                 sim_obs = self.make_model(full_params).simulated_obs
             else:
                 # set up dict containing all parameters for each model and then run multi_config_fn.
-                model_names += [f'{k}#{ens_member}' for k in fixed_params.keys()]
                 all_params = {k: (ens_param | params | fp ) for k,fp in fixed_params.items()} # needs to be using  python 3.9+ for | operator.
                 # Make sure reference is in each set of params.
                 # now call multi_config_fn on the dict that was constructed.
@@ -593,10 +594,11 @@ class runSubmit(SubmitStudy):
         if len(obs) != n_ensemble:
             raise ValueError(f"Logic error -- expected {n_ensemble} ensemble members but got {len(obs)}")
          # now have all the ensemble members.
-        if len(model_names) != len(self._tmp_keys):
-            raise ValueError("Logic error -- number of models created does not match number of model names")
         # store the models created during this call.
-        self._logical_info.models[name]= dict(zip(model_names,[self.model_index[key] for key in self._tmp_keys]) )# store all models created during this call.
+        models = [self.model_index[key] for key in self._tmp_keys]
+        # Could give up the dict and just have list of models. Then just use model.config_name()
+        self._logical_info.models[name]= {model.config_name():model for model in models}# store all models created during this call.
+        self._logical_info.obs[name]= models
         delattr(self, '_tmp_keys')  # clean up temporary attribute.
         if n_ensemble >1:  # ensemble avg obs if necessary
             obs = pd.DataFrame(obs).mean(axis=0)
