@@ -112,7 +112,7 @@ def expand_filelike_keys(dct: dict) -> dict:
     :param dct: dict to be processed
     :return: new dict with expanded keys
     """
-    filepath_strings = ['filepath']
+    filepath_strings = ['filename']
     new_dct = {}
     for key, value in dct.items():
         if isinstance(value, (str,pathlib.PurePath)) and key in filepath_strings:

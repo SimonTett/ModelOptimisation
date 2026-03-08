@@ -51,7 +51,7 @@ import engine
 
 ## set up command line args
 expected_env_vars = ['OPTCLIM_ROOT_DIR', 'OPTCLIM_LOG_DIR', 'OPTCLIM_JOB_ID']
-parser = argparse.ArgumentParser(description=f"Run study and provides the follow env variables: {" ".join(expected_env_vars)}" ,allow_abbrev=False)
+parser = argparse.ArgumentParser(description=f"Run study and provides the follow env variables: {' '.join(expected_env_vars)}" ,allow_abbrev=False)
 parser.add_argument("-d", "--dir", help="path to root directory where model runs will be created")
 parser.add_argument("jsonFile", help="json file that defines the study")
 parser.add_argument("--delete", action='store_true',
