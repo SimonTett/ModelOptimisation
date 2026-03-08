@@ -23,6 +23,109 @@ import sys
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 
+def _reset_logger(logger_name):
+    """
+    AI generated function to reset a logger to default state. This is useful for testing purposes to avoid duplicate log messages.
+    No test cases for this function as it is only used in testing and is not critical to the functioning of the code. It is also not expected to be used by users of the code.
+    :param logger_name: name of logger to be reset
+    :return: Nada.
+    """
+    logger = logging.getLogger(logger_name)
+    logger.handlers.clear()
+    logger.setLevel(logging.NOTSET)
+    logger.propagate = True
+
+
+
+
+
+
+
+
+def _reset_all_loggers():
+    """
+    Reset all loggers to default state, closing all handlers and deleting temp files if possible.
+    """
+    import logging
+    import tempfile
+    import os
+    root_logger = logging.getLogger()
+    for handle in root_logger.handlers[:]:
+        handle.close()
+        stream = getattr(handle, 'stream', None)
+        if stream and hasattr(stream, 'name'):
+            # Check if it's a tempfile
+            if isinstance(stream, tempfile._TemporaryFileWrapper):
+                try:
+                    stream.close()
+                    os.unlink(stream.name)
+                except Exception:
+                    pass
+            elif isinstance(stream.name, str) and os.path.exists(stream.name):
+                try:
+                    os.unlink(stream.name)
+                except Exception:
+                    pass
+        root_logger.removeHandler(handle)
+    root_logger.setLevel(logging.NOTSET)
+    # Reset all named loggers
+    for name, logger in logging.root.manager.loggerDict.items():
+        if isinstance(logger, logging.Logger):
+            for handle in logger.handlers[:]:
+                handle.close()
+                stream = getattr(handle, 'stream', None)
+                if stream and hasattr(stream, 'name'):
+                    if isinstance(stream, tempfile._TemporaryFileWrapper):
+                        try:
+                            stream.close()
+                            os.unlink(stream.name)
+                        except Exception:
+                            pass
+                    elif isinstance(stream.name, str) and os.path.exists(stream.name):
+                        try:
+                            os.unlink(stream.name)
+                        except Exception:
+                            pass
+                logger.removeHandler(handle)
+            logger.setLevel(logging.NOTSET)
+            logger.propagate = True
+
+def error_handle(message:str, error:typing.Literal['fail','warn','ignore']='fail'):
+    """
+    Handle an error according to the error handling strategy.
+    :param message: message to be used in error or warning
+    :param error: if 'fail' then raise an error with the message. If 'warn' then log a warning with the message. If 'ignore' then do nothing.
+    :return: None
+    """
+    if error == 'fail':
+        raise ValueError(message)
+    elif error == 'warn':
+        my_logger.warning(message)
+    elif error == 'ignore':
+        pass
+    else:
+        raise ValueError(f"Unknown error handling option {error}")
+
+def expand_filelike_keys(dct: dict) -> dict:
+    """
+    Expand any keys in the dict that are filepath
+    :param dct: dict to be processed
+    :return: new dict with expanded keys
+    """
+    filepath_strings = ['filepath']
+    new_dct = {}
+    for key, value in dct.items():
+        if isinstance(value, (str,pathlib.PurePath)) and key in filepath_strings:
+            # value is string or path and key is in filepath_strings so expand it.
+            new_dct[key] = expand(value)
+            logging.debug(f"Expanded {value} to {new_dct[key]}")
+        elif isinstance(value, dict):
+            # value is a dict so process it recursively
+            new_dct[key] = expand_filelike_keys(value)
+        else:
+            new_dct[key] = value
+    return new_dct
+
 def setup_logging(level:typing.Optional[typing.Union[int,str]] = None,
                   rootname:typing.Optional[str] = None,
                   log_config:typing.Optional[dict]=None):
@@ -45,7 +148,8 @@ def setup_logging(level:typing.Optional[typing.Union[int,str]] = None,
     # to use the logging_cong
     if level is not None and log_config is not None:
         logging.debug("Using log_config to set up logging")
-        logging.config.dictConfig(log_config) # assume this is sensible
+        log_config_expanded = expand_filelike_keys(log_config) # expand any file like keys in the log config
+        logging.config.dictConfig(log_config_expanded) # assume this is sensible
         return optclim_logger
 
     if level is None:
@@ -245,15 +349,29 @@ def parse_isoduration( s: str | typing.List) -> typing.List|str:
 
     return durn
 
-def expand(filestr: str) -> pathlib.Path:
+
+
+
+def expand(filestr: str|pathlib.PurePath,
+           error:typing.Literal['fail','warn','ignore']='fail') -> pathlib.Path:
     """
 
     Expand any env vars, convert to path and then expand any user constructs.
     :param filestr: path like string
+    :param error: if 'fail' then raise an error if expanded path contains a $ or % (showing an env var was not expanded).
+      If 'warn' then log a warning but return the path. If 'ignore' then just return the path.
     :return:expanded path
     """
+    if isinstance(filestr,pathlib.PurePath):
+        filestr = filestr.as_posix()
+    if '%' in filestr:
+        message = 'Expanding path with % in it. This may not work on all platforms. Use $ instead of % for env vars.'
+        error_handle(message, error)
     path = os.path.expandvars(filestr)
     path = pathlib.Path(path).expanduser()
+    if '$' in str(path) :  # if there is still a $ or % in the path then an env var was not expanded. So raise an error or log a warning.
+        message = f"Path {path} contains unexpanded env vars. Original string was {filestr}"
+        error_handle(message, error)
     return path
 
 
