@@ -88,6 +88,7 @@ class LogicalInfo(model_base):
         key = self.key(params)
         try:
             name = self.names[key] # already have a name for this set of parameters.
+            my_logger.debug(f"Already got name {name}")
         except KeyError: # need to generate a new name.
             name = f"I{self.iteration_count}_i{self.count_within_iteration}"
             self.count_within_iteration += 1 # increase count for next time.
@@ -95,7 +96,7 @@ class LogicalInfo(model_base):
             # store parameters
             param_series = pd.Series(params).rename(name) # these are the params that the algorithm varies.
             self.parameters[name] = param_series
-
+            my_logger.info(f"Generated {name}")
 
         return name
 
@@ -1086,7 +1087,7 @@ class runSubmit(SubmitStudy):
         userParams = configData.DFOLS_userParams(userParams=userParams)
         rhobeg = dfols_config.get('rhobeg', 1e-1)
         rhoend = dfols_config.get('rhoend', 1e-3)
-
+        do_logging=dfols_config.get('do_logging',False)
 
         if stop:
             dfols_config['maxfun']=len(self.logical_cost())+1
@@ -1099,7 +1100,7 @@ class runSubmit(SubmitStudy):
             with warnings.catch_warnings():  # catch the complaints from DFOLS about NaNs encountered...
                 warnings.filterwarnings('ignore')  # Ignore all warnings...
                 # TODO consider rewrtting this so a dict gets setup and passed in.
-                solution = dfols.solve(optFn, x0, do_logging=dfols_config.get('do_logging',False),
+                solution = dfols.solve(optFn, x0, do_logging=do_logging,
                                        objfun_has_noise=True,
                                        bounds=prange, scaling_within_bounds=True,
                                        maxfun=dfols_config.get('maxfun', 100),
@@ -1111,8 +1112,9 @@ class runSubmit(SubmitStudy):
             n_inst_models = len(self.models_to_instantiate())
             my_logger.info(f"Have just generated {n_inst_models} to instantiate")
             neval = len(self.logical_cost())
-            if neval > 1: # got some evaluations
+            if (neval > 1) and False: # got some evaluations
                 # Run DFOLS again with reduced number of fn evals to provide some diagnostic info.
+                raise ValueError("Runnign dfols 2nd time")
                 random.seed(rng_seed)  # reset rng seed back to first value.
                 with warnings.catch_warnings():  # catch the complaints from DFOLS about NaNs encountered...
                     warnings.filterwarnings('ignore')  # Ignore all warnings...

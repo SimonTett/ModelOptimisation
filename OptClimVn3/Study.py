@@ -88,7 +88,7 @@ class Study:
         :param config: A study config used to set. This is deep copied into self
         :return: Nothing
         """
-        logging.warning("Updating self.config. Be very very careful when you do this.")
+        my_logger.warning("Updating self.config. Be very very careful when you do this.")
         self.config = copy.deepcopy(config)
 
 
@@ -189,7 +189,7 @@ class Study:
         """
 
         key = self.key(parameters, fpFmt=fpFmt)
-        logging.debug(f"Key is: {key}")
+        my_logger.debug(f"Key is: {key}")
         model = self.model_index.get(key, None)
 
         return model
@@ -219,15 +219,15 @@ class Study:
         models = []
         for f in path_list:
             try:
-                logging.debug(f"Trying to load from {f}")
+                my_logger.debug(f"Trying to load from {f}")
                 m = Model.load_model(f)  # read the model.
                 key = self.key_for_model(m)  # work out the key
                 if key in self.model_index.keys():
-                    logging.warning(f"Have duplicate model/key {key} {m}")
+                    my_logger.warning(f"Have duplicate model/key {key} {m}")
                 self.model_index[key] = m
                 models.append(m)
             except (IOError, EOFError):
-                logging.warning(f"Failed to load_model from {f}. Ignoring.")
+                my_logger.warning(f"Failed to load_model from {f}. Ignoring.")
 
         return models
 

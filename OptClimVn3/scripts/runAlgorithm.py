@@ -225,10 +225,14 @@ if rSUBMIT is None:  # no configuration exists. So create it.
     rSUBMIT = runSubmit.runSubmit(configData, rootDir=rootDir, config_path=config_path,next_iter_cmd=restartCMD)
     if args.model_pattern is not None: # we have a model pattern to load models from.
         my_logger.warning(f"Loading models from {args.model_pattern} in {config_path.parent}. Not yet tested")
-        files = list(config_path.parent.glob(args.model_pattern))
+        files = sorted(list(config_path.parent.glob(args.model_pattern)))
+        if len(files) == 0:
+            raise ValueError(f"Failed to find any files with {config_path.parent}.glob({args.model_pattern})")
+
         rSUBMIT.read_model_configs(files)
+                
         my_logger.info(f"Loaded models in {files} ")
-        raise NotImplementedError('Need to deal with gen_name which could be inconsistent here.' )
+        #raise NotImplementedError('Need to deal with gen_name which could be inconsistent here.' )
     my_logger.debug(f"Created new runSubmit {rSUBMIT}")
 else:
     my_logger.debug(f"Using existing runSubmit {rSUBMIT}")
