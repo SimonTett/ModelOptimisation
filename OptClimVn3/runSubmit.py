@@ -1111,7 +1111,8 @@ class runSubmit(SubmitStudy):
             n_inst_models = len(self.models_to_instantiate())
             my_logger.info(f"Have just generated {n_inst_models} to instantiate")
             neval = len(self.logical_cost())
-            if neval > 1: # got some evaluations
+            if( neval > 1) & False: # got some evaluations.
+                # False turn of this logic for now. Need to fix finalConfig write in runAlgorithm for it to be useful.
                 # Run DFOLS again with reduced number of fn evals to provide some diagnostic info.
                 random.seed(rng_seed)  # reset rng seed back to first value.
                 with warnings.catch_warnings():  # catch the complaints from DFOLS about NaNs encountered...
