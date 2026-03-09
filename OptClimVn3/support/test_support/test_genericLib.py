@@ -139,15 +139,166 @@ class genericLib_test(unittest.TestCase):
                 self.assertEqual(icontent, dcontent, msg=f'File contents differ for {file} with symlink={symlink}')
 
 
-        #
+    def test_expand(self):
+        # Test expansion of environment variable
+        # AI generated after review of AI proposed tests. Code being tested written by human
+        import os
+        env_var = 'HOME'
+        os.environ[env_var] = str(self.tmp_path)
+        result = genericLib.expand(f"${env_var}/file.txt")
+        self.assertEqual(result, self.tmp_path/'file.txt')
 
+        # Test expansion of user home
+        result = genericLib.expand("~/file.txt")
+        self.assertTrue(str(result).endswith('file.txt'))
 
+        # Test with a string that has no variables
+        result = genericLib.expand("plain.txt")
+        self.assertEqual(result, pathlib.Path("plain.txt"))
 
+        # Test error handling: unexpanded env var, error='fail'
+        with self.assertRaises(ValueError):
+            genericLib.expand("$UNSET_VAR/file.txt", error='fail')
 
+        # Test error handling: unexpanded env var, error='warn'
+        with self.assertLogs(genericLib.my_logger, level='WARNING'):
+            result = genericLib.expand("$UNSET_VAR/file.txt", error='warn')
+            self.assertIn("$UNSET_VAR", str(result))
 
+        # Test error handling: unexpanded env var, error='ignore'
+        result = genericLib.expand("$UNSET_VAR/file.txt", error='ignore')
+        self.assertIn("$UNSET_VAR", str(result))
 
+        # Test Windows-style env variable expansion: should raise, warn, or ignore
+        with self.assertRaises(ValueError):
+            genericLib.expand("%FOO%/baz.txt", error='fail')
 
+        with self.assertLogs(genericLib.my_logger, level='WARNING'):
+            result = genericLib.expand("%FOO%/baz.txt", error='warn')
+            self.assertIn("%FOO%", str(result))
 
+        result = genericLib.expand("%FOO%/baz.txt", error='ignore')
+        self.assertIn("%FOO%", str(result))
+
+        # Test with empty string
+        result = genericLib.expand("")
+        self.assertEqual(result, pathlib.Path(""))
+
+        # Test with a string containing only env variable
+        os.environ['MYVAR'] = 'myvalue'
+        result = genericLib.expand("$MYVAR")
+        self.assertEqual(result, pathlib.Path("myvalue"))
+
+        # Test with a string containing only user home
+        result = genericLib.expand("~")
+        self.assertTrue(str(result).endswith(str(pathlib.Path.home())))
+
+    def test_error_handle(self):
+        # Test error_handle raises ValueError when mode is 'fail'
+        with self.assertRaises(ValueError) as cm:
+            genericLib.error_handle('This is a fail message','fail', )
+        self.assertIn('This is a fail message', str(cm.exception))
+
+        # Test error_handle logs a warning and returns gracefully when mode is 'warn'
+        with self.assertLogs(genericLib.my_logger, level='WARNING') as log:
+            result = genericLib.error_handle('This is a warn message','warn', )
+            self.assertIsNone(result)
+            self.assertTrue(any('This is a warn message' in record for record in log.output))
+
+        # Test error_handle ignores the error and returns gracefully when mode is 'ignore'
+        result = genericLib.error_handle( 'This is an ignore message','ignore')
+        self.assertIsNone(result)
+
+        # Test error_handle with empty message
+        with self.assertRaises(ValueError):
+            genericLib.error_handle('','fail')
+        with self.assertLogs(genericLib.my_logger, level='WARNING') as log:
+            genericLib.error_handle('', 'warn')
+        result = genericLib.error_handle('','ignore')
+        self.assertIsNone(result)
+
+        # Test error_handle with invalid mode (should raise ValueError)
+        with self.assertRaises(ValueError):
+            genericLib.error_handle('invalid_mode', 'Invalid mode message')
+
+    def notest_setup_logging(self):
+        """
+        Test that setup_logging configures logging correctly with various parameters and handles multiple calls without duplication.
+          Also tests error handling for invalid log levels and log configurations.
+          AI generated and human reviewed on strategy and code. Code being tested written by human. code review cursory but some testing better than none.
+          Causes some persistent logger issues that caues test_param_info.test_register and test_param_info.test_update_from_file to fail.
+          At some future point this method should be rewritten to reset logs.
+        :return:
+        """
+        import logging
+        # Default setup: should allow info messagesI
+        genericLib.setup_logging()
+        with self.assertLogs(logging.getLogger(), level='INFO') as log:
+            logging.info('Default info message')
+            self.assertTrue(any('Default info message' in record for record in log.output))
+
+        # Custom log level: DEBUG
+        genericLib.setup_logging(level='DEBUG',rootname='OPTCLIM.genericLib')
+        with self.assertLogs(logging.getLogger(), level='DEBUG') as log:
+            logging.debug('Debug message')
+            self.assertTrue(any('Debug message' in record for record in log.output))
+
+        # Custom log level: WARNING
+        genericLib.setup_logging(level='WARNING',rootname='OPTCLIM.genericLib')
+        with self.assertLogs(logging.getLogger(), level='WARNING') as log:
+            logging.warning('Warning message')
+            self.assertTrue(any('Warning message' in record for record in log.output))
+        # Info/debug should not appear
+        logging.info('Should not appear')
+        logging.debug('Should not appear')
+
+        # Custom root logger name
+        genericLib.setup_logging(rootname='customLogger')
+        logger = logging.getLogger('customLogger')
+        with self.assertLogs(logger, level='INFO') as log:
+            logger.info('Custom logger info')
+            self.assertTrue(any('Custom logger info' in record for record in log.output))
+
+        # Multiple calls: should not duplicate logs
+        genericLib.setup_logging()
+        genericLib.setup_logging()
+        with self.assertLogs(logging.getLogger(), level='INFO') as log:
+            logging.info('No duplicate message')
+            self.assertTrue(any('No duplicate message' in record for record in log.output))
+
+        # Invalid log level: should raise ValueError or handle gracefully
+        with self.assertRaises(ValueError):
+            genericLib.setup_logging(level='INVALID')
+
+        # Log config passed: valid config
+        log_config = {
+            'version': 1,
+            'handlers': {
+                'console': {
+                    'class': 'logging.StreamHandler',
+                    'level': 'INFO',
+                }
+            },
+            'root': {
+                'handlers': ['console'],
+                'level': 'INFO',
+            }
+        }
+        genericLib.setup_logging(log_config=log_config,level='INFO')
+        with self.assertLogs(logging.getLogger(), level='INFO') as log:
+            logging.info('Log config info')
+            self.assertTrue(any('Log config info' in record for record in log.output))
+
+        # Log config passed: invalid config
+        bad_config = { 'root': {}}  # missing version. Should raise an error
+        with self.assertRaises(Exception):
+            genericLib.setup_logging(log_config=bad_config,level='INFO')
+
+        # and reset logging to default for other tests
+        genericLib._reset_all_loggers()
+        for name, logger in logging.root.manager.loggerDict.items():
+            print(
+                f"Logger: {name}, Handlers: {getattr(logger, 'handlers', None)}, Level: {getattr(logger, 'level', None)}")
 
 if __name__ == '__main__':
     unittest.main()

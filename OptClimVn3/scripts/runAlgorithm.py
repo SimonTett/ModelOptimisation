@@ -44,13 +44,14 @@ import shutil
 import StudyConfig
 import genericLib
 import sys
+import engine
 # do minimum startup stuff. Really so can have logging
 
 ## main script
 
 ## set up command line args
-
-parser = argparse.ArgumentParser(description="Run study")
+expected_env_vars = ['OPTCLIM_ROOT_DIR', 'OPTCLIM_LOG_DIR', 'OPTCLIM_JOB_ID']
+parser = argparse.ArgumentParser(description=f"Run study and provides the follow env variables: {' '.join(expected_env_vars)}" ,allow_abbrev=False)
 parser.add_argument("-d", "--dir", help="path to root directory where model runs will be created")
 parser.add_argument("jsonFile", help="json file that defines the study")
 parser.add_argument("--delete", action='store_true',
@@ -105,6 +106,32 @@ guess_fail = args.guess_fail
 update_config = args.update_config
 archive = args.archive
 configData = StudyConfig.readConfig(filename=jsonFile)  # parse the jsonFile.
+if args.dir is not None:
+    rootDir = genericLib.expand(args.dir)  # directory defined so set rootDir
+else:  # set rootDir to cwd/name
+    rootDir = pathlib.Path.cwd() / configData.name()  # default path
+
+# setup env vars for use in logging etc
+eng = engine.abstractEngine.guess_engine() # do a guess at the engine so can set env var for that.
+if eng is not None:
+    try:
+        JOB_ID = eng.my_job_id()
+    except ValueError:
+        JOB_ID = os.getpid()
+else:
+    JOB_ID = os.getpid()
+os.environ['OPTCLIM_ROOT_DIR'] = rootDir.as_posix()
+output_dir = rootDir / 'jobOutput'
+os.environ['OPTCLIM_LOG_DIR'] = output_dir.as_posix()
+os.environ['OPTCLIM_JOB_ID'] = str(JOB_ID) # have JOB ID
+output_dir.mkdir(parents=True, exist_ok=True)  # make sure output dir (and in current implementation rootDir exists.)
+
+# check we have what is expected
+for var in expected_env_vars:
+    if var not in os.environ:
+        raise ValueError(f"Expected env variable {var} not set. Fix runAlgorithm. See expected_env_vars in runAlgorithm.py for what is expected. ")
+
+
 
 # logging stuff.
 level = None
@@ -135,10 +162,7 @@ from Model import  Model # root type for all Models.
 import optclim_exceptions
 import runSubmit
 import archive_study
-if args.dir is not None:
-    rootDir = Model.expand(args.dir)  # directory defined so set rootDir
-else:  # set rootDir to cwd/name
-    rootDir = pathlib.Path.cwd() / configData.name()  # default path
+
 
 if args.set_local_root_dir and (configData.run_info().get('local_root_dir') is None):
     configData.run_info()['local_root_dir'] = str(rootDir)
@@ -225,10 +249,14 @@ if rSUBMIT is None:  # no configuration exists. So create it.
     rSUBMIT = runSubmit.runSubmit(configData, rootDir=rootDir, config_path=config_path,next_iter_cmd=restartCMD)
     if args.model_pattern is not None: # we have a model pattern to load models from.
         my_logger.warning(f"Loading models from {args.model_pattern} in {config_path.parent}. Not yet tested")
-        files = list(config_path.parent.glob(args.model_pattern))
+        files = sorted(list(config_path.parent.glob(args.model_pattern)))
+        if len(files) == 0:
+            raise ValueError(f"Failed to find any files with {config_path.parent}.glob({args.model_pattern})")
+
         rSUBMIT.read_model_configs(files)
+                
         my_logger.info(f"Loaded models in {files} ")
-        raise NotImplementedError('Need to deal with gen_name which could be inconsistent here.' )
+        #raise NotImplementedError('Need to deal with gen_name which could be inconsistent here.' )
     my_logger.debug(f"Created new runSubmit {rSUBMIT}")
 else:
     my_logger.debug(f"Using existing runSubmit {rSUBMIT}")
