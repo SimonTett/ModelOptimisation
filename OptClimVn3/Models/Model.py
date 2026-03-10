@@ -516,7 +516,7 @@ class Model(ModelBaseClass, journal):
             last_hist_key = "Never"
         s = f"Type: {self.class_name()} Config Name: {self.config_name()} Name: {self.name}" \
             f" Status: {self.status} " \
-            "Nparams: {len(self.parameters)} Last Modified:{last_hist_key}"
+            f"Nparams: {len(self.parameters)} Last Modified:{last_hist_key}"
         return s
 
     def dump_model(self):

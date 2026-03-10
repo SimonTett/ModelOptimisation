@@ -1,18 +1,20 @@
 # Example function for multiple params
-# will just return the control + difference between plus4k and control values.
+# will just return the control + difference between plus4k and control values + models.
 import typing
 import pandas as pd
 
+import Model
+
 type_basic = int|float|str|bool
 def ctl_plus4k(run_submit_instance,
-                      parameter_dict:dict[str,dict[str,type_basic]]) -> typing.Optional[pd.Series]:
+                      parameter_dict:dict[str,dict[str,type_basic]]) -> tuple[typing.Optional[pd.Series],list[Model.Model]]:
 
     """
     Return control values concatenated with differences from plus4k case. This is an example case
     :param run_submit_instance: a runSubmit instance
     :param parameter_dict: Dict of parameters for models. Should have the keys control and plus4k
-    :return:Pandas series (or None) of concatenated series of ctl and delta.
-     delta values have index beginning delta_
+    :return:Pandas series (or None) of concatenated series of ctl and delta AND list of models created. Empty list if no models created.
+
     """
     models = dict()
 
@@ -30,11 +32,11 @@ def ctl_plus4k(run_submit_instance,
     # This implies no dependencies between models. If there are dependencies then return None when
     # dependant model obs is None.
     if any([m.simulated_obs is None for m in models.values()]):
-        return None
-    ctl = models['control'].simulated_obs # get the obs
-    plus4k = models['plus4k'].simulated_obs
+        return None, list(models.values())
+    ctl:pd.Series = models['control'].simulated_obs # get the obs
+    plus4k:pd.Series = models['plus4k'].simulated_obs
 
     new_index = ['delta_'+idx for idx in ctl.index] # new index for delta
     delta = (plus4k - ctl).set_axis(new_index) # compute delta and set axis
     result:pd.Series = pd.concat([ctl,delta]) # concat values together.
-    return result
+    return result,list(models.values())

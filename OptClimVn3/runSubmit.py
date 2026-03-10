@@ -132,7 +132,7 @@ class LogicalInfo(model_base):
         """
 
         dct = super().to_dict()
-        model_dct = dct.pop('models', {})  # get models dict (key is logical name, values are list of models)
+        model_dct = dct.get('models', {})  # get models dict (key is logical name, values are list of models)
         models_as_keys: dict[str:list] = {}
         for logical_name, model_list in model_dct.items():
             models_as_keys[logical_name]=[runSubmit.key_for_model(m) for m in model_list]
@@ -324,10 +324,11 @@ class runSubmit(SubmitStudy):
             params['reference'] = self.refDir
         model = self.get_model(params)
         if model is None:  # no model so time to create one.
-            model = self.create_model(params,reference_name=reference_name)  # returns None if no model was created.
+            model = self.create_model(params,reference_name=reference_name,dump=False)  # returns None if no model was created.
             if model is None:
                 raise optclim_exceptions.submitModel
                 # Immediately raise exception as None means no model created and nothing else can be done
+        
         elif model.status in  ["INSTANTIATED"]:  # model exists but needs submitting
             my_logger.debug(f"Model {model} has been instantiated but not run -- need to submit")
             raise optclim_exceptions.submitModel
@@ -338,7 +339,7 @@ class runSubmit(SubmitStudy):
             my_logger.debug(f"Using existing model {model}")
 
         key = self.key(params)
-        self._tmp_keys.update([key])  # add to temporary keys created during this call. Set gives us unique keys.
+        #self._tmp_keys.update([key])  # add to temporary keys created during this call. Set gives us unique keys.
         self.trace.append(key)  # append key to the trace. TODO think this could be removed now as trace not that useful now have logical_info
         return model
 
@@ -429,7 +430,7 @@ class runSubmit(SubmitStudy):
 
         ref_param_values = None
         param_values = None
-        for model in self._logical_info.models[name].values():
+        for model in self._logical_info.models[name]:
             if update_models:
                 key = self.key_for_model(model) # original key
                 param_values = model.update_params(params) # update the model parameters.
@@ -560,10 +561,12 @@ class runSubmit(SubmitStudy):
         # For now no caching of obs or cost. Could be done if needed. TODO insert caching if needed.
         ## Try and compute all observations wanted.
         obs = [] # where we will store the obs for each ensemble member.
-        self._tmp_keys=set() # temporary set of keys created during this call.
+        #self._tmp_keys=set() # temporary set of keys created during this call.
+        models_created=[]
         for ens_member in range(n_ensemble): # loop over ensemble members
             # We try and get all the ensemble members and then return None if any need running.
             # Do this so have a full list of cases to run to allow parallelism.
+            sim_obs =None # where we will store the obs for this ensemble member. Set to None to start with so can check if we need to run a model
             if n_ensemble == 1:
                 ens_param = {} # empty dict
             else:
@@ -573,15 +576,20 @@ class runSubmit(SubmitStudy):
             if multi_config_fn is None: # simple calculation
                 full_params = ens_param|params|fixed_params # needs to be using  python 3.9+ for | operator.
                 full_params.update(reference=self.expand(full_params.get('reference',self.refDir)).as_posix()) # add in reference params if they are there.
-                sim_obs = self.make_model(full_params).simulated_obs
+                model = self.make_model(full_params) # create the model.
+                if model is not None:
+                    models_created.append(model)
+                    sim_obs = model.simulated_obs
             else:
                 # set up dict containing all parameters for each model and then run multi_config_fn.
                 all_params = {k: (ens_param | params | fp ) for k,fp in fixed_params.items()} # needs to be using  python 3.9+ for | operator.
                 # Make sure reference is in each set of params.
                 # now call multi_config_fn on the dict that was constructed.
-                sim_obs = multi_config_fn(self, all_params) # obs will be None if any models need running.
+                sim_obs, models = multi_config_fn(self, all_params) # obs will be None if any models need running.
                 if sim_obs is not None and not isinstance(sim_obs, pd.Series):
                     raise ValueError(f"multi_config_fn should return a pandas Series or None but got {type(sim_obs)}")
+                elif sim_obs is not None:
+                    models_created += models # add the models created to the list of models created during this call.
             if sim_obs is None:
                 model_fail = True # flag that we need to return None once we have looped over ensemble members.
             else:
@@ -589,18 +597,16 @@ class runSubmit(SubmitStudy):
                 obs.append(sim_obs.rename(f"r{ens_member}")) # store the obs and name it by ensemble member.
         ## Done loop over ensemble members. Now for final processing.
         if model_fail: # some model needs running so return None
-            delattr(self, '_tmp_keys')  # clean up temporary attribute.
+            #delattr(self, '_tmp_keys')  # clean up temporary attribute.
             return None
         # otherwise all models we need have ran.
         if len(obs) != n_ensemble:
             raise ValueError(f"Logic error -- expected {n_ensemble} ensemble members but got {len(obs)}")
          # now have all the ensemble members.
         # store the models created during this call.
-        models = [self.model_index[key] for key in self._tmp_keys]
-        # Could give up the dict and just have list of models. Then just use model.config_name()
-        self._logical_info.models[name]= {model.config_name():model for model in models}# store all models created during this call.
-        self._logical_info.obs[name]= models
-        delattr(self, '_tmp_keys')  # clean up temporary attribute.
+
+        self._logical_info.models[name]= models_created #  store all models created during this call.
+
         if n_ensemble >1:  # ensemble avg obs if necessary
             obs = pd.DataFrame(obs).mean(axis=0)
         else:

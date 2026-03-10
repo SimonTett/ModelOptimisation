@@ -270,11 +270,10 @@ class testRunSubmit(unittest.TestCase):
         for l_name in rSubmit.logical_params().index:
             models = rSubmit.logical_models(l_name)
             self.assertEqual(len(models),2,'Expected 2 models')
-            for name in ['control','plus4k']:
-                k = name +'#0' # ensemble 0
-                if models[k].reference_name != name:
-                    breakpoint() # temp so can figure out what is going on
-                self.assertEqual(models[k].reference_name,name)
+            model_names = [m.config_name() for m in models]
+            expected_names = ['control#0','plus4k#0'] # should be these two models.
+            self.assertEqual(model_names,expected_names,f'Expected model names to be {expected_names} got {model_names}')
+
 
 
 
@@ -1212,9 +1211,8 @@ class testRunSubmit(unittest.TestCase):
         ## test get an error if models don't have same parameter values...
         # which means modifying the underlying model...
         models = run_submit.logical_models(name) # is a dict of models
-        k = list(models.keys())[1]
-        models[k].set_params(dict(a_ent_2=0.057),backup=False)
-        models[k].update_params()
+        models[0].set_params(dict(a_ent_2=0.057),backup=False)
+        models[0].update_params()
         with self.assertRaises(ValueError):
             run_submit.update_logical_params(name,parameters=update_params)
 
@@ -1231,10 +1229,10 @@ class testRunSubmit(unittest.TestCase):
         self.assertIsInstance(run_submit_copy,runSubmit.runSubmit)
         self.assertEqual(run_submit.config, run_submit_copy.config)
         # check logical info models consistent with model_info
-        for name, model_dct in run_submit_copy._logical_info.models.items():
-            for model_name, model in model_dct.items():
+        for name, model_list in run_submit_copy._logical_info.models.items(): # models is dict with key names and values lists of models
+            for model in model_list:
                 key = run_submit_copy.key_for_model(model)
-                self.assertIs(run_submit_copy.model_index[key],model,msg=f'{model_name}:{model} with key:{key} not same as in model_index')
+                self.assertIs(run_submit_copy.model_index[key],model,msg=f'{model.name}:{model} with key:{key} not same as in model_index')
                 self.assertIsInstance(run_submit_copy.model_index[key],Model.Model)
 
 
@@ -1462,8 +1460,8 @@ class TestLogicalInfo(unittest.TestCase):
         self.assertIn('parameters', dct)
         self.assertIn('models', dct)
         # check that model keys exist
-        for name, model_dct in dct['models'].items():
-            for model_name,model_key in model_dct.items():
+        for name, key_list in dct['models'].items():
+            for model_key in key_list:
                 self.assertIsInstance(model_key, str)
                 expect_model = self.run_submit.model_index[model_key]
                 self.assertEqual(self.run_submit.key_for_model(expect_model), model_key)
