@@ -1,4 +1,3 @@
-
 import copy
 import datetime
 import filecmp
@@ -1168,11 +1167,72 @@ class ModelTestCase(unittest.TestCase):
 
         self.assertTrue(expect_params.equals(got_params.reindex(expect_params.index)))
 
+    def test_update_reference_name(self):
+        """
+        test that update_reference_name works. Should update the reference name and then update the parameters to match the new reference.
+        :return:
 
+        Three tests:
+        1) Create a model with reference name 'control' and then update to 'experiment'. Check that warning issued, reference name is updated, Model config file is updated, and there are two more history entries
+        2) Update the reference name to the same name. Check that nothing changes and no history entries are added.
+        3) update the reference name to 'control2' with dump set to False. Check that reference name is updated, Model config file is not updated, but one history entry is added.
+        """
+        import tempfile
+        import pathlib
+        from unittest.mock import patch
 
+        # 1) Create model with reference_name 'control'
+        tmpdir = tempfile.TemporaryDirectory()
+        model_dir = pathlib.Path(tmpdir.name)
+        ref_dir = model_dir / 'ref'
+        ref_dir.mkdir()
+        config_path = model_dir / 'model_config.json'
+        # Create a dummy config file
+        config_path.write_text('{}')
 
+        # Create model
+        model = Model.Model(name='test_model', reference=ref_dir, reference_name='control', model_dir=model_dir, config_path=config_path)
+        old_history_len = len(getattr(model, 'history', []))
+        old_ref = model.reference_name
 
-        
+        # Patch dump to check it is called
+        with unittest.mock.patch('Model.Model.dump', autospec=True) as mock_dump:
+            with self.assertLogs('OPTCLIM.Model', level='WARNING') as log:
+                model.update_reference_name('experiment', dump=True)
+            # Check warning issued
+            self.assertTrue(any('Updating reference from control to experiment' in msg for msg in log.output))
+            # Check reference_name updated
+            self.assertEqual(model.reference_name, 'experiment')
+            # Check config file updated (dump called)
+            mock_dump.assert_called_with(model,config_path)
+            # Check two more history entries
+            self.assertEqual(len(model._history), old_history_len + 2)
+
+            # 2) Update reference name to same name
+            mock_dump.reset_mock()
+            old_history_len = len(model._history)
+            with self.assertNoLogs('OPTCLIM.Model', level='WARNING') as log:
+                model.update_reference_name('experiment', dump=True)
+            # No history entries added
+            self.assertEqual(len(model._history), old_history_len)
+            mock_dump.assert_not_called()
+
+            #3 change reference name but dump False
+            mock_dump.reset_mock()
+            old_history_len = len(model._history)
+            with self.assertLogs('OPTCLIM.Model', level='WARNING') as log:
+                model.update_reference_name('control2', dump=False)
+            # Check warning issued
+            self.assertTrue(any('Updating reference from experiment to control2' in msg for msg in log.output))
+            # Check reference_name updated
+            self.assertEqual(model.reference_name, 'control2')
+            # Check config file not updated (dump not called)
+            mock_dump.assert_not_called()
+            # Check one history entry added
+            self.assertEqual(len(model._history), old_history_len + 1)
+
+        tmpdir.cleanup()
+
 
 
 
