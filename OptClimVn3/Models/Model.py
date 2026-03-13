@@ -588,7 +588,7 @@ class Model(ModelBaseClass, journal):
         if direct is None:
             direct = self.config_dir
         direct.mkdir(parents=True, exist_ok=True)  # create the directory if needed.
-        my_logger.info(f"Created {direct}")
+        my_logger.debug(f"Created {direct}")
         if not self.fake:
             # empty the directory (if we are creating)
             for file in direct.iterdir():
@@ -598,7 +598,7 @@ class Model(ModelBaseClass, journal):
                     file.unlink()
             if copy_ref:
                 shutil.copytree(str(self.reference), str(direct), symlinks=True, dirs_exist_ok=True)  # copy from reference.
-                my_logger.info(f"Copied {self.reference} to {direct}")
+                my_logger.debug(f"Copied {self.reference} to {direct}")
 
     def set_status(self, new_status: type_status,
                    check_existing: bool = True,
