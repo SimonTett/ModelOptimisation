@@ -1621,5 +1621,20 @@ class Model(ModelBaseClass, journal):
         config_name = f"{self.reference_name}#{ensemble_member}"
         return config_name
 
+    def update_reference_name(self, reference_name: str,
+                         dump:bool = True):
+        """
+        Update the reference name for this model. This will update, if necessary, the reference_name attribute.
+        :param reference_name: new reference_name to use.
+        :param dump: If True dump the model config to disk to save the updated reference_name. If False then just update the reference_name in memory.
+        :return: None
+        """
+        if self.reference_name != reference_name: # only update if reference name different to avoid unnecessary updates and dumps.
+            my_logger.warning(f"Updating reference from {self.reference_name} to {reference_name}")
+            self.reference_name = reference_name
+            self.update_history(f"Updated reference_name  to {reference_name}")
+            if dump:
+                self.dump(self.config_path)  # dump the model to disk to save the updated reference.
+
 
 Model.register_class(Model)  # register ourselves!
