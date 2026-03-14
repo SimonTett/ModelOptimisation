@@ -7,6 +7,7 @@ import pathlib
 
 
 import Model
+import genericLib
 from SubmitStudy import SubmitStudy
 from StudyConfig import OptClimConfigVn3
 from model_base import model_base
@@ -313,7 +314,6 @@ class runSubmit(SubmitStudy):
     def make_model(self,params:dict, reference_name:typing.Optional[str] = None )-> Model.Model:
         """
         Make a model from a dictionary of parameters. If model already exists then return that model.
-        # Will add keys to self._tmp_keys if model already exists and is processed.
         :param params: dictionary of parameters
         :param reference_name: name of reference model to use. Pass None if want Model default behaviour.
         :return: Model object
@@ -342,9 +342,7 @@ class runSubmit(SubmitStudy):
                 model.update_reference_name(reference_name)
             # reset reference_name if provided. 
 
-        key = self.key(params)
-        #self._tmp_keys.update([key])  # add to temporary keys created during this call. Set gives us unique keys.
-        self.trace.append(key)  # append key to the trace. TODO think this could be removed now as trace not that useful now have logical_info
+
         return model
 
     def transform_check(self,obs:pd.Series,
@@ -565,7 +563,6 @@ class runSubmit(SubmitStudy):
         # For now no caching of obs or cost. Could be done if needed. TODO insert caching if needed.
         ## Try and compute all observations wanted.
         obs = [] # where we will store the obs for each ensemble member.
-        #self._tmp_keys=set() # temporary set of keys created during this call.
         models_created=[]
         for ens_member in range(n_ensemble): # loop over ensemble members
             # We try and get all the ensemble members and then return None if any need running.
@@ -600,17 +597,13 @@ class runSubmit(SubmitStudy):
                 # work out name for this ensemble member so when make a data array have unique index. And store the obs
                 obs.append(sim_obs.rename(f"r{ens_member}")) # store the obs and name it by ensemble member.
         ## Done loop over ensemble members. Now for final processing.
+        self._logical_info.models[name]= models_created #  store all models created during this call.
         if model_fail: # some model needs running so return None
-            #delattr(self, '_tmp_keys')  # clean up temporary attribute.
             return None
         # otherwise all models we need have ran.
         if len(obs) != n_ensemble:
             raise ValueError(f"Logic error -- expected {n_ensemble} ensemble members but got {len(obs)}")
          # now have all the ensemble members.
-        # store the models created during this call.
-
-        self._logical_info.models[name]= models_created #  store all models created during this call.
-
         if n_ensemble >1:  # ensemble avg obs if necessary
             obs = pd.DataFrame(obs).mean(axis=0)
         else:
@@ -808,7 +801,34 @@ class runSubmit(SubmitStudy):
 
         return fn
 
-    def runOptimized(self):
+    def reset_logical_info(self):
+        """
+        Reset the logical info. Needed when running algorthms.
+        :return: None
+        """
+        self._logical_info = LogicalInfo() # reset logical info to empty.
+
+    def check_deterministic(self,error:genericLib.error_handle_types = 'error') -> bool:
+        """
+        Check that the model runs are deterministic. Done by checkibg that all keys in self._logical_info.models are in self.model_index.
+        If not then suggests that some models that were run were not used which suggests non-determinism in the algorithm.
+
+        :param error: Used to in call to genericLib.error_handle to determine whether to raise an error, warn or ignore
+        :return: True if deterministic, False otherwise.
+        """
+
+        logical_model_keys = []
+        for model_lists in self._logical_info.models.values():
+            for model in model_lists:
+                logical_model_keys.append(self.key_for_model(model))
+        missing_keys = set(self.model_index) - set(logical_model_keys)
+        if missing_keys:
+            message = f"Have {len(missing_keys)} keys in model_index not in logical_info.models.\n Unused models are:\n"\
+                + "\n".join([f"{k}: {self.model_index[k]}" for k in missing_keys])
+            genericLib.error_handle(message,error)
+        return len(missing_keys) == 0 # return True if no missing keys, False otherwise.
+
+    def runOptimized(self,stop:bool=False) -> StudyConfig:
         """
         :arg self
         Run optimised case using reference model which may be potentially different from configuration used to optimize.
@@ -830,6 +850,8 @@ class runSubmit(SubmitStudy):
         # the final config (optimum param values, nEns) and n configurations.  Trick is
         # not running more than once... Which is what Submit gives...
         # Hard will come back when I actually have a need!
+        if stop:
+            raise NotImplementedError("runOptimized stop not implemented as have no use case")
         start = self.config.optimumParams()
         modelFn = self.genOptFunction(df=True)
         obsSeries = modelFn(start.values).squeeze()  # if the simu
@@ -868,7 +890,7 @@ class runSubmit(SubmitStudy):
 
         return deltaParam
 
-    def runJacobian(self,scale:bool=False):
+    def runJacobian(self,scale:bool=False,stop:bool=False) -> StudyConfig:
         """
         run Jacobian cases.
         Rather crude (first order accurate) estimate. Evaluate functions at
@@ -890,6 +912,8 @@ class runSubmit(SubmitStudy):
         """
         #TODO add maxfun which probably means outer loop is over ensemble members
         # rather than over parameters.
+        if stop:
+            raise NotImplementedError("runJacobian stop not implemented as have no use case")
         configData = self.config
         Tmat = configData.transMatrix(scale=scale)
         modelFn = self.genOptFunction(raiseError=True, df=True, residual=True, transform=Tmat,scale=scale)
@@ -1124,10 +1148,9 @@ class runSubmit(SubmitStudy):
             n_inst_models = len(self.models_to_instantiate())
             my_logger.info(f"Have just generated {n_inst_models} to instantiate")
             neval = len(self.logical_cost())
-            if( neval > 1) and False: # got some evaluations.
-                # False turn of this logic for now. Need to fix finalConfig write in runAlgorithm for it to be useful.
+            if( neval > 1): # got some evaluations.
                 # Run DFOLS again with reduced number of fn evals to provide some diagnostic info.
-                raise ValueError("Runnign dfols 2nd time")
+                my_logger.debug('Running DFOLS again with reduced number of fn evals to get diagnostic info')
                 random.seed(rng_seed)  # reset rng seed back to first value.
                 with warnings.catch_warnings():  # catch the complaints from DFOLS about NaNs encountered...
                     warnings.filterwarnings('ignore')  # Ignore all warnings...
@@ -1154,7 +1177,7 @@ class runSubmit(SubmitStudy):
 
         return finalConfig
 
-    def runGaussNewton(self, verbose=False, scale=True):
+    def runGaussNewton(self, verbose=False, scale=True,stop:bool=False) -> OptClimConfigVn3:
         """
 
         param: verbose if True produce more verbose output.
@@ -1175,6 +1198,8 @@ class runSubmit(SubmitStudy):
 
         """
         import Optimise
+        if stop:
+            raise NotImplementedError("runGaussNewton stop not implemented as have no use case")
 
         # extract internal covariance and transform it.
         configData = self.config
@@ -1214,7 +1239,7 @@ class runSubmit(SubmitStudy):
         return finalConfig
 
     ## run_params
-    def run_params(self,ensemble_average:bool = True,scale:bool=True) -> OptClimConfigVn3:
+    def run_params(self,ensemble_average:bool = True,scale:bool=True,stop:bool = False) -> OptClimConfigVn3:
         """
         Run the model for a set of parameters specified in the configuration file.
         This is a simple run of the model for a set of parameters. It does not do any optimisation.
@@ -1227,6 +1252,8 @@ class runSubmit(SubmitStudy):
                 finalConfig.obs() -- the observations
 
         """
+        if stop:
+            raise NotImplementedError("run_params stop not implemented as have no use case")
 
         params_dir = self.config.optimise() # get the parameters to run
         params = self.get_parameters(params_dir) # convert to dataframe
@@ -1278,7 +1305,7 @@ class runSubmit(SubmitStudy):
             raise ValueError(f"Parameters out of range:\n{params[L]}")
         return params
 
-    def runPYSOT(self, scale=True):
+    def runPYSOT(self, scale=True,stop:bool=False) -> OptClimConfigVn3:
 
         """
         Run PYSOT algorithm
@@ -1294,6 +1321,8 @@ class runSubmit(SubmitStudy):
         # pySOT -- probably won't work without some work. conda install conda-forge pysot will install it.
         import pySOT
         raise NotImplementedError('pysot not well implemented. ')
+        if stop:
+            raise NotImplementedError("runPYSOT stop not implemented as have no use case")
         configData = self.config
         optimise = configData.optimise().copy_files()  # get optimisation info
         tMat = configData.transMatrix()

@@ -6,6 +6,8 @@
   "sigma_comment": "If True use constraint weights",
   "mu": 0.01,
   "mu_comment": "The inverse weighting given to the constraint -- it gets wt 1/(2mu). If Null then no constraint should be applied",
+  "nondeterministic": "warn",
+  "nondeterministic_comment": "What to do if non-determinism is found in the algorithm. Options are 'warn' , 'ignore' and 'fail' (default)",
   "dfols":{
 
   "rhobeg": 0.18,

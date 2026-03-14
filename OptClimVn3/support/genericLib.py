@@ -90,7 +90,10 @@ def _reset_all_loggers():
             logger.setLevel(logging.NOTSET)
             logger.propagate = True
 
-def error_handle(message:str, error:typing.Literal['fail','warn','ignore']='fail'):
+error_handle_types = typing.Literal['fail','warn','ignore']
+# will use error handle in various different places so define it here.
+# It will be used to control whether to raise an error, log a warning or ignore an error when something goes wrong.
+def error_handle(message:str, error:error_handle_types='fail'):
     """
     Handle an error according to the error handling strategy.
     :param message: message to be used in error or warning
@@ -353,7 +356,7 @@ def parse_isoduration( s: str | typing.List) -> typing.List|str:
 
 
 def expand(filestr: str|pathlib.PurePath,
-           error:typing.Literal['fail','warn','ignore']='fail') -> pathlib.Path:
+           error:error_handle_types='fail') -> pathlib.Path:
     """
 
     Expand any env vars, convert to path and then expand any user constructs.

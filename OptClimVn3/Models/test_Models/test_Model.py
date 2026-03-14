@@ -1218,6 +1218,7 @@ class ModelTestCase(unittest.TestCase):
             mock_dump.assert_not_called()
 
             #3 change reference name but dump False
+            time.sleep(1e-3) # history keys are timestamps. This, in retrospect, is a bad idea. Should have a list of times/messages.
             mock_dump.reset_mock()
             old_history_len = len(model._history)
             with self.assertLogs('OPTCLIM.Model', level='WARNING') as log:
