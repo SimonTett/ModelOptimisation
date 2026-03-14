@@ -7,13 +7,13 @@ import Model
 
 type_basic = int|float|str|bool
 def ctl_plus4k(run_submit_instance,
-                      parameter_dict:dict[str,dict[str,type_basic]]) -> tuple[typing.Optional[pd.Series],list[Model.Model]]:
+                      parameter_dict:dict[str,dict[str,type_basic]]) -> tuple[list[Model.Model],typing.Optional[pd.Series]]:
 
     """
     Return control values concatenated with differences from plus4k case. This is an example case
     :param run_submit_instance: a runSubmit instance
     :param parameter_dict: Dict of parameters for models. Should have the keys control and plus4k
-    :return:Pandas series (or None) of concatenated series of ctl and delta AND list of models created. Empty list if no models created.
+    :return: List of models & Pandas series (or None) of concatenated series of ctl and delta.
 
     """
     models = dict()
@@ -29,14 +29,12 @@ def ctl_plus4k(run_submit_instance,
 
     # get the simulated obs for this model. If None model not been run yet.
     # test that all models ran and produced obs. Any that are None will mean can't compute result.
-    # This implies no dependencies between models. If there are dependencies then return None when
-    # dependant model obs is None.
     if any([m.simulated_obs is None for m in models.values()]):
-        return None, list(models.values())
+        return list(models.values()),None
     ctl:pd.Series = models['control'].simulated_obs # get the obs
     plus4k:pd.Series = models['plus4k'].simulated_obs
 
     new_index = ['delta_'+idx for idx in ctl.index] # new index for delta
     delta = (plus4k - ctl).set_axis(new_index) # compute delta and set axis
     result:pd.Series = pd.concat([ctl,delta]) # concat values together.
-    return result,list(models.values())
+    return list(models.values()),result

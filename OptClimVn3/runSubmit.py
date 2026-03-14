@@ -198,7 +198,7 @@ class LogicalInfo(model_base):
                 try:
                     final_model_list += [model_index[key]] # this is a model
                 except KeyError:
-                    raise ValueError(f"Key {key} for model {model_name} not found in model_index")
+                    raise ValueError(f"Key {key} not found in model_index")
             # done dealing with models for this logical name.
             self.models[name] = final_model_list # update models to be Model objects.
 
@@ -328,6 +328,7 @@ class runSubmit(SubmitStudy):
             if model is None:
                 raise optclim_exceptions.submitModel
                 # Immediately raise exception as None means no model created and nothing else can be done
+                # will run out any remining models.
         
         elif model.status in  ["INSTANTIATED"]:  # model exists but needs submitting
             my_logger.debug(f"Model {model} has been instantiated but not run -- need to submit")
@@ -337,6 +338,9 @@ class runSubmit(SubmitStudy):
             raise ValueError(f"{model} status != PROCESSED but is {model.status}")
         else:  # got a model.
             my_logger.debug(f"Using existing model {model}")
+            if reference_name is not None:
+                model.update_reference_name(reference_name)
+            # reset reference_name if provided. 
 
         key = self.key(params)
         #self._tmp_keys.update([key])  # add to temporary keys created during this call. Set gives us unique keys.
@@ -577,19 +581,19 @@ class runSubmit(SubmitStudy):
                 full_params = ens_param|params|fixed_params # needs to be using  python 3.9+ for | operator.
                 full_params.update(reference=self.expand(full_params.get('reference',self.refDir)).as_posix()) # add in reference params if they are there.
                 model = self.make_model(full_params) # create the model.
+                models_created.append(model)
                 if model is not None:
-                    models_created.append(model)
                     sim_obs = model.simulated_obs
             else:
                 # set up dict containing all parameters for each model and then run multi_config_fn.
                 all_params = {k: (ens_param | params | fp ) for k,fp in fixed_params.items()} # needs to be using  python 3.9+ for | operator.
                 # Make sure reference is in each set of params.
                 # now call multi_config_fn on the dict that was constructed.
-                sim_obs, models = multi_config_fn(self, all_params) # obs will be None if any models need running.
+                models,sim_obs = multi_config_fn(self, all_params) # obs will be None if any models need running.
+                models_created += models # add the models created to the list of models created during this call.
                 if sim_obs is not None and not isinstance(sim_obs, pd.Series):
                     raise ValueError(f"multi_config_fn should return a pandas Series or None but got {type(sim_obs)}")
-                elif sim_obs is not None:
-                    models_created += models # add the models created to the list of models created during this call.
+                
             if sim_obs is None:
                 model_fail = True # flag that we need to return None once we have looped over ensemble members.
             else:
