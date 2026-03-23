@@ -416,7 +416,7 @@ class testRunSubmit(unittest.TestCase):
                       'logging.save_xk': True,
                       'noise.additive_noise_level': nobs * 1e-4,  # upper est of noise.
                       'general.check_objfun_for_overflow': False,
-                      'init.run_in_parallel': False,
+                      'init.run_in_parallel': True,
                       'interpolation.throw_error_on_nans': True,  # make an error happen!
                       }
         overwrite = {'noise.quit_on_noise_level': None,
@@ -465,8 +465,8 @@ class testRunSubmit(unittest.TestCase):
 
 
         if solution.flag not in (solution.EXIT_SUCCESS, solution.EXIT_MAXFUN_WARNING):
-            print("dfols failed with flag %i error : %s" % (solution.flag, solution.msg))
-            raise Exception("Problem with dfols")
+            msg = f"dfols failed with flag {solution.flag}: {solution.msg}"
+            raise Exception(msg)
         print(f"DFOLS finished {solution.flag} {solution.msg}")
         soln = pd.Series(solution.x,index=varParamNames).rename(f'Naked DFOLS')
         expectparam = pd.Series(expectparam,index=varParamNames).rename('best')
@@ -488,8 +488,11 @@ class testRunSubmit(unittest.TestCase):
                 iterCount += 1
                 # expect nobs+1 on first iteration (parallel running)
                 if iterCount == 1:
-                    self.assertEqual(len(varParamNames) + 1, len(rSubmit.model_index),
-                                     f'Expected to have {nobs + 1} models ran on iteration#1')
+                    expected = 1+len(varParamNames)
+                else:
+                    expected = len(varParamNames)+iterCount
+                self.assertEqual(expected, len(rSubmit.model_index),
+                                 f'Expected to have {expected} models ran on iteration#{iterCount} got {len(rSubmit.model_index)}')
 
 
 
@@ -637,7 +640,7 @@ class testRunSubmit(unittest.TestCase):
 
         config_dfols = {k:v for k,v in dfols_config.items() if not k.endswith('_comment') }  # invert for DFOLS
         config_dfols.pop('namedSettings')
-        config_dfols.pop('raise_error')
+
 
         # general configuration of DFOLS -- which can be overwritten by config file
         userParams = {'logging.save_diagnostic_info': True,

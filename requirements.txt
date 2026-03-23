@@ -1,6 +1,5 @@
-# should be in a python 3.9-3.11 env as current cf-units version is not compatible with python 3.12
 ipython
-DFO-LS>=1.6.2 # always have at least DFO-LS 1.6.2+
+DFO-LS>=1.6.5 # always have at least DFO-LS 1.6.4+
 numpy~=1.26 # TODO upgrade to 2+
 #cf-units~=3.2
 #scitools-iris~=3.8

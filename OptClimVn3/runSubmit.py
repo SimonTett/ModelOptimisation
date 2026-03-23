@@ -1097,30 +1097,44 @@ class runSubmit(SubmitStudy):
         configData = self.config
         var_param_names = configData.paramNames()
         dfols_config = configData.DFOLS_config()
-        raise_error = dfols_config.get("raise_error",False)
-        if raise_error is None:
-            raise_error= False
-        # setup transform matrix and optFn
-        tMat = configData.transMatrix(scale=scale)
-        optFn = self.genOptFunction(transform=tMat, residual=True, raiseError=raise_error, scale=scale)
+
+
 
         # deal with Evaluation database
         x0 = self.dfols_eval_db(scale=scale) # will return evaluation database if key exists or None if it doesn't
-        if x0 is  None: # use beginaram to get intial values
+        if x0 is  None: # use beginParam to get intial values
             x0 = configData.beginParam(paramNames=var_param_names).values # initial parameter values
         # Sensible defaults  for DFOLS -- which can be overwritten by config file
         userParams = {'logging.save_diagnostic_info': True,
                       'logging.save_xk': True,
                       'noise.quit_on_noise_level': True,
                       'general.check_objfun_for_overflow': False,
-                      'init.run_in_parallel': True,  # run in parallel
-                      'interpolation.throw_error_on_nans': True,  # make an error happen!
+                      'init.run_in_parallel': False,  # run in parallel
+                      'interpolation.throw_error_on_nans': True,  # make an error happen.
+                      'restarts.throw_error_on_nans': True,  # ALSO make an error happen.
                       }
 
         prange = configData.paramRanges(paramNames=var_param_names)
         prange = (prange.loc['minParam',:].values,prange.loc['maxParam',:].values)
         # update the user parameters from the configuration.
         userParams = configData.DFOLS_userParams(userParams=userParams)
+        # Check following params are True or not set.
+        # interpolation.throw_error_on_nans & restarts.throw_error_on_nans
+        not_set_true=[]
+        for param in ['interpolation.throw_error_on_nans', 'restarts.throw_error_on_nans']:
+            value = userParams.get(param)
+            if value is False: # only raise an error if False. If None (because not set) or True then we are OK.
+                not_set_true.append(param) # add to list of bad params.
+            userParams[param] = True # force it to be true regardless
+
+        if not_set_true:
+            m = f'Set {" ".join(not_set_true)} parameters to True or do not set'
+            raise ValueError(m)
+
+        # setup transform matrix and optFn
+        tMat = configData.transMatrix(scale=scale)
+
+        optFn = self.genOptFunction(transform=tMat, residual=True, raiseError=False, scale=scale)
         rhobeg = dfols_config.get('rhobeg', 1e-1)
         rhoend = dfols_config.get('rhoend', 1e-3)
         do_logging=dfols_config.get('do_logging',False)
