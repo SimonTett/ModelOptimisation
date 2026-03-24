@@ -134,10 +134,10 @@ class LogicalInfo(model_base):
 
         dct = super().to_dict()
         model_dct = dct.get('models', {})  # get models dict (key is logical name, values are list of models)
-        models_as_keys: dict[str:list] = {}
+        models_as_keys: dict[str,list] = {}
         for logical_name, model_list in model_dct.items():
-            models_as_keys[logical_name]=[runSubmit.key_for_model(m) for m in model_list]
-        dct['models']= models_as_keys # store the keys
+            models_as_keys[logical_name] = [runSubmit.key_for_model(m) for m in model_list]
+        dct['models'] = models_as_keys # store the keys
         return dct
 
     @classmethod
@@ -165,7 +165,7 @@ class LogicalInfo(model_base):
         convert_message=True
         for logical_name,models in dct['models'].items():
             if isinstance(models,dict):
-                model_dct[logical_name] =models.values() # just want the values
+                model_dct[logical_name] =list(models.values()) # just want the values as a list.
                 if convert_message:
                     my_logger.warning('Converting model keys from dict to list')
                     convert_message=False # only want message to come out once
@@ -173,7 +173,7 @@ class LogicalInfo(model_base):
 
             else:
                 model_dct[logical_name] = models
-            dct['models'] = model_dct # replaced with updated dct.
+        dct['models'] = model_dct # replaced with updated dct.
 
 
         obj:LogicalInfo = super().from_dict(dct)
@@ -510,12 +510,14 @@ class runSubmit(SubmitStudy):
 
 
 
-
+    type_multi_model_fn = typing.Callable[["runSubmit", dict[str, dict]],tuple[list[Model.Model],typing.Optional[pd.Series]]]
+    # mult model fn takes as args a runSubmit obj and a dict and returns
+    #    a list of Models and pandas series (of obs)/None (if sims do not exist)
     def comp_logical_obs(self,
                  params: dict,
                  fixed_params: dict,
                  n_ensemble:int=1,
-                 multi_config_fn: typing.Optional[typing.Callable[[runSubmit, dict[str, dict]],typing.Optional[pd.Series]]] = None,
+                 multi_config_fn: typing.Optional[type_multi_model_fn] = None,
                  transform: typing.Optional[pd.DataFrame] = None,
                  scale: bool = False,
                  residual: bool = False,
@@ -808,12 +810,13 @@ class runSubmit(SubmitStudy):
         """
         self._logical_info = LogicalInfo() # reset logical info to empty.
 
-    def check_deterministic(self,error:genericLib.error_handle_types = 'error') -> bool:
+    def check_deterministic(self,error:genericLib.error_handle_types = 'warn') -> bool:
         """
         Check that the model runs are deterministic. Done by checkibg that all keys in self._logical_info.models are in self.model_index.
         If not then suggests that some models that were run were not used which suggests non-determinism in the algorithm.
 
-        :param error: Used to in call to genericLib.error_handle to determine whether to raise an error, warn or ignore
+        :param error: Used to in call to genericLib.error_handle to determine whether to raise an error, warn or ignore.
+          See genericLib.error_handle for allowed values and what is done.
         :return: True if deterministic, False otherwise.
         """
 
