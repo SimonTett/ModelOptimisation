@@ -1614,10 +1614,10 @@ class Model(ModelBaseClass, journal):
 
     def config_name(self)  -> str:
         """
-        Returns the configuration name which is the reference_name + ensembleMemmber (or 0)
+        Returns the configuration name which is the reference_name + ensembleMember (or 0)
         :return: name
         """
-        ensemble_member = self.parameters.get('ensembleMemmber',0)
+        ensemble_member = self.parameters.get('ensembleMember', 0)
         config_name = f"{self.reference_name}#{ensemble_member}"
         return config_name
 
