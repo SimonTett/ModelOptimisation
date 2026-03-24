@@ -292,7 +292,7 @@ if any(s not in ['PROCESSED','INSTANTIATED'] for s in status):
     raise ValueError(f"Have unexpected status rSUBMIT:{rSUBMIT}")
 
 algorithmName = configData.optimise()['algorithm'].upper()
-non_determinisitic = configData.optimise().get('nondeterministic', 'warn')
+non_determinisitic = configData.optimise().get('nondeterministic', 'fail')
 my_logger.debug(f"Algorithm is {algorithmName} and non_deterministic is {non_determinisitic}")
 if algorithmName in ['RUNOPTIMISED', 'JACOBIAN']:
     wantCost = False
