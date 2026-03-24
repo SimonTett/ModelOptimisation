@@ -29,7 +29,11 @@ with open(input, "r")  as fp: # load up the post-process data.
 
 print(post_process.get("process_options",'No process options found'))
 
-sim_obs = post_process["fake_obs"]*2
+fake_obs = post_process["fake_obs"]
+if isinstance(fake_obs, dict):
+    sim_obs = {k: v * 2 for k, v in fake_obs.items()}
+else:
+    sim_obs = fake_obs
 if not isinstance(sim_obs,dict):
     raise ValueError(f"fake_obs of type {type(sim_obs)}")
 
