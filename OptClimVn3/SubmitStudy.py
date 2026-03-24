@@ -194,7 +194,7 @@ class SubmitStudy(Study, model_base, journal):
         If you need functionality beyond this you may want to inherit from SubmitStudy and
           override create_model to meet your needs
         :param dump: If True dump  self (using self.dump_config method)
-        :param reference_name: Nmae of the reference config. If None the default Model behaviour is used.
+        :param reference_name: Name of the reference config. If None the default Model behaviour is used.
         :return: Model created (or model that already exists). Returns None if would make more than max_model_sims
         """
         existing_names = [model.name for model in self.model_index.values() ] # list of existing model names
