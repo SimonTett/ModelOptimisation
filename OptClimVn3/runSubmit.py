@@ -209,8 +209,8 @@ class LogicalInfo(model_base):
 
 class runSubmit(SubmitStudy):
     # Has the following additional attributes over SubmitStudy (and Study)
-    #trace:typing.List[str] # the trace of all model evaluations. Elements are keys into model_info
-    #prev_trace:typing.List[str] # the trace off all model evaluation the previous time the algorithm was run
+        # _logical_info: LogicalInfo -- holds information about logical names, parameters, obs, cost and models.
+        #  This is a private attribute as it is really only for use within this class. It is not intended to be used outside this class.
 
 
     """
@@ -234,12 +234,7 @@ class runSubmit(SubmitStudy):
 
     """
 
-    """
-    Issues -- no logical info until all runs done (for run_params anyhow).  
-    Might be path in runAlgorithm where we have models to run so don't run algorithm. 
-    Soln would be adding a method to runSubmit to update logical info from existing models.
-    perhaps on load?? 
-    """
+
 
     def __init__(self,
                  config: typing.Optional[OptClimConfigVn3],
@@ -251,65 +246,12 @@ class runSubmit(SubmitStudy):
                  config_path: typing.Optional[pathlib.Path] = None,
                  next_iter_cmd: typing.Optional[typing.List[str]] = None):
         super().__init__(config, name, rootDir, refDir, models, model_name, config_path, next_iter_cmd)
-        self.trace:list[str] = [] # TODO remove this and prev_trace.
-        self.prev_trace:list[str] = []
+
         # _logical_info holds information for per optimisation parameter info.
         # Currently, largely a bag of attributes which this class reaches into as it needs to.
         # Having _logical_info as private for now as not sure if it will be needed outside this class.
         self._logical_info:LogicalInfo = LogicalInfo()
- 
 
-    def closest_model(self,model:Model.Model)  -> tuple[Model.Model,float]:
-        """
-        Find and return the closet model in the (current) model trace to specified model.
-        Close is defined as the smallest min difference for the normalised params that are fp or int.
-         A more sophisticated implementation would normalise difference by the param ranges.
-        :param model: model we are looking for closest match.
-        :return:  Closest model match.
-        """
-        params = self.params(normalize=True,numeric=True,keys=self.trace)
-        mparam = self.params(normalize=True,numeric=True,model=model)
-        delta = (np.abs(mparam-params)).sum(axis=1)
-        # compute the sum of the abs parameter diffs
-        indx = delta.argmin()
-        close_model = list(self.model_index.values())[indx]
-        return close_model,float(delta[indx])
-
-    test_nondetermin_status = typing.Literal['error', 'warning'] # allowed values 
-    def restart(self,test_nondetermin:typing.Optional[test_nondetermin_status]=None):
-        """
-        Setup state for restart. Copies trace to prev_trace and sets trace to empty list.
-        :param test_nondetermin -- verify that trace and prev_trace are consistent --
-            all elements in prev_trace should be in trace.
-            test_nondetermin should be one of 'error or 'warning'. If 'warning' warnings will be given.
-            if 'error' then ValueError will be raised.
-        If None then will be set to 'error'
-        :return: None
-        """
-        raise NotImplementedError("No longer in use...")
-        if test_nondetermin is None:
-            test_nondetermin='error'
-        allowed = runSubmit.test_nondetermin_status.__args__
-        if test_nondetermin not in allowed:
-            raise ValueError(f"{test_nondetermin} should be one of {allowed}")
-
-        # check that we have not lost any keys. If so, suggests problem with algorithm.
-        missing_keys = set(self.prev_trace) - set(self.trace)
-        if missing_keys:
-            my_logger.warning(f"Have {len(missing_keys)} keys in prev_trace not in trace.\n Fix alg. They are:\n")
-            for k in missing_keys:
-                # find nearest match
-                model = self.model_index[k] # all models ran.
-                close_model, delta = self.closest_model(model)
-                my_logger.warning(f"Missing {model}. Closest match is {close_model} with abs norm. param diff {delta}")
-
-            if test_nondetermin == 'error':
-                raise ValueError("Failed as have keys in prev_trace not in trace. Set run_info/test_nondetermin to "
-                                 "'warning' to ignore")
-        
-        # dealt with potential non-determinism.
-        self.prev_trace = self.trace[:]
-        self.trace = []
 
     def make_model(self,params:dict, reference_name:typing.Optional[str] = None )-> Model.Model:
         """
