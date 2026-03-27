@@ -256,7 +256,6 @@ if rSUBMIT is None:  # no configuration exists. So create it.
         rSUBMIT.read_model_configs(files)
                 
         my_logger.info(f"Loaded models in {files} ")
-        #raise NotImplementedError('Need to deal with gen_name which could be inconsistent here.' )
     my_logger.debug(f"Created new runSubmit {rSUBMIT}")
 else:
     my_logger.debug(f"Using existing runSubmit {rSUBMIT}")
@@ -293,15 +292,23 @@ if any(s not in ['PROCESSED','INSTANTIATED'] for s in status):
     raise ValueError(f"Have unexpected status rSUBMIT:{rSUBMIT}")
 
 algorithmName = configData.optimise()['algorithm'].upper()
-my_logger.debug(f"Algorithm is {algorithmName}")
+non_determinisitic = configData.optimise().get('nondeterministic', 'fail')
+my_logger.debug(f"Algorithm is {algorithmName} and non_deterministic is {non_determinisitic}")
 if algorithmName in ['RUNOPTIMISED', 'JACOBIAN']:
     wantCost = False
 else:
     wantCost = True
+# want to save_final_config?
+save_final_config = True
+if algorithmName in ['DFOLS']:
+    save_final_config = False # not for DFOLS as it saves it
+
 finalConfig = None  # so we have something!
 while True:  # loop indefinitely so can have fake_fn. This really to test code/algorithm.
     try:  # run an algorithm iteration.
         np.random.seed(123456)  # init RNG though probably should go to the runXXX methods.
+        # reset logical information
+        rSUBMIT.reset_logical_info()
         if algorithmName == 'DFOLS':
             finalConfig = rSUBMIT.runDFOLS(scale=True,stop=args.stop)
         elif algorithmName == 'PYSOT':
@@ -318,8 +325,10 @@ while True:  # loop indefinitely so can have fake_fn. This really to test code/a
             finalConfig = rSUBMIT.run_params(scale=True,stop=args.stop)
         else:
             raise ValueError(f"Don't know what to do with Algorithm: {algorithmName}")
+        rSUBMIT.check_deterministic(error=non_determinisitic)
         break  # we have finished running algorithm so can exit and go to final clear up.
     except optclim_exceptions.submitModel:  # error which triggers need to instantiate and run more models.
+        rSUBMIT.check_deterministic(error=non_determinisitic) # check are still deterministic.
         if read_only:
             my_logger.info(f"read_only -- exiting")
             break  # exit the loop -- we are done as in read_only mode.
@@ -352,8 +361,9 @@ while True:  # loop indefinitely so can have fake_fn. This really to test code/a
     # end of try/except.
 
 # Deal with final stuff
-rSUBMIT.dump_config()  # dump the configuration.
-if finalConfig is not None:  # have a finalConfig. If so save it. We could not have it if dry_run or read_only set.
+rSUBMIT.dump_config(dump_models=True)  # dump the configuration & all models
+
+if finalConfig is not None and save_final_config:  # have a finalConfig. If so save it. We could not have it if dry_run or read_only set.
     finalConfig.save(final_JSON_file)
 
 if monitor:

@@ -459,7 +459,7 @@ class FortranNamelistConfig(BaseConfig):
                 setattr(config_to_write,attr,value)
 
         config_to_write.write(path, force=True)  # force overwriting of file.
-        my_logger.info(f'Wrote fortran namelist config to {path}')
+        my_logger.debug(f'Wrote fortran namelist config to {path}')
 
         return path
 
@@ -609,7 +609,7 @@ class UMroseNamelistConfig(BaseConfig):
             file.rename(file2) # and actually do the rename
 
         self.reset()
-        my_logger.info(f'Wrote UM rose namelist config to {path}')
+        my_logger.debug(f'Wrote UM rose namelist config to {path}')
         return path
 
 

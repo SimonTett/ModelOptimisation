@@ -10,3 +10,8 @@
 2026-03-07
 - added some env variables setup by runAlgorithm.py to support logging.
 - filename keys in log config dict get expanded and expand checks if expansion works. 
+
+2026-03-10
+- added ability to have different post-processing for different models in a multi-model configuration.
+- model now includes reference attribute and config_name method.
+- Cleaned up how logical_info handles models. Main change is that multi-model function should return  obs AND list of models

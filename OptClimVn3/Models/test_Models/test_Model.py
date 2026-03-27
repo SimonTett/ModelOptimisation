@@ -1,4 +1,3 @@
-
 import copy
 import datetime
 import filecmp
@@ -13,6 +12,7 @@ import unittest.mock
 import tarfile
 import shlex
 
+import Model
 import StudyConfig  # so can read in a config for fake_fn.
 import numpy as np
 import numpy.testing as nptest
@@ -105,6 +105,27 @@ class ModelTestCase(unittest.TestCase):
                 nptest.assert_equal(value, value2)
             else:
                 self.assertEqual(value, value2)
+
+
+    def test_init(self):
+        """
+        Test that model init works
+        :return:
+        """
+        pardict = dict(fred=2, james=3)
+        model = Model.Model('name=test_model', reference=self.refDir, model_dir=self.testDir / 'study', post_process=self.post_process,
+                             parameters=dict(RHCRIT=2, VF1=2.5, CT=2,G0=10,ANVIL_FACTOR=0.5,multi_var=2.0),
+                             engine=self.engine)
+        self.assertEqual(model.name, 'name=test_model')
+        self.assertEqual(model.reference_name,self.refDir.name)
+
+        model = Model.Model('name=test_model', reference=self.refDir, reference_name='control',model_dir=self.testDir / 'study', post_process=self.post_process,
+                             parameters=dict(RHCRIT=2, VF1=2.5, CT=2,G0=10,ANVIL_FACTOR=0.5,multi_var=2.0),
+                             engine=self.engine)
+
+        self.assertEqual(model.reference_name, 'control')
+
+
 
     def test_inherit(self):
         """
@@ -206,7 +227,8 @@ class ModelTestCase(unittest.TestCase):
         model = myModel('test_model', self.refDir, post_process=self.post_process,
                       model_dir=self.testDir, parameters=pardict)
         cmd = [model.expand(self.post_process['script']), 'input.json', self.post_process['output_file']]
-        expected_dct = dict(name='test_model', reference=pathlib.PurePath(self.refDir),
+        ref=pathlib.PurePath(self.refDir)
+        expected_dct = dict(name='test_model', reference=ref,reference_name=ref.name,
                             model_dir=pathlib.PurePath(self.testDir), config_dir=pathlib.PurePath(self.testDir),
                             parameters=pardict,
                             post_process={}, _output={},
@@ -748,6 +770,18 @@ class ModelTestCase(unittest.TestCase):
         with self.assertRaises(ValueError):
             model = myModel('fred', self.refDir, post_process=pp)
 
+        # test per reference_name works
+        script2 = model.expand('$OPTCLIMTOP/OptClimVn3/Models/scripts/pp_script_test2.py')
+        pp = copy.deepcopy(self.post_process)
+        pp['interp'] = 'python'
+        pp['post_process_for_reference'] = {'control': dict(script=script2,process_options='some process options')}
+        expect_pp  = dict(process_options = 'some process options')
+        model = myModel('fred', self.refDir, post_process=pp,reference_name='control')
+        self.assertEqual(model.post_process_cmd_script, ['python',script2, input, output])
+        self.assertEqual(model._post_process_output, output)
+        self.assertEqual(model._post_process_input, input)
+        self.assertEqual(model.post_process, expect_pp)
+
     def test_attrs_for_key(self):
         """
         Tests for key
@@ -1133,11 +1167,73 @@ class ModelTestCase(unittest.TestCase):
 
         self.assertTrue(expect_params.equals(got_params.reindex(expect_params.index)))
 
+    def test_update_reference_name(self):
+        """
+        test that update_reference_name works. Should update the reference name and then update the parameters to match the new reference.
+        :return:
 
+        Three tests:
+        1) Create a model with reference name 'control' and then update to 'experiment'. Check that warning issued, reference name is updated, Model config file is updated, and there are two more history entries
+        2) Update the reference name to the same name. Check that nothing changes and no history entries are added.
+        3) update the reference name to 'control2' with dump set to False. Check that reference name is updated, Model config file is not updated, but one history entry is added.
+        """
+        import tempfile
+        import pathlib
+        from unittest.mock import patch
 
+        # 1) Create model with reference_name 'control'
+        tmpdir = tempfile.TemporaryDirectory()
+        model_dir = pathlib.Path(tmpdir.name)
+        ref_dir = model_dir / 'ref'
+        ref_dir.mkdir()
+        config_path = model_dir / 'model_config.json'
+        # Create a dummy config file
+        config_path.write_text('{}')
 
+        # Create model
+        model = Model.Model(name='test_model', reference=ref_dir, reference_name='control', model_dir=model_dir, config_path=config_path)
+        old_history_len = len(getattr(model, 'history', []))
+        old_ref = model.reference_name
 
-        
+        # Patch dump to check it is called
+        with unittest.mock.patch('Model.Model.dump', autospec=True) as mock_dump:
+            with self.assertLogs('OPTCLIM.Model', level='WARNING') as log:
+                model.update_reference_name('experiment', dump=True)
+            # Check warning issued
+            self.assertTrue(any('Updating reference from control to experiment' in msg for msg in log.output))
+            # Check reference_name updated
+            self.assertEqual(model.reference_name, 'experiment')
+            # Check config file updated (dump called)
+            mock_dump.assert_called_with(model,config_path)
+            # Check two more history entries
+            self.assertEqual(len(model._history), old_history_len + 2)
+
+            # 2) Update reference name to same name
+            mock_dump.reset_mock()
+            old_history_len = len(model._history)
+            with self.assertNoLogs('OPTCLIM.Model', level='WARNING') as log:
+                model.update_reference_name('experiment', dump=True)
+            # No history entries added
+            self.assertEqual(len(model._history), old_history_len)
+            mock_dump.assert_not_called()
+
+            #3 change reference name but dump False
+            time.sleep(1e-3) # history keys are timestamps. This, in retrospect, is a bad idea. Should have a list of times/messages.
+            mock_dump.reset_mock()
+            old_history_len = len(model._history)
+            with self.assertLogs('OPTCLIM.Model', level='WARNING') as log:
+                model.update_reference_name('control2', dump=False)
+            # Check warning issued
+            self.assertTrue(any('Updating reference from experiment to control2' in msg for msg in log.output))
+            # Check reference_name updated
+            self.assertEqual(model.reference_name, 'control2')
+            # Check config file not updated (dump not called)
+            mock_dump.assert_not_called()
+            # Check one history entry added
+            self.assertEqual(len(model._history), old_history_len + 1)
+
+        tmpdir.cleanup()
+
 
 
 

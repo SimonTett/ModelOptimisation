@@ -7,6 +7,7 @@ import pathlib
 
 
 import Model
+import genericLib
 from SubmitStudy import SubmitStudy
 from StudyConfig import OptClimConfigVn3
 from model_base import model_base
@@ -52,7 +53,7 @@ class LogicalInfo(model_base):
         self.count_within_iteration: int = 0  # count of models within an iteration. Used in generating logical names.
         self.names: dict[str, str] = dict()  # dict of logical names indexed by key generated from parameters.
         self.parameters: dict[str, pd.Series] = dict()  # dict of logical parameters indexed by logical name.
-        self.models: dict[str, dict[str,Model.Model]] = dict()  # dict of dicts of models indexed by logical_name Each dict contains model names and Model objects.
+        self.models: dict[str, list[Model.Model]] = dict()  # dict of list of models indexed by logical_name.
         self.obs: dict[str, pd.Series] = dict()  # dict of obs indexed by logical name.
         self.cost: dict[str, float] = dict()  # dict of cost indexed by logical name.
 
@@ -132,40 +133,51 @@ class LogicalInfo(model_base):
         """
 
         dct = super().to_dict()
-        model_dct = dct.pop('models', {})  # get models dict
-        models_as_keys: dict[str,list[str]]= {}
-        for name,model_dct in model_dct.items():
-            dct_models = {k:runSubmit.key_for_model(m) for k,m in model_dct.items()} # convert models to keys
-            models_as_keys[name] = dct_models
-        dct['models']= models_as_keys # store the keys
+        model_dct = dct.get('models', {})  # get models dict (key is logical name, values are list of models)
+        models_as_keys: dict[str,list] = {}
+        for logical_name, model_list in model_dct.items():
+            models_as_keys[logical_name] = [runSubmit.key_for_model(m) for m in model_list]
+        dct['models'] = models_as_keys # store the keys
         return dct
 
     @classmethod
     def from_dict(cls, dct: dict) -> LogicalInfo:
         """
-        Create LogicalInfo from a dictionary. Uses super class method. Updates "old" format which used list of 'keys' to dict of 'models'.
+        Create LogicalInfo from a dictionary. Uses super class method.
+        Updates "old" format which used list of 'keys' to dict of 'models'.
         :param dct: dictionary to parse.
         :return: LogicalInfo object.
         """
         # deal with old version which uses keys and set models to it.
         # This code can be removed once old keys based data is no longer in use or has been converted.
         if 'keys' in dct and 'models' not in dct:
-            my_logger.warning("LogicalInfo.from_dict -- found 'keys' in dict -- converting to 'models'")
-            keys_attr: dict[str,list[str]] = dct.pop('keys')
-            # now to fix up models dict.
-            models_from_keys = dict()
-            for name, key_list in keys_attr.items():
-                models_from_keys[name] = {f'Model{count}':v for count,v in enumerate(key_list)} # set models to None -- will be fixed up in runSubmit.from_dict
-            # keys
-            dct['models'] = models_from_keys
-            my_logger.warning('LogicalInfo.from_dict -- converting keys to models -- please update saved data to new format')
+           dct['models'] = dct.pop('keys')
+           my_logger.warning('LogicalInfo.from_dict -- converting keys to models -- please update saved data to new format')
 
         elif 'keys' in dct and 'models' in dct:
             raise ValueError("LogicalInfo.from_dict -- found both 'keys' and 'models' in dict -- cannot proceed")
         else:
             pass # we are good!
 
+        #for a while models was a dict of dicts with the inner dict being model names + keys.
+        # if this is so need to flatten them.
+        model_dct={}
+        convert_message=True
+        for logical_name,models in dct['models'].items():
+            if isinstance(models,dict):
+                model_dct[logical_name] =list(models.values()) # just want the values as a list.
+                if convert_message:
+                    my_logger.warning('Converting model keys from dict to list')
+                    convert_message=False # only want message to come out once
+
+
+            else:
+                model_dct[logical_name] = models
+        dct['models'] = model_dct # replaced with updated dct.
+
+
         obj:LogicalInfo = super().from_dict(dct)
+        # conversion of keys to models (by pointing by reference to models in model_list handled in runSubmit.from_dict
         return obj
 
     def keys_to_models(self,model_index:dict[str,Model.Model],
@@ -177,19 +189,19 @@ class LogicalInfo(model_base):
         :param model_index: dict of models indexed by key.
         :return: Nada as models updated inplace.
         """
-        for name,model_dct in self.models.items():
-            dct = {}
-            for model_name, model_or_key in model_dct.items():
+        for name,model_list in self.models.items():
+            final_model_list=[]
+            for model_or_key in model_list:
                 if update_models:
                     key = runSubmit.key_for_model(model_or_key)
                 else:
                     key = model_or_key
                 try:
-                    dct[model_name] = model_index[key]
+                    final_model_list += [model_index[key]] # this is a model
                 except KeyError:
-                    raise ValueError(f"Key {key} for model {model_name} not found in model_index")
+                    raise ValueError(f"Key {key} not found in model_index")
             # done dealing with models for this logical name.
-            self.models[name] = dct # update models to be Model objects.
+            self.models[name] = final_model_list # update models to be Model objects.
 
 
 
@@ -197,8 +209,8 @@ class LogicalInfo(model_base):
 
 class runSubmit(SubmitStudy):
     # Has the following additional attributes over SubmitStudy (and Study)
-    #trace:typing.List[str] # the trace of all model evaluations. Elements are keys into model_info
-    #prev_trace:typing.List[str] # the trace off all model evaluation the previous time the algorithm was run
+        # _logical_info: LogicalInfo -- holds information about logical names, parameters, obs, cost and models.
+        #  This is a private attribute as it is really only for use within this class. It is not intended to be used outside this class.
 
 
     """
@@ -222,12 +234,7 @@ class runSubmit(SubmitStudy):
 
     """
 
-    """
-    Issues -- no logical info until all runs done (for run_params anyhow).  
-    Might be path in runAlgorithm where we have models to run so don't run algorithm. 
-    Soln would be adding a method to runSubmit to update logical info from existing models.
-    perhaps on load?? 
-    """
+
 
     def __init__(self,
                  config: typing.Optional[OptClimConfigVn3],
@@ -239,71 +246,18 @@ class runSubmit(SubmitStudy):
                  config_path: typing.Optional[pathlib.Path] = None,
                  next_iter_cmd: typing.Optional[typing.List[str]] = None):
         super().__init__(config, name, rootDir, refDir, models, model_name, config_path, next_iter_cmd)
-        self.trace:list[str] = [] # TODO remove this and prev_trace.
-        self.prev_trace:list[str] = []
+
         # _logical_info holds information for per optimisation parameter info.
         # Currently, largely a bag of attributes which this class reaches into as it needs to.
         # Having _logical_info as private for now as not sure if it will be needed outside this class.
         self._logical_info:LogicalInfo = LogicalInfo()
- 
 
-    def closest_model(self,model:Model.Model)  -> tuple[Model.Model,float]:
-        """
-        Find and return the closet model in the (current) model trace to specified model.
-        Close is defined as the smallest min difference for the normalised params that are fp or int.
-         A more sophisticated implementation would normalise difference by the param ranges.
-        :param model: model we are looking for closest match.
-        :return:  Closest model match.
-        """
-        params = self.params(normalize=True,numeric=True,keys=self.trace)
-        mparam = self.params(normalize=True,numeric=True,model=model)
-        delta = (np.abs(mparam-params)).sum(axis=1)
-        # compute the sum of the abs parameter diffs
-        indx = delta.argmin()
-        close_model = list(self.model_index.values())[indx]
-        return close_model,float(delta[indx])
 
-    test_nondetermin_status = typing.Literal['error', 'warning'] # allowed values 
-    def restart(self,test_nondetermin:typing.Optional[test_nondetermin_status]=None):
-        """
-        Setup state for restart. Copies trace to prev_trace and sets trace to empty list.
-        :param test_nondetermin -- verify that trace and prev_trace are consistent --
-            all elements in prev_trace should be in trace.
-            test_nondetermin should be one of 'error or 'warning'. If 'warning' warnings will be given.
-            if 'error' then ValueError will be raised.
-        If None then will be set to 'error'
-        :return: None
-        """
-        raise NotImplementedError("No longer in use...")
-        if test_nondetermin is None:
-            test_nondetermin='error'
-        allowed = runSubmit.test_nondetermin_status.__args__
-        if test_nondetermin not in allowed:
-            raise ValueError(f"{test_nondetermin} should be one of {allowed}")
-
-        # check that we have not lost any keys. If so, suggests problem with algorithm.
-        missing_keys = set(self.prev_trace) - set(self.trace)
-        if missing_keys:
-            my_logger.warning(f"Have {len(missing_keys)} keys in prev_trace not in trace.\n Fix alg. They are:\n")
-            for k in missing_keys:
-                # find nearest match
-                model = self.model_index[k] # all models ran.
-                close_model, delta = self.closest_model(model)
-                my_logger.warning(f"Missing {model}. Closest match is {close_model} with abs norm. param diff {delta}")
-
-            if test_nondetermin == 'error':
-                raise ValueError("Failed as have keys in prev_trace not in trace. Set run_info/test_nondetermin to "
-                                 "'warning' to ignore")
-        
-        # dealt with potential non-determinism.
-        self.prev_trace = self.trace[:]
-        self.trace = []
-
-    def make_model(self,params:dict )-> Model.Model:
+    def make_model(self,params:dict, reference_name:typing.Optional[str] = None )-> Model.Model:
         """
         Make a model from a dictionary of parameters. If model already exists then return that model.
-        # Will add keys to self._tmp_keys if model already exists and is processed.
         :param params: dictionary of parameters
+        :param reference_name: name of reference model to use. Pass None if want Model default behaviour.
         :return: Model object
         """
 
@@ -312,17 +266,12 @@ class runSubmit(SubmitStudy):
             params['reference'] = self.refDir
         model = self.get_model(params)
         if model is None:  # no model so time to create one.
-            model = self.create_model(params)  # returns None if no model was created.
+            model = self.create_model(params,reference_name=reference_name,dump=False)  # returns None if no model was created.
             if model is None:
                 raise optclim_exceptions.submitModel
                 # Immediately raise exception as None means no model created and nothing else can be done
-                # FIXME One issue here is that we are terminating the algorithm without the algorithm itself knowing this
-                # so then the algorithm can't do any clean up or capture diagnostics.
-                # This is tricky as really per-algorithm -- we want it to complete but there is no general way of doing this
-                # one approach would be to pass in a fn which gets run here. For DFOLS (and other opt cases) it could do this by returning obs values = target
-                # That would terminate but then jacobian etc would be stuffed as would use this last state. A better approach might be to set
-                # self.exceeded_max_models to True. Then rerun the algorithm with maxFn set to max_model_simulations.
-                # OR set maxFn to min(max_model_simulations,maxFn).
+                # will run out any remining models.
+        
         elif model.status in  ["INSTANTIATED"]:  # model exists but needs submitting
             my_logger.debug(f"Model {model} has been instantiated but not run -- need to submit")
             raise optclim_exceptions.submitModel
@@ -331,10 +280,11 @@ class runSubmit(SubmitStudy):
             raise ValueError(f"{model} status != PROCESSED but is {model.status}")
         else:  # got a model.
             my_logger.debug(f"Using existing model {model}")
+            if reference_name is not None:
+                model.update_reference_name(reference_name)
+            # reset reference_name if provided. 
 
-        key = self.key(params)
-        self._tmp_keys.update([key])  # add to temporary keys created during this call. Set gives us unique keys.
-        self.trace.append(key)  # append key to the trace. TODO think this could be removed now as trace not that useful now have logical_info
+
         return model
 
     def transform_check(self,obs:pd.Series,
@@ -424,7 +374,7 @@ class runSubmit(SubmitStudy):
 
         ref_param_values = None
         param_values = None
-        for model in self._logical_info.models[name].values():
+        for model in self._logical_info.models[name]:
             if update_models:
                 key = self.key_for_model(model) # original key
                 param_values = model.update_params(params) # update the model parameters.
@@ -502,12 +452,14 @@ class runSubmit(SubmitStudy):
 
 
 
-
+    type_multi_model_fn = typing.Callable[["runSubmit", dict[str, dict]],tuple[list[Model.Model],typing.Optional[pd.Series]]]
+    # mult model fn takes as args a runSubmit obj and a dict and returns
+    #    a list of Models and pandas series (of obs)/None (if sims do not exist)
     def comp_logical_obs(self,
                  params: dict,
                  fixed_params: dict,
                  n_ensemble:int=1,
-                 multi_config_fn: typing.Optional[typing.Callable[[runSubmit, dict[str, dict]],typing.Optional[pd.Series]]] = None,
+                 multi_config_fn: typing.Optional[type_multi_model_fn] = None,
                  transform: typing.Optional[pd.DataFrame] = None,
                  scale: bool = False,
                  residual: bool = False,
@@ -555,12 +507,11 @@ class runSubmit(SubmitStudy):
         # For now no caching of obs or cost. Could be done if needed. TODO insert caching if needed.
         ## Try and compute all observations wanted.
         obs = [] # where we will store the obs for each ensemble member.
-        self._tmp_keys=set() # temporary set of keys created during this call.
-        # see make_model where these keys get added to _tmp_keys
-        model_names=[]
+        models_created=[]
         for ens_member in range(n_ensemble): # loop over ensemble members
             # We try and get all the ensemble members and then return None if any need running.
             # Do this so have a full list of cases to run to allow parallelism.
+            sim_obs =None # where we will store the obs for this ensemble member. Set to None to start with so can check if we need to run a model
             if n_ensemble == 1:
                 ens_param = {} # empty dict
             else:
@@ -568,37 +519,35 @@ class runSubmit(SubmitStudy):
 
             # note that ensembleMember will be overwritten if it is in fixed_params or params. Checked above.
             if multi_config_fn is None: # simple calculation
-                model_names += [f'Simulation#{ens_member}']
                 full_params = ens_param|params|fixed_params # needs to be using  python 3.9+ for | operator.
                 full_params.update(reference=self.expand(full_params.get('reference',self.refDir)).as_posix()) # add in reference params if they are there.
-                sim_obs = self.make_model(full_params).simulated_obs
+                model = self.make_model(full_params) # create the model.
+                models_created.append(model)
+                if model is not None:
+                    sim_obs = model.simulated_obs
             else:
                 # set up dict containing all parameters for each model and then run multi_config_fn.
-                model_names += [f'{k}#{ens_member}' for k in fixed_params.keys()]
                 all_params = {k: (ens_param | params | fp ) for k,fp in fixed_params.items()} # needs to be using  python 3.9+ for | operator.
                 # Make sure reference is in each set of params.
                 # now call multi_config_fn on the dict that was constructed.
-                sim_obs = multi_config_fn(self, all_params) # obs will be None if any models need running.
+                models,sim_obs = multi_config_fn(self, all_params) # obs will be None if any models need running.
+                models_created += models # add the models created to the list of models created during this call.
                 if sim_obs is not None and not isinstance(sim_obs, pd.Series):
                     raise ValueError(f"multi_config_fn should return a pandas Series or None but got {type(sim_obs)}")
+                
             if sim_obs is None:
                 model_fail = True # flag that we need to return None once we have looped over ensemble members.
             else:
                 # work out name for this ensemble member so when make a data array have unique index. And store the obs
                 obs.append(sim_obs.rename(f"r{ens_member}")) # store the obs and name it by ensemble member.
         ## Done loop over ensemble members. Now for final processing.
+        self._logical_info.models[name]= models_created #  store all models created during this call.
         if model_fail: # some model needs running so return None
-            delattr(self, '_tmp_keys')  # clean up temporary attribute.
             return None
         # otherwise all models we need have ran.
         if len(obs) != n_ensemble:
             raise ValueError(f"Logic error -- expected {n_ensemble} ensemble members but got {len(obs)}")
          # now have all the ensemble members.
-        if len(model_names) != len(self._tmp_keys):
-            raise ValueError("Logic error -- number of models created does not match number of model names")
-        # store the models created during this call.
-        self._logical_info.models[name]= dict(zip(model_names,[self.model_index[key] for key in self._tmp_keys]) )# store all models created during this call.
-        delattr(self, '_tmp_keys')  # clean up temporary attribute.
         if n_ensemble >1:  # ensemble avg obs if necessary
             obs = pd.DataFrame(obs).mean(axis=0)
         else:
@@ -796,7 +745,35 @@ class runSubmit(SubmitStudy):
 
         return fn
 
-    def runOptimized(self):
+    def reset_logical_info(self):
+        """
+        Reset the logical info. Needed when running algorthms.
+        :return: None
+        """
+        self._logical_info = LogicalInfo() # reset logical info to empty.
+
+    def check_deterministic(self,error:genericLib.error_handle_types = 'warn') -> bool:
+        """
+        Check that the model runs are deterministic. Done by checkibg that all keys in self._logical_info.models are in self.model_index.
+        If not then suggests that some models that were run were not used which suggests non-determinism in the algorithm.
+
+        :param error: Used to in call to genericLib.error_handle to determine whether to raise an error, warn or ignore.
+          See genericLib.error_handle for allowed values and what is done.
+        :return: True if deterministic, False otherwise.
+        """
+
+        logical_model_keys = []
+        for model_lists in self._logical_info.models.values():
+            for model in model_lists:
+                logical_model_keys.append(self.key_for_model(model))
+        missing_keys = set(self.model_index) - set(logical_model_keys)
+        if missing_keys:
+            message = f"Have {len(missing_keys)} keys in model_index not in logical_info.models.\n Unused models are:\n"\
+                + "\n".join([f"{k}: {self.model_index[k]}" for k in missing_keys])
+            genericLib.error_handle(message,error)
+        return len(missing_keys) == 0 # return True if no missing keys, False otherwise.
+
+    def runOptimized(self,stop:bool=False) -> StudyConfig:
         """
         :arg self
         Run optimised case using reference model which may be potentially different from configuration used to optimize.
@@ -818,6 +795,8 @@ class runSubmit(SubmitStudy):
         # the final config (optimum param values, nEns) and n configurations.  Trick is
         # not running more than once... Which is what Submit gives...
         # Hard will come back when I actually have a need!
+        if stop:
+            raise NotImplementedError("runOptimized stop not implemented as have no use case")
         start = self.config.optimumParams()
         modelFn = self.genOptFunction(df=True)
         obsSeries = modelFn(start.values).squeeze()  # if the simu
@@ -856,7 +835,7 @@ class runSubmit(SubmitStudy):
 
         return deltaParam
 
-    def runJacobian(self,scale:bool=False):
+    def runJacobian(self,scale:bool=False,stop:bool=False) -> StudyConfig:
         """
         run Jacobian cases.
         Rather crude (first order accurate) estimate. Evaluate functions at
@@ -878,6 +857,8 @@ class runSubmit(SubmitStudy):
         """
         #TODO add maxfun which probably means outer loop is over ensemble members
         # rather than over parameters.
+        if stop:
+            raise NotImplementedError("runJacobian stop not implemented as have no use case")
         configData = self.config
         Tmat = configData.transMatrix(scale=scale)
         modelFn = self.genOptFunction(raiseError=True, df=True, residual=True, transform=Tmat,scale=scale)
@@ -1061,30 +1042,44 @@ class runSubmit(SubmitStudy):
         configData = self.config
         var_param_names = configData.paramNames()
         dfols_config = configData.DFOLS_config()
-        raise_error = dfols_config.get("raise_error",False)
-        if raise_error is None:
-            raise_error= False
-        # setup transform matrix and optFn
-        tMat = configData.transMatrix(scale=scale)
-        optFn = self.genOptFunction(transform=tMat, residual=True, raiseError=raise_error, scale=scale)
+
+
 
         # deal with Evaluation database
         x0 = self.dfols_eval_db(scale=scale) # will return evaluation database if key exists or None if it doesn't
-        if x0 is  None: # use beginaram to get intial values
+        if x0 is  None: # use beginParam to get intial values
             x0 = configData.beginParam(paramNames=var_param_names).values # initial parameter values
         # Sensible defaults  for DFOLS -- which can be overwritten by config file
         userParams = {'logging.save_diagnostic_info': True,
                       'logging.save_xk': True,
                       'noise.quit_on_noise_level': True,
                       'general.check_objfun_for_overflow': False,
-                      'init.run_in_parallel': True,  # run in parallel
-                      'interpolation.throw_error_on_nans': True,  # make an error happen!
+                      'init.run_in_parallel': False,  # run in parallel
+                      'interpolation.throw_error_on_nans': True,  # make an error happen.
+                      'restarts.throw_error_on_nans': True,  # ALSO make an error happen.
                       }
 
         prange = configData.paramRanges(paramNames=var_param_names)
         prange = (prange.loc['minParam',:].values,prange.loc['maxParam',:].values)
         # update the user parameters from the configuration.
         userParams = configData.DFOLS_userParams(userParams=userParams)
+        # Check following params are True or not set.
+        # interpolation.throw_error_on_nans & restarts.throw_error_on_nans
+        not_set_true=[]
+        for param in ['interpolation.throw_error_on_nans', 'restarts.throw_error_on_nans']:
+            value = userParams.get(param)
+            if value is False: # only raise an error if False. If None (because not set) or True then we are OK.
+                not_set_true.append(param) # add to list of bad params.
+            userParams[param] = True # force it to be true regardless
+
+        if not_set_true:
+            m = f'Set {" ".join(not_set_true)} parameters to True or do not set'
+            raise ValueError(m)
+
+        # setup transform matrix and optFn
+        tMat = configData.transMatrix(scale=scale)
+
+        optFn = self.genOptFunction(transform=tMat, residual=True, raiseError=False, scale=scale)
         rhobeg = dfols_config.get('rhobeg', 1e-1)
         rhoend = dfols_config.get('rhoend', 1e-3)
         do_logging=dfols_config.get('do_logging',False)
@@ -1112,10 +1107,9 @@ class runSubmit(SubmitStudy):
             n_inst_models = len(self.models_to_instantiate())
             my_logger.info(f"Have just generated {n_inst_models} to instantiate")
             neval = len(self.logical_cost())
-            if( neval > 1) and False: # got some evaluations.
-                # False turn of this logic for now. Need to fix finalConfig write in runAlgorithm for it to be useful.
+            if( neval > 1): # got some evaluations.
                 # Run DFOLS again with reduced number of fn evals to provide some diagnostic info.
-                raise ValueError("Runnign dfols 2nd time")
+                my_logger.debug('Running DFOLS again with reduced number of fn evals to get diagnostic info')
                 random.seed(rng_seed)  # reset rng seed back to first value.
                 with warnings.catch_warnings():  # catch the complaints from DFOLS about NaNs encountered...
                     warnings.filterwarnings('ignore')  # Ignore all warnings...
@@ -1142,7 +1136,7 @@ class runSubmit(SubmitStudy):
 
         return finalConfig
 
-    def runGaussNewton(self, verbose=False, scale=True):
+    def runGaussNewton(self, verbose=False, scale=True,stop:bool=False) -> OptClimConfigVn3:
         """
 
         param: verbose if True produce more verbose output.
@@ -1163,6 +1157,8 @@ class runSubmit(SubmitStudy):
 
         """
         import Optimise
+        if stop:
+            raise NotImplementedError("runGaussNewton stop not implemented as have no use case")
 
         # extract internal covariance and transform it.
         configData = self.config
@@ -1202,7 +1198,7 @@ class runSubmit(SubmitStudy):
         return finalConfig
 
     ## run_params
-    def run_params(self,ensemble_average:bool = True,scale:bool=True) -> OptClimConfigVn3:
+    def run_params(self,ensemble_average:bool = True,scale:bool=True,stop:bool = False) -> OptClimConfigVn3:
         """
         Run the model for a set of parameters specified in the configuration file.
         This is a simple run of the model for a set of parameters. It does not do any optimisation.
@@ -1215,6 +1211,8 @@ class runSubmit(SubmitStudy):
                 finalConfig.obs() -- the observations
 
         """
+        if stop:
+            raise NotImplementedError("run_params stop not implemented as have no use case")
 
         params_dir = self.config.optimise() # get the parameters to run
         params = self.get_parameters(params_dir) # convert to dataframe
@@ -1266,7 +1264,7 @@ class runSubmit(SubmitStudy):
             raise ValueError(f"Parameters out of range:\n{params[L]}")
         return params
 
-    def runPYSOT(self, scale=True):
+    def runPYSOT(self, scale=True,stop:bool=False) -> OptClimConfigVn3:
 
         """
         Run PYSOT algorithm
@@ -1282,6 +1280,8 @@ class runSubmit(SubmitStudy):
         # pySOT -- probably won't work without some work. conda install conda-forge pysot will install it.
         import pySOT
         raise NotImplementedError('pysot not well implemented. ')
+        if stop:
+            raise NotImplementedError("runPYSOT stop not implemented as have no use case")
         configData = self.config
         optimise = configData.optimise().copy_files()  # get optimisation info
         tMat = configData.transMatrix()

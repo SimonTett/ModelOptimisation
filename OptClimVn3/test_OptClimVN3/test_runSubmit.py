@@ -266,6 +266,16 @@ class testRunSubmit(unittest.TestCase):
         self.assertEqual(len(rSubmit._logical_info.parameters),2,'Expected 2 logical params')
         self.assertEqual(len(rSubmit._logical_info.obs),2,'Expected 2 logical obs')
 
+        # check model names are as expected
+        for l_name in rSubmit.logical_params().index:
+            models = rSubmit.logical_models(l_name)
+            self.assertEqual(len(models),2,'Expected 2 models')
+            model_names = [m.config_name() for m in models]
+            expected_names = ['control#0','plus4k#0'] # should be these two models.
+            self.assertEqual(model_names,expected_names,f'Expected model names to be {expected_names} got {model_names}')
+
+
+
 
     # end test case for stdFunction
 
@@ -406,7 +416,7 @@ class testRunSubmit(unittest.TestCase):
                       'logging.save_xk': True,
                       'noise.additive_noise_level': nobs * 1e-4,  # upper est of noise.
                       'general.check_objfun_for_overflow': False,
-                      'init.run_in_parallel': False,
+                      'init.run_in_parallel': True,
                       'interpolation.throw_error_on_nans': True,  # make an error happen!
                       }
         overwrite = {'noise.quit_on_noise_level': None,
@@ -455,8 +465,8 @@ class testRunSubmit(unittest.TestCase):
 
 
         if solution.flag not in (solution.EXIT_SUCCESS, solution.EXIT_MAXFUN_WARNING):
-            print("dfols failed with flag %i error : %s" % (solution.flag, solution.msg))
-            raise Exception("Problem with dfols")
+            msg = f"dfols failed with flag {solution.flag}: {solution.msg}"
+            raise Exception(msg)
         print(f"DFOLS finished {solution.flag} {solution.msg}")
         soln = pd.Series(solution.x,index=varParamNames).rename(f'Naked DFOLS')
         expectparam = pd.Series(expectparam,index=varParamNames).rename('best')
@@ -478,8 +488,11 @@ class testRunSubmit(unittest.TestCase):
                 iterCount += 1
                 # expect nobs+1 on first iteration (parallel running)
                 if iterCount == 1:
-                    self.assertEqual(len(varParamNames) + 1, len(rSubmit.model_index),
-                                     f'Expected to have {nobs + 1} models ran on iteration#1')
+                    expected = 1+len(varParamNames)
+                else:
+                    expected = len(varParamNames)+iterCount
+                self.assertEqual(expected, len(rSubmit.model_index),
+                                 f'Expected to have {expected} models ran on iteration#{iterCount} got {len(rSubmit.model_index)}')
 
 
 
@@ -627,7 +640,7 @@ class testRunSubmit(unittest.TestCase):
 
         config_dfols = {k:v for k,v in dfols_config.items() if not k.endswith('_comment') }  # invert for DFOLS
         config_dfols.pop('namedSettings')
-        config_dfols.pop('raise_error')
+
 
         # general configuration of DFOLS -- which can be overwritten by config file
         userParams = {'logging.save_diagnostic_info': True,
@@ -1201,9 +1214,8 @@ class testRunSubmit(unittest.TestCase):
         ## test get an error if models don't have same parameter values...
         # which means modifying the underlying model...
         models = run_submit.logical_models(name) # is a dict of models
-        k = list(models.keys())[1]
-        models[k].set_params(dict(a_ent_2=0.057),backup=False)
-        models[k].update_params()
+        models[0].set_params(dict(a_ent_2=0.057),backup=False)
+        models[0].update_params()
         with self.assertRaises(ValueError):
             run_submit.update_logical_params(name,parameters=update_params)
 
@@ -1220,10 +1232,10 @@ class testRunSubmit(unittest.TestCase):
         self.assertIsInstance(run_submit_copy,runSubmit.runSubmit)
         self.assertEqual(run_submit.config, run_submit_copy.config)
         # check logical info models consistent with model_info
-        for name, model_dct in run_submit_copy._logical_info.models.items():
-            for model_name, model in model_dct.items():
+        for name, model_list in run_submit_copy._logical_info.models.items(): # models is dict with key names and values lists of models
+            for model in model_list:
                 key = run_submit_copy.key_for_model(model)
-                self.assertIs(run_submit_copy.model_index[key],model,msg=f'{model_name}:{model} with key:{key} not same as in model_index')
+                self.assertIs(run_submit_copy.model_index[key],model,msg=f'{model.name}:{model} with key:{key} not same as in model_index')
                 self.assertIsInstance(run_submit_copy.model_index[key],Model.Model)
 
 
@@ -1451,8 +1463,8 @@ class TestLogicalInfo(unittest.TestCase):
         self.assertIn('parameters', dct)
         self.assertIn('models', dct)
         # check that model keys exist
-        for name, model_dct in dct['models'].items():
-            for model_name,model_key in model_dct.items():
+        for name, key_list in dct['models'].items():
+            for model_key in key_list:
                 self.assertIsInstance(model_key, str)
                 expect_model = self.run_submit.model_index[model_key]
                 self.assertEqual(self.run_submit.key_for_model(expect_model), model_key)

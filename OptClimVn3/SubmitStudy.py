@@ -119,10 +119,10 @@ class SubmitStudy(Study, model_base, journal):
         # TODO: make this more robust so that it can handle models that are not in the list of known models and uses syntax Module.class
         if self.model_name not in Model.known_models():
             self.module_name = config.module_name(model_name=self.model_name)
-            my_logger.info(f"Loading {self.module_name}")
+            my_logger.debug(f"Loading {self.module_name}")
             importlib.import_module(self.module_name)  # and load the module.
         else:
-            my_logger.info(f"Already have {self.model_name} so not loading module")
+            my_logger.debug(f"Already have {self.model_name} so not loading module")
 
         self.run_info = copy.deepcopy(config.run_info())  # copy run_info as modifying it.
         # Set up submit engine for this node.
@@ -177,7 +177,9 @@ class SubmitStudy(Study, model_base, journal):
 
         return s
 
-    def create_model(self, params: dict, dump: bool = True) -> typing.Optional[Model]:
+    def create_model(self, params: dict,
+                     dump: bool = True,
+                     reference_name:typing.Optional[str]=None) -> typing.Optional[Model]:
         """
         Create a model, update list of created models and index of models.
         name is generated using self.gen_name() and will be checked to see if it already exists.
@@ -192,6 +194,7 @@ class SubmitStudy(Study, model_base, journal):
         If you need functionality beyond this you may want to inherit from SubmitStudy and
           override create_model to meet your needs
         :param dump: If True dump  self (using self.dump_config method)
+        :param reference_name: Name of the reference config. If None the default Model behaviour is used.
         :return: Model created (or model that already exists). Returns None if would make more than max_model_sims
         """
         existing_names = [model.name for model in self.model_index.values() ] # list of existing model names
@@ -215,6 +218,7 @@ class SubmitStudy(Study, model_base, journal):
         study = self.to_study()  # convert SubmitStudy to Study
         model = Model.model_init(model_name, name=name,
                                  reference=reference,
+                                 reference_name=reference_name,
                                  model_dir=model_dir,
                                  config_path=config_path,
                                  parameters=param_dir,
@@ -230,7 +234,7 @@ class SubmitStudy(Study, model_base, journal):
         self.update_history(f"Created Model {model}")
         if dump:
             self.dump_config()  # and configuration
-        my_logger.info(f"Created model {model} with parameters {model.parameters}")
+        my_logger.debug(f"Created model {model} with parameters {model.parameters}")
         return model
 
     def update_iter(self, models: List[Model]) -> int:
