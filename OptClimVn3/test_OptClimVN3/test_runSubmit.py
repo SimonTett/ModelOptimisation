@@ -20,6 +20,7 @@ import optclim_exceptions
 import runSubmit
 from genericLib import fake_fn,setup_env,expand
 
+
 setup_env()  # setup environment variables
 
 
@@ -402,8 +403,8 @@ class testRunSubmit(unittest.TestCase):
         r = copy.deepcopy(self.extract_runSubmit)
         params = dict(CT=1e-4, EACF=0.5, ENTCOEF=3, ICE_SIZE=3e-5, RHCRIT=0.7, VF1=0.5, CW=2e-4)
         len_index = len(r.model_index)
-        from unittest.mock import patch
-        with patch('pathlib.Path.is_file', return_value=True),patch('os.access', return_value=True): # make sure always return True when testing for path existence.
+
+        with unittest.mock.patch('pathlib.Path.is_file', return_value=True),unittest.mock.patch('os.access', return_value=True): # make sure always return True when testing for path existence.
             model = r.create_model(params,dump=False)
             self.assertEqual(len(r.model_index), len_index+1) # increased
             key = r.key_for_model(model)
@@ -416,10 +417,11 @@ class testRunSubmit(unittest.TestCase):
         rootDir = self.rootDir.with_stem(self.rootDir.stem+'_test_read')
         r = runSubmit.runSubmit(copy.deepcopy(self.config), 'test_status', rootDir, refDir=self.refDir) # clean rSubmit
 
-        model_paths = [m.config_path for m in self.rSubmit.model_index.values()]
+        model_paths = [m.config_path for m in self.extract_runSubmit.model_index.values()]
         models = r.read_model_configs(model_paths)
         keys = [r.key_for_model(m) for m in models] # get all keys
         self.assertTrue(all([r.model_status[k] == 'read' for k in keys]))
+        self.assertTrue(len(r.model_index) >0) # have some models...
 
 
 
@@ -448,22 +450,24 @@ class testRunSubmit(unittest.TestCase):
 
         # simulate a model present at init by creating a model and adding to model_index and model_status
         params = dict(CT=1e-4, EACF=0.5, ENTCOEF=3, ICE_SIZE=3e-5, RHCRIT=0.7, VF1=0.5, CW=2e-4)
-        m = r.create_model(params, dump=False)
-        key_m = r.key_for_model(m)
-        # after create_model the status should be 'called'
-        self.assertEqual(r.model_status[key_m], 'called')
 
-        # simulate reading a model config (add another model)
-        params2 = params.copy(); params2['SOME'] = 1.0
-        m2 = r.create_model(params2, dump=False)
-        key_m2 = r.key_for_model(m2)
-        # mark one as read (simulate read_model_configs behaviour)
-        r.model_status[key_m2] = 'read'
+        with unittest.mock.patch('pathlib.Path.is_file', return_value=True),unittest.mock.patch('os.access', return_value=True): # make sure always return True when testing for path existence.
+            m = r.create_model(params, dump=False)
+            key_m = r.key_for_model(m)
+            # after create_model the status should be 'called'
+            self.assertEqual(r.model_status[key_m], 'called')
 
-        # simulate legacy from_dict behaviour: add a legacy key with 'unknown'
-        legacy_key = 'legacy_model_key'
-        r.model_index[legacy_key] = 'LEGACY_MODEL_PLACEHOLDER'
-        r.model_status[legacy_key] = 'unknown'
+            # simulate reading a model config (add another model)
+            params2 = params.copy(); params2['SOME'] = 1.0
+            m2 = r.create_model(params2, dump=False)
+            key_m2 = r.key_for_model(m2)
+            # mark one as read (simulate read_model_configs behaviour)
+            r.model_status[key_m2] = 'read'
+
+            # simulate legacy from_dict behaviour: add a legacy key with 'unknown'
+            legacy_key = 'legacy_model_key'
+            r.model_index[legacy_key] = 'LEGACY_MODEL_PLACEHOLDER'
+            r.model_status[legacy_key] = 'unknown'
 
         # now check reset_logical_info: unknown and called -> not_called; read/initial remain
         r.reset_logical_info()

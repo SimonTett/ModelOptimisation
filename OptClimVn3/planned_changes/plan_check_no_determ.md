@@ -8,8 +8,8 @@
 
 ## Requirements
 
-Check for non determinism only for models asked for in earlier iterations. Means that models loaded in or used in initialisation 
-do not trigger an error 
+Check for non-determinism only for models asked for in earlier iterations.
+Means that models loaded in or used in initialization do not trigger an error 
 
 ## Solution
 

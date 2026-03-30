@@ -276,26 +276,34 @@ class runSubmit(SubmitStudy):
         # add reference model to params if not already there.
         if 'reference' not in params and self.refDir is not None:
             params['reference'] = self.refDir
+
         model = self.get_model(params)
-        if model is not None:
-            self.set_model_status(model,'called') # we are calling the model.
-            if reference_name is not None:
-                model.update_reference_name(reference_name)  # reset reference_name if provided.
+
         if model is None:  # no model so time to create one.
             model = self.create_model(params,reference_name=reference_name,dump=False)  # returns None if no model was created.
             if model is None:
+                raise NotImplementedError(f"None path no longer implimented") # this code legacy and check here is to pick up that.
+                # Might want to be truened back on if max_model_simulations is reimplimented.
                 raise optclim_exceptions.submitModel
                 # Immediately raise exception as None means no model created and nothing else can be done
-                # will run out any remining models.
-        
-        elif model.status in  ["INSTANTIATED"]:  # model exists but needs submitting
+                # will run out any remining models. This probably should not hapen as logic for max_model_simulations removed.
+            # otherwise just return model. To do this as go through creation path once.
+            return model
+        else:    # std path -- model already exists so set status and potentially update reference
+            if reference_name is not None:
+                model.update_reference_name(reference_name)  # reset reference_name if provided.
+            self.set_model_status(model, 'called')  # we are calling the model.
+
+        # Check model.status
+        if model.status in  ["INSTANTIATED"]:  # model exists but needs submitting
             my_logger.debug(f"Model {model} has been instantiated but not run -- need to submit")
             raise optclim_exceptions.submitModel
-
-        elif model.status != "PROCESSED":  # not processed so raise ValueError and complain.
-            raise ValueError(f"{model} status != PROCESSED but is {model.status}")
-        else:  # got a model.
+        elif model.status in ["PROCESSED"]: # model has been Processed
             my_logger.debug(f"Using existing model {model}")
+        else:  # not processed/Instantiated so raise ValueError and complain.
+            raise ValueError(f"{model} status != PROCESSED but is {model.status}")
+
+
 
 
 
@@ -645,6 +653,11 @@ class runSubmit(SubmitStudy):
         if model is  None:
             raise ValueError("Model creation failed") # check for mess up.
         self.set_model_status(model,'called')
+        if reference_name is not None: #
+            model.update_reference_name(reference_name)
+            # reset reference_name if provided. May not be needed as this really to deal with legacy case where
+            # reference was not set and here we are creating a new model.
+
 
         return model
 
@@ -828,7 +841,7 @@ class runSubmit(SubmitStudy):
         If not then suggests that some models that were run were not used which suggests non-determinism in the algorithm.
 
         Also checks that model_status and model_index have the same keys
-          This will trigger an ValueError if they don't have the same kets regardless of value of error
+          This will trigger an ValueError if they don't have the same keys regardless of value of error
 
         :param error: Used to in call to genericLib.error_handle to determine whether to raise an error, warn or ignore.
           See genericLib.error_handle for allowed values and what is done.
@@ -841,15 +854,14 @@ class runSubmit(SubmitStudy):
             raise ValueError("Problem with model_status and model_index. Fix code as keys differ.")
 
         # check no keys in model_status are not_called
-        not_called = [k for k, v in self.model_status.items() if v == 'not_called']
-        uncalled_models = []
+        not_called = [k for k, v in self.model_status.items() if v == 'not_called'] # list of uncalled keys
         if not_called:
             uncalled_models = [str(self.model_index[k]) for k in not_called]
             message = f'Have {len(uncalled_models)} models not called. Unused models are:\n'\
                 +"\n".join(uncalled_models)
             genericLib.error_handle(message,error)
 
-        return len(uncalled_models) == 0 # return True if no missing keys, False otherwise.
+        return len(not_called) == 0 # return True if no missing keys, False otherwise.
 
     def runOptimized(self,stop:bool=False) -> StudyConfig:
         """
