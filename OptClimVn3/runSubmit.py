@@ -282,7 +282,7 @@ class runSubmit(SubmitStudy):
         if model is None:  # no model so time to create one.
             model = self.create_model(params,reference_name=reference_name,dump=False)  # returns None if no model was created.
             if model is None:
-                raise NotImplementedError(f"None path no longer implimented") # this code legacy and check here is to pick up that.
+                raise NotImplementedError(f"None path no longer implemented") # this code legacy and check here is to pick up that.
                 # Might want to be turnened back on if max_model_simulations is reimplimented.
                 raise optclim_exceptions.submitModel
                 # Immediately raise exception as None means no model created and nothing else can be done
@@ -610,7 +610,7 @@ class runSubmit(SubmitStudy):
         for key in keys:
             if key not in obj.model_index:
                 del(obj.model_status[key]) # remove the status for unneded model.
-                my_logger.warning(f'model_status key {key} not in model_status. Removing')
+                my_logger.warning(f'Key {key} not in model_index. Removed from model_status')
         # check keys are the same and fail if not
         if set(obj.model_status.keys()) != set(obj.model_index.keys()):
             raise ValueError(f"model_status keys {set(obj.model_status.keys())} do not match model_index keys {set(obj.model_index.keys())}")

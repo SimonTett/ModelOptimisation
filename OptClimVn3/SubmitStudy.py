@@ -195,7 +195,9 @@ class SubmitStudy(Study, model_base, journal):
           override create_model to meet your needs
         :param dump: If True dump  self (using self.dump_config method)
         :param reference_name: Name of the reference config. If None the default Model behaviour is used.
-        :return: Model created (or model that already exists).
+        :return: Model created.
+
+        Will raise ValueError if model_dir or config path already exist.
         """
         existing_names = [model.name for model in self.model_index.values() ] # list of existing model names
         while True: # loop until we find a name that does not exist.
