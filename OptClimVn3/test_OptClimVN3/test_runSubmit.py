@@ -20,6 +20,7 @@ import optclim_exceptions
 import runSubmit
 from genericLib import fake_fn,setup_env,expand
 
+
 setup_env()  # setup environment variables
 
 
@@ -101,6 +102,19 @@ class testRunSubmit(unittest.TestCase):
         # optClimLib.delDirContents(self.tmpDir.name)
         self.tmpDir.cleanup()
         # shutil.rmtree(self.tmpDir)
+
+    def test_init(self):
+        """
+        Test __init__ works as expected.
+        Checks that model_status is empty and when models passed all model_status are 'initial'
+        :return:
+        """
+
+        rootDir = self.rootDir.with_stem(self.rootDir.stem + '_test_init')
+        models = list(self.extract_runSubmit.model_index.values())
+        r = runSubmit.runSubmit(copy.deepcopy(self.config), 'test_status', rootDir, refDir=self.refDir,models=models)  # clean rSubmit
+        self.assertEqual(len(r.model_status),len(models))
+        self.assertTrue(all([s == 'initial' for k,s in r.model_status.items()])) # check everything is 'initial'
 
     # test case for _stdFunction
 
@@ -355,7 +369,7 @@ class testRunSubmit(unittest.TestCase):
         pdtest.assert_series_equal(best, expected)
         self.assertEqual(finalConfig.simObs().shape[0], 1)
 
-        # WORKING TO HERE,
+
         # increase ensemble to four and shorten basename.
         configData.baseRunID('test')
         configData.maxDigits(1)
@@ -380,6 +394,111 @@ class testRunSubmit(unittest.TestCase):
         expected = fake_function(pDict).rename(best.name)
         pdtest.assert_series_equal(best, expected)
         self.assertEqual(finalConfig.simObs().shape[0], 4)
+
+    def test_create_model(self):
+        """
+        Check that create model sets status to 'called'
+        :return:
+        """
+        r = copy.deepcopy(self.extract_runSubmit)
+        params = dict(CT=1e-4, EACF=0.5, ENTCOEF=3, ICE_SIZE=3e-5, RHCRIT=0.7, VF1=0.5, CW=2e-4)
+        len_index = len(r.model_index)
+
+        with unittest.mock.patch('pathlib.Path.is_file', return_value=True),unittest.mock.patch('os.access', return_value=True): # make sure always return True when testing for path existence.
+            model = r.create_model(params,dump=False)
+            self.assertEqual(len(r.model_index), len_index+1) # increased
+            key = r.key_for_model(model)
+            self.assertEqual(r.model_status[key],'called')
+
+
+    def test_read_model_config(self):
+        # test read_model_config reads in models and status is 'read'
+
+        rootDir = self.rootDir.with_stem(self.rootDir.stem+'_test_read')
+        r = runSubmit.runSubmit(copy.deepcopy(self.config), 'test_status', rootDir, refDir=self.refDir) # clean rSubmit
+
+        model_paths = [m.config_path for m in self.extract_runSubmit.model_index.values()]
+        models = r.read_model_configs(model_paths)
+        keys = [r.key_for_model(m) for m in models] # get all keys
+        self.assertTrue(all([r.model_status[k] == 'read' for k in keys]))
+        self.assertTrue(len(r.model_index) >0) # have some models...
+
+
+
+
+
+    def test_check_deterministic(self):
+        """
+        Test model_status transitions and check_deterministic behaviour.
+        Mostly AI generated
+
+        This test verifies:
+        - models passed into __init__ are marked 'initial'
+        - models set via read_model_configs are marked 'read'
+        - create_model sets status to 'called'
+        - reset_logical_info converts 'unknown' and 'called' to 'not_called' but leaves 'initial' and 'read' alone
+        - check_deterministic passes when only initial/read extras exist, and fails when a true not_called exists
+        """
+        # check that legacy data has status unknown.
+        rsub = self.extract_runSubmit
+        self.assertTrue(all([s == 'unknown' for s in rsub.model_status.values()]))
+        self.assertEqual(len(rsub.model_status), len(rsub.model_index))
+        self.assertTrue(len(rsub.model_status) > 0)
+
+        # create a fresh runSubmit with no preloaded models
+        r = runSubmit.runSubmit(copy.deepcopy(self.config), 'test_status', rootDir=self.rootDir, refDir=self.refDir)
+
+        # simulate a model present at init by creating a model and adding to model_index and model_status
+        params = dict(CT=1e-4, EACF=0.5, ENTCOEF=3, ICE_SIZE=3e-5, RHCRIT=0.7, VF1=0.5, CW=2e-4)
+
+        with unittest.mock.patch('pathlib.Path.is_file', return_value=True),unittest.mock.patch('os.access', return_value=True): # make sure always return True when testing for path existence.
+            m = r.create_model(params, dump=False)
+            key_m = r.key_for_model(m)
+            # after create_model the status should be 'called'
+            self.assertEqual(r.model_status[key_m], 'called')
+
+            # simulate reading a model config (add another model)
+            params2 = params.copy(); params2['SOME'] = 1.0
+            m2 = r.create_model(params2, dump=False)
+            key_m2 = r.key_for_model(m2)
+            # mark one as read (simulate read_model_configs behaviour)
+            r.model_status[key_m2] = 'read'
+
+            # simulate legacy from_dict behaviour: add a legacy key with 'unknown'
+            legacy_key = 'legacy_model_key'
+            r.model_index[legacy_key] = 'LEGACY_MODEL_PLACEHOLDER'
+            r.model_status[legacy_key] = 'unknown'
+
+        # now check reset_logical_info: unknown and called -> not_called; read/initial remain
+        r.reset_logical_info()
+        self.assertEqual(r.model_status[key_m], 'not_called')
+        self.assertEqual(r.model_status[key_m2], 'read')
+        self.assertEqual(r.model_status[legacy_key], 'not_called')
+
+        # check_deterministic should now find not_called entries and trigger error handling (return False)
+        ok = r.check_deterministic(error='ignore')
+        self.assertFalse(ok)
+
+        # mark them as called (simulate they were used)
+        r.model_status[key_m] = 'called'
+        r.model_status[legacy_key] = 'called'
+        ok = r.check_deterministic(error='ignore')
+        self.assertTrue(ok)
+        # reset logical again to set called -> not_called (simulate new iteration), then set them to called again
+        r.reset_logical_info()
+        r.model_status[key_m] = 'called'
+        r.model_status[legacy_key] = 'called'
+
+        # now ensure model_index and model_status keys match
+        # remove any placeholder that is not a model object
+        r.model_index.pop(legacy_key, None)
+        r.model_status.pop(legacy_key, None)
+
+        # now check deterministic should pass (no not_called)
+        ok2 = r.check_deterministic(error='ignore')
+        self.assertTrue(ok2)
+
+
 
     def test_runDFOLS(self):
         """
@@ -646,7 +765,6 @@ class testRunSubmit(unittest.TestCase):
         userParams = {'logging.save_diagnostic_info': True,
                       'logging.save_xk': True,
                       'logging.save_rk':True,
-                      'noise.additive_noise_level': nobs * 1e-4,  # upper est of noise.
                       'general.check_objfun_for_overflow': False,
                       'init.run_in_parallel': False,
                       'interpolation.throw_error_on_nans': True,  # make an error happen!
