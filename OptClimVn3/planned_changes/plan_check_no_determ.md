@@ -18,8 +18,9 @@ do not trigger an error
     - Add  to _init_ a model_status -- this is a *per* model tracker.
     - Modify _init_ to set model_status[key] for all models passed in to be 'initial' 
     - Modify from_dict to set all keys in model_status (if it does not exist)  to 'unknown' [Can't think of other behaviour to handle legacy]
-    - Add to own version of create_model (overriding the SubmitStudy version). This sets status to 'called' for  models
+    - Add own version of create_model (overriding the SubmitStudy version). This sets status to 'called' for  models
     - Add own version of read_model_configs  (overriding Study version). This sets status to 'read' for all models readin
+    - modify make_model to set model_status  to 'called' for any not None model created/reused. 
     - modify reset_logical_info() to set all 'called' or 'unknown'  models to 'not_called'
     - modify check_deterministic to check that nothing in model_status is 'not_called'. If any trigger error and report on unused models.
     - modify check_deterministic to verify that all models in model_index are in model_status and vice vesa. set difference is empty.

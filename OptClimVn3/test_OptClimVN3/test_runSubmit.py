@@ -419,7 +419,7 @@ class testRunSubmit(unittest.TestCase):
         model_paths = [m.config_path for m in self.rSubmit.model_index.values()]
         models = r.read_model_configs(model_paths)
         keys = [r.key_for_model(m) for m in models] # get all keys
-        self.assertTrue(all([r.model_status[k] for k in keys]))
+        self.assertTrue(all([r.model_status[k] == 'read' for k in keys]))
 
 
 
