@@ -81,7 +81,7 @@ class SubmitStudy(Study, model_base, journal):
     fn_type = Callable[[Mapping], pd.Series]  # type hint for fakeFn
 
     def __init__(self,
-                 config: Optional[OptClimConfigVn3],
+                 config: Optional["OptClimConfigVn3"],
                  name: Optional[str] = None,
                  rootDir: Optional[pathlib.Path] = None,
                  refDir: Optional[pathlib.Path] = None,
@@ -149,7 +149,7 @@ class SubmitStudy(Study, model_base, journal):
         self.next_iter_cmd = next_iter_cmd
         self.next_iter_jids = []  # no next jobs (yet)
 
-    def update_config(self, config: OptClimConfigVn3):
+    def update_config(self, config: "OptClimConfigVn3"):
         """
         Partially set up self with the configuration. This allows updating following a change to the configuration.
           Sets up run_info in addition to whatever the superclass method does.
@@ -179,7 +179,7 @@ class SubmitStudy(Study, model_base, journal):
 
     def create_model(self, params: dict,
                      dump: bool = True,
-                     reference_name:typing.Optional[str]=None) -> typing.Optional[Model]:
+                     reference_name:typing.Optional[str]=None) -> Model:
         """
         Create a model, update list of created models and index of models.
         name is generated using self.gen_name() and will be checked to see if it already exists.

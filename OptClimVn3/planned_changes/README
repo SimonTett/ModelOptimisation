@@ -1,0 +1,6 @@
+Place to put various plans. Ideal approach is one change plan per branch.
+Currently has
+variable_post_process.txt -- plan for per "reference class" post-processing
+plan_check_no_determin.md -- plan to check that deterministic check is robust to initialisation/reading in files.
+plan_refactor_namelist.txt -- plan to refactor namelist handling to make it more robust and easier to use.
+plan_individua_post_process.md -- plan to allow user to specify post-processing for individual runs (e.g. spinup vs evaluation vs sensitivity).

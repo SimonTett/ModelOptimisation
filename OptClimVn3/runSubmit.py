@@ -24,6 +24,7 @@ import random
 
 my_logger=logging.getLogger(f"OPTCLIM.{__name__}")
 
+type_model_status = typing.Literal['initial','unknown','called','read','not_called'] # allowed status for model_status
 class LogicalInfo(model_base):
     """ Class to hold logical information about parameters, observations etc. 
 
@@ -56,6 +57,7 @@ class LogicalInfo(model_base):
         self.models: dict[str, list[Model.Model]] = dict()  # dict of list of models indexed by logical_name.
         self.obs: dict[str, pd.Series] = dict()  # dict of obs indexed by logical name.
         self.cost: dict[str, float] = dict()  # dict of cost indexed by logical name.
+
 
     @staticmethod
     def key( params: dict) -> str:
@@ -175,8 +177,9 @@ class LogicalInfo(model_base):
                 model_dct[logical_name] = models
         dct['models'] = model_dct # replaced with updated dct.
 
-
         obj:LogicalInfo = super().from_dict(dct)
+
+
         # conversion of keys to models (by pointing by reference to models in model_list handled in runSubmit.from_dict
         return obj
 
@@ -210,7 +213,9 @@ class LogicalInfo(model_base):
 class runSubmit(SubmitStudy):
     # Has the following additional attributes over SubmitStudy (and Study)
         # _logical_info: LogicalInfo -- holds information about logical names, parameters, obs, cost and models.
-        #  This is a private attribute as it is really only for use within this class. It is not intended to be used outside this class.
+    #  This is a private attribute as it is really only for use within this class. It is not intended to be used outside this class.
+        # model_status: dict[str, type_model_status]  # dict of *model* statuses indexed by model_key.
+
 
 
     """
@@ -251,6 +256,12 @@ class runSubmit(SubmitStudy):
         # Currently, largely a bag of attributes which this class reaches into as it needs to.
         # Having _logical_info as private for now as not sure if it will be needed outside this class.
         self._logical_info:LogicalInfo = LogicalInfo()
+        self.model_status:dict[str,type_model_status] = dict()
+        # set status for models in model_status
+        if models is not None:
+            for model in models:
+                key = self.key_for_model(model)
+                self.model_status[key] = 'initial'
 
 
     def make_model(self,params:dict, reference_name:typing.Optional[str] = None )-> Model.Model:
@@ -578,6 +589,11 @@ class runSubmit(SubmitStudy):
         """
         obj:runSubmit = super(runSubmit,cls).from_dict(dct) # create the runSubmit object
         obj._logical_info.keys_to_models(obj.model_index)#  create the models in logical_info from the keys.
+        # legacy if model_status is not in dct then fill it in from the model_index set status to unknown
+        if 'model_status' not in dct:
+            my_logger.warning('legacy chantge: adding existing models to model_status with staus "unknown"')
+            for key in obj.model_index.keys():
+                obj.model_status[key] = 'unknown'
         return obj
 
     def update_params(self,update_parameters:list[str]):
@@ -609,6 +625,39 @@ class runSubmit(SubmitStudy):
         # update the logical info model info.
         new_run_submit._logical_info.keys_to_models(new_run_submit.model_index,update_models=True)
         return new_run_submit
+
+
+    def create_model(self, params: dict,
+                     dump: bool = True,
+                     reference_name:typing.Optional[str]=None) -> Model:
+        """
+        runSubmit version of create_model. Call super class and set model_status
+        :param params: dict of parameters to create the model.
+        :param dump: if True dump the model to disk
+        :param reference_name: Reference name for model
+        :return: newly created model
+        """
+        # call the super class.
+        model = super().create_model(params, dump=dump, reference_name=reference_name)
+        if model is  None:
+            raise ValueError("Model creation failed") # check for mess up.
+        key = self.key_for_model(model)
+        self.model_status[key] = 'called' # calling the model.
+        return model
+
+    def read_model_configs(self, path_list: list[pathlib.Path]) -> list[Model]:
+        """
+        Reads model configs from a list of paths.
+        :param path_list: List of paths
+        :return: list of models.
+        """
+
+        models = super().read_model_configs(path_list)
+        for model in models:
+            key = self.key_for_model(model)
+            self.model_status[key] = 'read'
+        return models
+
 
 
 
@@ -747,31 +796,42 @@ class runSubmit(SubmitStudy):
 
     def reset_logical_info(self):
         """
-        Reset the logical info. Needed when running algorthms.
+        Reset the logical info and model_status for unknown/called models to not_called. Needed when running algorthms.
         :return: None
         """
-        self._logical_info = LogicalInfo() # reset logical info to empty.
+        # iterate over a static list of keys to avoid runtime mutation issues
+        for key in list(self.model_status.keys()):
+            if self.model_status.get(key) in ['unknown', 'called']:
+                self.model_status[key] = 'not_called'
+        # reset logical info to empty.
+        self._logical_info = LogicalInfo()
+
 
     def check_deterministic(self,error:genericLib.error_handle_types = 'warn') -> bool:
         """
-        Check that the model runs are deterministic. Done by checkibg that all keys in self._logical_info.models are in self.model_index.
+        Check that the model runs are deterministic. Done by checking that no value in model_status is not_called
+        Also checks that model_status and model_index have the same keys triggering an error if they don't
         If not then suggests that some models that were run were not used which suggests non-determinism in the algorithm.
-
         :param error: Used to in call to genericLib.error_handle to determine whether to raise an error, warn or ignore.
           See genericLib.error_handle for allowed values and what is done.
         :return: True if deterministic, False otherwise.
         """
+        # want to check everything in self.model_status is in model_index (and vice versa)
+        keys_model_status = set(list(self.model_status.keys()))
+        keys_model_index = set(list(self.model_index.keys()))
+        if keys_model_index != keys_model_status:
+            raise ValueError("Problem with model_status and model_index. Fix code as keys differ.")
 
-        logical_model_keys = []
-        for model_lists in self._logical_info.models.values():
-            for model in model_lists:
-                logical_model_keys.append(self.key_for_model(model))
-        missing_keys = set(self.model_index) - set(logical_model_keys)
-        if missing_keys:
-            message = f"Have {len(missing_keys)} keys in model_index not in logical_info.models.\n Unused models are:\n"\
-                + "\n".join([f"{k}: {self.model_index[k]}" for k in missing_keys])
+        # check no keys in model_status are not_called
+        not_called = [k for k, v in self.model_status.items() if v == 'not_called']
+        uncalled_models = []
+        if not_called:
+            uncalled_models = [str(self.model_index[k]) for k in not_called]
+            message = f'Have {len(uncalled_models)} models not called. Unused models are:\n'\
+                +"\n".join(uncalled_models)
             genericLib.error_handle(message,error)
-        return len(missing_keys) == 0 # return True if no missing keys, False otherwise.
+
+        return len(uncalled_models) == 0 # return True if no missing keys, False otherwise.
 
     def runOptimized(self,stop:bool=False) -> StudyConfig:
         """
