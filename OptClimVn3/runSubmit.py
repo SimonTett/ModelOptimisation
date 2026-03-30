@@ -283,7 +283,7 @@ class runSubmit(SubmitStudy):
             model = self.create_model(params,reference_name=reference_name,dump=False)  # returns None if no model was created.
             if model is None:
                 raise NotImplementedError(f"None path no longer implimented") # this code legacy and check here is to pick up that.
-                # Might want to be truened back on if max_model_simulations is reimplimented.
+                # Might want to be turnened back on if max_model_simulations is reimplimented.
                 raise optclim_exceptions.submitModel
                 # Immediately raise exception as None means no model created and nothing else can be done
                 # will run out any remining models. This probably should not hapen as logic for max_model_simulations removed.
@@ -605,6 +605,16 @@ class runSubmit(SubmitStudy):
             my_logger.warning('legacy change: adding existing models to model_status with status "unknown"')
             for model in obj.model_index.values():
                 obj.set_model_status(model,'unknown')
+        # Check for keys in model_status not in model_index and delete them
+        keys = list(obj.model_status.keys())
+        for key in keys:
+            if key not in obj.model_index:
+                del(obj.model_status[key]) # remove the status for unneded model.
+                my_logger.warning(f'model_status key {key} not in model_status. Removing')
+        # check keys are the same and fail if not
+        if set(obj.model_status.keys()) != set(obj.model_index.keys()):
+            raise ValueError(f"model_status keys {set(obj.model_status.keys())} do not match model_index keys {set(obj.model_index.keys())}")
+
         return obj
 
     def update_params(self,update_parameters:list[str]):
@@ -812,7 +822,7 @@ class runSubmit(SubmitStudy):
 
     def reset_logical_info(self):
         """
-        Reset the logical info and model_status for unknown/called models to not_called. Needed when running algorthms.
+        Reset the logical info and model_status for unknown/called models to not_called. Needed when running algorithms.
         :return: None
         """
         # iterate over a static list of keys to avoid runtime mutation issues
