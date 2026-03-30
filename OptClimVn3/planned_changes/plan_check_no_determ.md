@@ -23,7 +23,7 @@ do not trigger an error
     - modify make_model to set model_status  to 'called' for any not None model created/reused. 
     - modify reset_logical_info() to set all 'called' or 'unknown'  models to 'not_called'
     - modify check_deterministic to check that nothing in model_status is 'not_called'. If any trigger error and report on unused models.
-    - modify check_deterministic to verify that all models in model_index are in model_status and vice vesa. set difference is empty.
+    - modify check_deterministic to verify that all models in model_index are in model_status and vice versa. set difference is empty.
 
 
                                                          
