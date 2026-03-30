@@ -2,7 +2,7 @@
 
 ## Problem 
 
-- Will detect non-deterministic algorithm becuase it will not reuse existing model cases. 
+- Will detect non-deterministic algorithm because it will not reuse existing model cases. 
 - Currently, do that by checking logical_info (which gets reset every iteration) against model_index to verify no missing models in logical_info
 - However, this approach will fail if load models from files or initialise run_submit with models.
 
