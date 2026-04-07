@@ -162,6 +162,9 @@ class testStudyConfig(unittest.TestCase):
 
 
 
+
+
+
     def test_readCovariances(self):
         """
         Test that readCovariances fails when obs are bad. (and any other tests that seem reasonable)
@@ -174,6 +177,50 @@ class testStudyConfig(unittest.TestCase):
         # now with obsNames not in covariance index.
         with self.assertRaises(ValueError):
             got = self.config.readCovariances(covFile, obsNames=['one', 'two'])
+
+
+
+    def test_get_covariance_param_combined(self):
+        """
+        Combined tests for get_covariance_param:
+        - name missing in covariance section -> returns default
+        - name present with explicit value -> returns that value
+        - name present but value is None -> returns default
+        AI generated code based on tests outline in plan_trans_matrix.md
+        """
+        # Generate a minimalist configuration.
+        base = {
+            'version': 3,
+            'study': {
+                'ObsList': ['o1', 'o2'],
+                'covariance': {}
+            }
+        }
+        base = StudyConfig.dictFile(Config_dct=base)
+        config = StudyConfig.OptClimConfigVn3(base, check=False)
+        param_name='unused_param'
+
+        # 1) Name not in covariance section -> should return default
+        with self.subTest("missing_param"):
+            cfg = copy.deepcopy(config)
+            default_val = 1.234
+            got = cfg.get_covariance_param(param_name, default=default_val)
+            self.assertEqual(got, default_val)
+
+        # 2) Name present with a concrete value -> should return config value
+        with self.subTest("present_with_value"):
+            cfg = copy.deepcopy(config)
+            cfg.getv('study')['covariance']= {param_name:1e-5} # bit hacky -- assigning the dict minEvalue to study/covariance
+            got = cfg.get_covariance_param(param_name, default=1e-6)
+            self.assertEqual(got, 1e-5)
+
+        # 3) Name present but value is None -> should return default
+        with self.subTest("present_with_none"):
+            cfg = copy.deepcopy(config)
+            cfg.getv('study')['covariance'] = {param_name: None}  # bit hacky -- assigning the dict minEvalue to study/covariance
+            default_val2 = 7e-6
+            got = cfg.get_covariance_param(param_name, default=default_val2)
+            self.assertEqual(got, default_val2)
 
     def test_version(self) -> object:
         """
@@ -670,6 +717,7 @@ class testStudyConfig(unittest.TestCase):
                 # Call the function that should log a warning
                 trans = self.config.transMatrix(scale=True)
             self.assertIn('WARNING:OPTCLIM.StudyConfig:Eigenvalues range is', log.output[0])
+            raise NotImplementedError("Test cases with min_evalue")
 
     def test_DFOLS_userParams(self):
         """

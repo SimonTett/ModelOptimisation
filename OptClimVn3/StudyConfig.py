@@ -637,6 +637,25 @@ class OptClimConfig(dictFile):
 
         return maxFails
 
+    def get_covariance_param(self, param_name: str,
+                             default: typing.Any = None) -> typing.Optional[typing.Any]:
+        """
+
+        :param param_name: name of parameter to extract from covariance information
+        :param default:  default value if covariance info is not set or None
+        :return:  value
+        """
+
+        cov_info = self.getv('study', {}).get('covariance',{})
+        value = cov_info.get(param_name)
+        if value is None: # get None through either underlying value being None (null in json file) or not being specificed
+            # either way set it to the default value.
+            value = default
+            my_logger.debug(f"Covariance parameter {param_name} not set in configuration file. Using default value {default}")
+        else:
+            my_logger.debug(f"Got covariance parameter {param_name} with value {value} from configuration file")
+        return value
+
     def Covariances(self, obsNames=None, trace=False, dirRewrite=None, scale=False, constraint=None, read=False,
                     CovTotal: typing.Optional[pd.DataFrame] = None,
                     CovIntVar: typing.Optional[pd.DataFrame] = None,
@@ -771,28 +790,44 @@ class OptClimConfig(dictFile):
         return cov
 
     def transMatrix(self, scale:bool=False, verbose:bool=False,
-                    minEvalue:float=1e-6,
+                    min_evalue:typing.Optional[float]=None,  # 1e-6,
+                    regularise:typing.Optional[float] = None,
                     dataFrame:bool=True,
                     inverse:bool = False,
-                    warn_scale:float = 1e-1):
+                    warn_scale:typing.Optional[float]=None  # default 1e-1
+                    ):
         """
         Return matrix that projects data onto eigenvectors of total covariance matrix
         :param scale: (Default False) Scale covariance.
         :param verbose: (default False) Be verbose.
         :param inverse: return the inverse of the transformation matrix
         :param dataFrame: wrap result up as a dataframe
-        :param minEvalue: evalues less than minEvalue * max(eigenvalues) are removed. Meaning a non-square transMatrix
+        :param min_evalue: evalues less than minEvalue * max(eigenvalues) are removed. Meaning a non-square transMatrix
+           Will use value min_evalue in study/covariance if exists and this value is None. Default if nothing set is 1e-6
         :param warn_scale: If the min/max evalue (after truncation) is less than warn_scale a warning is issued.
+           Will use value warn_scale in study/covariance if exists and this value is None.  Default if nothing set is 0.1
+        :param regularise: Value to add to diagonal if not None - gives "noise" floor
+           Will use value regularize in study/covariance if exists and this value is None. Default if nothing set is None
         :return: Transformation matrix that makes Total covariance matrix I.
         """
-
+        # get default values
+        if min_evalue is None:
+            min_evalue = self.get_covariance_param('minEvalue', default=1e-6)
+        if warn_scale is None:
+            warn_scale = self.get_covariance_param('warn_scale', default=1e-1)
+        if regularise is None:
+            regularise = self.get_covariance_param('regularise', None)
         # compute the matrix that diagonalises total covariance.
         cov = self.Covariances(trace=verbose, scale=scale)  # get covariances.
         errCov = cov['CovTotal']
-        # compute eigenvector and eigenvalues of covariances so we can transform residual into diagonal space.
+        if regularise:
+            reg = pd.DataFrame(np.identity(errCov.shape[0]) * regularise, index=errCov.index, columns=errCov.columns)
+            errCov += reg # regularise it
+            my_logger.info(f'Regularised error covarinace matrix  bu adding diag({regularise} to it')
+            # compute eigenvector and eigenvalues of covariances so we can transform residual into diagonal space.
         evalue, evect = np.linalg.eigh(errCov)
         # deal with small evalues.
-        crit = evalue.max() * minEvalue
+        crit = evalue.max() * min_evalue
         indx = evalue > crit
         ev_index=np.arange(0, indx.sum(),dtype='int64')
         obs_index=errCov.columns
@@ -2971,3 +3006,5 @@ class OptClimConfigVn3(OptClimConfigVn2):
             raise ValueError(msg)
 
         return obs
+
+
