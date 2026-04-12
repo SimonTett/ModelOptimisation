@@ -79,9 +79,9 @@ class SubmitStudy(Study, model_base, journal):
     """
 
     fn_type = Callable[[Mapping], pd.Series]  # type hint for fakeFn
-
+    from StudyConfig import  OptClimConfigVn3
     def __init__(self,
-                 config: Optional["OptClimConfigVn3"],
+                 config: Optional[OptClimConfigVn3],
                  name: Optional[str] = None,
                  rootDir: Optional[pathlib.Path] = None,
                  refDir: Optional[pathlib.Path] = None,
@@ -162,6 +162,20 @@ class SubmitStudy(Study, model_base, journal):
 
         self.run_info = copy.deepcopy(config.run_info())  # copy run_info as modifying it.
         my_logger.debug(f"Set run_info to {self.run_info}")
+
+    def lock(self,timeout:float=0.0,poll_interval:float = 0.05):
+        """
+        Lock the configuration file using genericLib.ContextFileLock.
+        :param timeout -- time in seconds to timeout -- see ContextFileLock
+        :param poll_interval -- poll_interval in seconds -- see ContextFileLock
+
+        :return: context file object
+
+        Example usage is:
+        with SubmitStudy.lock(timeout=10) as lock:
+          do stuff with lock
+        """
+        return genericLib.ContextFileLock(self.config_path,timeout=timeout,poll_interval=poll_interval)
 
     def __repr__(self):
         """

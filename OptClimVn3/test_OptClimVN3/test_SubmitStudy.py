@@ -428,6 +428,11 @@ class MyTestCase(unittest.TestCase):
         rmodels = submit.running_models()
         self.assertEqual(rmodels,list(submit.model_index.values()))
 
+    def test_lock(self):
+        # Test that lock works. No real testing done as method uses genericLib.
+        with self.submit.lock() as lock:
+            self.assertTrue(lock.is_locked)
+
 
 
     """
@@ -715,6 +720,8 @@ class test_KILL(unittest.TestCase):
         self.assertEqual(result, expected_jids)
         self.assertEqual(mock_model_kill.call_count, 5)
         self.assertEqual(mock_run_cmd.call_count, 1)
+
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -2,6 +2,11 @@ import pathlib
 import tempfile
 import unittest
 import genericLib
+import subprocess
+import sys
+import time
+
+
 
 class genericLib_test(unittest.TestCase):
 
@@ -299,6 +304,92 @@ class genericLib_test(unittest.TestCase):
         for name, logger in logging.root.manager.loggerDict.items():
             print(
                 f"Logger: {name}, Handlers: {getattr(logger, 'handlers', None)}, Level: {getattr(logger, 'level', None)}")
+
+
+    # tests for locking
+    def test_ContextFileLock(self):
+        # Test that ContextFileLock can acquire and release locks correctly, and handles lock contention.
+        file = self.tmp_path / 'test.txt'
+        lock_file = self.tmp_path / 'test.txt.lock'
+
+        lock1 = genericLib.ContextFileLock(file)
+        lock2 = genericLib.ContextFileLock(file)
+
+        # Test that lock1 can acquire the lock
+        with lock1:
+            self.assertTrue(lock_file.exists(), "Lock file should exist after acquiring lock1")
+
+            # Test that lock2 cannot acquire the lock while lock1 holds it
+            with self.assertRaises(genericLib.LockAcquireError):
+                with lock2:
+                    pass  # This should not be reached
+
+        # After releasing lock1, lock2 should be able to acquire the lock
+        with lock2:
+            self.assertTrue(lock_file.exists(), "Lock file should exist after acquiring lock2")
+
+        # After releasing lock2, the lock file should be removed
+        self.assertFalse(lock_file.exists(), "Lock file should be removed after releasing all locks")
+
+        # trying with a timeout
+        lock3 = genericLib.ContextFileLock(file,timeout=10.0)
+        with lock2:
+            self.assertTrue(lock_file.exists())
+
+
+
+
+    def test_lock_timeout_subprocess(self):
+        """
+        Spawn a separate Python process that acquires the lock and holds it.
+        Verify our attempt to acquire the same lock with a short timeout fails,
+        then verify acquire succeeds after the holder exits.
+        AI generated & then edited.
+        """
+        file = self.tmp_path / 'timeout_subproc.txt'
+        lock_file = self.tmp_path / 'timeout_subproc.txt.lock'
+
+        # Build an inline Python script that the child process will run.
+        # It receives two extra args: <path> <hold_seconds>.
+        child_script = (
+            "import sys, time, genericLib\n"
+            "from pathlib import Path\n"
+            "p = Path(sys.argv[1])\n"
+            "hold = float(sys.argv[2])\n"
+            "with genericLib.ContextFileLock(p):\n"
+            "    time.sleep(hold)\n"
+        )
+
+        # Start the child: hold lock for 1 second.
+        p = subprocess.Popen([sys.executable, "-c", child_script, str(file), "1.0"],
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+        try:
+            # Wait until lock file appears (give child a short window)
+            waited = 0.0
+            while not lock_file.exists() and waited < 2.0:
+                time.sleep(0.05)
+                waited += 0.05
+            if not lock_file.exists():
+                # tolerate scheduling variability
+                time.sleep(0.2)
+
+            self.assertTrue(lock_file.exists(), "Child process failed to create lock file in time")
+
+            # Attempt to acquire the same lock with a short timeout -> should raise LockAcquireError
+            with self.assertRaises(genericLib.LockAcquireError):
+                with genericLib.ContextFileLock(file):
+                    pass
+            # now with 4 second time out
+            with genericLib.ContextFileLock(file,timeout=4.0):
+                self.assertTrue(lock_file.exists())
+
+
+
+        finally:
+            if p.poll() is None:
+                p.kill()
+                p.wait(timeout=2.0)
 
 if __name__ == '__main__':
     unittest.main()

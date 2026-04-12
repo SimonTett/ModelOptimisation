@@ -304,72 +304,73 @@ if algorithmName in ['DFOLS']:
     save_final_config = False # not for DFOLS as it saves it
 
 finalConfig = None  # so we have something!
-while True:  # loop indefinitely so can have fake_fn. This really to test code/algorithm.
-    try:  # run an algorithm iteration.
-        np.random.seed(123456)  # init RNG though probably should go to the runXXX methods.
-        # reset logical information
-        rSUBMIT.reset_logical_info()
-        if algorithmName == 'DFOLS':
-            finalConfig = rSUBMIT.runDFOLS(scale=True,stop=args.stop)
-        elif algorithmName == 'PYSOT':
-            # pySOT -- probably won't work without some work.
-            finalConfig = rSUBMIT.runPYSOT(scale=True,stop=args.stop)
-        elif algorithmName == 'GAUSSNEWTON':
-            finalConfig = rSUBMIT.runGaussNewton(scale=True,stop=args.stop)
-        elif algorithmName == 'JACOBIAN':
-            # compute the Jacobian.
-            finalConfig = rSUBMIT.runJacobian(stop=args.stop)
-        elif algorithmName == 'RUNOPTIMISED':  # run optimised case through configuration in JSON file.
-            finalConfig = rSUBMIT.runOptimized(stop=args.stop)
-        elif algorithmName == 'RUN_PARAMS':  # run params.
-            finalConfig = rSUBMIT.run_params(scale=True,stop=args.stop)
-        else:
-            raise ValueError(f"Don't know what to do with Algorithm: {algorithmName}")
-        rSUBMIT.check_deterministic(error=non_determinisitic)
-        break  # we have finished running algorithm so can exit and go to final clear up.
-    except optclim_exceptions.submitModel:  # error which triggers need to instantiate and run more models.
-        rSUBMIT.check_deterministic(error=non_determinisitic) # check are still deterministic.
-        if read_only:
-            my_logger.info(f"read_only -- exiting")
-            break  # exit the loop -- we are done as in read_only mode.
-        iter_count = rSUBMIT.instantiate()  # instantiate all cases that need instantiation.
-        # This also generates iteration information.
-        my_logger.info(f"Instantiated {rSUBMIT}")
-        if dry_run:  # nothing gets submitted or faked. So exit
-            my_logger.info(f"dry_run -- exiting")
-            break
-        if args.stop: # stopping. Raise error if any runs to be submitted. This could change in future.
-            if iter_count > 0:
-                raise ValueError("Stopping but Instantiating  {iter_count} cases")
-            my_logger.info('Stopping')
-            break # exit loop
-        nModels = rSUBMIT.submit_all_models(fake_fn=fakeFn)  # this also saves the config.
-        finalConfig = rSUBMIT.runConfig(scale=True, add_cost=wantCost)  # generate final configuration
-        my_logger.info(f"On iteration {iter_count} submitted {nModels} models")
-        try:
-            my_logger.info(f"Last cost is {float(finalConfig.cost().iloc[-1])}")
-        except IndexError:  # no cost.
-            pass
-        if fakeFn is None:  # no fake fn so time to exit. This is "normal" behaviour.
-            my_logger.info("Exiting")
-            break  # exit the run forever loop as no more runs should be submitted on this go.
-        else:  # reload the configuration (and all models).
-            # This necessary as writing out/reading in changes (slightly) the floating point value of some values
-            # which in turn changes the way the algorithms behave.
-            rSUBMIT = runSubmit.runSubmit.load_SubmitStudy(config_path)
+with rSUBMIT.lock(timeout=30) as lock: # 30 second timeout.
+    while True:  # loop indefinitely so can have fake_fn. This really to test code/algorithm.
+        try:  # run an algorithm iteration.
+            np.random.seed(123456)  # init RNG though probably should go to the runXXX methods.
+            # reset logical information
+            rSUBMIT.reset_logical_info()
+            if algorithmName == 'DFOLS':
+                finalConfig = rSUBMIT.runDFOLS(scale=True,stop=args.stop)
+            elif algorithmName == 'PYSOT':
+                # pySOT -- probably won't work without some work.
+                finalConfig = rSUBMIT.runPYSOT(scale=True,stop=args.stop)
+            elif algorithmName == 'GAUSSNEWTON':
+                finalConfig = rSUBMIT.runGaussNewton(scale=True,stop=args.stop)
+            elif algorithmName == 'JACOBIAN':
+                # compute the Jacobian.
+                finalConfig = rSUBMIT.runJacobian(stop=args.stop)
+            elif algorithmName == 'RUNOPTIMISED':  # run optimised case through configuration in JSON file.
+                finalConfig = rSUBMIT.runOptimized(stop=args.stop)
+            elif algorithmName == 'RUN_PARAMS':  # run params.
+                finalConfig = rSUBMIT.run_params(scale=True,stop=args.stop)
+            else:
+                raise ValueError(f"Don't know what to do with Algorithm: {algorithmName}")
+            rSUBMIT.check_deterministic(error=non_determinisitic)
+            break  # we have finished running algorithm so can exit and go to final clear up.
+        except optclim_exceptions.submitModel:  # error which triggers need to instantiate and run more models.
+            rSUBMIT.check_deterministic(error=non_determinisitic) # check are still deterministic.
+            if read_only:
+                my_logger.info(f"read_only -- exiting")
+                break  # exit the loop -- we are done as in read_only mode.
+            iter_count = rSUBMIT.instantiate()  # instantiate all cases that need instantiation.
+            # This also generates iteration information.
+            my_logger.info(f"Instantiated {rSUBMIT}")
+            if dry_run:  # nothing gets submitted or faked. So exit
+                my_logger.info(f"dry_run -- exiting")
+                break
+            if args.stop: # stopping. Raise error if any runs to be submitted. This could change in future.
+                if iter_count > 0:
+                    raise ValueError("Stopping but Instantiating  {iter_count} cases")
+                my_logger.info('Stopping')
+                break # exit loop
+            nModels = rSUBMIT.submit_all_models(fake_fn=fakeFn)  # this also saves the config.
+            finalConfig = rSUBMIT.runConfig(scale=True, add_cost=wantCost)  # generate final configuration
+            my_logger.info(f"On iteration {iter_count} submitted {nModels} models")
+            try:
+                my_logger.info(f"Last cost is {float(finalConfig.cost().iloc[-1])}")
+            except IndexError:  # no cost.
+                pass
+            if fakeFn is None:  # no fake fn so time to exit. This is "normal" behaviour.
+                my_logger.info("Exiting")
+                break  # exit the run forever loop as no more runs should be submitted on this go.
+            else:  # reload the configuration (and all models).
+                # This necessary as writing out/reading in changes (slightly) the floating point value of some values
+                # which in turn changes the way the algorithms behave.
+                rSUBMIT = runSubmit.runSubmit.load_SubmitStudy(config_path)
 
-    # end of try/except.
+        # end of try/except.
 
-# Deal with final stuff
-rSUBMIT.dump_config(dump_models=True)  # dump the configuration & all models
+    # Deal with final stuff
+    rSUBMIT.dump_config(dump_models=True)  # dump the configuration & all models
 
-if finalConfig is not None and save_final_config:  # have a finalConfig. If so save it. We could not have it if dry_run or read_only set.
-    finalConfig.save(final_JSON_file)
+    if finalConfig is not None and save_final_config:  # have a finalConfig. If so save it. We could not have it if dry_run or read_only set.
+        finalConfig.save(final_JSON_file)
 
-if monitor:
-    rSUBMIT.plot(monitorFile=monitor_file)  # plot "std plot"
-if archive:
-    archive = archive_study.archive_study()
-    archive.archive(rSUBMIT,
-                    extra_paths=[final_JSON_file.relative_to(rootDir),
-                                 monitor_file.relative_to(rootDir)])
+    if monitor:
+        rSUBMIT.plot(monitorFile=monitor_file)  # plot "std plot"
+    if archive:
+        archive = archive_study.archive_study()
+        archive.archive(rSUBMIT,
+                        extra_paths=[final_JSON_file.relative_to(rootDir),
+                                     monitor_file.relative_to(rootDir)])

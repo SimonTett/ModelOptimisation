@@ -308,7 +308,7 @@ class model_base:
         """
         Load an object configuration from specified file.
         The correct type of object will be returned. 
-        :param check_types: types to be checked using isintance. If type not as expected error will be triggered
+        :param check_types: types to be checked using isinstance. If type not as expected error will be triggered
         :param file path to file to be read in.
            If str passed then it cls.expand will be ran on it.
         :return: Object of an appropriate type.

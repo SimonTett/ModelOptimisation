@@ -733,3 +733,65 @@ def copy_files(in_direct:pathlib.Path,
             my_logger.debug(f"Copied  {in_file} to {tgt_path} ")
 
     return files_copied
+    ##
+
+"""
+Simple wrapper helpers around py-filelock for exclusive file locking.
+Intended usage: with ConfigFileLock(path, timeout=30):  # do exclusive write/read-modify-write
+AI generated code and then modified.
+"""
+
+from contextlib import contextmanager
+from filelock import FileLock, Timeout
+
+
+class LockAcquireError(RuntimeError):
+    """Raised when a lock cannot be acquired under the requested policy."""
+
+
+class ContextFileLock:
+    """
+    Context manager that acquires an exclusive file lock for the given path.
+
+    Args:
+      target_path: path to the resource file you want to protect (the lock file will be target_path + ".lock")
+      timeout: number of seconds to wait for the lock. If 0 fail immediately if unable to get lock.
+      poll_interval: how frequently to poll internally (forwarded to FileLock's acquire)
+    Usage:
+      with ConfigFileLock("/path/to/config.json", timeout=30):
+          # protected region
+    """
+    def __init__(self, target_path: pathlib.Path, timeout: float = 0.0,
+                 poll_interval: float = 1.0):
+        lock_path = target_path.with_suffix(target_path.suffix + ".lock") # lock file is target file with .lock suffix
+        self._lock = FileLock(lock_path, timeout=timeout,poll_interval=poll_interval)
+        self._acquired = False
+        if timeout <0 :
+            raise ValueError("timeout must be non-negative")
+
+    def __enter__(self):
+        try:
+            self._lock.acquire()
+            self._acquired = True
+            my_logger.debug(f"Acquired lock for {self._lock.lock_file}")
+            return self
+        except Timeout:
+            raise LockAcquireError("Could not acquire lock (timeout / immediate-fail).")
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._acquired:
+            try:
+                self._lock.release()
+            finally:
+                self._acquired = False
+
+
+
+    @property
+    def lockfile_path(self) -> pathlib.Path:
+        return pathlib.Path(self._lock.lock_file)
+
+    @property
+    def is_locked(self) -> bool:
+        # FileLock keeps internal state; this mirrors whether this object thinks it's locked.
+        return self._acquired
