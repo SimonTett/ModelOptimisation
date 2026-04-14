@@ -267,7 +267,12 @@ class runSubmit(SubmitStudy):
     def make_model(self,params:dict, reference_name:typing.Optional[str] = None )-> Model:
         """
         Make a model from a dictionary of parameters. If model already exists then return that model.
-        Modify status to 'called' if Model is not made.
+        If fail to make model then raise optclim_exceptions.submitModel.
+        If model alredy exists then behaviour depends on model state  though model_status is set to 'called'
+          Instantiated -- raise optclim_exceptions.submitModel as model needs to be submitted.
+          Processed -- return model
+          Anything else (including Created) -- raise ValueError as should not be here
+
         :param params: dictionary of parameters
         :param reference_name: name of reference model to use. Pass None if want Model default behaviour.
         :return: Model object
@@ -281,32 +286,26 @@ class runSubmit(SubmitStudy):
 
         if model is None:  # no model so time to create one.
             model = self.create_model(params,reference_name=reference_name,dump=False)  # returns None if no model was created.
-            if model is None:
-                raise NotImplementedError(f"None path no longer implemented") # this code legacy and check here is to pick up that.
-                # Might want to be turnened back on if max_model_simulations is reimplimented.
+            if model is None: # no model can be created.
                 raise optclim_exceptions.submitModel
                 # Immediately raise exception as None means no model created and nothing else can be done
-                # will run out any remining models. This probably should not hapen as logic for max_model_simulations removed.
+                # will run out any remining models.
             # otherwise just return model. To do this as go through creation path once.
             return model
-        else:    # std path -- model already exists so set status and potentially update reference
+        else:    # std path -- model already exists so set status and potentially update reference.
+            # TODO -- might be able to get rid of this branch.
             if reference_name is not None:
                 model.update_reference_name(reference_name)  # reset reference_name if provided.
             self.set_model_status(model, 'called')  # we are calling the model.
 
         # Check model.status
-        if model.status in  ["INSTANTIATED"]:  # model exists but needs submitting
+        if model.status in  ["INSTANTIATED"]:  # model is created or instantiated.
             my_logger.debug(f"Model {model} has been instantiated but not run -- need to submit")
             raise optclim_exceptions.submitModel
         elif model.status in ["PROCESSED"]: # model has been Processed
             my_logger.debug(f"Using existing model {model}")
         else:  # not processed/Instantiated so raise ValueError and complain.
             raise ValueError(f"{model} status != PROCESSED but is {model.status}")
-
-
-
-
-
         return model
 
     def transform_check(self,obs:pd.Series,
@@ -650,7 +649,7 @@ class runSubmit(SubmitStudy):
 
     def create_model(self, params: dict,
                      dump: bool = True,
-                     reference_name:typing.Optional[str]=None) -> Model:
+                     reference_name:typing.Optional[str]=None) -> typing.Optional[Model]:
         """
         runSubmit version of create_model. Call super class and set model_status
         :param params: dict of parameters to create the model.
@@ -660,13 +659,12 @@ class runSubmit(SubmitStudy):
         """
         # call the super class.
         model = super().create_model(params, dump=dump, reference_name=reference_name)
-        if model is  None:
-            raise ValueError("Model creation failed") # check for mess up.
-        self.set_model_status(model,'called')
-        if reference_name is not None: #
-            model.update_reference_name(reference_name)
-            # reset reference_name if provided. May not be needed as this really to deal with legacy case where
-            # reference was not set and here we are creating a new model.
+        if model is  not None: # might get None if stop is set.
+            self.set_model_status(model,'called')
+            if reference_name is not None: #
+                model.update_reference_name(reference_name)
+                # reset reference_name if provided. May not be needed as this really to deal with legacy case where
+                # reference was not set and here we are creating a new model.
 
 
         return model
@@ -834,7 +832,7 @@ class runSubmit(SubmitStudy):
 
     def set_model_status(self,model:Model,status:type_model_status):
         """
-        Set status of model
+        Set  model_status
         :param model: A model object
         :param status: One of 'initial','called','not_called','unknown','read'
         :return: Nada

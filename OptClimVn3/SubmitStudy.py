@@ -57,6 +57,7 @@ class SubmitStudy(Study, model_base, journal):
     iter_keys: dict
     next_iter_cmd: typing.Optional[list[str]]
     next_iter_jids: list[str]
+    next_command:typing.Optional[typing.Literal['stop']] # next command to run. Only None or stop are allowed.
 
     """
      provides methods to support working out which models need to be submitted. Creates new models and submits them.
@@ -148,6 +149,7 @@ class SubmitStudy(Study, model_base, journal):
         self.iter_keys = dict()  # key iteration pairs.
         self.next_iter_cmd = next_iter_cmd
         self.next_iter_jids = []  # no next jobs (yet)
+        self.next_command  = None
 
     def update_config(self, config: "OptClimConfigVn3"):
         """
@@ -193,9 +195,10 @@ class SubmitStudy(Study, model_base, journal):
 
     def create_model(self, params: dict,
                      dump: bool = True,
-                     reference_name:typing.Optional[str]=None) -> Model:
+                     reference_name:typing.Optional[str]=None) -> typing.Optional[Model]:
         """
         Create a model, update list of created models and index of models.
+        If self.next_command is 'stop' immediately returns None.
         name is generated using self.gen_name() and will be checked to see if it already exists.
         If it does then a new name will be generated (and so on).
 
@@ -213,6 +216,9 @@ class SubmitStudy(Study, model_base, journal):
 
         Will raise ValueError if model_dir or config path already exist.
         """
+        if self.next_command == 'stop':
+            my_logger.debug("Stopping. Returning None")
+            return None
         existing_names = [model.name for model in self.model_index.values() ] # list of existing model names
         while True: # loop until we find a name that does not exist.
             name = self.gen_name()

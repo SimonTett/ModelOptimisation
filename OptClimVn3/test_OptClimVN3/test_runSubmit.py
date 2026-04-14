@@ -397,7 +397,7 @@ class testRunSubmit(unittest.TestCase):
 
     def test_create_model(self):
         """
-        Check that create model sets status to 'called'
+        Check that create model sets status to 'called' and when next_command is 'stop' returns None
         :return:
         """
         r = copy.deepcopy(self.extract_runSubmit)
@@ -409,6 +409,46 @@ class testRunSubmit(unittest.TestCase):
             self.assertEqual(len(r.model_index), len_index+1) # increased
             key = r.key_for_model(model)
             self.assertEqual(r.model_status[key],'called')
+
+        # verify that if next_command is 'stop' get None.
+        r.next_command = 'stop'
+        params.update(VF99=12.4444)
+        model = r.create_model(params,dump=False)
+        self.assertIsNone(model)
+
+    def test_make_model(self ):
+        """
+        Tests for make_model.
+        1) New param set get a new model back with model_index longer
+        2) Existing param set get model back with no change in model_index
+        3) Set next_command to 'stop'. Ask for existing model get model back. Ask for new model get error raised.
+
+        :return:
+        """
+
+        rsub = self.rSubmit
+        self.assertEqual(len(rsub.model_index), 0)
+        params = dict(VF1=1.03,ENTCOEF=4.01)
+        model = rsub.make_model(params)
+        self.assertEqual(len(rsub.model_index), 1)
+        # do it again -- should raise a ValueError
+        with self.assertRaises(ValueError):
+            model2 = rsub.make_model(params)
+        # instantiate model.
+        model.instantiate()
+        with self.assertRaises(optclim_exceptions.submitModel):
+            model2 = rsub.make_model(params)
+        self.assertEqual(len(rsub.model_index), 1)
+
+        # set next_command to 'stop'
+        rsub.next_command = 'stop'
+        params2 = params.copy()
+        params2.update(VF1=2.0)
+        with self.assertRaises(optclim_exceptions.submitModel):
+            model4 = rsub.make_model(params2) # should get None back and raise an exception to submit Models.
+
+        self.assertEqual(len(rsub.model_index), 1)
+
 
 
     def test_read_model_config(self):

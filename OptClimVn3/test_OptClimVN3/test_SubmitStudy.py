@@ -90,6 +90,15 @@ class MyTestCase(unittest.TestCase):
         sub2 = self.submit.load(self.submit.config_path)
         self.assertEqual(self.submit, sub2)
 
+        # check we get None for a new model when set next_command to 'stop' and old model back
+        sub = copy.deepcopy(self.submit)
+        sub.next_command = 'stop'
+        paramD = copy.deepcopy(paramD)
+        paramD.update(ENTCOEFF=6.543)
+        model3 = sub.create_model(paramD)
+        self.assertIsNone(model3)
+
+
     def test_copyConfig(self):
         # test that we can copy a SubmitStudy object
         submit = self.submit
