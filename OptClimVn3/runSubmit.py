@@ -871,6 +871,31 @@ class runSubmit(SubmitStudy):
 
         return len(not_called) == 0 # return True if no missing keys, False otherwise.
 
+    def plot(self,
+             fname: str = 'monitor',
+             monitor_file: typing.Optional[pathlib.Path] = None,
+             cost: typing.Optional[pd.Series] = None,
+             obs: typing.Optional[pd.DataFrame] = None,
+             params: typing.Optional[dict] = None,
+             savefig_kwargs: typing.Optional[dict] = None, ) -> \
+            typing.Optional[tuple[plt.Figure, tuple[plt.Axes, plt.Axes, plt.Axes]]]:
+
+        """
+        Calls superclass plot using, by default, logical values
+        :return: 
+        """
+        #obsNames = self.config.obsNames()
+        if cost is None:
+            cost = self.logical_cost()
+        if obs is None:
+            obs = self.logical_obs(scale=True,normalize=True).dropna()
+        if params is None:
+            params = self.logical_params(normalize=True)
+        # call the super class plotter to actually plot
+        fig,axs= super().plot(fig_name=fname, fname=monitor_file, cost=cost, obs=obs, params=params,
+                              savefig_kwargs=savefig_kwargs)
+        return fig,axs
+
     def runOptimized(self,stop:bool=False) -> StudyConfig:
         """
         :arg self

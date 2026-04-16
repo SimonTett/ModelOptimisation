@@ -37,6 +37,7 @@ def fake_run(rSubmit: runSubmit, scale: bool = True) -> typing.Callable:
 
 import engine
 import archive_study
+import genericLib
 class testRunSubmit(unittest.TestCase):
     """
     Test cases for runSubmit. There should be one for every method in runSubmit.
@@ -50,7 +51,7 @@ class testRunSubmit(unittest.TestCase):
         tmpDir = tempfile.TemporaryDirectory()
         tdir = pathlib.Path(tmpDir.name)
         arc, cfg = archive_study.archive_study.extract_archive(
-            runSubmit.runSubmit.expand('$OPTCLIMTOP/OptClimVn3/test_data/archive_dfols4p.tar.gz'),
+            genericLib.expand('$OPTCLIMTOP/OptClimVn3/test_data/archive_dfols4p.tar.gz'),
             direct=tdir)
         cls.extract_runSubmit = cfg # store for use in tests.
         cls._tmpDir = tmpDir
@@ -1379,6 +1380,15 @@ class testRunSubmit(unittest.TestCase):
 
         # would be good to have a case with single model run....
 
+    def test_plot(self):
+        # test that plot works and returns a figure and axes
+        # See test_Study.test_plot which does most of the testing.
+        import matplotlib.pyplot as plt
+        fig, axes = self.extract_runSubmit.plot()
+        self.assertIsInstance(fig, plt.Figure)
+        self.assertEqual(len(axes), 3)
+        for ax in axes:
+            self.assertIsInstance(ax, plt.Axes)
 
     def test_copyConfig(self):
         # test that copy method works correctly
@@ -1626,5 +1636,8 @@ class TestLogicalInfo(unittest.TestCase):
                 self.assertIsInstance(model_key, str)
                 expect_model = self.run_submit.model_index[model_key]
                 self.assertEqual(self.run_submit.key_for_model(expect_model), model_key)
+
+
+
 
 

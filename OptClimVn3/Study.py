@@ -267,8 +267,9 @@ class Study:
 
         return paramsDF
 
-    def obs(self, scale: bool = True, normalize: bool = False,
-            obsNames:typing.Optional[list[str]]=None) -> pd.DataFrame | None:
+    def obs(self, scale: bool = True,
+            normalize: bool = False,
+            obsNames:typing.Optional[list[str]]=None) -> typing.Optional[pd.DataFrame]:
         """
         Extract the Obs used in the *individual* simulations. If simulation has no observations then it is ignored.
         :param scale If True data will be scaled.
@@ -282,9 +283,9 @@ class Study:
             return None
         obsDF = pd.DataFrame(obs)
         if obsNames is None:
-            obsNames = obsDF.columns.values
+            obsNames = obsDF.columns.values.tolist()
         else:
-            obsDF=obsDF.reindex(columns=obsNames)
+            obsDF=obsDF.reindex(columns=obsNames).dropna(axis=1)
 
         if scale:  # scale ?
             obsDF *= self.config.scales(obsNames=obsNames)
@@ -292,6 +293,8 @@ class Study:
         if normalize:  # normalize
             tgt = self.config.targets(scale=scale, obsNames=obsNames)
             obsDF -= tgt  # difference from tgt.
+            # drop any nana
+            obsDF.dropna(axis=1)
             cov = self.config.Covariances(scale=scale)  # get covariances.
             errCov = cov['CovTotal']  # just want the total
             sd = pd.Series(np.sqrt(np.diag(errCov)),
@@ -310,11 +313,17 @@ class Study:
         obs = self.obs(scale=scale,obsNames=obsNames)  # get obs
         if obs is None:  # no data
             return None
-        tMat = self.config.transMatrix(scale=scale,
-                                       dataFrame=True)  # which puts us into space where totalError is Identity matrix.
+
+ # which puts us into space where totalError is Identity matrix.
         nObs = len(obs.columns)
-        target = self.config.targets(scale=scale)  # get targets
+        target = self.config.targets(scale=scale,obsNames=obsNames)  # get targets
         obs = obs.reindex(columns=target.index)  # reindex obs to match targets.
+        obs = obs.dropna(axis=1) # drop any missing data
+        target = target.reindex(index=obs.columns)
+        tMat = self.config.transMatrix(scale=scale,obsNames=obs.columns,
+                                       dataFrame=True)
+        # extract just what we have in obs.
+        tMat = tMat.reindex(columns=obs.columns)
         resid = (obs - target) @ tMat.T
         cost = np.sqrt(
             (resid ** 2).sum(1).astype(float) / nObs)  # TODO -- make nObs the number of indep matrices -- len(resid)
@@ -416,82 +425,93 @@ class Study:
 
         # do some plotting
 
-    def plot(self, figName='monitor', monitorFile=None):
+    def plot(self,
+             fname:typing.Optional[pathlib.Path]=None,
+             fig_name: str = 'monitor',
+             cost:typing.Optional[pd.Series]=None,
+             obs:typing.Optional[pd.DataFrame]=None,
+             params:typing.Optional[dict]=None,
+             savefig_kwargs:typing.Optional[dict]=None,) -> \
+            typing.Optional[tuple[plt.Figure,tuple[plt.Axes,plt.Axes,plt.Axes]]]:
         """
         plot cost, normalised parameter & obs values for runs.
-          Could do with a clean up and make better use of pandas plotting
-        :param figName: name of figure to make -- default is monitor
-        :param monitorFile: name of file to save figure to if not None. Default is None
+        :param fig_name: name of figure to make -- default is monitor
+        :param monitor_file: path to save figure to if not None. Default is None
+        :param cost -- cost values to plot. If None then will use self.cost
+        :param obs -- obs values to plot. If None then will use self.obs(normalise=True)
+        :param params - param values to plot. If None then will self.params(normalise=True)
+        :param savefig_kwargs: dict of kwargs to pass to fig.savefig. Default is empty dict.
         :return: figure, (costAxis, paramAxis, obsAxis)
 
-        Note needs matplotlib
+        Needs matplotlib
         """
         # get a bunch of annoying messages from matplotlib so turn them off...
         logging.getLogger('matplotlib.font_manager').disabled = True
         obsNames = self.config.obsNames()
-
-        cost = self.cost(obsNames=obsNames)
+        if savefig_kwargs is None:
+            savefig_kwargs = {}
+        if params is None:
+            params = self.params(normalize=True,numeric=True)
+        if obs is None:
+            obs = self.obs(scale=True,normalize=True,obsNames=obsNames).dropna()
+            obsNames = obs.columns #
+        if cost is None:
+            cost = self.cost(obsNames=obsNames)
         if (cost is None) or (len(cost) == 0):
-            return  # nothing to plot
-        fig, ax = plt.subplots(3, 1, num=figName, figsize=[8.3, 11.7], sharex='col', clear=True)
+            my_logger.warning("Nothing to plot")
+            return  None # nothing to plot
+        fig, ax = plt.subplots(3, 1, num=fig_name, figsize=[8.3, 11.7],
+                               sharex='col', clear=True,layout='constrained')
         (costAx, paramAx, obsAx) = ax  # name the axis .
         cmap = copy.copy(plt.cm.get_cmap('RdYlGn'))
         cmap.set_under('skyblue')
         cmap.set_over('black')
-        try:  # now to plot
-            nx = len(cost)
-            costAx.plot(np.arange(0, nx), cost.values)
-            a = costAx.set_xlim(-0.5, nx)
-            minv = cost.min()
-            minp = cost.values.argmin()  # use location in array (as that is what we plot)
-            costAx.set_title("Cost", fontsize='small')
-            a = costAx.plot(minp, minv, marker='o', ms=12, alpha=0.5)
-            costAx.axhline(minv, linestyle='dotted')
-            a = costAx.set_yscale('log')
-            yticks = [1, 2, 5, 10, 20, 50]
-            a = costAx.set_yticks(yticks)
-            a = costAx.set_yticklabels([str(y) for y in yticks])
-            # plot params
+        nx = len(cost)
+        costAx.plot(np.arange(0, nx), cost.values)
+        a = costAx.set_xlim(-0.5, nx)
+        minv = cost.min()
+        minp = cost.values.argmin()  # use location in array (as that is what we plot)
+        costAx.set_title("Cost", fontsize='small')
+        a = costAx.plot(minp, minv, marker='o', ms=12, alpha=0.5)
+        costAx.axhline(minv, linestyle='dotted')
+        a = costAx.set_yscale('log')
+        yticks = [1, 2, 5, 10, 20, 50]
+        a = costAx.set_yticks(yticks)
+        a = costAx.set_yticklabels([str(y) for y in yticks])
+        # plot params
+        params = params.reindex(index=cost.index)  # reorder
+        X = np.arange(-0.5, params.shape[1])
+        Y = np.arange(-0.5, params.shape[0])  # want first iteration at 0.0
+        cm = paramAx.pcolormesh(Y, X, params.T.values, cmap=cmap, vmin=0.0, vmax=1.)  # make a colormesh
+        a = paramAx.set_yticks(np.arange(0, len(params.columns)))
+        a = paramAx.set_yticklabels(params.columns)
+        a = paramAx.set_title("Normalised Parameter")
+        a = paramAx.axvline(minp, linestyle='dashed', linewidth=2, color='gray')
 
-            parm = self.params(normalize=True)
-            parm = parm.reindex(index=cost.index)  # reorder
-            X = np.arange(-0.5, parm.shape[1])
-            Y = np.arange(-0.5, parm.shape[0])  # want first iteration at 0.0
-            cm = paramAx.pcolormesh(Y, X, parm.T.values, cmap=cmap, vmin=0.0, vmax=1.)  # make a colormesh
-            a = paramAx.set_yticks(np.arange(0, len(parm.columns)))
-            a = paramAx.set_yticklabels(parm.columns)
-            a = paramAx.set_title("Normalised Parameter")
-            a = paramAx.axvline(minp, linestyle='dashed', linewidth=2, color='gray')
+        # plot norm obs
+        X = np.arange(-0.5, obs.shape[1])
+        Y = np.arange(-0.5, obs.shape[0])
+        cmO = obsAx.pcolormesh(Y, X, obs.T.values, vmin=-4, vmax=4, cmap=cmap)
+        a = obsAx.set_yticks(np.arange(0, len(obs.columns)))
+        a = obsAx.set_yticklabels(obs.columns, fontsize='x-small')
+        obsAx.set_xlabel("Iteration")
+        xticks = np.arange(0, nx // 5 + 1) * 5
+        a = obsAx.set_xticks(xticks)
+        a = obsAx.set_xticklabels(xticks)
+        obsAx.axvline(minp, linestyle='dashed', linewidth=2, color='gray')
 
-            # plot norm obs
-            obs = self.obs(scale=True, normalize=True,obsNames=obsNames)
-            X = np.arange(-0.5, obs.shape[1])
-            Y = np.arange(-0.5, obs.shape[0])
-            cmO = obsAx.pcolormesh(Y, X, obs.T.values, vmin=-4, vmax=4, cmap=cmap)
-            a = obsAx.set_yticks(np.arange(0, len(obs.columns)))
-            a = obsAx.set_yticklabels(obs.columns, fontsize='x-small')
-            obsAx.set_xlabel("Iteration")
-            xticks = np.arange(0, nx // 5 + 1) * 5
-            a = obsAx.set_xticks(xticks)
-            a = obsAx.set_xticklabels(xticks)
-            obsAx.axvline(minp, linestyle='dashed', linewidth=2, color='gray')
+        obsAx.set_title("Normalised Observations")
+        # plot the color bars.
+        for cmm, ax in zip([cmO, cm], [obsAx,paramAx]):
+            cb = fig.colorbar(cmm, ax=ax, orientation='horizontal', fraction=0.05, extend='both')
 
-            obsAx.set_title("Normalised Observations")
-            # plot the color bars.
-            for cmm, title in zip([cmO, cm], ['Obs', 'Param']):
-                cb = fig.colorbar(cmm, ax=costAx, orientation='horizontal', fraction=0.05, extend='both')
-                cb.ax.set_xlabel(title)
-            # fig.colorbar(cm, ax=costAx, orientation='horizontal', fraction=0.05,extend='both')
-        except  TypeError:  # get this when nothing to plot
-            print("Nothing to plot")
-            pass
+
 
         fig.suptitle(self.name + " " + datetime.datetime.now().strftime('%Y-%m-%d %H:%M'), fontsize='small',
                      y=0.99)
-        fig.tight_layout()
         fig.show()
-        if monitorFile is not None:
-            fig.savefig(str(monitorFile))  # save the figure
+        if fname is not None:
+            fig.savefig(fname,**savefig_kwargs)  # save the figure
         return fig, (costAx, paramAx, obsAx)
 
     def reload(self):

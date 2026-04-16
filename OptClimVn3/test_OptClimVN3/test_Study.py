@@ -5,6 +5,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pandas.testing as pdtest
+from matplotlib import pyplot as plt
+
 import StudyConfig
 import tempfile
 
@@ -188,6 +190,23 @@ class TestStudy(unittest.TestCase):
         # test that runConfig works.
         newConfig=self.study.runConfig(filename=self.direct/'fred.json')
         self.assertIsInstance(newConfig.Config['_covariance_matrices']['CovTotal'],pd.DataFrame)
+
+    def test_plot(self ):
+        """
+        Test that plot works. All going to do is test get a figure and three axes back.
+        :return: nada
+        """
+
+        fig,axes = self.study.plot()
+        self.assertIsInstance(fig,plt.Figure)
+        self.assertEqual(len(axes),3)
+        for ax in axes:
+            self.assertIsInstance(ax,plt.Axes)
+        # check that saving figure works
+        file = self.direct/'fred.png'
+        self.study.plot(fname=file)
+        self.assertTrue(file.exists())
+
 
 
 if __name__ == '__main__':
