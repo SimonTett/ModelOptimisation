@@ -368,7 +368,7 @@ with rSUBMIT.lock(timeout=30) as lock: # 30 second timeout.
         finalConfig.save(final_JSON_file)
 
     if monitor:
-        rSUBMIT.plot(monitor_file=monitor_file)  # plot "std plot"
+        rSUBMIT.plot(fname=monitor_file)  # plot "std plot"
     if archive:
         archive = archive_study.archive_study()
         archive.archive(rSUBMIT,

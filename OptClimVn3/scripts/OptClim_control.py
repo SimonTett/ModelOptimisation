@@ -52,8 +52,9 @@ def main(argv=None):
     p_plot.add_argument('MONITORFILE', type=genericLib.expand,
                         help='Output file (for plot)', nargs='?')
 
-    p_kill = subparsers.add_parser('kill', help='Kill study')
-    p_stop = subparsers.add_parser('stop', help='Stop study')
+    p_kill = subparsers.add_parser('kill', help='Kill and Stop study')
+    p_stop = subparsers.add_parser('stop',
+                                   help='Stop study. Will run any instantiated cases but generate no new runs')
     p_continue = subparsers.add_parser('continue', help='Continue study (after stopping)')
 
     args = parser.parse_args(argv)
@@ -85,6 +86,9 @@ def main(argv=None):
         elif args.command == 'kill':
             my_logger.info("Killing study")
             study.kill()
+            study.next_command = "stop"
+            # if this running at same time as runAlgorithm is running but runAlgorithm is waiting on file lock
+            # making next_command 'stop' will stop any more runs being made. Though will run an instantated cases.
         elif args.command == 'update':
             cfg_file = args.NEWCONFIG or study.config.fileName()
             cfg_file = genericLib.expand(cfg_file)

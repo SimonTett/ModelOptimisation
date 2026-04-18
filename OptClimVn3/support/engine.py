@@ -30,6 +30,98 @@ class abstractEngine(model_base, journal):
 
     allowed_eng = typing.Literal['SGE', 'SLURM','SLURM_SYSU']  # allowed engines
 
+
+    @staticmethod
+    def detect_scheduler(timeout=1.0):
+        """
+        # AI generated code to guess which engine we can use.
+        Return one of: 'SLURM', 'PBS', 'SGE', 'LSF', 'UNKNOWN', or None (none found).
+        Uses env vars first, then looks for scheduler binaries and probes them.
+        Non-blocking (uses short timeouts).
+        """
+        # 1) env var checks (when running inside a job)
+        env = os.environ
+        if 'SLURM_JOB_ID' in env or 'SLURM_STEP_ID' in env:
+            return 'SLURM'
+        if 'PBS_JOBID' in env or 'PBS_JOB_ID' in env or 'PBS_O_QUEUE' in env:
+            return 'PBS'
+        if 'SGE_ROOT' in env or 'JOB_ID' in env and 'SGE' in env.get('QUEUE', ''):
+            return 'SGE'
+        # LSF sets LSB_JOBID
+        if 'LSB_JOBID' in env:
+            return 'LSF'
+
+        # 2) check for obvious binaries - prefer Slurm check first
+        if shutil.which('sbatch') or shutil.which('squeue') or shutil.which('scontrol'):
+            return 'SLURM'
+
+        # 3) check for PBS/Torque/SGE: many systems have qsub/qstat. probe qstat/qsub to disambiguate.
+        qstat = shutil.which('qstat')
+        qsub = shutil.which('qsub')
+        pbs_binaries = ['pbsnodes', 'qmgr', 'pdsh']  # pbs-related helpers
+        for b in pbs_binaries:
+            if shutil.which(b):
+                return 'PBS'
+
+        # If qstat exists, probe its output for hints
+        if qstat:
+            try:
+                p = subprocess.run([qstat, '--version'], capture_output=True, text=True, timeout=timeout)
+                out = (p.stdout + p.stderr).lower()
+                if 'pbs' in out or 'torque' in out or 'pbspro' in out:
+                    return 'PBS'
+                if 'grid engine' in out or 'sge' in out or 'univa' in out or 'oracle' in out:
+                    return 'SGE'
+            except (subprocess.SubprocessError, FileNotFoundError):
+                # some qstat versions don't accept --version; try minimal call
+                try:
+                    p = subprocess.run([qstat], capture_output=True, text=True, timeout=timeout)
+                    out = (p.stdout + p.stderr).lower()
+                    if 'pbs' in out or 'torque' in out:
+                        return 'PBS'
+                    if 'usage' in out and 'sge' in out:
+                        return 'SGE'
+                except Exception:
+                    pass
+
+        # If qsub exists, probe it
+        if qsub:
+            try:
+                p = subprocess.run([qsub, '--version'], capture_output=True, text=True, timeout=timeout)
+                out = (p.stdout + p.stderr).lower()
+                if 'pbs' in out or 'torque' in out or 'pbspro' in out:
+                    return 'PBS'
+                if 'grid engine' in out or 'sge' in out or 'univa' in out:
+                    return 'SGE'
+            except Exception:
+                pass
+
+        # Additional heuristics: presence of pbs commands or slurm commands already tried. If nothing found:
+        if shutil.which('qsub') or shutil.which('qstat'):
+            # can't disambiguate; likely PBS/Torque or SGE
+            return 'PBS_OR_SGE'
+
+        return None
+
+    @classmethod
+    def guess_engine(cls, ssh_node: typing.Optional[str] = None) -> typing.Optional["abstractEngine"]:
+        """
+        Guess engine
+        :param ssh_node: node running on
+        :return: an engine or None if failed to guess
+        """
+        if ssh_node is not None:
+            raise NotImplementedError("remote check not implemented")
+        engine_name = cls.detect_scheduler() # guess Scheduler
+
+
+        if engine_name is None:
+            my_logger.warning('Failed to find an engine_name')
+            return None
+
+        eng = KNOWN_ENGINES[engine_name](ssh_node=ssh_node)
+        return eng # actually return the engine.
+
     @classmethod
     def create_engine(cls, engine_name: allowed_eng = 'SGE',
                       ssh_node: typing.Optional[str] = None) -> "abstractEngine":
@@ -39,94 +131,13 @@ class abstractEngine(model_base, journal):
         :param ssh_node: node to ssh to where engine can submit things
         Sets up engines which hold cmds for SGE or slurm respectively. .
         """
-        known_engines = dict(SGE=sge_engine, SLURM=slurm_engine,
-                             SLURM_SYSU=slurm_sysu_engine )  # known engines
-        eng = known_engines[engine_name](ssh_node=ssh_node)
 
+        # work out what engine we can use which is platform dependant...
+
+
+        eng = KNOWN_ENGINES[engine_name](ssh_node=ssh_node) # will fail if engine_name not known.
         return eng
 
-    @classmethod
-    def guess_engine(cls,ssh_node:typing.Optional[str] = None) -> typing.Optional["abstractEngine"]:
-
-        if ssh_node is not None:
-            raise  NotImplementedError("remote check not implemented")
-
-        def detect_scheduler(timeout=1.0):
-            """
-            # AI generated code to guess which engine we can use.
-            Return one of: 'SLURM', 'PBS', 'SGE', 'LSF', 'UNKNOWN', or None (none found).
-            Uses env vars first, then looks for scheduler binaries and probes them.
-            Non-blocking (uses short timeouts).
-            """
-            # 1) env var checks (when running inside a job)
-            env = os.environ
-            if 'SLURM_JOB_ID' in env or 'SLURM_STEP_ID' in env:
-                return 'SLURM'
-            if 'PBS_JOBID' in env or 'PBS_JOB_ID' in env or 'PBS_O_QUEUE' in env:
-                return 'PBS'
-            if 'SGE_ROOT' in env or 'JOB_ID' in env and 'SGE' in env.get('QUEUE', ''):
-                return 'SGE'
-            # LSF sets LSB_JOBID
-            if 'LSB_JOBID' in env:
-                return 'LSF'
-
-            # 2) check for obvious binaries - prefer Slurm check first
-            if shutil.which('sbatch') or shutil.which('squeue') or shutil.which('scontrol'):
-                return 'SLURM'
-
-            # 3) check for PBS/Torque/SGE: many systems have qsub/qstat. probe qstat/qsub to disambiguate.
-            qstat = shutil.which('qstat')
-            qsub = shutil.which('qsub')
-            pbs_binaries = ['pbsnodes', 'qmgr', 'pdsh']  # pbs-related helpers
-            for b in pbs_binaries:
-                if shutil.which(b):
-                    return 'PBS'
-
-            # If qstat exists, probe its output for hints
-            if qstat:
-                try:
-                    p = subprocess.run([qstat, '--version'], capture_output=True, text=True, timeout=timeout)
-                    out = (p.stdout + p.stderr).lower()
-                    if 'pbs' in out or 'torque' in out or 'pbspro' in out:
-                        return 'PBS'
-                    if 'grid engine' in out or 'sge' in out or 'univa' in out or 'oracle' in out:
-                        return 'SGE'
-                except (subprocess.SubprocessError, FileNotFoundError):
-                    # some qstat versions don't accept --version; try minimal call
-                    try:
-                        p = subprocess.run([qstat], capture_output=True, text=True, timeout=timeout)
-                        out = (p.stdout + p.stderr).lower()
-                        if 'pbs' in out or 'torque' in out:
-                            return 'PBS'
-                        if 'usage' in out and 'sge' in out:
-                            return 'SGE'
-                    except Exception:
-                        pass
-
-            # If qsub exists, probe it
-            if qsub:
-                try:
-                    p = subprocess.run([qsub, '--version'], capture_output=True, text=True, timeout=timeout)
-                    out = (p.stdout + p.stderr).lower()
-                    if 'pbs' in out or 'torque' in out or 'pbspro' in out:
-                        return 'PBS'
-                    if 'grid engine' in out or 'sge' in out or 'univa' in out:
-                        return 'SGE'
-                except Exception:
-                    pass
-
-            # Additional heuristics: presence of pbs commands or slurm commands already tried. If nothing found:
-            if shutil.which('qsub') or shutil.which('qstat'):
-                # can't disambiguate; likely PBS/Torque or SGE
-                return 'PBS_OR_SGE'
-
-            return None
-        # work out what engine we can use which is platform dependant...
-        engine_name = detect_scheduler()
-
-        if engine_name is None:
-             my_logger.warning('Failed to find an engine_name')
-        return engine_name
     def __init__(self, ssh_node: typing.Optional[str] = None):
         """
         Initialize an Engine instance
@@ -616,3 +627,5 @@ class slurm_sysu_engine(slurm_engine):
     _control_cmd:str = 'yhcontrol'
     _kill_cmd:str = 'yhcancel'
 
+KNOWN_ENGINES = dict(SGE=sge_engine, SLURM=slurm_engine,
+                     SLURM_SYSU=slurm_sysu_engine)  # known engines

@@ -85,7 +85,6 @@ class TestEngine(unittest.TestCase):
         if self.engine is None:
             logging.warning("No engine defined. Skipping test_run_cmds")
             return
-        breakpoint()
         log_pth = pathlib.Path(os.environ['OPTCLIMTOP'])/'tmp_test_engine' # where we are going to put log files
         print(f'log_pth is {log_pth}')
         log_pth.mkdir(exist_ok=True,parents=True) 
