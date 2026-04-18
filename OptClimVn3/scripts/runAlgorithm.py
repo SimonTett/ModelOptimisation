@@ -19,6 +19,8 @@ jsonFile: path to jsonFile defining configuration.
 
 do runAlgorithm -h to see what the remaining  command line arguments are.
 
+
+
 """
 import os
 
@@ -305,6 +307,7 @@ if algorithmName in ['DFOLS']:
 
 finalConfig = None  # so we have something!
 with rSUBMIT.lock(timeout=30) as lock: # 30 second timeout.
+    # TODO Risk of stale file but really want to refactor runAlgorithm to seperate out create and run.
     while True:  # loop indefinitely so can have fake_fn. This really to test code/algorithm.
         try:  # run an algorithm iteration.
             np.random.seed(123456)  # init RNG though probably should go to the runXXX methods.

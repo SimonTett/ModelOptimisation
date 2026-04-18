@@ -5,6 +5,7 @@ import genericLib
 import subprocess
 import sys
 import time
+from filelock import Timeout # just want the exception
 
 
 
@@ -320,7 +321,7 @@ class genericLib_test(unittest.TestCase):
             self.assertTrue(lock_file.exists(), "Lock file should exist after acquiring lock1")
 
             # Test that lock2 cannot acquire the lock while lock1 holds it
-            with self.assertRaises(genericLib.LockAcquireError):
+            with self.assertRaises(Timeout):
                 with lock2:
                     pass  # This should not be reached
 
@@ -333,7 +334,7 @@ class genericLib_test(unittest.TestCase):
 
         # trying with a timeout
         lock3 = genericLib.ContextFileLock(file,timeout=10.0)
-        with lock2:
+        with lock3:
             self.assertTrue(lock_file.exists())
 
 
@@ -377,7 +378,7 @@ class genericLib_test(unittest.TestCase):
             self.assertTrue(lock_file.exists(), "Child process failed to create lock file in time")
 
             # Attempt to acquire the same lock with a short timeout -> should raise LockAcquireError
-            with self.assertRaises(genericLib.LockAcquireError):
+            with self.assertRaises(Timeout):
                 with genericLib.ContextFileLock(file):
                     pass
             # now with 4 second time out

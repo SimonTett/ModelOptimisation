@@ -6,20 +6,26 @@
 """
 from __future__ import annotations
 
+import copy
 import errno
+import importlib
+import logging
+import logging.config
 import os
+import pathlib
 import shutil
 import stat
-import pathlib
+import sys
 import typing
-import importlib
+import tempfile
+
+import argparse
+import json
+
 
 import numpy as np
 import pandas as pd
-import logging
-import logging.config
-import copy
-import sys
+import filelock
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 
@@ -46,9 +52,7 @@ def _reset_all_loggers():
     """
     Reset all loggers to default state, closing all handlers and deleting temp files if possible.
     """
-    import logging
-    import tempfile
-    import os
+
     root_logger = logging.getLogger()
     for handle in root_logger.handlers[:]:
         handle.close()
@@ -531,8 +535,6 @@ def genSeed(param: pd.Series) -> int:
     return seed
 
 
-import argparse
-import json
 
 
 def std_post_process_setup(parser: argparse.ArgumentParser) -> typing.Tuple[argparse.Namespace,  dict]:
@@ -733,20 +735,10 @@ def copy_files(in_direct:pathlib.Path,
             my_logger.debug(f"Copied  {in_file} to {tgt_path} ")
 
     return files_copied
-    ##
-
-"""
-Simple wrapper helpers around py-filelock for exclusive file locking.
-Intended usage: with ConfigFileLock(path, timeout=30):  # do exclusive write/read-modify-write
-AI generated code and then modified.
-"""
-
-from contextlib import contextmanager
-from filelock import FileLock, Timeout
+    #
 
 
-class LockAcquireError(RuntimeError):
-    """Raised when a lock cannot be acquired under the requested policy."""
+## AI generated code for locking and then modified.
 
 
 class ContextFileLock:
@@ -762,21 +754,31 @@ class ContextFileLock:
           # protected region
     """
     def __init__(self, target_path: pathlib.Path, timeout: float = 0.0,
-                 poll_interval: float = 1.0):
-        lock_path = target_path.with_suffix(target_path.suffix + ".lock") # lock file is target file with .lock suffix
-        self._lock = FileLock(lock_path, timeout=timeout,poll_interval=poll_interval)
-        self._acquired = False
+                 poll_interval: typing.Optional[float] = None):
+        """
+
+        :param target_path: path to be locked
+        :param timeout: timeout interval in seconds. Must be >= 0.0
+        :param poll_interval:  polling interval in seconds
+        """
         if timeout <0 :
-            raise ValueError("timeout must be non-negative")
+            raise ValueError(f"timeout={timeout} must be non-negative")
+        if poll_interval is None:
+            poll_interval = max(timeout/10,0.01)
+        if poll_interval <= 0.0:
+            raise ValueError(f"poll_interval={poll_interval} must be positive")
+        poll_interval:float # poll_interval is a float now as None been dealt with.
+        lock_path = target_path.with_suffix(target_path.suffix + ".lock") # lock file is target file with .lock suffix
+        self._lock = filelock.FileLock(lock_path, timeout=timeout,poll_interval=poll_interval)
+        self._acquired = False
+
 
     def __enter__(self):
-        try:
-            self._lock.acquire()
-            self._acquired = True
-            my_logger.debug(f"Acquired lock for {self._lock.lock_file}")
-            return self
-        except Timeout:
-            raise LockAcquireError("Could not acquire lock (timeout / immediate-fail).")
+        self._lock.acquire()
+        self._acquired = True
+        my_logger.debug(f"Acquired lock for {self._lock.lock_file}")
+        return self
+
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self._acquired:

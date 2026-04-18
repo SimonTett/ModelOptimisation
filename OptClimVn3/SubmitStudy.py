@@ -165,7 +165,7 @@ class SubmitStudy(Study, model_base, journal):
         self.run_info = copy.deepcopy(config.run_info())  # copy run_info as modifying it.
         my_logger.debug(f"Set run_info to {self.run_info}")
 
-    def lock(self,timeout:float=0.0,poll_interval:float = 0.05):
+    def lock(self,timeout:float=0.0,poll_interval:typing.Optional[float] = None):
         """
         Lock the configuration file using genericLib.ContextFileLock.
         :param timeout -- time in seconds to timeout -- see ContextFileLock

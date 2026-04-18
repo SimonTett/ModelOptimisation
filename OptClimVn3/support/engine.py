@@ -30,11 +30,11 @@ class abstractEngine(model_base, journal):
 
     allowed_eng = typing.Literal['SGE', 'SLURM','SLURM_SYSU']  # allowed engines
 
-
+    # AI generated code to guess which engine we can use.
     @staticmethod
     def detect_scheduler(timeout=1.0):
         """
-        # AI generated code to guess which engine we can use.
+
         Return one of: 'SLURM', 'PBS', 'SGE', 'LSF', 'UNKNOWN', or None (none found).
         Uses env vars first, then looks for scheduler binaries and probes them.
         Non-blocking (uses short timeouts).
@@ -45,7 +45,7 @@ class abstractEngine(model_base, journal):
             return 'SLURM'
         if 'PBS_JOBID' in env or 'PBS_JOB_ID' in env or 'PBS_O_QUEUE' in env:
             return 'PBS'
-        if 'SGE_ROOT' in env or 'JOB_ID' in env and 'SGE' in env.get('QUEUE', ''):
+        if 'SGE_ROOT' in env or ('JOB_ID' in env and 'SGE' in env.get('QUEUE', '')):
             return 'SGE'
         # LSF sets LSB_JOBID
         if 'LSB_JOBID' in env:
@@ -118,7 +118,8 @@ class abstractEngine(model_base, journal):
         if engine_name is None:
             my_logger.warning('Failed to find an engine_name')
             return None
-
+        if engine_name not in KNOWN_ENGINES:
+            raise NotImplementedError(f"Unknown engine name {engine_name}")
         eng = KNOWN_ENGINES[engine_name](ssh_node=ssh_node)
         return eng # actually return the engine.
 
@@ -520,7 +521,7 @@ class slurm_engine(abstractEngine):
             submit_cmd += [f'--dependency=afterok:{hold}']
         if isinstance(hold, list) and (len(hold) > 0):
             # hold on multiple jobs (empty list means nothing to be held)
-            submit_cmd += [f"--dependency=afterok:" + ":".join(hold)]  #liangwj
+            submit_cmd += [f"--dependency=afterok:" + ":".join(hold)]
         if n_tasks is not None:
             submit_cmd += ['-a', f'1-{n_tasks}']  # -a =  task array
         if extra_args is not None: # got some extra args add them in
@@ -536,7 +537,7 @@ class slurm_engine(abstractEngine):
         :param jobid: The jobid of the job to be released
         :return: a list of things that can be ran!
         """
-        cmd = [self._control_cmd, 'release', jobid]  # Command to release_job a job #liangwj
+        cmd = [self._control_cmd, 'release', jobid]  # Command to release_job a job
 
         cmd = self.connect_fn(cmd)
         return cmd
@@ -547,7 +548,7 @@ class slurm_engine(abstractEngine):
         :param jobid: The jobid to kill
         :return: command to be ran (a list)
         """
-        cmd = [self._kill_cmd, jobid] #liangwj
+        cmd = [self._kill_cmd, jobid]
 
         cmd = self.connect_fn(cmd)
         return cmd
@@ -559,7 +560,7 @@ class slurm_engine(abstractEngine):
         :return: jobid as a string.
         """
 
-        return output.split()[3].split('.')[0] #liangwj
+        return output.split()[3].split('.')[0] # extra . for case of sub-jobs.
 
     def job_status(self, job_id: str, full_output: bool = False) -> str:
         """
@@ -595,7 +596,7 @@ class slurm_engine(abstractEngine):
         # work out how to parse result.
         if len(result) == 0:  # nothing found
             return "notFound"
-        status = result.split()[4]   #liangwj
+        status = result.split()[4]   # status is 5th element in output. Should be something like PENDING, RUNNING etc.
         if status.startswith("PENDING"):
             reason = result.split()[8].split("(")[1].replace(")","") #status.split("(")[1].replace(")", "") #liangwj
             if reason in ['JobHeldUser', 'JobHeldAdmin', "Dependency"]:

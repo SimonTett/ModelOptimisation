@@ -274,6 +274,7 @@ class Study:
         Extract the Obs used in the *individual* simulations. If simulation has no observations then it is ignored.
         :param scale If True data will be scaled.
         :param normalize If True data will be normalized -- distance in SD's from tgt
+        :param obsNames list of names of observations. If not provided will be extracted from model obs and target.
         :return: pandas dataframe of observations possibly scaled and normalized.
            None will be returned if there are no obs
         """
@@ -293,7 +294,7 @@ class Study:
         if normalize:  # normalize
             tgt = self.config.targets(scale=scale, obsNames=obsNames)
             obsDF -= tgt  # difference from tgt.
-            # drop any nana
+            # drop any nana which might have come from tgt
             obsDF.dropna(axis=1)
             cov = self.config.Covariances(scale=scale)  # get covariances.
             errCov = cov['CovTotal']  # just want the total

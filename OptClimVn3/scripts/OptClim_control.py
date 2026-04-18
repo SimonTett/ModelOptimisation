@@ -6,7 +6,7 @@ Usage: OptClim_control.py CONFIG command [options]
 
 Commands implemented: stop, continue, kill, update, plot, clear
 
-This script intentionally keeps behavior minimal: it loads the SubmitStudy
+This script intentionally keeps behaviour minimal: it loads the SubmitStudy
 object from the configuration, acquires the study lock (non-blocking by
 default) and performs the requested action. Plotting also uses the lock as
 requested.
@@ -23,8 +23,8 @@ import pathlib
 import matplotlib
 
 import genericLib
-from OptClimVn3.StudyConfig import readConfig
-from OptClimVn3.runSubmit import runSubmit
+from StudyConfig import readConfig
+from runSubmit import runSubmit
 
 matplotlib.use('Agg')  # make sure no matplotlib windows.
 
@@ -61,7 +61,7 @@ def main(argv=None):
 
     # configure logging
     my_logger = genericLib.setup_logging(level=args.log_level, rootname='OPTCLIM.control')
-    logging.getLogger(f"OPTCLIM.control")
+
     if args.CONFIG is None:  # try and find a config file to read in.
         sconfig_files = list(pathlib.Path.cwd().glob("*.scfg"))
         if len(sconfig_files) != 1:
