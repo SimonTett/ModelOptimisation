@@ -295,7 +295,7 @@ class Study:
             tgt = self.config.targets(scale=scale, obsNames=obsNames)
             obsDF -= tgt  # difference from tgt.
             # drop any nana which might have come from tgt
-            obsDF.dropna(axis=1)
+            obsDF = obsDF.dropna(axis=1)
             cov = self.config.Covariances(scale=scale)  # get covariances.
             errCov = cov['CovTotal']  # just want the total
             sd = pd.Series(np.sqrt(np.diag(errCov)),

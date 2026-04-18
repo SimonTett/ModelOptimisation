@@ -598,7 +598,7 @@ class slurm_engine(abstractEngine):
             return "notFound"
         status = result.split()[4]   # status is 5th element in output. Should be something like PENDING, RUNNING etc.
         if status.startswith("PENDING"):
-            reason = result.split()[8].split("(")[1].replace(")","") #status.split("(")[1].replace(")", "") #liangwj
+            reason = result.split()[8].split("(")[1].replace(")","")
             if reason in ['JobHeldUser', 'JobHeldAdmin', "Dependency"]:
                 return "Held"
             else:

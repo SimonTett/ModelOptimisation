@@ -735,12 +735,10 @@ def copy_files(in_direct:pathlib.Path,
             my_logger.debug(f"Copied  {in_file} to {tgt_path} ")
 
     return files_copied
-    #
+    
 
 
-## AI generated code for locking and then modified.
-
-
+# AI generated code for locking and then modified.
 class ContextFileLock:
     """
     Context manager that acquires an exclusive file lock for the given path.
@@ -750,7 +748,7 @@ class ContextFileLock:
       timeout: number of seconds to wait for the lock. If 0 fail immediately if unable to get lock.
       poll_interval: how frequently to poll internally (forwarded to FileLock's acquire)
     Usage:
-      with ConfigFileLock("/path/to/config.json", timeout=30):
+      with ContextFileLock("/path/to/config.json", timeout=30):
           # protected region
     """
     def __init__(self, target_path: pathlib.Path, timeout: float = 0.0,
