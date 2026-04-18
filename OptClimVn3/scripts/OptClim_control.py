@@ -70,9 +70,8 @@ def main(argv=None):
         args.CONFIG = sconfig_files[0]
         my_logger.info(f"Using config file {args.CONFIG}")
 
-    study = runSubmit.load(args.CONFIG)  # load config file.
-    # acquire lock with requested timeout
-    with study.lock(timeout=args.timeout):
+    with genericLib.ContextFileLock(timeout=args.timeout) as lock:     # acquire lock with requested timeout
+        study = runSubmit.load(args.CONFIG)  # load config file.
         if args.command == 'stop':
             study.next_command = "stop"
             study.update_history("Stopping algorithm")

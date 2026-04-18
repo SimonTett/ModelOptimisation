@@ -882,7 +882,7 @@ class runSubmit(SubmitStudy):
 
         """
         Calls superclass plot using, by default, logical values
-        :return: 
+        :return: fix and axes from superclass plot method. See that for details.
         """
         #obsNames = self.config.obsNames()
         if cost is None:
