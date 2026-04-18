@@ -20,9 +20,12 @@ stat = subprocess.run(['hostname','-A'],capture_output=True,text=True)
 if (stat.returncode == 0) and 'archer2.ac.uk' in stat.stdout:
     # Specials needed for archer
     print("On archer 2")
+    run_code = os.environ.get('PROJECT_CODE')
+    if run_code is None:
+        raise ValueError("On Archer2 but PROJECT_CODE env var not set")
     args.update(
         run_queue='serial', # running in the serial q
-        run_code='n02-terrafirma', # running with no2-terrafirma
+        run_code=run_code, # project code
         extra_args=['--qos=serial'] # and need to set qos
     )
 
@@ -82,6 +85,7 @@ class TestEngine(unittest.TestCase):
         if self.engine is None:
             logging.warning("No engine defined. Skipping test_run_cmds")
             return
+        breakpoint()
         log_pth = pathlib.Path(os.environ['OPTCLIMTOP'])/'tmp_test_engine' # where we are going to put log files
         print(f'log_pth is {log_pth}')
         log_pth.mkdir(exist_ok=True,parents=True) 

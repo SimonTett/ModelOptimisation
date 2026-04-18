@@ -168,7 +168,7 @@ class MyTestCase(unittest.TestCase):
         for mpth in mpths:
             self.assertFalse(mpth.exists())
         self.assertEqual(self.submit.gen_name(), 'ZZ000')
-        self.assertEqual(len(self.submit._history), nhist + 1)  # added deleted
+        self.assertEqual(len(self.submit._history), nhist + 2)  # added deleted and kill n message
 
     def test_dump_load(self):
         submit = self.submit

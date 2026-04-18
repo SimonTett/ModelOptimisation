@@ -872,8 +872,8 @@ class runSubmit(SubmitStudy):
         return len(not_called) == 0 # return True if no missing keys, False otherwise.
 
     def plot(self,
-             fname: str = 'monitor',
-             monitor_file: typing.Optional[pathlib.Path] = None,
+             fname:typing.Optional[pathlib.Path]=None,
+             fig_name: str = 'monitor',
              cost: typing.Optional[pd.Series] = None,
              obs: typing.Optional[pd.DataFrame] = None,
              params: typing.Optional[dict] = None,
@@ -892,7 +892,8 @@ class runSubmit(SubmitStudy):
         if params is None:
             params = self.logical_params(normalize=True)
         # call the super class plotter to actually plot
-        fig,axs= super().plot(fig_name=fname, fname=monitor_file, cost=cost, obs=obs, params=params,
+        fig,axs= super().plot(fname=fname, fig_name=fig_name,
+                              cost=cost, obs=obs, params=params,
                               savefig_kwargs=savefig_kwargs)
         return fig,axs
 

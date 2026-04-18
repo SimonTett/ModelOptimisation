@@ -855,6 +855,7 @@ class SubmitStudy(Study, model_base, journal):
             self.update_history(f"Killed resubmission job id:{curr_resub_id}")
 
         my_logger.info(f"Killed {len(killed)} jobs")
+        self.update_history(f"Killed {len(killed)} jobs")
         return killed
 
 

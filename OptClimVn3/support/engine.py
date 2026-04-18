@@ -14,10 +14,10 @@ import subprocess
 import typing
 import pathlib
 from abc import ABCMeta, abstractmethod
-from subprocess import CalledProcessError
 import shlex # for protecting commands with spaces etc.
 
 from model_base import model_base, journal  # so can save things. The default to_dict, from_dict should work.
+import shutil
 
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
@@ -41,25 +41,92 @@ class abstractEngine(model_base, journal):
         """
         known_engines = dict(SGE=sge_engine, SLURM=slurm_engine,
                              SLURM_SYSU=slurm_sysu_engine )  # known engines
-        return known_engines[engine_name](ssh_node=ssh_node)
+        eng = known_engines[engine_name](ssh_node=ssh_node)
+
+        return eng
 
     @classmethod
     def guess_engine(cls,ssh_node:typing.Optional[str] = None) -> typing.Optional["abstractEngine"]:
 
-        # work out what engine we can use which is platform dependant...Use this be seeing if job_status works
-        engine_name = None
-        for name in ['SGE', 'SLURM', 'SLURM_SYSU']:
-            eng = cls.create_engine(name,ssh_node=ssh_node)
-            try:
-                stat = eng.job_status('999999')
-                engine_name = name
-                break
-            except (subprocess.CalledProcessError,FileNotFoundError):  # need to catch both for linux & windows.
-                pass
+        if ssh_node is not None:
+            raise  NotImplementedError("remote check not implemented")
+
+        def detect_scheduler(timeout=1.0):
+            """
+            # AI generated code to guess which engine we can use.
+            Return one of: 'SLURM', 'PBS', 'SGE', 'LSF', 'UNKNOWN', or None (none found).
+            Uses env vars first, then looks for scheduler binaries and probes them.
+            Non-blocking (uses short timeouts).
+            """
+            # 1) env var checks (when running inside a job)
+            env = os.environ
+            if 'SLURM_JOB_ID' in env or 'SLURM_STEP_ID' in env:
+                return 'SLURM'
+            if 'PBS_JOBID' in env or 'PBS_JOB_ID' in env or 'PBS_O_QUEUE' in env:
+                return 'PBS'
+            if 'SGE_ROOT' in env or 'JOB_ID' in env and 'SGE' in env.get('QUEUE', ''):
+                return 'SGE'
+            # LSF sets LSB_JOBID
+            if 'LSB_JOBID' in env:
+                return 'LSF'
+
+            # 2) check for obvious binaries - prefer Slurm check first
+            if shutil.which('sbatch') or shutil.which('squeue') or shutil.which('scontrol'):
+                return 'SLURM'
+
+            # 3) check for PBS/Torque/SGE: many systems have qsub/qstat. probe qstat/qsub to disambiguate.
+            qstat = shutil.which('qstat')
+            qsub = shutil.which('qsub')
+            pbs_binaries = ['pbsnodes', 'qmgr', 'pdsh']  # pbs-related helpers
+            for b in pbs_binaries:
+                if shutil.which(b):
+                    return 'PBS'
+
+            # If qstat exists, probe its output for hints
+            if qstat:
+                try:
+                    p = subprocess.run([qstat, '--version'], capture_output=True, text=True, timeout=timeout)
+                    out = (p.stdout + p.stderr).lower()
+                    if 'pbs' in out or 'torque' in out or 'pbspro' in out:
+                        return 'PBS'
+                    if 'grid engine' in out or 'sge' in out or 'univa' in out or 'oracle' in out:
+                        return 'SGE'
+                except (subprocess.SubprocessError, FileNotFoundError):
+                    # some qstat versions don't accept --version; try minimal call
+                    try:
+                        p = subprocess.run([qstat], capture_output=True, text=True, timeout=timeout)
+                        out = (p.stdout + p.stderr).lower()
+                        if 'pbs' in out or 'torque' in out:
+                            return 'PBS'
+                        if 'usage' in out and 'sge' in out:
+                            return 'SGE'
+                    except Exception:
+                        pass
+
+            # If qsub exists, probe it
+            if qsub:
+                try:
+                    p = subprocess.run([qsub, '--version'], capture_output=True, text=True, timeout=timeout)
+                    out = (p.stdout + p.stderr).lower()
+                    if 'pbs' in out or 'torque' in out or 'pbspro' in out:
+                        return 'PBS'
+                    if 'grid engine' in out or 'sge' in out or 'univa' in out:
+                        return 'SGE'
+                except Exception:
+                    pass
+
+            # Additional heuristics: presence of pbs commands or slurm commands already tried. If nothing found:
+            if shutil.which('qsub') or shutil.which('qstat'):
+                # can't disambiguate; likely PBS/Torque or SGE
+                return 'PBS_OR_SGE'
+
+            return None
+        # work out what engine we can use which is platform dependant...
+        engine_name = detect_scheduler()
+
         if engine_name is None:
-            eng = None
-            my_logger.warning('Failed to find an engine_name')
-        return eng
+             my_logger.warning('Failed to find an engine_name')
+        return engine_name
     def __init__(self, ssh_node: typing.Optional[str] = None):
         """
         Initialize an Engine instance
@@ -217,7 +284,7 @@ class sge_engine(abstractEngine):
     """
     Engine class for SGE
     """
-
+    sub_cmd='qsub' # name of submission command.
     def submit_cmd(self, cmd: list[str|pathlib.PurePath], name: str,
                    outdir: typing.Optional[pathlib.Path] = None,
                    rundir: typing.Optional[pathlib.Path] = None,
@@ -499,8 +566,8 @@ class slurm_engine(abstractEngine):
         self.connect_fn(cmd)
         try:
             result = subprocess.check_output(cmd, text=True)
-        except subprocess.CalledProcessError as e:
-            if e.returncode == 1:
+        except (subprocess.CalledProcessError,FileNotFoundError) as e:
+            if isinstance(e,FileNotFoundError) or e.returncode == 1:
                 return "notFound"
             else:
                 raise subprocess.CalledProcessError

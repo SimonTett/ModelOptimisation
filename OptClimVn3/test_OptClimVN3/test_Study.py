@@ -196,6 +196,8 @@ class TestStudy(unittest.TestCase):
         Test that plot works. All going to do is test get a figure and three axes back.
         :return: nada
         """
+        import matplotlib
+        matplotlib.use('Agg') # make sure no matplotlib windows.
 
         fig,axes = self.study.plot()
         self.assertIsInstance(fig,plt.Figure)

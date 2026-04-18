@@ -1,12 +1,15 @@
 # test the scripts
+import copy
 import pathlib
 import sys
+import time
 import unittest
 import subprocess
 import tempfile
 from Model import Model
 import platform
 import shutil
+import contextlib
 import typing
 
 import genericLib
@@ -15,10 +18,31 @@ import engine
 
 import StudyConfig
 from runSubmit import runSubmit  # so we can test if we have one!
-
+import archive_study
 genericLib.setup_env()
 
 
+def run_cmd(*args):
+    """
+    Run a python command is sys indep way. On windows shove sys.executable in front of args
+    Print out stdout and stderr if command failed.
+    :param args:
+    :return:
+    """
+    if platform.system() == 'Windows':
+        cmd = [sys.executable]
+
+    else:
+        cmd = []
+    cmd += args
+
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    print("stdout", res.stdout)
+    print("stderr", res.stderr)
+    if res.returncode != 0:
+
+        res.check_returncode()
+    return res
 class testScripts(unittest.TestCase):
 
     def setup_model(self):
@@ -38,7 +62,7 @@ class testScripts(unittest.TestCase):
         direct = tempfile.TemporaryDirectory()
         self.direct = direct
         self.tempDir = pathlib.Path(direct.name)
-        self.script_dir = Model.expand("$OPTCLIMTOP/OptClimVn3/scripts")
+        self.script_dir = genericLib.expand("$OPTCLIMTOP/OptClimVn3/scripts")
         self.assertTrue(self.script_dir.exists())
 
     def tearDown(self) -> None:
@@ -151,6 +175,77 @@ class testScripts(unittest.TestCase):
         self.assertEqual(len(models),5)
         self.assertEqual(len(sconfig.logical_obs()),5)
         self.assertEqual(len(sconfig.logical_cost()),5)
+
+
+    def test_OptClim_control(self):
+        # test OptClim_Control.
+        # Tests each option and that config after running command is as expected.
+        # extract from archive an existing config
+
+        arc, cfg = archive_study.archive_study.extract_archive(
+            genericLib.expand('$OPTCLIMTOP/OptClimVn3/test_data/archive_dfols4p.tar.gz'),
+            direct=self.tempDir)
+        script_path = self.script_dir/'OptClim_control.py'
+        cfg_path = self.tempDir/'dfols4p.scfg'
+        # update first. For this we need to write out a config file
+        config = cfg.config
+        config.save(self.tempDir / 'dfols4p.json') # save the json config.
+        cfg.dump_config(dump_models=False) # and dump the config (which should update the file but nothing else.)
+
+        config = copy.deepcopy(config) # copy the json configuration.
+        config.setv("song_type_comment",'this is not a love song')
+        config.save() # save the config which should be changed
+        self.assertIsNone(cfg.config.getv('song_type_comment'))
+        run_cmd(str(script_path),str(cfg_path),'update')
+        cfg2 = runSubmit.load(cfg_path) # load it.
+        self.assertEqual(cfg2.config.getv('song_type_comment'),'this is not a love song')
+        # test reading in from a non default config.
+        config2 = copy.deepcopy(config)
+        config2.setv('song_type_comment','this is a love song')
+        config2_path = self.tempDir / 'dfols4p_final2.json'
+        config2.save(config2_path) # save the json config.
+        run_cmd(str(script_path), str(cfg_path), 'update',str(config2_path))
+        cfg2 = runSubmit.load(cfg_path)  # load it.
+        self.assertEqual(cfg2.config.getv('song_type_comment'), 'this is a love song')
+
+        # dump the original config back
+        cfg.config.save()
+        cfg.dump_config(dump_models=False)  # and dump the config (which should update the file)
+
+        self.assertIsNone(cfg.config.getv('song_type_comment'))
+        # now do update where we are in the directory and do not provide a config
+        with contextlib.chdir(self.tempDir) as newdir:
+            run_cmd(str(script_path),'update')
+            cfg3 = runSubmit.load(cfg.config_path) # load it.
+            self.assertIsNone(cfg3.config.getv('song_type_comment'))
+
+        # now for plot
+        monitor_file = self.tempDir / 'monitor.png'
+        run_cmd(str(script_path), str(cfg_path), 'plot',str(monitor_file))
+        self.assertTrue(monitor_file.exists())
+        monitor_file.unlink() # remove it
+        monitor_file = self.tempDir / f"monitor_{cfg.name}.png"
+        with contextlib.chdir(self.tempDir) as newdir:
+            run_cmd(str(script_path),str(cfg_path),'plot')
+            self.assertTrue(monitor_file.exists())
+            monitor_file.unlink() # remove it
+
+        # test stop
+        run_cmd(str(script_path),str(cfg_path),'stop')
+        cfg = runSubmit.load(cfg_path)
+        self.assertEqual(cfg.next_command,'stop')
+
+        # test continue
+        run_cmd(str(script_path),str(cfg_path),'continue')
+        cfg = runSubmit.load(cfg_path)
+        self.assertIsNone(cfg.next_command)
+
+        # test kill...
+        run_cmd(str(script_path),str(cfg_path),'kill')
+        cfg = runSubmit.load(cfg_path)
+        self.assertEqual(list(cfg._history.values())[-1],['Killed 0 jobs']) # should report no jobs killed.
+
+
 
 
 if __name__ == '__main__':

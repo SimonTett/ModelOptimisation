@@ -46,15 +46,19 @@ The script doing all this could also do other things -- like run the config etc 
 
 
 ## OptClim script. 
+Has the following syntax:
+
+OptClim_control.py [config_file] [--log_level debug|info|warning ] command [option_args_per_command]
+
 Implements the following options:
 1) stop - set next_command to stop. 
 2) continue - set next_command to None. This will allow optimisation to run on. 
 3) plot -- call  plot method. Need to implement plot for runSubmit. 
-   *Optional* Argument is output file for plot.  Default is f"monitor_{self.name}.png" in current directory.
+   *Optional* argument is [--output_file filepath] for plot.  Default is f"monitor_{self.name}.png" in current directory.
 4) kill -- call StudyConfig kill - kills everything.
 5) update -- call StudyConfig update_params - updates parameters from config file and updates evaluation database info.
-   *Optional* Argument is config file to update from. Default is current config file in self.config.fileName()
-~~6) archive -- call StudyConfig archive - archives current config and results.~~ [Not now as need to decide what to archive beyond minimal list]
+   *Optional* argument is [--config_file filepath]. Default is current config file in self.config.fileName()
+6) ~~ archive -- call StudyConfig archive - archives current config and results.~~ [Not now as need to decide what to archive beyond minimal list]
 
 All but plot will require file locking. locking should fail immediately if lock cannot be obtained.
 Command line arguments will be the config file and the option. 
