@@ -70,7 +70,12 @@ def main(argv=None):
         args.CONFIG = sconfig_files[0]
         my_logger.info(f"Using config file {args.CONFIG}")
 
-    with genericLib.ContextFileLock(timeout=args.timeout) as lock:     # acquire lock with requested timeout
+    # check args.command is defined.
+    if args.command is None:
+        parser.print_help()
+        raise ValueError("No command specified. ")
+
+    with genericLib.ContextFileLock(args.CONFIG,timeout=args.timeout) as lock:     # acquire lock with requested timeout
         study = runSubmit.load(args.CONFIG)  # load config file.
         if args.command == 'stop':
             study.next_command = "stop"
