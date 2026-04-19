@@ -203,4 +203,4 @@ while True:
 
 # optionally produce monitoring picture. Only doing at the end even when fakeFn active.
 if args.monitor:
-    finalConfig.plot(monitor_file=monitorFile)
+    finalConfig.plot(monitorFile=monitorFile)
