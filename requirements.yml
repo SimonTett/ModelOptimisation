@@ -1,0 +1,14 @@
+# conda requirements for OptClim. Requires python 3.12 or better.
+# To create the environment, run:
+# conda env create -f requirements.yml
+# To update the environment, run:
+# conda env update -f requirements.yml
+# To activate the environment, run:
+# conda activate optclim
+name: optclim
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip:
+      - -r requirements.txt # install the pip requirements as well

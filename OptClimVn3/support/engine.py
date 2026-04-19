@@ -582,7 +582,7 @@ class slurm_engine(abstractEngine):
             if isinstance(e,FileNotFoundError) or e.returncode == 1:
                 return "notFound"
             else:
-                raise subprocess.CalledProcessError
+                raise # -- just raise the initial error... subprocess.CalledProcessError
 
         if full_output:
             return result

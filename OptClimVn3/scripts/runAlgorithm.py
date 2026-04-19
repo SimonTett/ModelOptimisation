@@ -344,7 +344,7 @@ with rSUBMIT.lock(timeout=30) as lock: # 30 second timeout.
                 break
             if args.stop: # stopping. Raise error if any runs to be submitted. This could change in future.
                 if iter_count > 0:
-                    raise ValueError("Stopping but Instantiating  {iter_count} cases")
+                    raise ValueError(f"Stopping but Instantiating  {iter_count} cases")
                 my_logger.info('Stopping')
                 break # exit loop
             nModels = rSUBMIT.submit_all_models(fake_fn=fakeFn)  # this also saves the config.

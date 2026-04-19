@@ -4,7 +4,7 @@ Small control script for OptClim SubmitStudy configurations.
 
 Usage: OptClim_control.py CONFIG command [options]
 
-Commands implemented: stop, continue, kill, update, plot, clear
+Commands implemented: stop, continue, kill, update &  plot
 
 This script intentionally keeps behaviour minimal: it loads the SubmitStudy
 object from the configuration, acquires the study lock (non-blocking by

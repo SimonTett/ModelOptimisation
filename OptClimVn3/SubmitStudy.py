@@ -37,10 +37,10 @@ from StudyConfig import dictFile
 import genericLib
 # check we are version 3.8 or above.
 
-if (sys.version_info.major < 3) or (sys.version_info.major == 3 and sys.version_info.minor < 8):
-    raise Exception("Only works at 3.8+ ")
+if (sys.version_info.major < 3) or (sys.version_info.major == 3 and sys.version_info.minor < 11):
+    raise Exception("Only works at 3.11+ ")
 
-__version__ = '0.9'
+__version__ = '0.95'
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 

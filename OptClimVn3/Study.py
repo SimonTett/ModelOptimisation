@@ -326,8 +326,9 @@ class Study:
         # extract just what we have in obs.
         tMat = tMat.reindex(columns=obs.columns)
         resid = (obs - target) @ tMat.T
+        nobs = resid.shape[1]
         cost = np.sqrt(
-            (resid ** 2).sum(1).astype(float) / nObs)  # TODO -- make nObs the number of indep matrices -- len(resid)
+            (resid ** 2).sum(1).astype(float) /nobs)
         cost = pd.Series(cost, index=obs.index).rename('cost ' + self.name)
         return cost
 
@@ -431,13 +432,13 @@ class Study:
              fig_name: str = 'monitor',
              cost:typing.Optional[pd.Series]=None,
              obs:typing.Optional[pd.DataFrame]=None,
-             params:typing.Optional[dict]=None,
+             params:typing.Optional[pd.DataFrame]=None,
              savefig_kwargs:typing.Optional[dict]=None,) -> \
             typing.Optional[tuple[plt.Figure,tuple[plt.Axes,plt.Axes,plt.Axes]]]:
         """
         plot cost, normalised parameter & obs values for runs.
         :param fig_name: name of figure to make -- default is monitor
-        :param monitor_file: path to save figure to if not None. Default is None
+        :param fname: path to save figure to if not None. Default is None
         :param cost -- cost values to plot. If None then will use self.cost
         :param obs -- obs values to plot. If None then will use self.obs(normalise=True)
         :param params - param values to plot. If None then will self.params(normalise=True)

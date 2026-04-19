@@ -137,8 +137,9 @@ class TestStudy(unittest.TestCase):
             nObs = len(obs.columns)
             tgt = self.config.targets(scale=scale)
             resid = (obs - tgt) @ tMat.T
+            nobs = resid.shape[1]
             cost_expected = np.sqrt((resid ** 2).sum(1).astype(
-                float) / nObs)  # TODO -- make nObs the number of indep matrices -- len(resid)
+                float) / nobs)
             cost_expected.index = [m.name for m in self.study.model_index.values() if m.status == 'PROCESSED']
             cost_expected = cost_expected.rename(f"cost {self.study.name}")
             pdtest.assert_series_equal(cost_expected, cost)
