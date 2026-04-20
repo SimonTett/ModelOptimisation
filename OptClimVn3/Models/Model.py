@@ -47,8 +47,6 @@ Do write tests for your new Model testing your new and modified methods.
 
 """
 
-
-
 """
 Failure modes and solutions:
 1) Post-processing times out. Model state is SUCCEEDED but no post-processing done.
@@ -58,7 +56,6 @@ Failure modes and solutions:
     
     Complain to archer2 help desk -- job has 30 mins time limit and runs in about 3 mins interactively. 
 """
-
 
 import copy
 import functools
@@ -80,7 +77,7 @@ import genericLib
 import namelist_var
 from model_base import journal
 from ModelBaseClass import ModelBaseClass, register_param
-from namelist_var import NamelistVar,GroupConfig,type_allowed_fortran
+from namelist_var import NamelistVar, GroupConfig, type_allowed_fortran
 from engine import abstractEngine
 import shlex
 
@@ -95,7 +92,7 @@ class Model(ModelBaseClass, journal):
     # type definitions for attributes.
     name: str
     config_path: typing.Union[pathlib.Path, pathlib.PurePath]
-    reference:typing.Union[pathlib.Path, pathlib.PurePath]
+    reference: typing.Union[pathlib.Path, pathlib.PurePath]
     reference_name: typing.Optional[str]
     model_dir: typing.Union[pathlib.Path, pathlib.PurePath]
     post_process: dict
@@ -110,7 +107,7 @@ class Model(ModelBaseClass, journal):
     pp_jid: typing.Optional[str]
     model_jids: list[str]
     submitted_jid: typing.Optional[str]
-    submit_script: typing.Union[pathlib.Path ,pathlib.PurePath]
+    submit_script: typing.Union[pathlib.Path, pathlib.PurePath]
     continue_script: typing.Union[pathlib.Path, pathlib.PurePath]
     set_status_script: typing.Union[pathlib.Path, pathlib.PurePath]
     status: type_status
@@ -119,7 +116,7 @@ class Model(ModelBaseClass, journal):
     _post_process_input: typing.Optional[str]
     _post_process_output: typing.Optional[str]
     configs: GroupConfig
-    remote: dict[str,str|pathlib.PurePath]
+    remote: dict[str, str | pathlib.PurePath]
 
     """
     Abstract model class. Any class that inherits from this will have name lookup.
@@ -158,7 +155,8 @@ class Model(ModelBaseClass, journal):
                        INSTANTIATED=["CREATED"],  # Instantiate a model requires it to have been created
                        SUBMITTED=['INSTANTIATED', 'PERTURBED', 'CONTINUE'],
                        # Submitting needs it to have been instantiated, perturbed or to be continued.
-                       RUNNING=["SUBMITTED","RUNNING"],  # running the model should have been submitted or already been running
+                       RUNNING=["SUBMITTED", "RUNNING"],
+                       # running the model should have been submitted or already been running
                        FAILED=["RUNNING", "SUBMITTED"],  # Failed means it should have been running or SUBMITTED
                        PERTURBED=["FAILED"],  # Allowed to perturb a model after it failed.
                        CONTINUE=["FAILED", "PERTURBED"],
@@ -169,6 +167,7 @@ class Model(ModelBaseClass, journal):
     # Q Perturbed comes in two flavours. Perturb and continue or perturb and restart. How to handle that?
     allowed_status = set(status_info.keys())
     _known_parameters_cache: typing.Optional[set[str]] = None  # cache for known parameters.
+
     @classmethod
     def load_model(cls, model_path: pathlib.Path):
         """
@@ -186,10 +185,9 @@ class Model(ModelBaseClass, journal):
 
         if not model.model_dir.samefile(model_path.parent):
             my_logger.warning(f"Model {model} model_dir changed to {model_path.parent} ")
-            model.model_dir = model_path.parent # update directory with where we actually loaded it from.
+            model.model_dir = model_path.parent  # update directory with where we actually loaded it from.
 
         return model
-
 
     # methods now.
     def __init__(self,
@@ -275,7 +273,7 @@ class Model(ModelBaseClass, journal):
         if config_dir is None:
             self.config_dir = model_dir
         elif model_dir is not None:
-            self.config_dir = model_dir/config_dir # config_dir **relative** to model_dir
+            self.config_dir = model_dir / config_dir  # config_dir **relative** to model_dir
         else:
             raise ValueError("config_dir must be specified if model_dir is None")
         if status not in self.allowed_status:
@@ -295,7 +293,6 @@ class Model(ModelBaseClass, journal):
         self.perturb_count = 0  # how many times have we perturbed the model?
         self.submission_count = 0  # how mamy times have we submitted the model?
 
-
         # history and output
         self.update_history(None)  # init history.
         self.store_output(None, None)  # init store output
@@ -314,8 +311,8 @@ class Model(ModelBaseClass, journal):
         if run_info is not None:
             self.run_info = copy.deepcopy(run_info)  # copy the run_info into Model.
 
-        if engine is None: # no submission engine provided. So create one. Default will be SLURM.
-            engine = abstractEngine.create_engine(engine_name=self.run_info.get('submit_engine','SLURM'),
+        if engine is None:  # no submission engine provided. So create one. Default will be SLURM.
+            engine = abstractEngine.create_engine(engine_name=self.run_info.get('submit_engine', 'SLURM'),
                                                   ssh_node=self.run_info.get('ssh_node'))  # default engine.
             my_logger.info(f'Set abstract Engine to {engine}')
         self.engine = engine  # submission engine.
@@ -331,26 +328,24 @@ class Model(ModelBaseClass, journal):
         script_pth = root / "scripts/set_model_status.py"
         self.set_status_script = script_pth
 
-
-            # and simulated obs.
+        # and simulated obs.
         self.simulated_obs = None
-        self.configs = GroupConfig(root_dir=self.config_dir) # grouped configs for writing out generic namelists
+        self.configs = GroupConfig(root_dir=self.config_dir)  # grouped configs for writing out generic namelists
         # Set up remote stuff.
         remote_machine = self.run_info.get('remote_machine', None)
-        remote_model_dir = self.expand(self.run_info.get('remote_model_dir', None),local=False)
+        remote_model_dir = self.expand(self.run_info.get('remote_model_dir', None), local=False)
         local_root_dir = self.expand(self.run_info.get('local_root_dir', None))
         if remote_model_dir is not None:
             remote_model_dir = self.new_path(self.model_dir, remote_model_dir, root_dir=local_root_dir)
 
-
-        self.remote = dict(remote_machine=remote_machine, remote_model_dir=remote_model_dir) # remote info
+        self.remote = dict(remote_machine=remote_machine, remote_model_dir=remote_model_dir)  # remote info
         # Set status
         self.status = status
         if self.status == 'CREATED':  # creating model for the first time
             self.update_history("CREATING model")
 
     @classmethod
-    def get_param_info(cls,parameter:str) -> list[NamelistVar|typing.Callable]:
+    def get_param_info(cls, parameter: str) -> list[NamelistVar | typing.Callable]:
         """
         Get parameter info for a parameter. Searches mro wise through object inheritence.
         :param parameter: name of the parameter
@@ -362,12 +357,12 @@ class Model(ModelBaseClass, journal):
         stuff = None
         for bcls in cls.__mro__:
             if hasattr(bcls, 'param_info') and parameter in bcls.param_info.param_constructors:
-                    stuff = bcls.param_info.param_constructors[parameter]
-                    my_logger.debug(f'Found parameter {parameter} in {bcls.__name__}')
-                    break # exit the loop as we have found the parameter.
+                stuff = bcls.param_info.param_constructors[parameter]
+                my_logger.debug(f'Found parameter {parameter} in {bcls.__name__}')
+                break  # exit the loop as we have found the parameter.
         if stuff is None:
-            params_known=sorted(cls.known_parameters())
-            raise KeyError(f"Parameter {parameter} not found.\n Allowed parameters are: " +"\n"+
+            params_known = sorted(cls.known_parameters())
+            raise KeyError(f"Parameter {parameter} not found.\n Allowed parameters are: " + "\n" +
                            " ".join(params_known))
         elif not isinstance(stuff, list):
             raise ValueError(f"Parameter {parameter} did not return list but returned {stuff}")
@@ -417,13 +412,14 @@ class Model(ModelBaseClass, journal):
         pp = copy.deepcopy(post_process)
 
         # now deal with reference_name if needed.
-        pp_for_ref = pp.pop('post_process_for_reference',None) # individual post processing wanted?
-        if  pp_for_ref is not None: # have per reference post-processing info
+        pp_for_ref = pp.pop('post_process_for_reference', None)  # individual post processing wanted?
+        if pp_for_ref is not None:  # have per reference post-processing info
             if self.reference_name is None:
                 raise ValueError('post_process_for_reference present but reference_name is None')
             my_logger.debug(f"Using post_process_per_reference for {self.reference_name}")
-            dct:typing.Optional[dict] = pp_for_ref[self.reference_name] #  Will trigger error if self.reference_name not in dict.
-            if dct is not None: # actually got something for this reference name.
+            dct: typing.Optional[dict] = pp_for_ref[
+                self.reference_name]  #  Will trigger error if self.reference_name not in dict.
+            if dct is not None:  # actually got something for this reference name.
                 pp.update(pp_for_ref[self.reference_name])  # update with per reference info.
 
         # then set up script    etc.
@@ -456,7 +452,7 @@ class Model(ModelBaseClass, journal):
         self.post_process_cmd_script = pp_cmd  # assumed to be running in model_dir
         self.post_process = pp  #
 
-    def __eq__(self, other,vars_to_ignore:typing.Optional[typing.List[str]] = None):
+    def __eq__(self, other, vars_to_ignore: typing.Optional[typing.List[str]] = None):
         """
         Compare two objects and identify their differences by comparing their attributes.
         :param other: The other object to compare against.
@@ -466,7 +462,7 @@ class Model(ModelBaseClass, journal):
         if vars_to_ignore is None:
             vars_to_ignore = []
         vars_to_ignore.append('configs')
-        result = super().__eq__(other,vars_to_ignore=vars_to_ignore)
+        result = super().__eq__(other, vars_to_ignore=vars_to_ignore)
         return result
 
     def compare_objects(self, other):
@@ -479,8 +475,8 @@ class Model(ModelBaseClass, journal):
         if self == other:
             return []  # Objects are identical
 
-        if type(self) != type(other):
-            return {'Different types:', type(self), type(other)}
+        if not isinstance(self,other):
+            return set(['Different types:', type(self), type(other)])
 
         vself = vars(self)
         vother = vars(other)
@@ -545,8 +541,8 @@ class Model(ModelBaseClass, journal):
         for parameter in set(parameters):  # set means we iterate over unique parameters
             try:
                 param = self.read_param(parameter)
-                if isinstance(param,dict): # got multiple values back
-                    result.update(param) # update the result
+                if isinstance(param, dict):  # got multiple values back
+                    result.update(param)  # update the result
                 elif parameter in result:
                     my_logger.warning(f"Already got {parameter}. Skipping")
                     pass
@@ -560,7 +556,6 @@ class Model(ModelBaseClass, journal):
 
         return result
 
-
     def gen_parameters(self, **kwargs) -> list[tuple[NamelistVar, type_allowed_fortran]]:
         """
         Generate parameter settings.
@@ -573,10 +568,11 @@ class Model(ModelBaseClass, journal):
             stuff_to_set.extend(self.param(parameter, value))
 
         return stuff_to_set  # this is a list of (variable_set_info, value)
+
     ## end of parameter related methods
     def create_model(self,
-                     direct:typing.Optional[pathlib.Path] = None,
-                     copy_ref:bool=True):
+                     direct: typing.Optional[pathlib.Path] = None,
+                     copy_ref: bool = True):
         """
         Create a new model by copying reference. If self.fake is True then no copy is done.
          Overwrite (and call superclass) for your own model.
@@ -597,7 +593,8 @@ class Model(ModelBaseClass, journal):
                 else:
                     file.unlink()
             if copy_ref:
-                shutil.copytree(str(self.reference), str(direct), symlinks=True, dirs_exist_ok=True)  # copy from reference.
+                shutil.copytree(str(self.reference), str(direct), symlinks=True,
+                                dirs_exist_ok=True)  # copy from reference.
                 my_logger.debug(f"Copied {self.reference} to {direct}")
 
     def set_status(self, new_status: type_status,
@@ -613,12 +610,12 @@ class Model(ModelBaseClass, journal):
         :param check_allowed: Check that new status is allowed.
         """
 
-        if check_allowed: # only check
+        if check_allowed:  # only check
             if new_status not in self.allowed_status:
                 raise ValueError(f"Status {new_status} should be one of " + " ".join(self.allowed_status))
             if new_status == 'CREATED':
                 raise ValueError(f"Do not set status to CREATED")
-        
+
         expected_status = self.status_info[new_status]
         if check_existing and (self.status not in expected_status):
             raise ValueError(
@@ -629,7 +626,7 @@ class Model(ModelBaseClass, journal):
         self.status = new_status
         self.dump_model()  # write to disk
 
-    def instantiate(self,fake:bool = False) -> None:
+    def instantiate(self, fake: bool = False) -> None:
         """
         Run create_model and set_params, update status.
         If fake is True then do not actually create the model.
@@ -645,7 +642,7 @@ class Model(ModelBaseClass, journal):
         self.create_model()  # create model
         self.modify_model()  # do any modifications to model needed before setting params.
         self.set_params()  # set the params
-        self.check() # check the model is ok. Very model dependent.
+        self.check()  # check the model is ok. Very model dependent.
         # set permissions to rxw,rx,rx for submit and continue script.
         if not fake:
             for file in [self.submit_script, self.continue_script]:
@@ -653,17 +650,17 @@ class Model(ModelBaseClass, journal):
                     (self.model_dir / file).chmod(0o755)  # set permission
             # install remote if needed.
 
-            cmds=self.install_remote_command(remote_machine=self.remote.get('remote_machine'),
-                                             remote_model_dir=self.remote.get('remote_model_dir'))
+            cmds = self.install_remote_command(remote_machine=self.remote.get('remote_machine'),
+                                               remote_model_dir=self.remote.get('remote_model_dir'))
             # expect list of cmds to run. make dir and then do rsync
             if cmds is not None:
                 for cmd in cmds:
-                    output=self.run_cmd(cmd,convert_to_posix=True,quote=False)
+                    output = self.run_cmd(cmd, convert_to_posix=True, quote=False)
                 my_logger.debug(f"Installed model remotely with {cmd} and got {output}")
 
 
         else:
-            self.fake = True # we are faking now!
+            self.fake = True  # we are faking now!
         # possibly do remote_install
 
         self.set_status('INSTANTIATED')
@@ -694,7 +691,6 @@ class Model(ModelBaseClass, journal):
             if not self.set_status_script.is_file():
                 raise ValueError(f"Need {self.set_status_script} is not a file")
 
-
         return True
 
     def submit_post_process(self) -> str:
@@ -704,7 +700,8 @@ class Model(ModelBaseClass, journal):
 
         pp_cmd = [str(self.set_status_script), str(self.config_path), 'PROCESSED']
         # post-process cmd. Which gets submitted now and the job id recorded.
-        job_params = self.engine.extract_job_submission_params(self.run_info,default_values=dict(runTime=1800)) # extract stuff needed to submit the job.
+        job_params = self.engine.extract_job_submission_params(self.run_info, default_values=dict(
+            runTime=1800))  # extract stuff needed to submit the job.
         outputDir = self.model_dir / 'PP_output'  # post-processing output goes in Model Dir
         outputDir.mkdir(exist_ok=True, parents=True)
         my_logger.debug(f"Created {outputDir}")
@@ -720,8 +717,6 @@ class Model(ModelBaseClass, journal):
         my_logger.debug(f"post-processing run {pp_cmd} and got {output}")
         pp_jid = self.engine.job_id(output)  # extract the job-ID.
         return pp_jid
-
-
 
     def submit_model(self,
                      fake_function: typing.Optional[typing.Callable[[dict], pd.Series]] = None,
@@ -747,7 +742,7 @@ class Model(ModelBaseClass, journal):
         pp_jid = None  # unless we do something will have no pp job.
 
         # deal with fake_function.
-        if self.fake and fake_function is  None:
+        if self.fake and fake_function is None:
             raise ValueError(f"Fake model {self.name} and fake_function not provided. Not allowed")
         if fake_function:  # handle fake function
             self.pp_jid = None  # no cmd to run as we just run it!
@@ -787,10 +782,10 @@ class Model(ModelBaseClass, journal):
         # which will release the post-processing job.
         cmd = self.submit_cmd()  # cmd that submits the model.
         remote_machine = self.remote.get('remote_machine')
-        remote_dir= self.remote.get('remote_model_dir')
+        remote_dir = self.remote.get('remote_model_dir')
         if remote_dir is not None:
-            remote_dir = pathlib.PurePath(remote_dir) # remote_dir should be a string
-        cmd = self.ssh_command(cmd,remote_machine=remote_machine,remote_model_dir=remote_dir)
+            remote_dir = pathlib.PurePath(remote_dir)  # remote_dir should be a string
+        cmd = self.ssh_command(cmd, remote_machine=remote_machine, remote_model_dir=remote_dir)
         output = self.run_cmd(cmd)  # and run the command
         jid = self.engine.job_id(output)  # and work out the job id.
         self.submitted_jid = jid  # model will
@@ -824,11 +819,12 @@ class Model(ModelBaseClass, journal):
         outdir.mkdir(parents=True, exist_ok=True)
         my_logger.debug(f"Created {outdir}")
 
-        cmd = self.engine.submit_cmd([pathlib.PurePath(self.model_dir / script)], f"{self.name}{len(self.model_jids):05d}", outdir,
+        cmd = self.engine.submit_cmd([pathlib.PurePath(self.model_dir / script)],
+                                     f"{self.name}{len(self.model_jids):05d}", outdir,
                                      run_code=runCode, time=runTime, rundir=self.model_dir)
         return cmd
 
-    def running(self,jid:typing.Optional[str]=None) -> typing.Optional[str]:
+    def running(self, jid: typing.Optional[str] = None) -> typing.Optional[str]:
         """
         Set status to running, store current job id
         : jid -- if not None then use this as job id. Otherwise get job id from engine.
@@ -874,8 +870,6 @@ class Model(ModelBaseClass, journal):
         :return:
         """
         self.set_status('FAILED')
-
-
 
     def continue_simulation(self):
         """
@@ -943,7 +937,7 @@ class Model(ModelBaseClass, journal):
         my_logger.debug(f"Dumping post_process to {input_file}")
         output = dict(postProcess=self.post_process)  # wrap post process in dict
         with open(input_file, 'w') as fp:
-            json.dump(output, fp,indent=2)
+            json.dump(output, fp, indent=2)
         # dump the post-processing dict for the post-processing to  pick up.
 
         post_process_output = self.model_dir / self._post_process_output
@@ -951,13 +945,13 @@ class Model(ModelBaseClass, journal):
 
         # get in the simulated obs which also sets them 
         self.read_simulated_obs(post_process_output)
-        
+
         if update:  # if we are updating there is no status change -- we have already checked we are processed.
             self.update_history("Reprocessed model")
 
         my_logger.debug(f"Sim obs are {self.simulated_obs}")
         self.set_status(status)  #  update the status (and dump state to disk)
-        return result # Should this actually return the simulated observations??
+        return result  # Should this actually return the simulated observations??
 
     def read_simulated_obs(self, post_process_file: pathlib.Path):
         """
@@ -1063,9 +1057,8 @@ class Model(ModelBaseClass, journal):
         
         :return: None
         """
-        if not self.fake: # not faking
+        if not self.fake:  # not faking
             self.kill()
-
 
         shutil.rmtree(self.model_dir, ignore_errors=True)
         my_logger.info(f"Deleted everything in {self.model_dir}")
@@ -1100,10 +1093,9 @@ class Model(ModelBaseClass, journal):
         my_logger.warning(f"Nothing set for {ens_member}. Override in your own model")
         return None
 
-
     def copyConfig(self, direct: pathlib.Path,
-             extra_files: typing.Optional[list[pathlib.Path]] = None,
-             update_paths: bool = True) -> "Model":
+                   extra_files: typing.Optional[list[pathlib.Path]] = None,
+                   update_paths: bool = True) -> "Model":
         """
         Copy Model to a new directory. Different Model classes may well want to override this by adding their own extra_files
         This basic version will only copy the model config file and the post-processing output file.
@@ -1123,7 +1115,6 @@ class Model(ModelBaseClass, journal):
             my_logger.info("Made direct absolute to " + str(direct))
         direct.mkdir(parents=True, exist_ok=True)  # create the directory if needed.
 
-
         files_to_copy = [self.config_path.relative_to(self.model_dir), self._post_process_output]
 
         if extra_files is not None:
@@ -1137,13 +1128,12 @@ class Model(ModelBaseClass, journal):
 
         cp_config_path = direct / (self.config_path.relative_to(self.model_dir))
         if update_paths:
-
             cp_model.update_history(f'Copied {len(files_copied)} from {self.model_dir} to {direct}')
             cp_model.model_dir = direct
             cp_model.config_path = cp_config_path
             cp_model.update_history(f"Updated model_dir and config_path")
 
-        cp_model.dump(cp_config_path) # dump it out! (needed as have changed things so orig copy will have old values)
+        cp_model.dump(cp_config_path)  # dump it out! (needed as have changed things so orig copy will have old values)
         return cp_model
 
     def archive(self,
@@ -1173,15 +1163,14 @@ class Model(ModelBaseClass, journal):
             # dump the model (but no change to internal values)
             # handle models that were read in and so, potentially, outside rootDir
             tmpdir_pth = pathlib.Path(tmpdir) / self.config_path.name
-            self.copyConfig(direct=tmpdir_pth, extra_files=extra_files,update_paths=False)
+            self.copyConfig(direct=tmpdir_pth, extra_files=extra_files, update_paths=False)
 
-            for path in tmpdir_pth.rglob("*"): # get all files in the copied  model dir.
+            for path in tmpdir_pth.rglob("*"):  # get all files in the copied  model dir.
                 if path.is_dir():
                     continue  # skip dirs
                 arc_path = path.relative_to(tmpdir_pth)
                 archive.add(path, arc_path)
                 my_logger.debug(f"Added {path} to archive as {arc_path}")
-
 
     def reprocess(self, post_process: typing.Optional[dict] = None) -> pd.Series:
         """
@@ -1221,25 +1210,24 @@ class Model(ModelBaseClass, journal):
         """
         dct2 = cls.convert_pure_paths(dct)
         try:
-            dct2['configs'] = namelist_var.GroupConfig.from_dict(dct2['configs'])  # convert configs back to a configs object.
-        except KeyError: # old style configs so just let __init__ deal with it.
+            dct2['configs'] = namelist_var.GroupConfig.from_dict(
+                dct2['configs'])  # convert configs back to a configs object.
+        except KeyError:  # old style configs so just let __init__ deal with it.
             pass
         obj = cls(name=dct2.pop('name'), reference=dct2.pop('reference'))  # create a default instance
         obj.fill_attrs(dct2)
         return obj
 
-
-    def read_nl_value(self,nl_var:NamelistVar,
-                      raise_error:bool = True) -> type_allowed_fortran:
+    def read_nl_value(self, nl_var: NamelistVar,
+                      raise_error: bool = True) -> type_allowed_fortran:
         """
         Read value from namelist.
         :param nl_var: namelist variable to read
         :param raise_error: Pass through to configs.read_value
         :return: value obtained by reading the namelist.
         """
-        value = self.configs.read_value(nl_var,raise_error=raise_error)
+        value = self.configs.read_value(nl_var, raise_error=raise_error)
         return value
-
 
     def gen_params(self,
                    parameters: typing.Optional[dict] = None) -> dict[NamelistVar:type_allowed_fortran]:
@@ -1267,7 +1255,7 @@ class Model(ModelBaseClass, journal):
 
     def set_params(self,
                    parameters: typing.Optional[dict] = None,
-                   backup:bool = True):
+                   backup: bool = True):
 
         """
         Set parameters
@@ -1280,10 +1268,11 @@ class Model(ModelBaseClass, journal):
         if self.fake:
             return  # nothing to be done if faking.
         nl = self.gen_params(parameters=parameters)  # get the namelist/value stuff
-        self.configs.write_values(nl,backup=backup,create=True)  # and write them all out. Creating new namelist info if needed.
+        self.configs.write_values(nl, backup=backup,
+                                  create=True)  # and write them all out. Creating new namelist info if needed.
 
     def read_param(self, parameter: str,
-                   raise_error:bool = True) -> type_allowed_fortran:
+                   raise_error: bool = True) -> type_allowed_fortran:
         """
         Read parameter value from model instance.
         :param parameter: parameter wanted
@@ -1291,12 +1280,12 @@ class Model(ModelBaseClass, journal):
         :return: value. Depends on what is in the model...
         """
         # get the namelist info.
-        stuff = self.get_param_info(parameter)[0]# just want the first element of the list.
+        stuff = self.get_param_info(parameter)[0]  # just want the first element of the list.
         if callable(stuff):  # is it a callable? If so run it in inverse mode.
             result = stuff(self, None)
             my_logger.debug(f"Called {stuff.__qualname__} with inverse and got {result} ")
         else:
-            result = self.read_nl_value(stuff,raise_error=raise_error)
+            result = self.read_nl_value(stuff, raise_error=raise_error)
             my_logger.debug(f"Read data from {stuff}")
 
         return result
@@ -1420,7 +1409,7 @@ class Model(ModelBaseClass, journal):
         new_model_dict = vars(self.load(self.config_path))
         self.fill_attrs(new_model_dict)
 
-    def kill(self,kill_model:bool=True) -> list[str]:
+    def kill(self, kill_model: bool = True) -> list[str]:
         """
         Kill model related processes
         :param kill_model: If True kill the model job and post-processing job. If False just the post-processing job.
@@ -1430,7 +1419,7 @@ class Model(ModelBaseClass, journal):
         if kill_model and len(self.model_jids) > 0:  # got some models to kill
             curr_model_id = self.model_jids[-1]
             status = self.model_job_status()
-            if status not in ['notFound',None]:
+            if status not in ['notFound', None]:
                 cmd = self.engine.kill_job(curr_model_id)
                 self.run_cmd(cmd)
                 my_logger.debug(f"Killed model job id:{curr_model_id}")
@@ -1439,7 +1428,7 @@ class Model(ModelBaseClass, journal):
             else:
                 my_logger.debug(f"Job {curr_model_id} not found.")
         status = self.pp_job_status()
-        if status not in ['notFound',None]:  # got a post-processing job.
+        if status not in ['notFound', None]:  # got a post-processing job.
             cmd = self.engine.kill_job(self.pp_jid)
             self.run_cmd(cmd)
             my_logger.debug(f"Killed post-processing job id:{self.pp_jid}")
@@ -1449,7 +1438,7 @@ class Model(ModelBaseClass, journal):
             my_logger.debug(f"No post-processing job to kill. pp_jid is {self.pp_jid} and status is {status}")
         return jobs_killed
 
-    def pp_job_status(self) ->typing.Optional[str]:
+    def pp_job_status(self) -> typing.Optional[str]:
         """
         Get the status of the post-processing job. Really done so can mock this for testing!
         :return: status of the post-processing job. None if pp_jid is None
@@ -1457,7 +1446,7 @@ class Model(ModelBaseClass, journal):
         if self.pp_jid is None:
             return None
         else:
-            return self.engine.job_status(self.pp_jid) # return the job status
+            return self.engine.job_status(self.pp_jid)  # return the job status
 
     def model_job_status(self) -> typing.Optional[str]:
         """
@@ -1465,7 +1454,7 @@ class Model(ModelBaseClass, journal):
         :return: status of the model job. None if no model job submitted.
         Probably will be overwritten in subclasses to return the status of the currently running model job.
         """
-        if self.model_jids: # got some model jid's. Return status of last one
+        if self.model_jids:  # got some model jid's. Return status of last one
             return self.engine.job_status(self.model_jids[-1])
         else:
             return None
@@ -1477,10 +1466,9 @@ class Model(ModelBaseClass, journal):
         """
         return 'standard'
 
-
-    def ssh_command(self,cmd:list[str|pathlib.PurePath],
-                    remote_machine:typing.Optional[str] = None,
-                    remote_model_dir:typing.Optional[pathlib.PurePath]= None) -> list[str]:
+    def ssh_command(self, cmd: list[str | pathlib.PurePath],
+                    remote_machine: typing.Optional[str] = None,
+                    remote_model_dir: typing.Optional[pathlib.PurePath] = None) -> list[str]:
         """
         generate  cmd to run via ssh on remote system. Does not actually run it. Use self.run_cmd to do that.
         :param cmd: command to be run on remote machine as a list of strings.
@@ -1504,24 +1492,24 @@ class Model(ModelBaseClass, journal):
         if (remote_model_dir is not None) and (not isinstance(remote_model_dir, pathlib.PurePath)):
             raise ValueError(f"remote_model_dir {remote_model_dir} is not a PurePath")
         # generate the remote command.
-        remote_cmd:list[str] = []
+        remote_cmd: list[str] = []
         for c in cmd:
-            if not isinstance(c, (str,pathlib.PurePath)):
+            if not isinstance(c, (str, pathlib.PurePath)):
                 raise ValueError(f"Element {c} of cmd is not a string or a pure path")
-            if (remote_model_dir is not None) and isinstance(c,pathlib.PurePath) and c.is_relative_to(self.model_dir):
+            if (remote_model_dir is not None) and isinstance(c, pathlib.PurePath) and c.is_relative_to(self.model_dir):
                 # have remote_model_dir and c is a PurePath that is relative to self.model_dir
                 # need to replace local model_dir with remote_model_dir
                 relative_path = c.relative_to(self.model_dir)
                 remote_path = remote_model_dir / relative_path
-                remote_cmd.append(remote_path.as_posix()) # convert to posix path for remote machine
-            elif isinstance(c,pathlib.PurePath):
+                remote_cmd.append(remote_path.as_posix())  # convert to posix path for remote machine
+            elif isinstance(c, pathlib.PurePath):
                 remote_cmd.append(c.as_posix())  # convert to posix path for remote machine
             else:
                 remote_cmd.append(c)  # just use as is.
 
-        remote_cmd=' '.join(remote_cmd)  # make into a single string
-        cmd = ['ssh','-q','-o','batchmode=yes','-o','StrictHostKeyChecking=yes', remote_machine, remote_cmd]
-        return cmd #
+        remote_cmd = ' '.join(remote_cmd)  # make into a single string
+        cmd = ['ssh', '-q', '-o', 'batchmode=yes', '-o', 'StrictHostKeyChecking=yes', remote_machine, remote_cmd]
+        return cmd  #
 
     @staticmethod
     def new_path(path: pathlib.PurePath,
@@ -1544,8 +1532,9 @@ class Model(ModelBaseClass, journal):
         return new_path
 
     def install_remote_command(self,
-                               remote_machine:typing.Optional[str]=None,
-                               remote_model_dir:typing.Optional[pathlib.PurePath]=None) -> typing.Optional[list[list[str|pathlib.PurePath]]]:
+                               remote_machine: typing.Optional[str] = None,
+                               remote_model_dir: typing.Optional[pathlib.PurePath] = None) -> typing.Optional[
+        list[list[str | pathlib.PurePath]]]:
         """
         Generate list of cmds to install on remote machine. Use run_cmd to actually do it.
         WIll return None if no remote machine or remote_dir
@@ -1568,27 +1557,29 @@ class Model(ModelBaseClass, journal):
         """
         if (remote_model_dir is None) or (remote_machine is None):
             my_logger.debug(f"Remote machine or  remote dir are not set.")
-            return None # nothing to be done.
+            return None  # nothing to be done.
         # check variable types are correct.
         if not isinstance(remote_model_dir, pathlib.PurePath):
             raise ValueError(f"remote_dir {remote_model_dir} is not a PurePath")
-        if not isinstance(remote_machine,str):
-            raise  ValueError(f"remote_machine {remote_machine} is not a string")
+        if not isinstance(remote_machine, str):
+            raise ValueError(f"remote_machine {remote_machine} is not a string")
 
         my_logger.debug(f"Will install {self.model_dir} to {remote_model_dir} on {remote_machine}")
 
-        remote_path = remote_model_dir.as_posix().rstrip('/') # get as posix path for remote machine.
-        cmd0 = self.ssh_command(['mkdir', '-p', remote_path], remote_machine=remote_machine)  # cmd to create remote dir if needed.
+        remote_path = remote_model_dir.as_posix().rstrip('/')  # get as posix path for remote machine.
+        cmd0 = self.ssh_command(['mkdir', '-p', remote_path],
+                                remote_machine=remote_machine)  # cmd to create remote dir if needed.
         # now create cmd to rsync the model dir to the remote dir. rsync will create remote_dir if it does not exist.
-        ssh_opts = ["-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes"] # run in batch mode with strict host key checking
+        ssh_opts = ["-o", "BatchMode=yes", "-o",
+                    "StrictHostKeyChecking=yes"]  # run in batch mode with strict host key checking
         ssh_command = "ssh " + " ".join(shlex.quote(opt) for opt in ssh_opts)
-        cmd = ['rsync','-a','-q',"-e",ssh_command,str(self.model_dir)+'/',f"{remote_machine}:{remote_path}"]
+        cmd = ['rsync', '-a', '-q', "-e", ssh_command, str(self.model_dir) + '/', f"{remote_machine}:{remote_path}"]
         # note no trailing slash so we copy the model_dir to remote_path NOT into remote_path (as would happen with a trailing slash)
 
-        return [cmd0,cmd]
+        return [cmd0, cmd]
 
-    def update_params(self, parameters:typing.Optional[list[str]]=None,
-                      update:bool = True) -> pd.Series:
+    def update_params(self, parameters: typing.Optional[list[str]] = None,
+                      update: bool = True) -> pd.Series:
         """
         Update the parameters in a model by reading them from disk.
         Model is not written to disk.
@@ -1601,18 +1592,17 @@ class Model(ModelBaseClass, journal):
             raise ValueError("Model not instantiated. Cannot update parameters.")
         if parameters is None:
             parameters = []
-        params_to_update = set(list(self.parameters.keys())+parameters) # list of unique params
-        new_params = self.read_params(list(params_to_update), fail=True) # read the param values
+        params_to_update = set(list(self.parameters.keys()) + parameters)  # list of unique params
+        new_params = self.read_params(list(params_to_update), fail=True)  # read the param values
         my_logger.debug(f'Updated params are {params_to_update}')
         if update:
-            self.parameters.update(new_params) # update
+            self.parameters.update(new_params)  # update
             self.update_history(f"Updated parameters {params_to_update}")
         result = pd.Series(new_params).rename(self.name)
 
-
         return result
 
-    def config_name(self)  -> str:
+    def config_name(self) -> str:
         """
         Returns the configuration name which is the reference_name + ensembleMember (or 0)
         :return: name
@@ -1622,14 +1612,14 @@ class Model(ModelBaseClass, journal):
         return config_name
 
     def update_reference_name(self, reference_name: str,
-                         dump:bool = True):
+                              dump: bool = True):
         """
         Update the reference name for this model. This will update, if necessary, the reference_name attribute.
         :param reference_name: new reference_name to use.
         :param dump: If True dump the model config to disk to save the updated reference_name. If False then just update the reference_name in memory.
         :return: None
         """
-        if self.reference_name != reference_name: # only update if reference name different to avoid unnecessary updates and dumps.
+        if self.reference_name != reference_name:  # only update if reference name different to avoid unnecessary updates and dumps.
             my_logger.warning(f"Updating reference from {self.reference_name} to {reference_name}")
             self.reference_name = reference_name
             self.update_history(f"Updated reference_name  to {reference_name}")
