@@ -5,6 +5,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pandas.testing as pdtest
+from matplotlib import pyplot as plt
+
 import StudyConfig
 import tempfile
 
@@ -135,8 +137,9 @@ class TestStudy(unittest.TestCase):
             nObs = len(obs.columns)
             tgt = self.config.targets(scale=scale)
             resid = (obs - tgt) @ tMat.T
+            nobs = resid.shape[1]
             cost_expected = np.sqrt((resid ** 2).sum(1).astype(
-                float) / nObs)  # TODO -- make nObs the number of indep matrices -- len(resid)
+                float) / nobs)
             cost_expected.index = [m.name for m in self.study.model_index.values() if m.status == 'PROCESSED']
             cost_expected = cost_expected.rename(f"cost {self.study.name}")
             pdtest.assert_series_equal(cost_expected, cost)
@@ -188,6 +191,25 @@ class TestStudy(unittest.TestCase):
         # test that runConfig works.
         newConfig=self.study.runConfig(filename=self.direct/'fred.json')
         self.assertIsInstance(newConfig.Config['_covariance_matrices']['CovTotal'],pd.DataFrame)
+
+    def test_plot(self ):
+        """
+        Test that plot works. All going to do is test get a figure and three axes back.
+        :return: nada
+        """
+        import matplotlib
+        matplotlib.use('Agg') # make sure no matplotlib windows.
+
+        fig,axes = self.study.plot()
+        self.assertIsInstance(fig,plt.Figure)
+        self.assertEqual(len(axes),3)
+        for ax in axes:
+            self.assertIsInstance(ax,plt.Axes)
+        # check that saving figure works
+        file = self.direct/'fred.png'
+        self.study.plot(fname=file)
+        self.assertTrue(file.exists())
+
 
 
 if __name__ == '__main__':

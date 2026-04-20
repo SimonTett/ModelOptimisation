@@ -2,24 +2,24 @@
 Place to put tests for Submit.
 """
 import copy
+import json
 import pathlib  # make working with file paths easier.
 import shutil
 import tempfile
 import typing
-import unittest.mock
 import unittest
+import unittest.mock
+
 import numpy as np
 import numpy.testing as nptest
 import pandas as pd
 import pandas.testing as pdtest
-import json
 
 import Model
 import StudyConfig
 import optclim_exceptions
 import runSubmit
-from genericLib import fake_fn,setup_env,expand
-
+from genericLib import fake_fn, setup_env, expand
 
 setup_env()  # setup environment variables
 
@@ -29,19 +29,24 @@ def fake_run(rSubmit: runSubmit, scale: bool = True) -> typing.Callable:
     :return the function used to fake.
     """
     config = rSubmit.config
-    fake_function = lambda pDict: fake_fn(config,pDict)
+    fake_function = lambda pDict: fake_fn(config, pDict)
 
     rSubmit.instantiate()
     rSubmit.submit_all_models(fake_fn=fake_function)
     return fake_function
 
+
 import engine
 import archive_study
+import genericLib
+
+
 class testRunSubmit(unittest.TestCase):
     """
     Test cases for runSubmit. There should be one for every method in runSubmit.
 
     """
+
     @classmethod
     def setUpClass(cls):
         """
@@ -50,9 +55,9 @@ class testRunSubmit(unittest.TestCase):
         tmpDir = tempfile.TemporaryDirectory()
         tdir = pathlib.Path(tmpDir.name)
         arc, cfg = archive_study.archive_study.extract_archive(
-            runSubmit.runSubmit.expand('$OPTCLIMTOP/OptClimVn3/test_data/archive_dfols4p.tar.gz'),
+            genericLib.expand('$OPTCLIMTOP/OptClimVn3/test_data/archive_dfols4p.tar.gz'),
             direct=tdir)
-        cls.extract_runSubmit = cfg # store for use in tests.
+        cls.extract_runSubmit = cfg  # store for use in tests.
         cls._tmpDir = tmpDir
 
     @classmethod
@@ -60,11 +65,6 @@ class testRunSubmit(unittest.TestCase):
         # cleanup
         cls._tmpDir.cleanup()
         del cls.extract_runSubmit
-
-
-
-
-
 
     def setUp(self):
         """
@@ -81,12 +81,12 @@ class testRunSubmit(unittest.TestCase):
         config.constraint(False)  # no constraint
         obs = config.obsNames()
         var_scales = 10.0 ** np.round(np.log10(config.scales()))
-        covTotal = pd.DataFrame(np.diag(1.0/var_scales**2), index=obs, columns=obs) *1e-5  # small random error..
+        covTotal = pd.DataFrame(np.diag(1.0 / var_scales ** 2), index=obs, columns=obs) * 1e-5  # small random error..
         config.Covariances(CovTotal=covTotal)  # set total covar.
         rootDir = pathlib.Path(tmpDir.name)
         refDir = runSubmit.runSubmit.expand("$OPTCLIMTOP/Configurations/xnmea")
         self.rSubmit = runSubmit.runSubmit(config, 'test',
-                            rootDir=rootDir, refDir=refDir)
+                                           rootDir=rootDir, refDir=refDir)
 
         self.refDir = refDir  # where the default reference configuration lives.
         self.rootDir = rootDir  # where the config info will go.
@@ -112,9 +112,10 @@ class testRunSubmit(unittest.TestCase):
 
         rootDir = self.rootDir.with_stem(self.rootDir.stem + '_test_init')
         models = list(self.extract_runSubmit.model_index.values())
-        r = runSubmit.runSubmit(copy.deepcopy(self.config), 'test_status', rootDir, refDir=self.refDir,models=models)  # clean rSubmit
-        self.assertEqual(len(r.model_status),len(models))
-        self.assertTrue(all([s == 'initial' for k,s in r.model_status.items()])) # check everything is 'initial'
+        r = runSubmit.runSubmit(copy.deepcopy(self.config), 'test_status', rootDir, refDir=self.refDir,
+                                models=models)  # clean rSubmit
+        self.assertEqual(len(r.model_status), len(models))
+        self.assertTrue(all([s == 'initial' for k, s in r.model_status.items()]))  # check everything is 'initial'
 
     # test case for _stdFunction
 
@@ -152,21 +153,21 @@ class testRunSubmit(unittest.TestCase):
         params2 = np.vstack([params, np.repeat(0, nparam)])
         # test 0 -- run 1 model
 
-        data = rSubmit.stdFunction(params,raiseError=False) # do not raise error.
-        expect = np.repeat(np.nan,nobs)
-        nptest.assert_equal(data,expect)
+        data = rSubmit.stdFunction(params, raiseError=False)  # do not raise error.
+        expect = np.repeat(np.nan, nobs)
+        nptest.assert_equal(data, expect)
         # no of models to run should be 1.
         models = rSubmit.model_index.values()
         self.assertEqual(len(models), 1, "Expect only 1 model to submit")
 
         # test 1 # run same model and should raise ValueError as status is not processed
         rSubmit.config.ensembleSize(1)  # 1 member ensemble
-        with self.assertRaises(ValueError): # should also get a warning.
+        with self.assertRaises(ValueError):  # should also get a warning.
             result = rSubmit.stdFunction(params)  # should get ValueError as running twice.
         # no of models to run should be 1. (as we already have it just asked for it twice)
         models = rSubmit.model_index.values()
         self.assertEqual(len(models), 1, "Expect only 1 model to submit")
-        rSubmit.delete() # restart.
+        rSubmit.delete()  # restart.
 
         # test 2. Set ensemble size to 2.
         rSubmit.config.ensembleSize(2)  # 1 member ensemble
@@ -190,8 +191,8 @@ class testRunSubmit(unittest.TestCase):
         self.assertEqual(nmodel, 4, f"Expect 4 models to submit. Got {nmodel}")
         # test without raising exception by setting status to processed and including simulated_obs
         for model in models:
-            model.status ='PROCESSED'
-            model.simulated_obs = pd.Series(1.0,index=rSubmit.config.obsNames())
+            model.status = 'PROCESSED'
+            model.simulated_obs = pd.Series(1.0, index=rSubmit.config.obsNames())
         result = rSubmit.stdFunction(params2, raiseError=False)
         # 2 results so should be a 2 element vector
         self.assertEqual(result.shape[0], 2, 'Expected two element vector')
@@ -203,7 +204,7 @@ class testRunSubmit(unittest.TestCase):
 
         # now fake some obs!
         for m in models:
-            m.simulated_obs = fake_fn(self.config,m.parameters)
+            m.simulated_obs = fake_fn(self.config, m.parameters)
             m.status = 'PROCESSED'
         # check if we run with df=True we get a dataframe...
         p = rSubmit.params().iloc[0, :].values  # first model
@@ -236,14 +237,14 @@ class testRunSubmit(unittest.TestCase):
         self.assertEqual(result.size, 1, 'Size not as expected')
 
         # check that optclim_exceptions.submitModel is raised when we ask for new models above the limit.
-        rSubmit.run_info['max_model_simulations']=len(rSubmit.model_index)
+        rSubmit.run_info['max_model_simulations'] = len(rSubmit.model_index)
         with self.assertRaises(optclim_exceptions.submitModel):
-            result = rSubmit.stdFunction(params*3)
+            result = rSubmit.stdFunction(params * 3)
         # test that can run with multiple_function
         fixed_params = {
             "_comment": " List of parameters and values that are fixed and not modified in optimisation. Set to null to use default values",
             "multiple_function": "$OPTCLIMTOP/OptClimVn3/scripts/example_multiparam.ctl_plus4k",
-            "multiple_function_comment":"path with function at the end. Everything should be dot separated. If provided then fixedParams has multiple configurations and this function will combine them.",
+            "multiple_function_comment": "path with function at the end. Everything should be dot separated. If provided then fixedParams has multiple configurations and this function will combine them.",
             "control": {
                 "START_TIME": "1998-12-01",
                 "START_TIME_comment": "Start time as an iso string",
@@ -263,33 +264,31 @@ class testRunSubmit(unittest.TestCase):
         with self.assertRaises(optclim_exceptions.submitModel):
             result = rSubmit.stdFunction(params2)
         # expect four  model configs.
-        self.assertEqual(len(rSubmit.model_index),4)
+        self.assertEqual(len(rSubmit.model_index), 4)
         # second model should have SST_PERTURB = 4
         last_model = list(rSubmit.model_index.values())[-1]
-        self.assertEqual(last_model.parameters['SST_PERTURB'],4.0)
+        self.assertEqual(last_model.parameters['SST_PERTURB'], 4.0)
         # now fake the models as processed and provide some obs.
         for model in rSubmit.model_index.values():
             model.status = 'PROCESSED'
             model.simulated_obs = fake_fn(rSubmit.config, model.parameters)
-        result = rSubmit.stdFunction(params2) # should now work.
-        self.assertEqual(result.shape,(2,nobs),'Expected two sets of obs')
-        self.assertEqual(rSubmit._logical_info.iteration_count,1,'Expected iteration count to be 1')
-        self.assertEqual(rSubmit._logical_info.count_within_iteration,0,
+        result = rSubmit.stdFunction(params2)  # should now work.
+        self.assertEqual(result.shape, (2, nobs), 'Expected two sets of obs')
+        self.assertEqual(rSubmit._logical_info.iteration_count, 1, 'Expected iteration count to be 1')
+        self.assertEqual(rSubmit._logical_info.count_within_iteration, 0,
                          f'Expected 0 within iteration count got {rSubmit._logical_info.count_within_iteration}')
         # also expect that logical param and logical obs have size 2.
-        self.assertEqual(len(rSubmit._logical_info.parameters),2,'Expected 2 logical params')
-        self.assertEqual(len(rSubmit._logical_info.obs),2,'Expected 2 logical obs')
+        self.assertEqual(len(rSubmit._logical_info.parameters), 2, 'Expected 2 logical params')
+        self.assertEqual(len(rSubmit._logical_info.obs), 2, 'Expected 2 logical obs')
 
         # check model names are as expected
         for l_name in rSubmit.logical_params().index:
             models = rSubmit.logical_models(l_name)
-            self.assertEqual(len(models),2,'Expected 2 models')
+            self.assertEqual(len(models), 2, 'Expected 2 models')
             model_names = [m.config_name() for m in models]
-            expected_names = ['control#0','plus4k#0'] # should be these two models.
-            self.assertEqual(model_names,expected_names,f'Expected model names to be {expected_names} got {model_names}')
-
-
-
+            expected_names = ['control#0', 'plus4k#0']  # should be these two models.
+            self.assertEqual(model_names, expected_names,
+                             f'Expected model names to be {expected_names} got {model_names}')
 
     # end test case for stdFunction
 
@@ -314,15 +313,15 @@ class testRunSubmit(unittest.TestCase):
             result = fn(params)  # should raise an runModelError exception
 
         # now run it.
-        fk_fn = fake_run(rSubmit,scale=True)
+        fk_fn = fake_run(rSubmit, scale=True)
         result = list(rSubmit.model_index.values())[0].simulated_obs
         self.assertEqual(result.shape, (nobs,), f'Expected {nobs} element array')
-        pDict = dict(zip(rSubmit.config.paramNames(),params))
+        pDict = dict(zip(rSubmit.config.paramNames(), params))
         expect = fk_fn(pDict).rename(result.name)
         pdtest.assert_series_equal(expect, result)
 
-    @unittest.mock.patch.object(engine.sge_engine,'job_status', autospec=True, return_value='notFound')
-    def test_runOptimized(self,mck):
+    @unittest.mock.patch.object(engine.sge_engine, 'job_status', autospec=True, return_value='notFound')
+    def test_runOptimized(self, mck):
         """
 
         test runOptimized!
@@ -350,7 +349,7 @@ class testRunSubmit(unittest.TestCase):
                 raise ValueError("Something odd")
             finalConfig = rSubmit.runOptimized()  # run it to get the actual final congig
             rSubmit.delete()  # clean up!
-            return finalConfig,fake_funcn # and return the final config.
+            return finalConfig, fake_funcn  # and return the final config.
 
         configData = self.config
 
@@ -369,12 +368,11 @@ class testRunSubmit(unittest.TestCase):
         pdtest.assert_series_equal(best, expected)
         self.assertEqual(finalConfig.simObs().shape[0], 1)
 
-
         # increase ensemble to four and shorten basename.
         configData.baseRunID('test')
         configData.maxDigits(1)
         configData.ensembleSize(4)
-        finalConfig,fake_function = run_all(configData,  name='run_opt2')
+        finalConfig, fake_function = run_all(configData, name='run_opt2')
         # and check what is to be created is as expected.
         pDict = configData.optimumParams().to_dict()
         best = finalConfig.best_obs()
@@ -386,7 +384,7 @@ class testRunSubmit(unittest.TestCase):
         # set to min range.
         opt = optConfig.paramRanges().loc['minParam', :]
         optConfig.optimumParams(optimum=opt)
-        finalConfig,fake_function = run_all(optConfig, name='run_opt3')
+        finalConfig, fake_function = run_all(optConfig, name='run_opt3')
         # and check what is to be created is as expected.
         # and check what is to be created is as expected.
         pDict = optConfig.optimumParams().to_dict()
@@ -397,35 +395,70 @@ class testRunSubmit(unittest.TestCase):
 
     def test_create_model(self):
         """
-        Check that create model sets status to 'called'
+        Check that create model sets status to 'called' and when next_command is 'stop' returns None
         :return:
         """
         r = copy.deepcopy(self.extract_runSubmit)
         params = dict(CT=1e-4, EACF=0.5, ENTCOEF=3, ICE_SIZE=3e-5, RHCRIT=0.7, VF1=0.5, CW=2e-4)
         len_index = len(r.model_index)
 
-        with unittest.mock.patch('pathlib.Path.is_file', return_value=True),unittest.mock.patch('os.access', return_value=True): # make sure always return True when testing for path existence.
-            model = r.create_model(params,dump=False)
-            self.assertEqual(len(r.model_index), len_index+1) # increased
+        with unittest.mock.patch('pathlib.Path.is_file', return_value=True), unittest.mock.patch('os.access',
+                                                                                                 return_value=True):  # make sure always return True when testing for path existence.
+            model = r.create_model(params, dump=False)
+            self.assertEqual(len(r.model_index), len_index + 1)  # increased
             key = r.key_for_model(model)
-            self.assertEqual(r.model_status[key],'called')
+            self.assertEqual(r.model_status[key], 'called')
 
+        # verify that if next_command is 'stop' get None.
+        r.next_command = 'stop'
+        params.update(VF99=12.4444)
+        model = r.create_model(params, dump=False)
+        self.assertIsNone(model)
+
+    def test_make_model(self):
+        """
+        Tests for make_model.
+        1) New param set get a new model back with model_index longer
+        2) Existing param set get model back with no change in model_index
+        3) Set next_command to 'stop'. Ask for existing model get model back. Ask for new model get error raised.
+
+        :return:
+        """
+
+        rsub = self.rSubmit
+        self.assertEqual(len(rsub.model_index), 0)
+        params = dict(VF1=1.03, ENTCOEF=4.01)
+        model = rsub.make_model(params)
+        self.assertEqual(len(rsub.model_index), 1)
+        # do it again -- should raise a ValueError
+        with self.assertRaises(ValueError):
+            model2 = rsub.make_model(params)
+        # instantiate model.
+        model.instantiate()
+        with self.assertRaises(optclim_exceptions.submitModel):
+            model2 = rsub.make_model(params)
+        self.assertEqual(len(rsub.model_index), 1)
+
+        # set next_command to 'stop'
+        rsub.next_command = 'stop'
+        params2 = params.copy()
+        params2.update(VF1=2.0)
+        with self.assertRaises(optclim_exceptions.submitModel):
+            model4 = rsub.make_model(params2)  # should get None back and raise an exception to submit Models.
+
+        self.assertEqual(len(rsub.model_index), 1)
 
     def test_read_model_config(self):
         # test read_model_config reads in models and status is 'read'
 
-        rootDir = self.rootDir.with_stem(self.rootDir.stem+'_test_read')
-        r = runSubmit.runSubmit(copy.deepcopy(self.config), 'test_status', rootDir, refDir=self.refDir) # clean rSubmit
+        rootDir = self.rootDir.with_stem(self.rootDir.stem + '_test_read')
+        r = runSubmit.runSubmit(copy.deepcopy(self.config), 'test_status', rootDir, refDir=self.refDir)  # clean rSubmit
 
         model_paths = [m.config_path for m in self.extract_runSubmit.model_index.values()]
         models = r.read_model_configs(model_paths)
-        keys = [r.key_for_model(m) for m in models] # get all keys
+        keys = [r.key_for_model(m) for m in models]  # get all keys
         self.assertTrue(all([r.model_status[k] == 'read' for k in keys]))
-        self.assertTrue(len(r.model_index) >0) # have some models...
-
-
-
-
+        self.assertTrue(len(r.model_index) > 0)  # have some models...
 
     def test_check_deterministic(self):
         """
@@ -451,14 +484,16 @@ class testRunSubmit(unittest.TestCase):
         # simulate a model present at init by creating a model and adding to model_index and model_status
         params = dict(CT=1e-4, EACF=0.5, ENTCOEF=3, ICE_SIZE=3e-5, RHCRIT=0.7, VF1=0.5, CW=2e-4)
 
-        with unittest.mock.patch('pathlib.Path.is_file', return_value=True),unittest.mock.patch('os.access', return_value=True): # make sure always return True when testing for path existence.
+        with unittest.mock.patch('pathlib.Path.is_file', return_value=True), unittest.mock.patch('os.access',
+                                                                                                 return_value=True):  # make sure always return True when testing for path existence.
             m = r.create_model(params, dump=False)
             key_m = r.key_for_model(m)
             # after create_model the status should be 'called'
             self.assertEqual(r.model_status[key_m], 'called')
 
             # simulate reading a model config (add another model)
-            params2 = params.copy(); params2['SOME'] = 1.0
+            params2 = params.copy();
+            params2['SOME'] = 1.0
             m2 = r.create_model(params2, dump=False)
             key_m2 = r.key_for_model(m2)
             # mark one as read (simulate read_model_configs behaviour)
@@ -498,8 +533,6 @@ class testRunSubmit(unittest.TestCase):
         ok2 = r.check_deterministic(error='ignore')
         self.assertTrue(ok2)
 
-
-
     def test_runDFOLS(self):
         """
         test runDFOLS
@@ -522,12 +555,13 @@ class testRunSubmit(unittest.TestCase):
         maxP = configData.paramRanges().loc['maxParam', :]
         begin = configData.beginParam(maxP)  # can truncate here using .iloc[0:x] if wanted.
         obs = configData.obsNames()
-        nobs=len(obs)
+        nobs = len(obs)
         # for expected params should get back array close to 0
         # run DFOLS "naked"
         # set up DFOLS
         dfols_config = configData.DFOLS_config()
-        dfols_config['maxfun'] = 125 # making this 100 seems to cause an extra evaluation and problems with the Jacobian.
+        dfols_config[
+            'maxfun'] = 125  # making this 100 seems to cause an extra evaluation and problems with the Jacobian.
         dfols_config['rhobeg'] = 1e-1
         dfols_config['rhoend'] = 1e-3
         # general configuration of DFOLS -- which can be overwritten by config file
@@ -555,10 +589,11 @@ class testRunSubmit(unittest.TestCase):
         tgt = configData.targets(scale=scale)
         Tmat = configData.transMatrix(scale=scale)
         varParamNames = configData.paramNames()
+
         def fn_opt(param_v):  # function for optimisation,
             pDict = dict(zip(varParamNames, param_v))
             pDict.update(configData.fixedParams())
-            sim_obs = fake_fn(configData,pDict)
+            sim_obs = fake_fn(configData, pDict)
             if scale:
                 sim_obs *= configData.scales()
             sim_obs -= tgt
@@ -582,13 +617,12 @@ class testRunSubmit(unittest.TestCase):
                                , user_params=userParams
                                )
 
-
         if solution.flag not in (solution.EXIT_SUCCESS, solution.EXIT_MAXFUN_WARNING):
             msg = f"dfols failed with flag {solution.flag}: {solution.msg}"
             raise Exception(msg)
         print(f"DFOLS finished {solution.flag} {solution.msg}")
-        soln = pd.Series(solution.x,index=varParamNames).rename(f'Naked DFOLS')
-        expectparam = pd.Series(expectparam,index=varParamNames).rename('best')
+        soln = pd.Series(solution.x, index=varParamNames).rename(f'Naked DFOLS')
+        expectparam = pd.Series(expectparam, index=varParamNames).rename('best')
         df = pd.DataFrame([expectparam, soln])
         #    expect to be within 0.01% of the expected soln.
         nptest.assert_allclose(soln.values, expectparam.values, rtol=1e-4)
@@ -596,29 +630,26 @@ class testRunSubmit(unittest.TestCase):
         # Run runDFOLS. WIll use fake_function to optimise directly.
         iterCount = 0
         rSubmit = runSubmit.runSubmit(configData, 'test_DFOLS',
-                            rootDir=self.rootDir, refDir=self.refDir)
+                                      rootDir=self.rootDir, refDir=self.refDir)
         # setup Submit object.
         while True:
             try:
                 finalConfig = rSubmit.runDFOLS(scale=scale)  # run DFOLS
                 break  # if we get to here then we are done.
             except optclim_exceptions.submitModel:  # Need to run some models which are "faked"
-                fake_function = fake_run(rSubmit,scale=scale)
+                fake_function = fake_run(rSubmit, scale=scale)
                 iterCount += 1
                 # expect nobs+1 on first iteration (parallel running)
                 if iterCount == 1:
-                    expected = 1+len(varParamNames)
+                    expected = 1 + len(varParamNames)
                 else:
-                    expected = len(varParamNames)+iterCount
+                    expected = len(varParamNames) + iterCount
                 self.assertEqual(expected, len(rSubmit.model_index),
                                  f'Expected to have {expected} models ran on iteration#{iterCount} got {len(rSubmit.model_index)}')
 
-
-
-
         # now compare results from DFOLS with those from "naked" dfols.
         best = finalConfig.optimumParams().rename('best')
-        df = pd.concat([df,best.rename('DFOLS')])
+        df = pd.concat([df, best.rename('DFOLS')])
         transJac = pd.DataFrame(finalConfig.dfols_solution().jacobian, columns=varParamNames, index=Tmat.index)
 
         result_transJac = finalConfig.transJacobian()
@@ -628,9 +659,6 @@ class testRunSubmit(unittest.TestCase):
         # lot bigger
         pdtest.assert_series_equal(best, expectparam, rtol=5e-3)
         #
-
-
-
 
     def test_dfols_eval_db(self):
         """
@@ -657,28 +685,27 @@ class testRunSubmit(unittest.TestCase):
         """
         import dfols
         from numpy import random
-        from genericLib import fake_fn # need the generic lib version
+        from genericLib import fake_fn  # need the generic lib version
         import logging
         import sys
 
-        #1) create fake obs and params. Will just make them random for testing purposes.
+        # 1) create fake obs and params. Will just make them random for testing purposes.
         # very very tedious to setup.  Good to work out how to do this in a more sensible way.
         rng_seed = 987654321
         rng = random.default_rng(rng_seed)
         config = copy.deepcopy(self.config)  # copy the config
         param_names = config.paramNames()
         # make 6 sets of params  all with different values using the rng between 0 and 1
-        n_set = len(param_names) # how many do we want?
-        params = rng.uniform(low=0.4, high=0.6, size=(n_set,len(param_names))) # set up param values near 0.5
+        n_set = len(param_names)  # how many do we want?
+        params = rng.uniform(low=0.4, high=0.6, size=(n_set, len(param_names)))  # set up param values near 0.5
         params = pd.DataFrame(params, columns=param_names)
         prange = config.paramRanges()
-        params = params*prange.loc['rangeParam']+prange.loc['minParam']
-        obs = [fake_fn(self.config,prow.to_dict()).rename(name) for name,prow in params.iterrows()]
+        params = params * prange.loc['rangeParam'] + prange.loc['minParam']
+        obs = [fake_fn(self.config, prow.to_dict()).rename(name) for name, prow in params.iterrows()]
         obs = pd.DataFrame(obs)
 
-        tgt = config.targets(scale=False) # stick to SI units
+        tgt = config.targets(scale=False)  # stick to SI units
         obs += tgt
-
 
         # now have "simulated" obs and params that go with them,
         # Note these obs do not make much physical sense
@@ -695,12 +722,11 @@ class testRunSubmit(unittest.TestCase):
         )
         config.DFOLS_config()['evaluation_database'] = eval_db_dict
 
-
         # test 1. Running works and start idx == 7 as new idx.
         rSubmit = copy.deepcopy(self.rSubmit)
         rSubmit.config = config
         eval_db = rSubmit.dfols_eval_db(scale=True)
-        self.assertEqual(eval_db.get_starting_eval_idx(),n_set)
+        self.assertEqual(eval_db.get_starting_eval_idx(), n_set)
 
         # test 2. set idx to min and get back min params
         # FIXME this test is failing -- need to investigate. Get 13 when should get 9.
@@ -719,10 +745,10 @@ class testRunSubmit(unittest.TestCase):
         )
         config.DFOLS_config()['evaluation_database'] = eval_db_dict
         eval_db = rSubmit.dfols_eval_db(scale=True)
-        self.assertEqual(eval_db.get_starting_eval_idx(),min_indx)
+        self.assertEqual(eval_db.get_starting_eval_idx(), min_indx)
 
         # test 3 specifiy an index.
-        indx=3
+        indx = 3
         eval_db_dict = dict(
             parameters=str(param_file),
             simulated_observations=str(obs_file),
@@ -731,7 +757,7 @@ class testRunSubmit(unittest.TestCase):
         )
         config.DFOLS_config()['evaluation_database'] = eval_db_dict
         eval_db = rSubmit.dfols_eval_db(scale=True)
-        self.assertEqual(eval_db.get_starting_eval_idx(),indx)
+        self.assertEqual(eval_db.get_starting_eval_idx(), indx)
 
         ## run dfols with evaluation_databse. Need to run dfols directly to get values.
         # Doing this here as using runSubmit.runDFOLS is very slow (probably due to file IO).
@@ -757,14 +783,13 @@ class testRunSubmit(unittest.TestCase):
         dfols_config['rhoend'] = 1e-3
         dfols_config['do_logging'] = True
 
-        config_dfols = {k:v for k,v in dfols_config.items() if not k.endswith('_comment') }  # invert for DFOLS
+        config_dfols = {k: v for k, v in dfols_config.items() if not k.endswith('_comment')}  # invert for DFOLS
         config_dfols.pop('namedSettings')
-
 
         # general configuration of DFOLS -- which can be overwritten by config file
         userParams = {'logging.save_diagnostic_info': True,
                       'logging.save_xk': True,
-                      'logging.save_rk':True,
+                      'logging.save_rk': True,
                       'general.check_objfun_for_overflow': False,
                       'init.run_in_parallel': False,
                       'interpolation.throw_error_on_nans': True,  # make an error happen!
@@ -786,9 +811,8 @@ class testRunSubmit(unittest.TestCase):
         tgt = configData.targets(scale=scale)
         Tmat = configData.transMatrix(scale=scale)
         param_names = configData.paramNames()
-        obs_names = configData.obsNames()[0:len(param_names)] # truncate obs so problem is not overdetermined.
-        configData.obsNames(obs_names) # reset obsNames
-
+        obs_names = configData.obsNames()[0:len(param_names)]  # truncate obs so problem is not overdetermined.
+        configData.obsNames(obs_names)  # reset obsNames
 
         # use a very simple optimisation function to test the eval db
         # Note that the std fake_fn seems to give some odd results here.
@@ -807,7 +831,7 @@ class testRunSubmit(unittest.TestCase):
         minP = prange.loc['minParam', :].values
         maxP = prange.loc['maxParam', :].values
         bounds = (minP, maxP)
-        solution = dfols.solve(fn_opt, begin.values,argsf=(configData,),bounds=bounds,
+        solution = dfols.solve(fn_opt, begin.values, argsf=(configData,), bounds=bounds,
                                **config_dfols
                                , user_params=userParams
                                )
@@ -815,7 +839,6 @@ class testRunSubmit(unittest.TestCase):
         if solution.flag not in (solution.EXIT_SUCCESS, solution.EXIT_MAXFUN_WARNING):
             print("dfols failed with flag %i error : %s" % (solution.flag, solution.msg))
             raise Exception("Problem with dfols")
-
 
         shutil.rmtree(self.rootDir)  # clean out rootdir
         self.rootDir.mkdir(parents=True, exist_ok=True)
@@ -829,7 +852,7 @@ class testRunSubmit(unittest.TestCase):
         begin_scale = configData.beginParam(scale=True)
         pert_v = pd.Series(0.18, index=begin_scale.index)
         pert_v = pert_v.where(begin_scale < 0.5, -0.18)
-        jac_evals =  [
+        jac_evals = [
             begin_scale.where(begin_scale.index != idx, begin_scale[idx] + v).rename(index + 1)
             for index, (idx, v) in enumerate(pert_v.items())]
         jac_evals = pd.DataFrame(jac_evals)
@@ -839,15 +862,15 @@ class testRunSubmit(unittest.TestCase):
         maxP = pranges.loc['maxParam', :]
         jac_evals = jac_evals * (maxP - minP) + minP  # this is now unscaled jacobian points.
 
-        sim_obs = [fn_opt(row.values,configData) for _, row in jac_evals.iterrows()]
-        sim_obs += [fn_opt(row,configData)  for row in solution.diagnostic_info.xk]
+        sim_obs = [fn_opt(row.values, configData) for _, row in jac_evals.iterrows()]
+        sim_obs += [fn_opt(row, configData) for row in solution.diagnostic_info.xk]
         sim_obs = pd.DataFrame(sim_obs)
-        sim_obs.columns= obs_names
+        sim_obs.columns = obs_names
         params = pd.DataFrame([v for v in solution.diagnostic_info.xk])
         params.columns = jac_evals.columns
-        params = pd.concat([jac_evals,params], axis=0)
+        params = pd.concat([jac_evals, params], axis=0)
         params.index = range(params.shape[0])
-        sim_obs.index = range(params.shape[0]) # hopefully triggers error if size wrong
+        sim_obs.index = range(params.shape[0])  # hopefully triggers error if size wrong
 
         params.to_csv(params_file)
         sim_obs.to_csv(obs_file)
@@ -859,20 +882,20 @@ class testRunSubmit(unittest.TestCase):
         )
         config = copy.deepcopy(configData)
         config.DFOLS_config()['evaluation_database'] = eval_db_dict
-        config.DFOLS_config()['rhobeg']=0.01  # smaller rhobeg.
+        config.DFOLS_config()['rhobeg'] = 0.01  # smaller rhobeg.
         rSubmit = runSubmit.runSubmit(config, 'test_DFOLS2',
                                       rootDir=self.rootDir, refDir=self.refDir)
         with self.assertRaises(optclim_exceptions.submitModel) as context:
             finalConfig = rSubmit.runDFOLS(scale=scale)  # run it
         # should be trying to run a single new case.
-        self.assertEqual(1,len(rSubmit.models_to_instantiate()),msg=f'Expect one model to be created. rhobeg = {rSubmit.config.DFOLS_config()["rhobeg"]}')
+        self.assertEqual(1, len(rSubmit.models_to_instantiate()),
+                         msg=f'Expect one model to be created. rhobeg = {rSubmit.config.DFOLS_config()["rhobeg"]}')
         # evaluate the values we got!
         params = list(rSubmit.models_to_instantiate()[0].parameters.values())
-        sim_obs_eval = fn_opt(params,config)
+        sim_obs_eval = fn_opt(params, config)
 
-
-    @unittest.mock.patch.object(engine.sge_engine,'job_status', autospec=True, return_value='notFound')
-    def test_runJacobian(self,mck):
+    @unittest.mock.patch.object(engine.sge_engine, 'job_status', autospec=True, return_value='notFound')
+    def test_runJacobian(self, mck):
         """
         test runJacobian!
 
@@ -885,9 +908,9 @@ class testRunSubmit(unittest.TestCase):
         # Make the begin values be max values (so we know perturbations take us to the center)
 
         # Modify the steps to be small but different.
-        scale=True
+        scale = True
         configData = self.config
-        configData.beginParam(begin=configData.paramRanges().loc['maxParam',:])
+        configData.beginParam(begin=configData.paramRanges().loc['maxParam', :])
         steps = configData.steps()
         steps.iloc[:] = np.arange(len(steps)) * 0.001 + 0.1  # want small but not equal steps.
         steps.loc['scale_steps'] = True
@@ -896,22 +919,22 @@ class testRunSubmit(unittest.TestCase):
         configData.constraint(False)  # turn off constraint.
         prange = configData.paramRanges()  # param ranges
         optParams = prange.loc['maxParam']
-        paramNames = optParams.index.to_list()# paramNames wants a list!
+        paramNames = optParams.index.to_list()  # paramNames wants a list!
         configData.paramNames(paramNames=paramNames)  # set the param names to reduced set.
         obsNames = configData.obsNames(add_constraint=False)  # get the obs names making sure constraint not used.
 
-        def raw_jac(base,steps,scale:bool=False):
+        def raw_jac(base, steps, scale: bool = False):
             if scale:
                 scales = configData.scales()
             else:
                 scales = 1.0
-            ref = fake_fn(configData, base.to_dict())*scales
+            ref = fake_fn(configData, base.to_dict()) * scales
             jac = []
 
             for p in steps.index:
                 dd = base.copy()
-                dd.loc[p] -=  steps.loc[p]
-                delta = fake_fn(configData,dd.to_dict())*scales - ref
+                dd.loc[p] -= steps.loc[p]
+                delta = fake_fn(configData, dd.to_dict()) * scales - ref
                 delta = delta.rename(p)  # name it by param
                 jac.append(delta)
             jac = pd.DataFrame(jac)  # convert to dataframe
@@ -920,12 +943,13 @@ class testRunSubmit(unittest.TestCase):
             # and apply linear transform
             Tmat = configData.transMatrix(scale=scale)
             jac_trans = jac @ Tmat.T
-            return jac.T,jac_trans.T
+            return jac.T, jac_trans.T
+
         # all wrapped so we get a Series
         nparam = len(optParams)
         # compute what we expect --
         refParam = configData.beginParam()
-        expect_jac,expect_trans_jac = raw_jac(refParam,steps,scale=scale)
+        expect_jac, expect_trans_jac = raw_jac(refParam, steps, scale=scale)
         rSubmit = runSubmit.runSubmit(configData, 'test_jac',
                                       rootDir=self.rootDir, refDir=self.refDir)
         # setup Submit object.
@@ -934,7 +958,7 @@ class testRunSubmit(unittest.TestCase):
                 finalConfig = rSubmit.runJacobian(scale=scale)  # run Jacobian
                 break
             except optclim_exceptions.submitModel:  # Need to run some models.
-                fake_func = fake_run(rSubmit,scale=scale)
+                fake_func = fake_run(rSubmit, scale=scale)
                 # expect nparam+1 models all processed
                 models = [model for model in rSubmit.model_index.values() if model.status == "PROCESSED"]
                 nModels = len(models)
@@ -944,20 +968,21 @@ class testRunSubmit(unittest.TestCase):
         # now check jac is what we expect...
         trans_jac_run = finalConfig.transJacobian()
         jac_run = finalConfig.jacobian()
-        nptest.assert_allclose(trans_jac_run, expect_trans_jac, atol=1e-9)  # round trip through json removes some precision.
-        nptest.assert_allclose(jac_run,expect_jac,atol=1e-9)
+        nptest.assert_allclose(trans_jac_run, expect_trans_jac,
+                               atol=1e-9)  # round trip through json removes some precision.
+        nptest.assert_allclose(jac_run, expect_jac, atol=1e-9)
         # and check the Hessian is what we expect.
-        expect_hess = expect_trans_jac.T @ expect_trans_jac*2
+        expect_hess = expect_trans_jac.T @ expect_trans_jac * 2
         hess_run = finalConfig.hessian()
-        nptest.assert_allclose(hess_run,expect_hess,atol=1e-9)
+        nptest.assert_allclose(hess_run, expect_hess, atol=1e-9)
         # check that passing in optConfig works and that have nparam +1 cases.
         optConfig = copy.deepcopy(self.config)
         # set optimum values to max,
         param_range = configData.paramRanges()
-        opt = param_range.loc['minParam',:]+0.9*param_range.loc['rangeParam',:]
+        opt = param_range.loc['minParam', :] + 0.9 * param_range.loc['rangeParam', :]
         optConfig.optimumParams(optimum=opt)
-        expect_jac,expect_jac_trans = raw_jac(opt, steps, scale=scale)
-        rSubmit.delete() # clean up rSubmit -- no automatic deletion as want to keep disk stuff persistent.
+        expect_jac, expect_jac_trans = raw_jac(opt, steps, scale=scale)
+        rSubmit.delete()  # clean up rSubmit -- no automatic deletion as want to keep disk stuff persistent.
         rSubmit = runSubmit.runSubmit(optConfig, 'test_opt_jac',
                                       rootDir=self.rootDir, refDir=self.refDir)
         while True:
@@ -974,7 +999,7 @@ class testRunSubmit(unittest.TestCase):
         trans_jac_run = finalConfig.transJacobian()
         jac_run = finalConfig.jacobian()
         nptest.assert_allclose(trans_jac_run, expect_jac_trans, atol=1e-9)
-        nptest.assert_allclose(jac_run,expect_jac,atol=1e-9)
+        nptest.assert_allclose(jac_run, expect_jac, atol=1e-9)
 
     def test_runGaussNewton(self):
         """
@@ -1000,9 +1025,9 @@ class testRunSubmit(unittest.TestCase):
             nsim = param_v.shape[0]
             obs = []
 
-            for indx in range(0,nsim):
+            for indx in range(0, nsim):
 
-                pDict = dict(zip(varParamNames, param_v[indx,:]))
+                pDict = dict(zip(varParamNames, param_v[indx, :]))
                 sim_obs = fake_fn(configData, pDict)
                 if scale:
                     sim_obs *= configData.scales()
@@ -1023,19 +1048,19 @@ class testRunSubmit(unittest.TestCase):
         begin = configData.beginParam(configData.paramRanges().loc['maxParam', :])  # and also resets param names
         # run bare optimise.
 
-        intCov = configData.Covariances(scale=scale)['CovTotal']*0.01
+        intCov = configData.Covariances(scale=scale)['CovTotal'] * 0.01
         # Scaling done for compatibility with optFunction.
         # need to transform intCov. errCov should be I after transform.
         intCov = Tmat.dot(intCov).dot(Tmat.T)
         # This is correct-- it is the internal covariance transformed
-        optimise = dict(sigma=False,deterministicPerturb=20,maxIterations=20,alphas=[0.3,0.7,1])
+        optimise = dict(sigma=False, deterministicPerturb=20, maxIterations=20, alphas=[0.3, 0.7, 1])
 
         paramNames = configData.paramNames()
         nparam = len(paramNames)
         nObs = Tmat.shape[0]  # could be less than the "raw" obs depending on Tmat.
         # for this fake_fn (whcih cares nothing about the obs) we should set the step to 5% of the range.
 
-        configData.steps(steps=configData.paramRanges().loc['rangeParam', :]*0.05)
+        configData.steps(steps=configData.paramRanges().loc['rangeParam', :] * 0.05)
         start = configData.beginParam(paramNames=paramNames)
         best, status, info = Optimise.gaussNewton(fn_opt, start.values,
                                                   configData.paramRanges(paramNames=paramNames).values.T,
@@ -1045,7 +1070,8 @@ class testRunSubmit(unittest.TestCase):
 
         # expect to have converged and that best is close to expect
         self.assertEqual(status, 'Converged', msg='Expected to have converged')
-        nptest.assert_allclose(best, expectparam, rtol=1e-4)  # close to 0.1%. Can probably do better by modifying covariance.
+        nptest.assert_allclose(best, expectparam,
+                               rtol=1e-4)  # close to 0.1%. Can probably do better by modifying covariance.
         # get out the jacobian for later comparision.
         jac = info['jacobian'][-1, :, :].T  # bare right now...
         # now to run runGaussNewton.
@@ -1057,15 +1083,16 @@ class testRunSubmit(unittest.TestCase):
         # setup Submit object.
         while True:
             try:
-                finalConfig = rSubmit.runGaussNewton(scale=scale,verbose=False)  # run Guass-Newton line-search.
+                finalConfig = rSubmit.runGaussNewton(scale=scale, verbose=False)  # run Guass-Newton line-search.
                 break  # if we get to here then we are done.
             except optclim_exceptions.submitModel:  # Need to run some models which are "faked"
                 create_models = [model for model in rSubmit.model_index.values() if model.status == "CREATED"]
-                nModels= len(create_models)
+                nModels = len(create_models)
                 fake_function = fake_run(rSubmit, scale=scale)
                 iterCount += 1
                 if iterCount == 1:
-                    self.assertEqual(nparam + 1, len(rSubmit.model_index), f'Expected to have {nparam + 1} models ran on iteration#1')
+                    self.assertEqual(nparam + 1, len(rSubmit.model_index),
+                                     f'Expected to have {nparam + 1} models ran on iteration#1')
                 elif (iterCount % 2) == 0:
                     self.assertEqual(nalpha, nModels, f'Expected to have {nalpha} models ran on iteration# {iterCount}')
                 else:
@@ -1084,7 +1111,7 @@ class testRunSubmit(unittest.TestCase):
         configData.optimise(maxIterations=1)  # limit to 1 iteration
         rSubmit = runSubmit.runSubmit(configData, 'test_GN2',
                                       rootDir=self.rootDir, refDir=self.refDir)
-        iterCount =0
+        iterCount = 0
         while True:
             try:
                 finalConfig = rSubmit.runGaussNewton(scale=scale)  # run DFOLS
@@ -1099,11 +1126,10 @@ class testRunSubmit(unittest.TestCase):
 
     def test_dump_load(self):
         # test that dumping and loading work by dumping then loading and comparing the two objects.
-        fp=self.rSubmit.config_path
+        fp = self.rSubmit.config_path
         self.rSubmit.dump_config()
         nSubmit = self.rSubmit.load(fp)
-        self.assertEqual(self.rSubmit,nSubmit)
-
+        self.assertEqual(self.rSubmit, nSubmit)
 
     def test_comp_logical_obs(self):
         """
@@ -1122,7 +1148,6 @@ class testRunSubmit(unittest.TestCase):
         # 1) Call comp_logical_obs with nEns=1 and simple params
         r_submit = copy.deepcopy(self.rSubmit)
 
-
         result = r_submit.comp_logical_obs(params, fixed_params)
         self.assertEqual(len(r_submit.model_index), 1, "Should have one model for nEns=1")
         self.assertIsNone(result, "Should return None when model not processed")
@@ -1137,67 +1162,67 @@ class testRunSubmit(unittest.TestCase):
 
         # 2) Set ensembleSize=2, call again. Should have two models.
         r_submit = copy.deepcopy(self.rSubmit)
-        result = r_submit.comp_logical_obs(params, fixed_params,n_ensemble=2)
+        result = r_submit.comp_logical_obs(params, fixed_params, n_ensemble=2)
         self.assertEqual(len(r_submit.model_index), 2, "Should have two models for nEns=2")
         self.assertIsNone(result, "Should return None when models not processed")
 
         # 2a) Set simulated_obs for models, call again, check returned series
-        for count,model in enumerate(r_submit.model_index.values()):
+        for count, model in enumerate(r_submit.model_index.values()):
             model.status = 'PROCESSED'
-            model.simulated_obs = pd.Series(41+count, index=r_submit.config.obsNames())
-        result = r_submit.comp_logical_obs(params, fixed_params,n_ensemble=2)
+            model.simulated_obs = pd.Series(41 + count, index=r_submit.config.obsNames())
+        result = r_submit.comp_logical_obs(params, fixed_params, n_ensemble=2)
         self.assertTrue(isinstance(result, pd.Series), "Should return a Series when processed")
         self.assertTrue((result.values == 41.5).all(), "All values should be 41.5 ")
-
 
         # 2) Reset runSubmit, run with individual ensembleMember values
 
         r_submit = copy.deepcopy(self.rSubmit)
-        ens_values = list(range(0,3))
+        ens_values = list(range(0, 3))
         for ensembleMember in ens_values:
             params = dict(VF1=1.0, ensembleMember=ensembleMember)
             result = r_submit.comp_logical_obs(params, fixed_params)
             self.assertIsNone(result, "Should return None when models not processed")
         self.assertEqual(len(r_submit.model_index), len(ens_values), f"Should have {len(ens_values)} models")
         # now give the models simulated_obs and rerun
-        for model,ensembleMember in zip(r_submit.model_index.values(),ens_values):
+        for model, ensembleMember in zip(r_submit.model_index.values(), ens_values):
             model.status = 'PROCESSED'
-            model.simulated_obs = pd.Series(99+ensembleMember, index=r_submit.config.obsNames())
+            model.simulated_obs = pd.Series(99 + ensembleMember, index=r_submit.config.obsNames())
             params = dict(VF1=1.0, ensembleMember=ensembleMember)
             result = r_submit.comp_logical_obs(params, fixed_params)
             self.assertTrue(isinstance(result, pd.Series), "Should return a Series when processed")
-            self.assertTrue((result.values == 99+ensembleMember).all(), f"All values should be {99+ensembleMember} for ensembleMember={ensembleMember}")
-
-
+            self.assertTrue((result.values == 99 + ensembleMember).all(),
+                            f"All values should be {99 + ensembleMember} for ensembleMember={ensembleMember}")
 
         # 5) Pass a multimodel function and fixed_params, n_ensemble=2
         r_submit.delete()
         r_submit = copy.deepcopy(self.rSubmit)
-        r_submit.config.obsNames(r_submit.config.obsNames()+['delta_olr_nhx']) # add an obs which ctl_plus4k will set to 1
-        params = dict(VF1=1.0,theta=1e-4)
+        r_submit.config.obsNames(
+            r_submit.config.obsNames() + ['delta_olr_nhx'])  # add an obs which ctl_plus4k will set to 1
+        params = dict(VF1=1.0, theta=1e-4)
         fixed_params = {
             "control": {"Delta_SST": 0},
             "plus4k": {"Delta_SST": 1.0}
         }
 
-        from OptClimVn3.scripts.example_multiparam import ctl_plus4k # get simple multimodel function
+        from OptClimVn3.scripts.example_multiparam import ctl_plus4k  # get simple multimodel function
 
-        result = r_submit.comp_logical_obs(params, fixed_params, n_ensemble=2,multi_config_fn=ctl_plus4k)
+        result = r_submit.comp_logical_obs(params, fixed_params, n_ensemble=2, multi_config_fn=ctl_plus4k)
         self.assertEqual(len(r_submit.model_index), 4, "Should have four models for multimodel function and nEns=2")
         self.assertIsNone(result, "Should return None when models not processed")
 
         # 6) Set simulated_obs for these models, call again, check returned series
-        sim_obs = set(r_submit.config.obsNames())-set(['delta_olr_nhx'])
+        sim_obs = set(r_submit.config.obsNames()) - set(['delta_olr_nhx'])
         for model in r_submit.model_index.values():
             model.status = 'PROCESSED'
 
-            model.simulated_obs = pd.Series(123+model.parameters['Delta_SST']+0.1*model.parameters['ensembleMember'],
-                                            index=sim_obs)
-        result = r_submit.comp_logical_obs(params, fixed_params=fixed_params,n_ensemble=2,multi_config_fn=ctl_plus4k)
-        expect_results = pd.Series(123.05,index=r_submit.config.obsNames()).rename('I0_i0') # Only one case
+            model.simulated_obs = pd.Series(
+                123 + model.parameters['Delta_SST'] + 0.1 * model.parameters['ensembleMember'],
+                index=sim_obs)
+        result = r_submit.comp_logical_obs(params, fixed_params=fixed_params, n_ensemble=2, multi_config_fn=ctl_plus4k)
+        expect_results = pd.Series(123.05, index=r_submit.config.obsNames()).rename('I0_i0')  # Only one case
         expect_results['delta_olr_nhx'] = 1.0
         self.assertTrue(isinstance(result, pd.Series), "Should return a Series when processed")
-        pdtest.assert_series_equal(result,expect_results)
+        pdtest.assert_series_equal(result, expect_results)
 
     def test_logical_fns(self):
         """
@@ -1210,24 +1235,22 @@ class testRunSubmit(unittest.TestCase):
 
         :return:
         """
-        param1 = np.array([[0.1+count,0.5+count] for count in range(0,4)])
-        param2 = np.array([[0.2 + count,0.4+count] for count in range(0, 4)])
-        param3 = np.array([[0.3 + count, 0.2+count] for count in range(0, 2)])
-        index = [f'I0_i{c}' for c in range(0,param1.shape[0])]+\
-                [f'I1_i{c}' for c in range(0,param2.shape[0])]+\
-                [f'I2_i{c}' for c in range(0,param3.shape[0])]
-
-
+        param1 = np.array([[0.1 + count, 0.5 + count] for count in range(0, 4)])
+        param2 = np.array([[0.2 + count, 0.4 + count] for count in range(0, 4)])
+        param3 = np.array([[0.3 + count, 0.2 + count] for count in range(0, 2)])
+        index = [f'I0_i{c}' for c in range(0, param1.shape[0])] + \
+                [f'I1_i{c}' for c in range(0, param2.shape[0])] + \
+                [f'I2_i{c}' for c in range(0, param3.shape[0])]
 
         r_submit = copy.deepcopy(self.rSubmit)
 
-        r_submit.config.obsNames(['lat_nhx','lprecip_tropics']) # just one obs to keep it simple.
-        r_submit.config.paramNames(['vf1','rhcrit'])
-        scales = r_submit.config.scales() # scalings needed to get expected results
-        expected_df = pd.DataFrame(np.vstack([param1,param2,param3]),
-                                      columns=r_submit.config.paramNames(),index=index)
-        obs_list=[]
-        for param in [param1,param2,param3]:
+        r_submit.config.obsNames(['lat_nhx', 'lprecip_tropics'])  # just one obs to keep it simple.
+        r_submit.config.paramNames(['vf1', 'rhcrit'])
+        scales = r_submit.config.scales()  # scalings needed to get expected results
+        expected_df = pd.DataFrame(np.vstack([param1, param2, param3]),
+                                   columns=r_submit.config.paramNames(), index=index)
+        obs_list = []
+        for param in [param1, param2, param3]:
             with self.assertRaises(optclim_exceptions.submitModel):
                 result = r_submit.stdFunction(param)
             # now fill in the values
@@ -1235,66 +1258,67 @@ class testRunSubmit(unittest.TestCase):
             for model in r_submit.model_index.values():
                 if model.status != 'PROCESSED':
                     model.status = 'PROCESSED'
-                    obs = pd.Series([model.parameters[p]**2 for p in r_submit.config.paramNames()],index=indx)+r_submit.config.targets(scale=True)
+                    obs = pd.Series([model.parameters[p] ** 2 for p in r_submit.config.paramNames()],
+                                    index=indx) + r_submit.config.targets(scale=True)
 
                     model.simulated_obs = obs
-                    obs_list.append(obs*scales)
-            result = r_submit.stdFunction(param) # this actually retrieves the obs.
+                    obs_list.append(obs * scales)
+            result = r_submit.stdFunction(param)  # this actually retrieves the obs.
 
         got = r_submit.logical_params()
-        pdtest.assert_frame_equal(got,expected_df)
+        pdtest.assert_frame_equal(got, expected_df)
         # try normalised params
         got = r_submit.logical_params(normalize=True)
         prange = r_submit.config.paramRanges(ensemble=True).reindex(columns=expected_df.columns)
-        expected_df -= prange.loc['minParam',:]
-        expected_df = expected_df.div(prange.loc['rangeParam',:],axis=1)
+        expected_df -= prange.loc['minParam', :]
+        expected_df = expected_df.div(prange.loc['rangeParam', :], axis=1)
         expected_df = expected_df.reindex(columns=r_submit.config.paramNames())
-        pdtest.assert_frame_equal(got,expected_df)
+        pdtest.assert_frame_equal(got, expected_df)
 
-        expected_obs_df = pd.DataFrame(obs_list,index=index)
+        expected_obs_df = pd.DataFrame(obs_list, index=index)
         got = r_submit.logical_obs()
         pdtest.assert_frame_equal(got, expected_obs_df)
         # Now try normalised cost.
         cov = r_submit.config.Covariances(scale=True)['CovTotal']
         sd = np.sqrt(np.diag(cov))
-        expected_obs_df = (expected_obs_df - r_submit.config.targets(scale=True))/sd
+        expected_obs_df = (expected_obs_df - r_submit.config.targets(scale=True)) / sd
         got = r_submit.logical_obs(normalize=True)
         pdtest.assert_frame_equal(got, expected_obs_df)
         # get the cost. WIll just check the index matches.
         got = r_submit.logical_cost()
-        pdtest.assert_index_equal(got.index,expected_obs_df.index)
+        pdtest.assert_index_equal(got.index, expected_obs_df.index)
 
         ## do case when ensembleSize = 2
         r_submit = copy.deepcopy(self.rSubmit)
-        ens_size = r_submit.config.ensembleSize(2) # set ensemble size to two
+        ens_size = r_submit.config.ensembleSize(2)  # set ensemble size to two
         r_submit.config.obsNames(['lat_nhx', 'lprecip_tropics'])  # just one obs to keep it simple.
         r_submit.config.paramNames(['vf1', 'rhcrit'])
-        cols = r_submit.config.paramNames()+['ensembleMember']
+        cols = r_submit.config.paramNames() + ['ensembleMember']
         import itertools
         param_values = [np.append(p, [e], axis=0) for param in [param1, param2, param3]
                         for p, e in itertools.product(param, range(ens_size))]
 
-        index = [f'I0_i{c}' for c in range(0,ens_size*param1.shape[0])]+\
-                [f'I1_i{c}' for c in range(0,ens_size*param2.shape[0])]+\
-                [f'I2_i{c}' for c in range(0,ens_size*param3.shape[0])]
+        index = [f'I0_i{c}' for c in range(0, ens_size * param1.shape[0])] + \
+                [f'I1_i{c}' for c in range(0, ens_size * param2.shape[0])] + \
+                [f'I2_i{c}' for c in range(0, ens_size * param3.shape[0])]
         expected_df = pd.DataFrame(np.vstack(param_values),
                                    columns=cols, index=index)
         obs_list = []
         for param in [param1, param2, param3]:
             with self.assertRaises(optclim_exceptions.submitModel):
-                result = r_submit.stdFunction(param,ensemble_average=False)
+                result = r_submit.stdFunction(param, ensemble_average=False)
             # now fill in the values
             indx = r_submit.config.obsNames()
             for model in r_submit.model_index.values():
                 if model.status != 'PROCESSED':
                     model.status = 'PROCESSED'
                     obs = (pd.Series([model.parameters[p] ** 2 for p in r_submit.config.paramNames()],
-                                    index=indx) + r_submit.config.targets(scale=True)+
-                           0.01*model.parameters['ensembleMember']) # add a bit to make ensembleMember visible
+                                     index=indx) + r_submit.config.targets(scale=True) +
+                           0.01 * model.parameters['ensembleMember'])  # add a bit to make ensembleMember visible
 
                     model.simulated_obs = obs
                     obs_list.append(obs * scales)
-            result = r_submit.stdFunction(param,ensemble_average=False)  # this actually retrieves the obs.
+            result = r_submit.stdFunction(param, ensemble_average=False)  # this actually retrieves the obs.
         got = r_submit.logical_params()
         pdtest.assert_frame_equal(got, expected_df)
         # and obs
@@ -1318,47 +1342,55 @@ class testRunSubmit(unittest.TestCase):
         ## setup
 
         run_submit = copy.deepcopy(self.extract_runSubmit)
-        name ='I3_i0'
+        name = 'I3_i0'
         params = run_submit.logical_params().loc[name]
 
-        new_expected = dict(a_ent_2=0.056,cape_timescale=3600.0)
+        new_expected = dict(a_ent_2=0.056, cape_timescale=3600.0)
 
         update_params = params.index.to_list() + list(new_expected.keys())
-        expected_params = pd.concat([params,pd.Series(new_expected)]).rename(params.name)
-        got_params = run_submit.update_logical_params(name,parameters=update_params)
+        expected_params = pd.concat([params, pd.Series(new_expected)]).rename(params.name)
+        got_params = run_submit.update_logical_params(name, parameters=update_params)
         expected_params = expected_params.reindex(got_params.index)
-        self.assertTrue(got_params.equals(expected_params),msg='pandas series differ')
+        self.assertTrue(got_params.equals(expected_params), msg='pandas series differ')
 
         ## test get an error if models don't have same parameter values...
         # which means modifying the underlying model...
-        models = run_submit.logical_models(name) # is a dict of models
-        models[0].set_params(dict(a_ent_2=0.057),backup=False)
+        models = run_submit.logical_models(name)  # is a dict of models
+        models[0].set_params(dict(a_ent_2=0.057), backup=False)
         models[0].update_params()
         with self.assertRaises(ValueError):
-            run_submit.update_logical_params(name,parameters=update_params)
+            run_submit.update_logical_params(name, parameters=update_params)
 
         # would be good to have a case with single model run....
 
+    def test_plot(self):
+        # test that plot works and returns a figure and axes
+        # See test_Study.test_plot which does most of the testing.
+        import matplotlib.pyplot as plt
+        import matplotlib
+        matplotlib.use('Agg')  # make headless
+        fig, axes = self.extract_runSubmit.plot()
+        self.assertIsInstance(fig, plt.Figure)
+        self.assertEqual(len(axes), 3)
+        for ax in axes:
+            self.assertIsInstance(ax, plt.Axes)
 
     def test_copyConfig(self):
         # test that copy method works correctly
         tmpDir = tempfile.TemporaryDirectory()
         tmp_dir = pathlib.Path(tmpDir.name)
         run_submit = copy.deepcopy(self.extract_runSubmit)
-        copy_dir =tmp_dir/'copy_test'
+        copy_dir = tmp_dir / 'copy_test'
         run_submit_copy = run_submit.copyConfig(copy_dir)
-        self.assertIsInstance(run_submit_copy,runSubmit.runSubmit)
+        self.assertIsInstance(run_submit_copy, runSubmit.runSubmit)
         self.assertEqual(run_submit.config, run_submit_copy.config)
         # check logical info models consistent with model_info
-        for name, model_list in run_submit_copy._logical_info.models.items(): # models is dict with key names and values lists of models
+        for name, model_list in run_submit_copy._logical_info.models.items():  # models is dict with key names and values lists of models
             for model in model_list:
                 key = run_submit_copy.key_for_model(model)
-                self.assertIs(run_submit_copy.model_index[key],model,msg=f'{model.name}:{model} with key:{key} not same as in model_index')
-                self.assertIsInstance(run_submit_copy.model_index[key],Model.Model)
-
-
-
-
+                self.assertIs(run_submit_copy.model_index[key], model,
+                              msg=f'{model.name}:{model} with key:{key} not same as in model_index')
+                self.assertIsInstance(run_submit_copy.model_index[key], Model.Model)
 
     def test_from_dict(self):
         """
@@ -1366,14 +1398,14 @@ class testRunSubmit(unittest.TestCase):
         Runs it and tests that rSubmit._logical_info.models exists and are lists of keys which exist in the model_info .
         :return:
         """
-        rSubmit =  copy.deepcopy(self.extract_runSubmit)
-        dct = rSubmit.to_dict() #
-        dct['_logical_info'] = runSubmit.LogicalInfo.from_dict(dct['_logical_info'].to_dict()) # magic needed for LogicalInfo
+        rSubmit = copy.deepcopy(self.extract_runSubmit)
+        dct = rSubmit.to_dict()  #
+        dct['_logical_info'] = runSubmit.LogicalInfo.from_dict(
+            dct['_logical_info'].to_dict())  # magic needed for LogicalInfo
         new_rSubmit = runSubmit.runSubmit.from_dict(dct)
-        self.assertIsInstance(new_rSubmit,runSubmit.runSubmit)
-        self.assertEqual(rSubmit,new_rSubmit) # FIXME. Failing here as model reference types differ. rSubmit -- it is posic path, while new_rSubmit it is pureWindowsPath
-
-
+        self.assertIsInstance(new_rSubmit, runSubmit.runSubmit)
+        self.assertEqual(rSubmit,
+                         new_rSubmit)  # FIXME. Failing here as model reference types differ. rSubmit -- it is posic path, while new_rSubmit it is pureWindowsPath
 
 
 class TestRunParams(unittest.TestCase):
@@ -1393,12 +1425,12 @@ class TestRunParams(unittest.TestCase):
         config.constraint(False)  # no constraint
         obs = config.obsNames()
         var_scales = 10.0 ** np.round(np.log10(config.scales()))
-        covTotal = pd.DataFrame(np.diag(1.0/var_scales**2), index=obs, columns=obs) *1e-5  # small random error..
+        covTotal = pd.DataFrame(np.diag(1.0 / var_scales ** 2), index=obs, columns=obs) * 1e-5  # small random error..
         config.Covariances(CovTotal=covTotal)  # set total covar.
         rootDir = pathlib.Path(tmpDir.name)
         refDir = runSubmit.runSubmit.expand("$OPTCLIMTOP/Configurations/xnmea")
         self.rSubmit = runSubmit.runSubmit(config, 'test',
-                            rootDir=rootDir, refDir=refDir)
+                                           rootDir=rootDir, refDir=refDir)
 
         run_params_file = expand("$OPTCLIMTOP/OptClimVn3/configurations/run_params.ijson")
         with run_params_file.open('rt') as f:
@@ -1428,18 +1460,14 @@ class TestRunParams(unittest.TestCase):
         with self.assertRaises(optclim_exceptions.submitModel):
             run_submit.run_params()
         n_models = len(run_submit.models_to_instantiate())
-        self.assertEqual(n_param,n_models,msg=f'Expected {n_param} models to be created')
+        self.assertEqual(n_param, n_models, msg=f'Expected {n_param} models to be created')
         # run the model by faking them
         fake_function = fake_run(run_submit)
-        config = run_submit.run_params() # should run.
-        self.assertIsInstance(config,StudyConfig.OptClimConfigVn3)
+        config = run_submit.run_params()  # should run.
+        self.assertIsInstance(config, StudyConfig.OptClimConfigVn3)
         # check for multiple params sets
         run_submit = copy.deepcopy(self.rSubmit)
         run_params = copy.deepcopy(self.run_params)
-
-
-
-
 
     def test_get_parameters(self):
         # Test that get_parameters function works correctly
@@ -1469,9 +1497,6 @@ class TestRunParams(unittest.TestCase):
         pdtest.assert_frame_equal(params, expected)
 
 
-
-
-
 class TestLogicalInfo(unittest.TestCase):
     """
     Test the logical_info method of runSubmit class.
@@ -1489,7 +1514,7 @@ class TestLogicalInfo(unittest.TestCase):
         tdir = pathlib.Path(tmpDir.name)
         arc, cfg = archive_study.archive_study.extract_archive(
             runSubmit.runSubmit.expand('$OPTCLIMTOP/OptClimVn3/test_data/archive_dfols4p.tar.gz'),
-            direct=tdir) # quite slow -- extract the archive
+            direct=tdir)  # quite slow -- extract the archive
         cls.extract_runSubmit = cfg  # store for use in tests.
         cls._tmpDir = tmpDir
 
@@ -1498,10 +1523,10 @@ class TestLogicalInfo(unittest.TestCase):
         # cleanup
         cls._tmpDir.cleanup()
         del cls.extract_runSubmit
+
     def setUp(self):
 
         self.run_submit = copy.deepcopy(self.extract_runSubmit)
-
 
     def test_logical_name(self):
         """
@@ -1525,7 +1550,7 @@ class TestLogicalInfo(unittest.TestCase):
         name = logical_info.name(param_list[0])
         self.assertEqual(name, 'I0_i0')
         self.assertEqual(logical_info.count_within_iteration, 1)
-        name2 =logical_info.name(param_list[0])
+        name2 = logical_info.name(param_list[0])
         self.assertEqual(name2, 'I0_i0')
         self.assertEqual(logical_info.count_within_iteration, 1)
         # new params
@@ -1567,11 +1592,10 @@ class TestLogicalInfo(unittest.TestCase):
         new_params = param_list[1].copy()
         new_params['NEW_PARAM'] = 2.0  # add new param
         new_params = pd.Series(new_params)
-        logical_info.update_params(names[1],new_params)
+        logical_info.update_params(names[1], new_params)
         # check that parameters have been updated
         updated_params = logical_info.parameters[names[1]]
         self.assertTrue(updated_params.equals(new_params), msg='Parameters not updated correctly in logical_info')
-
 
     def test_to_dict(self):
         # test that to_dict works correctly
@@ -1586,5 +1610,3 @@ class TestLogicalInfo(unittest.TestCase):
                 self.assertIsInstance(model_key, str)
                 expect_model = self.run_submit.model_index[model_key]
                 self.assertEqual(self.run_submit.key_for_model(expect_model), model_key)
-
-

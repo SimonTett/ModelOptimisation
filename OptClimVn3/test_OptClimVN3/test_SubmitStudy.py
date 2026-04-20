@@ -90,6 +90,15 @@ class MyTestCase(unittest.TestCase):
         sub2 = self.submit.load(self.submit.config_path)
         self.assertEqual(self.submit, sub2)
 
+        # check we get None for a new model when set next_command to 'stop' and old model back
+        sub = copy.deepcopy(self.submit)
+        sub.next_command = 'stop'
+        paramD = copy.deepcopy(paramD)
+        paramD.update(ENTCOEFF=6.543)
+        model3 = sub.create_model(paramD)
+        self.assertIsNone(model3)
+
+
     def test_copyConfig(self):
         # test that we can copy a SubmitStudy object
         submit = self.submit
@@ -159,7 +168,7 @@ class MyTestCase(unittest.TestCase):
         for mpth in mpths:
             self.assertFalse(mpth.exists())
         self.assertEqual(self.submit.gen_name(), 'ZZ000')
-        self.assertEqual(len(self.submit._history), nhist + 1)  # added deleted
+        self.assertEqual(len(self.submit._history), nhist + 2)  # added deleted and kill n message
 
     def test_dump_load(self):
         submit = self.submit
@@ -427,6 +436,11 @@ class MyTestCase(unittest.TestCase):
             model.status = "RUNNING"
         rmodels = submit.running_models()
         self.assertEqual(rmodels,list(submit.model_index.values()))
+
+    def test_lock(self):
+        # Test that lock works. No real testing done as method uses genericLib.
+        with self.submit.lock() as lock:
+            self.assertTrue(lock.is_locked)
 
 
 
@@ -715,6 +729,8 @@ class test_KILL(unittest.TestCase):
         self.assertEqual(result, expected_jids)
         self.assertEqual(mock_model_kill.call_count, 5)
         self.assertEqual(mock_run_cmd.call_count, 1)
+
+
 
 if __name__ == '__main__':
     unittest.main()
