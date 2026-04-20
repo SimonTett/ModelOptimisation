@@ -475,7 +475,7 @@ class Model(ModelBaseClass, journal):
         if self == other:
             return []  # Objects are identical
 
-        if not isinstance(self,other):
+        if type(self) is not type(other):
             return set(['Different types:', type(self), type(other)])
 
         vself = vars(self)

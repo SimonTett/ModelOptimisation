@@ -315,7 +315,7 @@ class Study:
         if obs is None:  # no data
             return None
 
- # which puts us into space where totalError is Identity matrix.
+        # which puts us into space where totalError is Identity matrix.
 
         target = self.config.targets(scale=scale,obsNames=obsNames)  # get targets
         obs = obs.reindex(columns=target.index)  # reindex obs to match targets.
@@ -327,6 +327,10 @@ class Study:
         tMat = tMat.reindex(columns=obs.columns)
         resid = (obs - target) @ tMat.T
         nobs = resid.shape[1]
+        if nobs == 0:
+            raise ValueError(
+                "No usable observation columns remain after dropping missing data"
+            )
         cost = np.sqrt(
             (resid ** 2).sum(1).astype(float) /nobs)
         cost = pd.Series(cost, index=obs.index).rename('cost ' + self.name)

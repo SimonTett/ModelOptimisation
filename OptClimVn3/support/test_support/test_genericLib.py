@@ -390,7 +390,7 @@ class genericLib_test(unittest.TestCase):
         finally:
             if p.poll() is None:
                 p.kill()
-                p.wait(timeout=2.0)
+            p.wait(timeout=2.0)
 
 if __name__ == '__main__':
     unittest.main()
