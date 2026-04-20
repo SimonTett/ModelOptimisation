@@ -855,7 +855,7 @@ class runSubmit(SubmitStudy):
 
         """
         Calls superclass plot using, by default, logical values
-        :return: fix and axes from superclass plot method. See that for details.
+        :return: fix and axes from superclass plot method. See that for details. Will return None if data missing.
         """
         # obsNames = self.config.obsNames()
         if cost is None:
@@ -865,10 +865,10 @@ class runSubmit(SubmitStudy):
         if params is None:
             params = self.logical_params(normalize=True)
         # call the super class plotter to actually plot
-        fig, axs = super().plot(fname=fname, fig_name=fig_name,
+        fig_axs = super().plot(fname=fname, fig_name=fig_name,
                                 cost=cost, obs=obs, params=params,
                                 savefig_kwargs=savefig_kwargs)
-        return fig, axs
+        return fig_axs
 
     def runOptimized(self, stop: bool = False) -> StudyConfig:
         """

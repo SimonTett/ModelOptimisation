@@ -316,7 +316,7 @@ class Study:
             return None
 
  # which puts us into space where totalError is Identity matrix.
-        nObs = len(obs.columns)
+
         target = self.config.targets(scale=scale,obsNames=obsNames)  # get targets
         obs = obs.reindex(columns=target.index)  # reindex obs to match targets.
         obs = obs.dropna(axis=1) # drop any missing data
