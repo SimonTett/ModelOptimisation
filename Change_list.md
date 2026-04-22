@@ -19,3 +19,8 @@
 2026-03-30 [plan_check_no_determ.md]
 - Fixes for non-deterministic algorithm check. Uses model_status to track which models have been called, read in or initialised.
 - Added folder containing planned changes.  
+
+2026-04-15 [plan_control_script.md]
+  - Added control script. 
+  - Added SubmitStudy.next_command with values of None or  stop. When stop no new model creation but allow existing models to run.
+  - Added file locking to runAlgorithm to allow safe use of control and runAlgorithm scripts.

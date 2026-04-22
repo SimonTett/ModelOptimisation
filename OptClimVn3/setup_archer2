@@ -2,11 +2,7 @@
 # Run with . ./setup_archer2
 # change OPTCLIMTOP for your system
 export OPTCLIMTOP=/work/n02/shared/tetts/ModelOptimisation
-# load necessary modules
-module load PrgEnv-gnu
-module load cray-python/3.10.10
-# activate python env
-source /work/n02/shared/tetts/venv/ModelOptimisation/bin/activate # activate environment
+conda activate optclim # activate optclim env.
 VN3=$OPTCLIMTOP/OptClimVn3
 export PYTHONPATH=$VN3:$VN3/Models:$VN3/support:$PYTHONPATH
 export PATH=$VN3/scripts:$PATH

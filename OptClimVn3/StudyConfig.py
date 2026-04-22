@@ -771,6 +771,7 @@ class OptClimConfig(dictFile):
         return cov
 
     def transMatrix(self, scale:bool=False, verbose:bool=False,
+                    obsNames:typing.Optional[list[str]]=None,
                     minEvalue:float=1e-6,
                     dataFrame:bool=True,
                     inverse:bool = False,
@@ -787,7 +788,7 @@ class OptClimConfig(dictFile):
         """
 
         # compute the matrix that diagonalises total covariance.
-        cov = self.Covariances(trace=verbose, scale=scale)  # get covariances.
+        cov = self.Covariances(obsNames=obsNames,trace=verbose, scale=scale)  # get covariances.
         errCov = cov['CovTotal']
         # compute eigenvector and eigenvalues of covariances so we can transform residual into diagonal space.
         evalue, evect = np.linalg.eigh(errCov)
