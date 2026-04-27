@@ -1,0 +1,52 @@
+# .gitattributes — put this file at the repository root
+# This file normalizes line endings and marks common binary files so Git
+# won't try to treat them as text. It enforces LF endings for source files
+# which prevents EOL-only diffs across platforms (Windows vs Unix).
+# AI generated.
+
+# Let Git detect text files and normalize them by default
+* text=auto
+
+# Force LF for common source / text file types
+*.py     text eol=lf
+*.sh     text eol=lf
+*.md     text eol=lf
+*.rst    text eol=lf
+*.txt    text eol=lf
+*.json   text eol=lf
+*.yml    text eol=lf
+*.yaml   text eol=lf
+*.csv    text eol=lf
+*.tsv    text eol=lf
+*.xml    text eol=lf
+*.ini    text eol=lf
+*.cfg    text eol=lf
+*.conf   text eol=lf
+*.tex    text eol=lf
+Makefile text eol=lf
+
+# Treat common binaries as binary to avoid EOL or diff attempts
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.ico    binary
+*.pdf    binary
+*.zip    binary
+*.tar    binary
+*.gz     binary
+*.bz2    binary
+*.rar    binary
+*.7z     binary
+*.exe    binary
+*.dll    binary
+*.so     binary
+*.dylib  binary
+
+# NetCDF and other scientific/data binary formats
+*.nc     binary
+*.nc4    binary
+*.grib   binary
+
+# End of .gitattributes
+
