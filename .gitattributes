@@ -23,6 +23,8 @@
 *.cfg    text eol=lf
 *.conf   text eol=lf
 *.tex    text eol=lf
+*.json   text eol=lf
+*.ijson  text eol=lf
 Makefile text eol=lf
 
 # Treat common binaries as binary to avoid EOL or diff attempts
