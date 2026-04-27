@@ -1,3 +1,5 @@
+# Install with:
+# pip install -r requirements.txt
 ipython
 DFO-LS>=1.6.5 # always have at least DFO-LS 1.6.4+
 numpy~=1.26 # TODO upgrade to 2+

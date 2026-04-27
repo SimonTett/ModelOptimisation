@@ -10,5 +10,6 @@ channels:
   - conda-forge
 dependencies:
   - python=3.12
+  - pip # need pip to install the pip requirements
   - pip:
       - -r requirements.txt # install the pip requirements as well
