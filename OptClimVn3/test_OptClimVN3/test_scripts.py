@@ -21,6 +21,47 @@ from runSubmit import runSubmit  # so we can test if we have one!
 import archive_study
 genericLib.setup_env()
 
+import warnings
+
+# internal flag so we only warn once per process if the stdlib provides chdir
+_CONTEXT_CHDIR_WARNED = False
+
+
+@contextlib.contextmanager
+def context_chdir(path: typing.Union[str, pathlib.Path]):
+    """Context manager that temporarily changes CWD and restores it on exit.
+
+    If the running Python's stdlib already provides `contextlib.chdir`, this helper
+    will delegate to it but emit a single, first-time-only warning suggesting the
+    stdlib alternative. On older Pythons (e.g. 3.10) it falls back to a simple
+    os.chdir try/finally implementation. The context yields a pathlib.Path for
+    compatibility with code that used ``with contextlib.chdir(...) as newdir:``.
+    """
+    global _CONTEXT_CHDIR_WARNED
+
+    # Prefer the stdlib implementation when available (Python 3.11+), but
+    # issue a one-time informational warning so callers know they can switch.
+    if hasattr(contextlib, 'chdir'):
+        if not _CONTEXT_CHDIR_WARNED:
+            warnings.warn(
+                "stdlib contextlib.chdir is available in this Python; consider using it instead of the local fallback.",
+                UserWarning,
+                stacklevel=2,
+            )
+            _CONTEXT_CHDIR_WARNED = True
+        # Delegate to the stdlib context manager for correct behaviour
+        with contextlib.chdir(path) as p:
+            yield pathlib.Path(p) if p is not None else pathlib.Path(str(path))
+        return
+
+    # Fallback for older Pythons
+    prev = os.getcwd()
+    target = str(path)
+    os.chdir(target)
+    try:
+        yield pathlib.Path(target)
+    finally:
+        os.chdir(prev)
 
 def run_cmd(*args):
     """
@@ -214,7 +255,7 @@ class testScripts(unittest.TestCase):
 
         self.assertIsNone(cfg.config.getv('song_type_comment'))
         # now do update where we are in the directory and do not provide a config
-        with contextlib.chdir(self.tempDir) as newdir:
+        with context_chdir(self.tempDir) as newdir: # for python 3.12 update this to contextlib.chdir
             run_cmd(str(script_path),'update')
             cfg3 = runSubmit.load(cfg.config_path) # load it.
             self.assertIsNone(cfg3.config.getv('song_type_comment'))
@@ -225,7 +266,7 @@ class testScripts(unittest.TestCase):
         self.assertTrue(monitor_file.exists())
         monitor_file.unlink() # remove it
         monitor_file = self.tempDir / f"monitor_{cfg.name}.png"
-        with contextlib.chdir(self.tempDir) as newdir:
+        with context_chdir(self.tempDir) as newdir:
             run_cmd(str(script_path),str(cfg_path),'plot')
             self.assertTrue(monitor_file.exists())
             monitor_file.unlink() # remove it
