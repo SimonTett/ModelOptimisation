@@ -792,6 +792,8 @@ class OptClimConfig(dictFile):
     def transMatrix(self, scale:bool=False, verbose:bool=False,
                     min_evalue:typing.Optional[float]=None,  # 1e-6,
                     regularise:typing.Optional[float] = None,
+                    obsNames:typing.Optional[list[str]]=None,
+                    minEvalue:float=1e-6,
                     dataFrame:bool=True,
                     inverse:bool = False,
                     warn_scale:typing.Optional[float]=None  # default 1e-1
@@ -818,7 +820,7 @@ class OptClimConfig(dictFile):
         if regularise is None:
             regularise = self.get_covariance_param('regularise', None)
         # compute the matrix that diagonalises total covariance.
-        cov = self.Covariances(trace=verbose, scale=scale)  # get covariances.
+        cov = self.Covariances(obsNames=obsNames,trace=verbose, scale=scale)  # get covariances.
         errCov = cov['CovTotal']
         if regularise:
             reg = pd.DataFrame(np.identity(errCov.shape[0]) * regularise, index=errCov.index, columns=errCov.columns)
@@ -3006,5 +3008,3 @@ class OptClimConfigVn3(OptClimConfigVn2):
             raise ValueError(msg)
 
         return obs
-
-

@@ -37,10 +37,10 @@ from StudyConfig import dictFile
 import genericLib
 # check we are version 3.8 or above.
 
-if (sys.version_info.major < 3) or (sys.version_info.major == 3 and sys.version_info.minor < 8):
-    raise Exception("Only works at 3.8+ ")
+if (sys.version_info.major < 3) or (sys.version_info.major == 3 and sys.version_info.minor < 10):
+    raise Exception("Only works at 3.10+ ")
 
-__version__ = '0.9'
+__version__ = '0.95'
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 
@@ -57,6 +57,7 @@ class SubmitStudy(Study, model_base, journal):
     iter_keys: dict
     next_iter_cmd: typing.Optional[list[str]]
     next_iter_jids: list[str]
+    next_command:typing.Optional[typing.Literal['stop']] # next command to run. Only None or stop are allowed.
 
     """
      provides methods to support working out which models need to be submitted. Creates new models and submits them.
@@ -79,9 +80,9 @@ class SubmitStudy(Study, model_base, journal):
     """
 
     fn_type = Callable[[Mapping], pd.Series]  # type hint for fakeFn
-
+    from StudyConfig import  OptClimConfigVn3
     def __init__(self,
-                 config: Optional["OptClimConfigVn3"],
+                 config: Optional[OptClimConfigVn3],
                  name: Optional[str] = None,
                  rootDir: Optional[pathlib.Path] = None,
                  refDir: Optional[pathlib.Path] = None,
@@ -148,6 +149,7 @@ class SubmitStudy(Study, model_base, journal):
         self.iter_keys = dict()  # key iteration pairs.
         self.next_iter_cmd = next_iter_cmd
         self.next_iter_jids = []  # no next jobs (yet)
+        self.next_command  = None
 
     def update_config(self, config: "OptClimConfigVn3"):
         """
@@ -162,6 +164,20 @@ class SubmitStudy(Study, model_base, journal):
 
         self.run_info = copy.deepcopy(config.run_info())  # copy run_info as modifying it.
         my_logger.debug(f"Set run_info to {self.run_info}")
+
+    def lock(self,timeout:float=0.0,poll_interval:typing.Optional[float] = None):
+        """
+        Lock the configuration file using genericLib.ContextFileLock.
+        :param timeout -- time in seconds to timeout -- see ContextFileLock
+        :param poll_interval -- poll_interval in seconds -- see ContextFileLock
+
+        :return: context file object
+
+        Example usage is:
+        with SubmitStudy.lock(timeout=10) as lock:
+          do stuff with lock
+        """
+        return genericLib.ContextFileLock(self.config_path,timeout=timeout,poll_interval=poll_interval)
 
     def __repr__(self):
         """
@@ -179,9 +195,10 @@ class SubmitStudy(Study, model_base, journal):
 
     def create_model(self, params: dict,
                      dump: bool = True,
-                     reference_name:typing.Optional[str]=None) -> Model:
+                     reference_name:typing.Optional[str]=None) -> typing.Optional[Model]:
         """
         Create a model, update list of created models and index of models.
+        If self.next_command is 'stop' immediately returns None.
         name is generated using self.gen_name() and will be checked to see if it already exists.
         If it does then a new name will be generated (and so on).
 
@@ -199,6 +216,9 @@ class SubmitStudy(Study, model_base, journal):
 
         Will raise ValueError if model_dir or config path already exist.
         """
+        if self.next_command == 'stop':
+            my_logger.debug("Stopping. Returning None")
+            return None
         existing_names = [model.name for model in self.model_index.values() ] # list of existing model names
         while True: # loop until we find a name that does not exist.
             name = self.gen_name()
@@ -835,6 +855,7 @@ class SubmitStudy(Study, model_base, journal):
             self.update_history(f"Killed resubmission job id:{curr_resub_id}")
 
         my_logger.info(f"Killed {len(killed)} jobs")
+        self.update_history(f"Killed {len(killed)} jobs")
         return killed
 
 

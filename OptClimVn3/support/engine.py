@@ -14,10 +14,10 @@ import subprocess
 import typing
 import pathlib
 from abc import ABCMeta, abstractmethod
-from subprocess import CalledProcessError
 import shlex # for protecting commands with spaces etc.
 
 from model_base import model_base, journal  # so can save things. The default to_dict, from_dict should work.
+import shutil
 
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
@@ -30,6 +30,99 @@ class abstractEngine(model_base, journal):
 
     allowed_eng = typing.Literal['SGE', 'SLURM','SLURM_SYSU']  # allowed engines
 
+    # AI generated code to guess which engine we can use.
+    @staticmethod
+    def detect_scheduler(timeout=1.0):
+        """
+
+        Return one of: 'SLURM', 'PBS', 'SGE', 'LSF', 'UNKNOWN', or None (none found).
+        Uses env vars first, then looks for scheduler binaries and probes them.
+        Non-blocking (uses short timeouts).
+        """
+        # 1) env var checks (when running inside a job)
+        env = os.environ
+        if 'SLURM_JOB_ID' in env or 'SLURM_STEP_ID' in env:
+            return 'SLURM'
+        if 'PBS_JOBID' in env or 'PBS_JOB_ID' in env or 'PBS_O_QUEUE' in env:
+            return 'PBS'
+        if 'SGE_ROOT' in env or ('JOB_ID' in env and 'SGE' in env.get('QUEUE', '')):
+            return 'SGE'
+        # LSF sets LSB_JOBID
+        if 'LSB_JOBID' in env:
+            return 'LSF'
+
+        # 2) check for obvious binaries - prefer Slurm check first
+        if shutil.which('sbatch') or shutil.which('squeue') or shutil.which('scontrol'):
+            return 'SLURM'
+
+        # 3) check for PBS/Torque/SGE: many systems have qsub/qstat. probe qstat/qsub to disambiguate.
+        qstat = shutil.which('qstat')
+        qsub = shutil.which('qsub')
+        pbs_binaries = ['pbsnodes', 'qmgr', 'pdsh']  # pbs-related helpers
+        for b in pbs_binaries:
+            if shutil.which(b):
+                return 'PBS'
+
+        # If qstat exists, probe its output for hints
+        if qstat:
+            try:
+                p = subprocess.run([qstat, '--version'], capture_output=True, text=True, timeout=timeout)
+                out = (p.stdout + p.stderr).lower()
+                if 'pbs' in out or 'torque' in out or 'pbspro' in out:
+                    return 'PBS'
+                if 'grid engine' in out or 'sge' in out or 'univa' in out or 'oracle' in out:
+                    return 'SGE'
+            except (subprocess.SubprocessError, FileNotFoundError):
+                # some qstat versions don't accept --version; try minimal call
+                try:
+                    p = subprocess.run([qstat], capture_output=True, text=True, timeout=timeout)
+                    out = (p.stdout + p.stderr).lower()
+                    if 'pbs' in out or 'torque' in out:
+                        return 'PBS'
+                    if 'usage' in out and 'sge' in out:
+                        return 'SGE'
+                except Exception:
+                    pass
+
+        # If qsub exists, probe it
+        if qsub:
+            try:
+                p = subprocess.run([qsub, '--version'], capture_output=True, text=True, timeout=timeout)
+                out = (p.stdout + p.stderr).lower()
+                if 'pbs' in out or 'torque' in out or 'pbspro' in out:
+                    return 'PBS'
+                if 'grid engine' in out or 'sge' in out or 'univa' in out:
+                    return 'SGE'
+            except Exception:
+                pass
+
+        # Additional heuristics: presence of pbs commands or slurm commands already tried. If nothing found:
+        if shutil.which('qsub') or shutil.which('qstat'):
+            # can't disambiguate; likely PBS/Torque or SGE
+            return 'PBS_OR_SGE'
+
+        return None
+
+    @classmethod
+    def guess_engine(cls, ssh_node: typing.Optional[str] = None) -> typing.Optional["abstractEngine"]:
+        """
+        Guess engine
+        :param ssh_node: node running on
+        :return: an engine or None if failed to guess
+        """
+        if ssh_node is not None:
+            raise NotImplementedError("remote check not implemented")
+        engine_name = cls.detect_scheduler() # guess Scheduler
+
+
+        if engine_name is None:
+            my_logger.warning('Failed to find an engine_name')
+            return None
+        if engine_name not in KNOWN_ENGINES:
+            raise NotImplementedError(f"Unknown engine name {engine_name}")
+        eng = KNOWN_ENGINES[engine_name](ssh_node=ssh_node)
+        return eng # actually return the engine.
+
     @classmethod
     def create_engine(cls, engine_name: allowed_eng = 'SGE',
                       ssh_node: typing.Optional[str] = None) -> "abstractEngine":
@@ -39,27 +132,13 @@ class abstractEngine(model_base, journal):
         :param ssh_node: node to ssh to where engine can submit things
         Sets up engines which hold cmds for SGE or slurm respectively. .
         """
-        known_engines = dict(SGE=sge_engine, SLURM=slurm_engine,
-                             SLURM_SYSU=slurm_sysu_engine )  # known engines
-        return known_engines[engine_name](ssh_node=ssh_node)
 
-    @classmethod
-    def guess_engine(cls,ssh_node:typing.Optional[str] = None) -> typing.Optional["abstractEngine"]:
+        # work out what engine we can use which is platform dependant...
 
-        # work out what engine we can use which is platform dependant...Use this be seeing if job_status works
-        engine_name = None
-        for name in ['SGE', 'SLURM', 'SLURM_SYSU']:
-            eng = cls.create_engine(name,ssh_node=ssh_node)
-            try:
-                stat = eng.job_status('999999')
-                engine_name = name
-                break
-            except (subprocess.CalledProcessError,FileNotFoundError):  # need to catch both for linux & windows.
-                pass
-        if engine_name is None:
-            eng = None
-            my_logger.warning('Failed to find an engine_name')
+
+        eng = KNOWN_ENGINES[engine_name](ssh_node=ssh_node) # will fail if engine_name not known.
         return eng
+
     def __init__(self, ssh_node: typing.Optional[str] = None):
         """
         Initialize an Engine instance
@@ -217,7 +296,7 @@ class sge_engine(abstractEngine):
     """
     Engine class for SGE
     """
-
+    sub_cmd='qsub' # name of submission command.
     def submit_cmd(self, cmd: list[str|pathlib.PurePath], name: str,
                    outdir: typing.Optional[pathlib.Path] = None,
                    rundir: typing.Optional[pathlib.Path] = None,
@@ -442,7 +521,7 @@ class slurm_engine(abstractEngine):
             submit_cmd += [f'--dependency=afterok:{hold}']
         if isinstance(hold, list) and (len(hold) > 0):
             # hold on multiple jobs (empty list means nothing to be held)
-            submit_cmd += [f"--dependency=afterok:" + ":".join(hold)]  #liangwj
+            submit_cmd += [f"--dependency=afterok:" + ":".join(hold)]
         if n_tasks is not None:
             submit_cmd += ['-a', f'1-{n_tasks}']  # -a =  task array
         if extra_args is not None: # got some extra args add them in
@@ -458,7 +537,7 @@ class slurm_engine(abstractEngine):
         :param jobid: The jobid of the job to be released
         :return: a list of things that can be ran!
         """
-        cmd = [self._control_cmd, 'release', jobid]  # Command to release_job a job #liangwj
+        cmd = [self._control_cmd, 'release', jobid]  # Command to release_job a job
 
         cmd = self.connect_fn(cmd)
         return cmd
@@ -469,7 +548,7 @@ class slurm_engine(abstractEngine):
         :param jobid: The jobid to kill
         :return: command to be ran (a list)
         """
-        cmd = [self._kill_cmd, jobid] #liangwj
+        cmd = [self._kill_cmd, jobid]
 
         cmd = self.connect_fn(cmd)
         return cmd
@@ -481,7 +560,7 @@ class slurm_engine(abstractEngine):
         :return: jobid as a string.
         """
 
-        return output.split()[3].split('.')[0] #liangwj
+        return output.split()[3].split('.')[0] # extra . for case of sub-jobs.
 
     def job_status(self, job_id: str, full_output: bool = False) -> str:
         """
@@ -499,11 +578,11 @@ class slurm_engine(abstractEngine):
         self.connect_fn(cmd)
         try:
             result = subprocess.check_output(cmd, text=True)
-        except subprocess.CalledProcessError as e:
-            if e.returncode == 1:
+        except (subprocess.CalledProcessError,FileNotFoundError) as e:
+            if isinstance(e,FileNotFoundError) or e.returncode == 1:
                 return "notFound"
             else:
-                raise subprocess.CalledProcessError
+                raise # -- just raise the initial error... subprocess.CalledProcessError
 
         if full_output:
             return result
@@ -517,9 +596,9 @@ class slurm_engine(abstractEngine):
         # work out how to parse result.
         if len(result) == 0:  # nothing found
             return "notFound"
-        status = result.split()[4]   #liangwj
+        status = result.split()[4]   # status is 5th element in output. Should be something like PENDING, RUNNING etc.
         if status.startswith("PENDING"):
-            reason = result.split()[8].split("(")[1].replace(")","") #status.split("(")[1].replace(")", "") #liangwj
+            reason = result.split()[8].split("(")[1].replace(")","")
             if reason in ['JobHeldUser', 'JobHeldAdmin', "Dependency"]:
                 return "Held"
             else:
@@ -549,3 +628,5 @@ class slurm_sysu_engine(slurm_engine):
     _control_cmd:str = 'yhcontrol'
     _kill_cmd:str = 'yhcancel'
 
+KNOWN_ENGINES = dict(SGE=sge_engine, SLURM=slurm_engine,
+                     SLURM_SYSU=slurm_sysu_engine)  # known engines

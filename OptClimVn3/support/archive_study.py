@@ -83,7 +83,7 @@ class archive_study(model_base, journal):
     @classmethod
     def extract_archive(cls,
                         archive_path: pathlib.Path,
-                        direct: typing.Optional[pathlib.Path]=None) -> ("archive_study", SubmitStudy):
+                        direct: typing.Optional[pathlib.Path]=None) ->tuple["archive_study", SubmitStudy]:
         """
         Extract an archive.
         :param archive_path: Path to the archive.
@@ -92,20 +92,22 @@ class archive_study(model_base, journal):
         """
         if direct is None:
             direct = pathlib.Path.cwd()
-        # mkae it an absolute path
+        # make it an absolute path
         direct = direct.resolve()
         direct.mkdir(parents=True, exist_ok=True) # create the dir as nesc.
-        mode='r:'
+        mode='r'
         if archive_path.suffix == '.gz':
-            mode+='gz'
+            mode+=':gz'
         my_logger.debug(f'Reading data from {archive_path} using mode {mode}')
         with tarfile.open(archive_path, mode) as archive:
             ## TODO get permission errors if files exist.
-            archive.extractall(path=direct)  # extract all data
-            archive_config: archive_study = model_base.load(direct / 'archive.acfg', check_types=[archive_study])
-            cfg_path = direct / archive_config.config_file
+            archive.extractall(path=str(direct))  # extract all data
+            archive_config: archive_study = model_base.load(
+                direct / 'archive.acfg',
+                check_types=[archive_study])
+            cfg_path = direct / str(archive_config.config_file)
             # we are reading an archive which means paths need rewriting.
-            model_base._translate_path_var = [archive_config.rootDir,direct]  # setup for translation.
+            model_base._translate_path_var = (archive_config.rootDir,direct)  # setup for translation.
             model_base._convert_path2pure = True  # convert paths to pure paths.
             # QUITE ugly to use class variables to translate. Needed because can't pass args into from_dict
             cfg = SubmitStudy.load_SubmitStudy(cfg_path)  # read the extracted data

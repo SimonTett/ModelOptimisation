@@ -11,19 +11,21 @@ import sys
 
 parser = argparse.ArgumentParser(description="Update parameters in an existing OptClimVn3 configuration file. "
                                              "Optionally copy the input configuration to a new file and output logcal_params and logical_obs to files.")
-parser.add_argument('config_path', type=pathlib.Path, help='Path to the existing configuration file (.scfg)')
+parser.add_argument('config_path', type=genericLib.expand, help='Path to the existing configuration file (.scfg)')
 group = parser.add_mutually_exclusive_group(required=False) # support getting parameters defined in two different ways
 group.add_argument('--parameters',  nargs='+',
                     help='List of parameters to update from model config')
 
-group.add_argument('--study_config_path', type=pathlib.Path, help='StudyConfig to use to define parameters')
-parser.add_argument('--output', type=pathlib.Path,
+group.add_argument('--study_config_path', type=genericLib.expand, help='StudyConfig to use to define parameters')
+parser.add_argument('--output', type=genericLib.expand,
                     help='Path to save the updated configuration file. If not provided, nothing will be saved.')
-parser.add_argument('--output_obs', type=pathlib.Path,
+parser.add_argument('--output_obs', type=genericLib.expand,
                     help='Path to save the updated observations file. If not provided, observations will not be saved.')
-parser.add_argument('--output_params', type=pathlib.Path,
+parser.add_argument('--output_params', type=genericLib.expand,
                     help='Path to save the updated parameters file. If not provided, parameters will not be saved.')
-parser.add_argument('--eval_db_path', type=pathlib.Path,help='Path to evaluation database. Only generated if output_obs and output_params are specified.')
+parser.add_argument('--reindex',action=argparse.BooleanOptionalAction,
+                    help='Reindex params by obs index. Needed for legacy non determinism')
+parser.add_argument('--eval_db_path', type=genericLib.expand,help='Path to evaluation database. Only generated if output_obs and output_params are specified.')
 parser.add_argument('--log', help="Logging level", default="WARNING",choices=['DEBUG','INFO','WARNING','ERROR','CRITICAL'])
 
 
@@ -50,9 +52,10 @@ elif args.study_config_path:
 else:
     parameters=[] # no parameters to update
 
-my_logger.debug(f"Parameters to update are {' '.join(parameters)}")
+if parameters: # got some parameters
+    my_logger.debug(f"Parameters to update are {' '.join(parameters)}")
 
-config.update_params(parameters) # should not write anything out yet.
+    config.update_params(parameters) # should not write anything out yet.
 
 # write out the requested files
 if args.output_obs: # want to write out  observations?
@@ -60,6 +63,10 @@ if args.output_obs: # want to write out  observations?
     my_logger.debug(f"Observations saved to {args.output_obs}")
 
 params = config.logical_params()
+if args.reindex: # reindex params by obs keys. Bit of a hack to cope with non-deterministic cases
+    indx =  config.logical_obs().index
+    params = params.reindex(indx)
+    my_logger.info(f"Reindex params -- now has shape {params.shape}")
 if args.output_params: # Want to write out  parameters ?
     params.to_csv(args.output_params)
     my_logger.debug(f"Saved parameters to {args.output_params}")
