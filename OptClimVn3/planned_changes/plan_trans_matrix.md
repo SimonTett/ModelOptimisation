@@ -1,26 +1,31 @@
-# Planned changes to StudyConfig.transMatrix
+# Planned changes to better handle Covariances and tranform_matrix
 
-## Problem
-transMatrix takes two arguments that impact its behaviour but are not in the configuration file:
-- minEvalue:float=1e-6,
-- warn_scale:float = 1e-1
+## Problems
+- Current code around Covariance calculation is a bit horrid. Want to add some way of empirically scaling covariances and have 
+same logic for all covariance matrices. 
+- need a way of having transform matrix be regularized or truncated from config file. 
 
-## Proposed solution
-- Add these two parameters to the configuration in the covariance section via self.getv('study', {}).get('covariance', {})
-- change minEvalue and warn_scale to both be None by default.
-- if value is None then get value from config with default values as now. 
-- Do by adding a new function get_covariance_param which takes the parameter name and default value as arguments and returns the value from config or default if not provided.
+So bump version of config file to 4. (from 3)
 
-## Proposed tests for get_covariance_param
-- Name not in covariance section of config: should return default value.
-- Name in covariance section of config: should return value from config.
-- Name in covariance section of config but value is None: should return default value.
+Structure of each covariance matrix entry is a dict containing the following keys:
+  path -- gets passed through expand to convert to a path
+  diagonalize -- if True diagonalize the matrix
+  importance_scaling -- scaling to apply to elements of covariance matrix.
+  Anything else ending in _comment gets striped and the directory ** expanded is passed to read_covariances. 
 
-## Proposed tests for transMatrix
-- change minEvalue and transMatrix should change. 
+transform_matrix gets a control block called transform_matrix in the covariances block. Has the following elements
+regularize -- value to regularize the matrix with.  If None no regularization is done.
+min_evalue -- minumum fraction of max eigenvalue that  eigenvalue must have for that eigenvector/value to contribute to transform matrix. This is an implementation truncation
+  If None no truncation is done
+warn_scale -- ratio of min to max eigenvalues (after truncation) below which a warning is given. If None no warning given.
+Example case (used for testing ) have default values consistent with those used in vn3 transMatrix code.
 
-## Potential future changes
-Generalise get_covariance_param to be get_config_param which takes a path (. separated?) and default value as arguments. 
-Then, returns the value from config or default if not provided or value is None. 
-This would allow use of this function for other parameters in the future if needed.
+# Add new methods
+1 read_covariance -- reads in covariance and does processing returnign None (nothing found) or pandas dataframe of cov matrix
+2 transform_matrix -- computed transform_matrix from TotalCov matrix applying regularisation 
+
+make readCovariance and transMatrix in vn4 raise NotImplementedError. 
+Have transform_matrix in vn3 call transMatrix. 
+
+These will generate changes across the code base.  So need to update to use new configurations. 
 

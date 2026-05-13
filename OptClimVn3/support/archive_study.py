@@ -42,7 +42,7 @@ class archive_study(model_base, journal):
 
     def archive(self, submit:SubmitStudy,
                 archive_path: typing.Optional[pathlib.Path] = None,
-                extra_paths: typing.Optional[typing.List[pathlib.Path]] = None,
+                extra_paths: typing.Optional[list[pathlib.Path]] = None,
                 compress:bool=True):
         """
         Archive a SubmitStudy (or anything that has an archive method)

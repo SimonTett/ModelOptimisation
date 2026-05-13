@@ -321,7 +321,7 @@ class Study:
         obs = obs.reindex(columns=target.index)  # reindex obs to match targets.
         obs = obs.dropna(axis=1) # drop any missing data
         target = target.reindex(index=obs.columns)
-        tMat = self.config.transform_matrix(scale=scale,obsNames=obs.columns)
+        tMat = self.config.transform_matrix(scale=scale, obs_names=obs.columns)
         # extract just what we have in obs.
         tMat = tMat.reindex(columns=obs.columns)
         resid = (obs - target) @ tMat.T

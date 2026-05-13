@@ -70,7 +70,7 @@
             "comment": "Covariance matrices and operations on them. If CovObsErr and CovIntVar are *both* specified then CovTotal will be computed from them if its path is null. If only one of CovObsErr and CovIntVar is specified then CovTotal must be specified. If CovTotal is specified then CovObsErr and CovIntVar are ignored.",
             "CovTotal": {
                 "file": null,
-                "file_comment": "Name of file containing Covariance Matrix for total Error. If null then computed from CovIntVar and CovObsErr if either  are specified. ",
+                "file_comment": "Name of file containing Covariance Matrix for total Error. If null then covariance computed from CovIntVar and CovObsErr.",
                 "diagonalize": false,
                 "diagonalize_comment": "If true diagonalise the covariance matrix",
                 "importance_scaling": null,
@@ -95,17 +95,16 @@
                 "diagonalize_comment": "If true diagonalise the  covariance matrix"
             },
             "CovObsErr_Comment": "How to generate Covariance Matrix for Observational Error",
-            "transform_matrix": null,
-            "example_transform_matrix_comment": {
+            "transform_matrix": {
                 "_comment": "Example of how to specify transform matrix options. See StudyConfig.transform_matrix for details. Just pass **strip_comments(config.Covariances.transform_matrix) into transform_matrix to get reqd behaviour.",
-                "min_evalue":null,
+                "min_evalue":1e-6,
                 "min_evalue_comment":"If not null then minimum eigenvalue to keep in transform matrix. If null then keep all eigenvalues.",
                 "regularise":null,
                 "regularise_comment":"If not null then regularise covariance matrix by adding this value to diagonal before computing eignevalues.",
-                "warn_scale": null,
+                "warn_scale": 0.1,
                 "warn_scale_comment": "If not null then value to scale warning threshold for small eigenvalues. If null then no warnings given."
             },
-            "transform_matrix_comment": "Generation of transform matrix that diagonilises the CovTotal matrix. If not null then should be dict with keys 'file' and 'file_comment' giving name of file containing transform matrix and comment on how to generate it."
+            "transform_matrix_comment": "Generation of transform matrix that diagonalizes the CovTotal matrix."
         },
         "ObsList": [
             "olr_nhx",
