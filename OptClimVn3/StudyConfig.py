@@ -3343,18 +3343,24 @@ class OptClimConfigVn4(OptClimConfigVn3):
 
         :param inverse: return the inverse of the transformation matrix
         :param min_evalue: evalues less than minEvalue * max(eigenvalues) are removed. Meaning a non-square transMatrix
-        Default if nothing set is 1e-6
         :param warn_scale: If the min/max evalue (after truncation/regularisation) is less than warn_scale a warning is issued.
         :param regularize: Value to add to diagonal if not None - gives "noise" floor
 
         For min_evalue, warn_scale & regularize values used if var is None come from study.Covariance.transform_matrix.
-        If can't be found in that they are 1e-6, 1e-1 and None respectively.
+        If values are None then no truncation, warning or regularization is done.
         :return: Transformation matrix that makes Total covariance matrix I.
         """
         # get default values. These come from the config file.
         transform_matrix_config = self.getv('study',None).get('covariance').get('transform_matrix')
         if transform_matrix_config is None:
             transform_matrix_config = {}
+        else:
+            transform_matrix_config: dict = self.strip_comment(transform_matrix_config)
+        # check only have allowed keys. Sanity check in case of user error.
+        allowed_keys = set(['regularize','min_evalue','warn_scale'])
+        extra_keys = set(list(transform_matrix_config.keys())) - allowed_keys
+        if extra_keys:
+            raise ValueError(f"Unknown keys in transform_matrix: {extra_keys}")
         # get the transform_matrix.  Config MUST have study and Covariance and optionally can have transform_matrix
         if min_evalue is None: #
             min_evalue= transform_matrix_config.get('min_evalue')  # try and set from transform_matrix

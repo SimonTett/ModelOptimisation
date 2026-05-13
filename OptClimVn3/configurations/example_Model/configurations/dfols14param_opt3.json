@@ -90,8 +90,8 @@
                 "_comment": "Example of how to specify transform matrix options. See StudyConfig.transform_matrix for details. Just pass **strip_comments(config.Covariances.transform_matrix) into transform_matrix to get reqd behaviour.",
                 "min_evalue":1e-6,
                 "min_evalue_comment":"If not null then minimum eigenvalue to keep in transform matrix. If null then keep all eigenvalues.",
-                "regularise":null,
-                "regularise_comment":"If not null then regularise covariance matrix by adding this value to diagonal before computing eignevalues.",
+                "regularize":null,
+                "regularize_comment":"If not null then regularise covariance matrix by adding this value to diagonal before computing eignevalues.",
                 "warn_scale": 0.1,
                 "warn_scale_comment": "If not null then value to scale warning threshold for small eigenvalues. If null then no warnings given."
             },
