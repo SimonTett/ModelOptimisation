@@ -321,8 +321,7 @@ class Study:
         obs = obs.reindex(columns=target.index)  # reindex obs to match targets.
         obs = obs.dropna(axis=1) # drop any missing data
         target = target.reindex(index=obs.columns)
-        tMat = self.config.transMatrix(scale=scale,obsNames=obs.columns,
-                                       dataFrame=True)
+        tMat = self.config.transform_matrix(scale=scale,obsNames=obs.columns)
         # extract just what we have in obs.
         tMat = tMat.reindex(columns=obs.columns)
         resid = (obs - target) @ tMat.T
@@ -403,7 +402,7 @@ class Study:
             newConfig.transJacobian(transJacobian,comment=transJacobian_comment)
             if jacobian is  None: # compute jacobian
                 my_logger.info('Computing jacobian from transJacobian')
-                inv_transM = newConfig.transMatrix(scale=scale, inverse=True)  # get the inverse transformation matrix
+                inv_transM = newConfig.transform_matrix(scale=scale, inverse=True)  # get the inverse transformation matrix
                 jacobian = inv_transM @ transJacobian  # transform jacobian to parameter space
                 jacobian_comment = 'Jacobian computed from transJacobian'
             if hessian is None:

@@ -36,7 +36,9 @@ import pandas as pd
 from io import StringIO
 import xarray  # TODO -- consider removing dependence on xarray
 
-__version__ = '3.0.0'
+__version__ = '4.0.0'
+
+from numpy.ma.core import diagonal
 
 import genericLib
 
@@ -300,8 +302,10 @@ class dictFile(dict):
                 f"Version = {vn} in {self._filename}. Update to version 3 or greater to work with current software...")
         elif vn < 4:  # version 3 config
             config = OptClimConfigVn3(self, **kwargs)
+        elif vn < 5:
+            config = OptClimConfigVn4(self, **kwargs)
         else:
-            raise Exception(f"Version must be < 4. Write new code for {vn}!")
+            raise Exception(f"Version must be < 5. Write new code for {vn}!")
         return config
 
 
@@ -637,24 +641,6 @@ class OptClimConfig(dictFile):
 
         return maxFails
 
-    def get_covariance_param(self, param_name: str,
-                             default: typing.Any = None) -> typing.Optional[typing.Any]:
-        """
-
-        :param param_name: name of parameter to extract from covariance information
-        :param default:  default value if covariance info is not set or None
-        :return:  value
-        """
-
-        cov_info = self.getv('study', {}).get('covariance',{})
-        value = cov_info.get(param_name)
-        if value is None: # get None through either underlying value being None (null in json file) or not being specificed
-            # either way set it to the default value.
-            value = default
-            my_logger.debug(f"Covariance parameter {param_name} not set in configuration file. Using default value {default}")
-        else:
-            my_logger.debug(f"Got covariance parameter {param_name} with value {value} from configuration file")
-        return value
 
     def Covariances(self, obsNames=None, trace=False, dirRewrite=None, scale=False, constraint=None, read=False,
                     CovTotal: typing.Optional[pd.DataFrame] = None,
@@ -789,47 +775,32 @@ class OptClimConfig(dictFile):
 
         return cov
 
+
+
     def transMatrix(self, scale:bool=False, verbose:bool=False,
-                    min_evalue:typing.Optional[float]=None,  # 1e-6,
-                    regularise:typing.Optional[float] = None,
                     obsNames:typing.Optional[list[str]]=None,
                     minEvalue:float=1e-6,
                     dataFrame:bool=True,
                     inverse:bool = False,
-                    warn_scale:typing.Optional[float]=None  # default 1e-1
-                    ):
+                    warn_scale:float = 1e-1):
         """
         Return matrix that projects data onto eigenvectors of total covariance matrix
         :param scale: (Default False) Scale covariance.
         :param verbose: (default False) Be verbose.
         :param inverse: return the inverse of the transformation matrix
         :param dataFrame: wrap result up as a dataframe
-        :param min_evalue: evalues less than minEvalue * max(eigenvalues) are removed. Meaning a non-square transMatrix
-           Will use value min_evalue in study/covariance if exists and this value is None. Default if nothing set is 1e-6
+        :param minEvalue: evalues less than minEvalue * max(eigenvalues) are removed. Meaning a non-square transMatrix
         :param warn_scale: If the min/max evalue (after truncation) is less than warn_scale a warning is issued.
-           Will use value warn_scale in study/covariance if exists and this value is None.  Default if nothing set is 0.1
-        :param regularise: Value to add to diagonal if not None - gives "noise" floor
-           Will use value regularize in study/covariance if exists and this value is None. Default if nothing set is None
         :return: Transformation matrix that makes Total covariance matrix I.
         """
-        # get default values
-        if min_evalue is None:
-            min_evalue = self.get_covariance_param('minEvalue', default=1e-6)
-        if warn_scale is None:
-            warn_scale = self.get_covariance_param('warn_scale', default=1e-1)
-        if regularise is None:
-            regularise = self.get_covariance_param('regularise', None)
+
         # compute the matrix that diagonalises total covariance.
         cov = self.Covariances(obsNames=obsNames,trace=verbose, scale=scale)  # get covariances.
         errCov = cov['CovTotal']
-        if regularise:
-            reg = pd.DataFrame(np.identity(errCov.shape[0]) * regularise, index=errCov.index, columns=errCov.columns)
-            errCov += reg # regularise it
-            my_logger.info(f'Regularised error covarinace matrix  bu adding diag({regularise} to it')
             # compute eigenvector and eigenvalues of covariances so we can transform residual into diagonal space.
         evalue, evect = np.linalg.eigh(errCov)
         # deal with small evalues.
-        crit = evalue.max() * min_evalue
+        crit = evalue.max() * minEvalue
         indx = evalue > crit
         ev_index=np.arange(0, indx.sum(),dtype='int64')
         obs_index=errCov.columns
@@ -846,6 +817,22 @@ class OptClimConfig(dictFile):
         ev_range = evalue.min()/evalue.max()
         if ev_range < warn_scale:
             my_logger.warning(f"Eigenvalues range is {ev_range} which is less than {warn_scale} -- can lead to over focus on small errors")
+        return transMatrix
+
+    # dummy transform_matrix for backward compatability
+    def transform_matrix(self, scale:bool=False,
+                    obsNames: typing.Optional[list[str]] = None,
+                    inverse: typing.Optional[bool] = None,
+                    min_evalue:typing.Optional[float]=None,  # 1e-6,
+                    regularise:typing.Optional[float] = None,
+                    warn_scale:typing.Optional[float]=None  # default 1e-1
+                    ) -> pd.DataFrame:
+        if regularise is not None:
+            raise NotImplementedError("Regularisation not implemented in vn < 4. Update to version 4.")
+        my_logger.warning(f"Calling transform_matrix at version {self.version()}. Update your config to version >= 4")
+        base_kwargs = dict(minEvalue=min_evalue, warn_scale=warn_scale)
+        kwargs = {k:v for k,v in base_kwargs.items() if v is not None} # extratc not none values
+        transMatrix = self.transMatrix(scale=scale, obsNames=obsNames, inverse=inverse, dataFrame=True,**kwargs)
         return transMatrix
 
     def steps(self, steps=None, paramNames=None):
@@ -911,6 +898,7 @@ class OptClimConfig(dictFile):
         Returns a covariance matrix from file optionally sub-sampling to named observations.
         Note if obsName is not specified ordering will be as in the file.
         """
+
         if obsNames is None:
             obsNames = self.obsNames(add_constraint=False)  # do not include constraint here. It gets added on later.
         use_covFile = os.path.expanduser(os.path.expandvars(covFile))
@@ -2540,11 +2528,12 @@ class OptClimConfigVn3(OptClimConfigVn2):
         elif isinstance(dct_lst, dict):
             result = {}
             for key, value in dct_lst.items():
-                if isinstance(value, (dict,list)):  # a dict or list -- call strip_comment
+                if isinstance(key, str) and key.endswith(self.comment_end):
+                    my_logger.debug(f"Ignoring {key}")
+                elif isinstance(value, (dict,list)):  # a dict or list -- call strip_comment
                     my_logger.debug(f"Copying {key} as dict")
                     result[key] = self.strip_comment(value)
-                elif isinstance(key, str) and key.endswith(self.comment_end):
-                    my_logger.debug(f"Ignoring {key}")
+
                 else:
                     my_logger.debug(f"Copying {key}")
                     result[key] = value  # just take the value across.
@@ -3008,3 +2997,404 @@ class OptClimConfigVn3(OptClimConfigVn2):
             raise ValueError(msg)
 
         return obs
+
+class OptClimConfigVn4(OptClimConfigVn3):
+    """
+    4th version of OptClimConfig. New code is to handle new way of handing covariances.
+    """
+
+    @classmethod
+    def dict2cov(cls, dct: dict) -> pd.DataFrame:
+        """
+        Convert a dict representation back to a dataframe.
+        :param dct: dict to be converted. Should contain scale and dataframe keys
+        :return: Decoded dataframe
+        """
+        scale = dct.pop('scale')
+        df = pd.DataFrame.from_dict(dct.pop('dataframe'), orient='tight')
+        df /= scale  # rescale it.
+        return df
+
+    def get_covariance_param(self, param_name: str,
+                             default: typing.Any = None) -> typing.Optional[typing.Any]:
+        """
+
+        :param param_name: name of parameter to extract from covariance information
+        :param default:  default value if covariance info is not set or None
+        :return:  value
+        """
+
+        cov_info = self.getv('study', {}).get('covariance',{})
+        value = cov_info.get(param_name)
+        if value is None: # get None through either underlying value being None (null in json file) or not being specificed
+            # either way set it to the default value.
+            value = default
+            my_logger.debug(f"Covariance parameter {param_name} not set in configuration file. Using default value {default}")
+        else:
+            my_logger.debug(f"Got covariance parameter {param_name} with value {value} from configuration file")
+        return value
+
+    def readCovariances(self, covFile: str, obsNames: typing.Optional[list[str]] = None, **kwargs):
+        """"
+        Dummy.
+        :param **kwargs:
+        :param covFile: path to covariance file
+
+        """
+        raise NotImplementedError("readCovariances is not implemented at version 4")
+
+    def read_covariance(self, file:typing.Optional[str]= None,
+                        diagonalize:typing.Optional[bool]= None,
+                        importance_scaling:typing.Optional[dict]= None,
+                        obs_names:typing.Optional[list[str]] = None,
+                        name:typing.Optional[str] = None,
+                        cov:typing.Optional[pd.DataFrame] = None) -> typing.Optional[pd.DataFrame]:
+        """
+        Read in and modify covariance block
+        :param
+            file: path to file. Can contain env variables which will be expanded. If null then None will be returned.
+            diagonalise: bool if True diagonalise the matrix.
+            importance_scaling: dict.  Scaling to apply to covariance matrix to give more (or less) weight to obs.
+        :param obs_names: List of observation names to extract from covariance file. If None then self.obsNames() will be used.
+         This is used to extract the relevant part of the covariance matrix.
+        :param name: name to use in logging to identify this covariance matrix.
+        :param cov_matrix: If specified then no readin will be done but other processing will be done.
+
+        :return: dataframe of covariance matrix or None.
+        """
+        if name is None:
+            name='unknown covariance'
+
+
+
+        if file is None and cov is None:
+            my_logger.debug(f"{name} path not set. Returning None")
+            return None
+        elif cov is None:
+            path = genericLib.expand(file)
+            # now read in covariance file
+            try:
+                cov = pd.read_csv(path)  # read the covariance
+                cov.set_index(cov.columns, drop=False, inplace=True,
+                              verify_integrity=True)  # provide index
+                my_logger.debug("Reading covariance matrix from {path} with no index")
+            except ValueError:  # now likely have index
+                cov = pd.read_csv(path, index_col=0)
+                my_logger.debug("Reading covariance matrix from  {path} with index")
+        else:
+            pass
+
+        if obs_names is None:
+            obs_names = self.obsNames(add_constraint=False) # get the observed names.
+        if diagonalize is None:
+            diagonalize = False
+        if importance_scaling is not None:
+            importance_scaling = pd.Series(importance_scaling).reindex(obs_names, fill_value=1.0)
+            my_logger.debug(f"Importance scaling {name} is set to {importance_scaling}")
+
+        cov = self.process_covariance(cov, obs_names=obs_names,
+                                      diagonalize=diagonalize,
+                                      scales=importance_scaling,
+                                      name=name)
+
+        return cov
+        #
+
+
+
+    def Covariances(self,
+                    obsNames: typing.Optional[typing.List[str]] = None,
+                    trace: bool = False,  # TODO remove trace -- replaced with logging
+                    dirRewrite: typing.Optional[typing.Dict] = None,
+                    # TODO consider removing this as saved config should have covariances in.
+                    scale: bool = False,  # TODO remove scale -- should be got from the config.
+                    constraint: typing.Optional[bool] = None,
+                    read: bool = False,
+                    CovTotal: typing.Optional[pd.DataFrame] = None,
+                    CovIntVar: typing.Optional[pd.DataFrame] = None,
+                    CovObsErr: typing.Optional[pd.DataFrame] = None):
+        """
+        If CovObsErr and CovIntVar are both specified then CovTotal will be computed from
+        CovObsErr+2*CovIntVar overwriting the value of CovTotal that may have been specified.
+        Unspecified values will be set equal to None.
+        If CovIntVar is not present it will be set to diag(1e-12)
+        If CovTotal is not present it will be set to the identity matrix
+
+        :param obsNames: Optional List of observations wanted and in order expected.
+        :param trace: optional with default False. If True then additional output will be generated.
+        :param dirRewrite: optional with default None. If set then rewrite directory names used in readCovariances.
+        :param scale: if set true  then covariances are scaled by scaling factors derived from self.scales()
+        :param constraint: is set to True  (default is None) then add constraint weighting into Covariances. If set to None then
+           if configuration asks for constraint (study.sigma set True) then will be set True. If set False then no constraint will be set.
+            Total and ObsErr covariances for constraint will be set to 1/(2*mu) while IntVar covariance will be set to 1/(100*2*mu)
+            This is applied when data is returned. If you don't want constraint set then see StudyConfig.constraint method.
+
+        :param CovTotal -- if not None set CovTotal to  value overwriting any existing values.
+           Should be a pandas datarrray
+        :param CovIntVar -- if not None set CovIntVar to value overwriting any existing values.
+        :param CovObsErr -- if not None set CovObsErr to value overwriting any existing values.
+         In setting values you can make CovTotal inconsistent with CovIntVar and CovObsErr.
+         This method does not check this. You should also pass in unscaled values as scaling is applied on data
+        No diagonalisation  is done to these value. Constraint, if requested, added on.
+         Scaling is then applied to these values (or original values)
+        :param read -- if True use readCovariances to read in the data in essence resetting covariances
+        :return: a dictionary containing CovTotal,CovIntVar, CovObsErr-  the covariance matrices and ancillary data.
+         None if not present. Also may modify the configuration.
+
+        TODO: Modify internal var covariance matrix as depends on ensemble size.
+        """
+        if trace:
+            raise ValueError("Do not specify trace as using logging")
+
+        matrix_key = "_covariance_matrices"  # where we store the covariance matrices.
+        keys = ['CovTotal', 'CovIntVar', 'CovObsErr']  # names of covariance matrices
+        useConstraint = constraint
+        if constraint is None:
+            useConstraint = self.constraint()  # work out if we have a constraint or not.
+
+        if obsNames is None:
+            obsNames = self.obsNames(add_constraint=False)  # don't want constraint here. Included later
+        cov = {}  # empty dict to return things in
+        covInfo = self.getv('study', {}).get('covariance', {})
+        # extract the covariance matrix and optionally diagonalise it.
+        readData = (self.getv(matrix_key, None) is None) or read
+        if readData:
+            my_logger.info("Reading covariance matrices")
+            for k in keys:
+                cov_info = covInfo.get(k)
+                if cov_info is not None:  # specified in the configuration file so read it
+                    cov[k] = self.read_covariance( obs_names=obsNames, name=k,**self.strip_comment(cov_info))
+
+
+            # make total covariance from CovIntVar and CovObsErr if both are defined.
+            if (cov.get('CovIntVar') is not None and
+                    cov.get('CovObsErr') is not None):  # if key not defined will "get" None
+                k = 'CovTotal'
+                total_cov = cov['CovObsErr'] + 2.0 * cov['CovIntVar']
+                cov_info = covInfo.get(k,{})
+                if cov_info is None:
+                    cov_info = {}
+                cov[k] = self.read_covariance( obs_names=obsNames, name=k,cov=total_cov,**self.strip_comment(covInfo.get(k)))
+                cov[k + '_info'] = 'CovTotal generated from CovObsErr and CovIntVar'
+                my_logger.info("Computed CovTotal from CovObsErr and CovIntVar")
+
+            for k, value in zip(['CovIntVar', 'CovObsErr', 'CovTotal'], [1e-12, 1, 1]):
+                if cov.get(k) is None:  # Set it to something
+                    my_logger.warning(f"{k} not set so setting to diag {value}")
+                    cov[k] = pd.DataFrame(value * np.identity(len(obsNames)),
+                                          index=obsNames, columns=obsNames,
+                                          dtype=float)
+                elif cov[k].isnull().values.any():
+                    raise ValueError(
+                        f"Covariance {k} has missing values after reindexing -- probably missing observations")
+                else:
+                    pass
+
+            self.setv(matrix_key, cov)  # store the covariances as we have read them in.
+        # end of reading in data.
+        # overwrite if values passed in.
+
+        # set up values from values passed in  overwriting values if necessary
+        cov = self.getv(matrix_key)
+        set_obsNames = set(obsNames)
+        for key, UpdatedCov in zip(['CovTotal', 'CovIntVar', 'CovObsErr'], [CovTotal, CovIntVar, CovObsErr]):
+            if UpdatedCov is not None:
+                my_logger.debug(f"Setting key")
+                if (set_obsNames != set(UpdatedCov.index)) or (set_obsNames != set(UpdatedCov.columns)):
+                    raise ValueError(f"Observations in {key} do not match expected {obsNames}")
+                cov[key] = UpdatedCov
+                cov['key' + 'File'] = 'Overwritten '
+
+        cov = copy.deepcopy(self.getv(matrix_key))  # copy from stored covariances.
+        # Need a deep copy as cov is a dict pointing to datarrays. As the dataarrays get modified then
+        # that would modify the underlying cached values.
+        # apply constraint.
+        if useConstraint:
+            # want to have constraint wrapped in to covariance matrices. Rather arbitrary for all but
+            # Total!
+
+            consValue = 2.0 * self.optimise()['mu']
+            consName = self.constraintName()
+            my_logger.warning("DO not use constraint. Use importance scale")
+            #raise ValueError("Do not use constraint. Use importance scale")
+
+            for k, v in zip(keys, (consValue, consValue / 100., consValue)):
+                # Include the constraint value. Rather arbitrary choice for internal variability
+                if k in cov:
+                    if consName in cov[k].index:  # raise error  when have constraint and value in covariances
+                        raise ValueError(f'Constraint {consName} already in {k}')
+                    cov[k].loc[consName, :] = 0.0
+                    cov[k].loc[:, consName] = 0.0
+                    cov[k].loc[consName, consName] = v
+        # extract to obsNames
+        obsNames = self.obsNames(add_constraint=useConstraint)
+        # make sure we have included the constraint (if wanted) in obs
+        for k in keys:
+            if k in cov and cov[k] is not None:
+                cov[k] = cov[k].reindex(index=obsNames, columns=obsNames)
+                if cov[k].isnull().values.any():
+                    raise ValueError(
+                        f"Covariance {k} has missing values after reindexing -- probably missing observations")
+                my_logger.debug(f'Extracted cov {k} to {", ".join(obsNames)}')
+        # scale data
+        if scale:
+            obsNames = self.obsNames(
+                add_constraint=useConstraint)  # make sure we have included the constraint (if wanted) in obs
+            scales = self.scales(obsNames=obsNames)
+
+            cov_scale = pd.DataFrame(np.outer(scales, scales), index=scales.index, columns=scales.index)
+            for k in keys:
+                if k in cov and cov[k] is not None:
+                    cov[k] = cov[k] * cov_scale
+                    my_logger.debug(f"Scaling {k}")
+
+        return cov
+
+
+
+    @staticmethod
+    def process_covariance(cov:pd.DataFrame,
+                           name:typing.Optional[str] = None,
+                           obs_names:typing.Optional[list[str]]=None,
+                           diagonalize:bool=False,
+                           scales:typing.Optional[pd.Series]=None,
+                           ) -> pd.DataFrame:
+
+        """
+        Process covariance matrix
+        :param cov: (full) covariance matrix
+        :param name: Name of covariance matrix used for logging.
+        :param obs_names: names of observations to use.
+        :param diagonalize:  If true diagonalize the matrix
+        :param scales:  If provided scales to apply to matrix. "missing" values will have scale of 1.
+          if scales.index has elements not in cov (after selecting to obs_names) then ValueError is raised.
+
+
+        :return: modified dataframe
+        """
+
+        def scale_cov_matrix(scales: pd.Series,
+                        new_index: pd.Index,
+                        fill_value: float = 1.0) -> pd.DataFrame:
+            """
+            Reindex scales to new_index and then generate scaling matrix from outer product.
+
+            :param cov:covariance matrix
+            :param new_index: listlike -- new index to take scales2. Missing values will be set to fill value
+            :param fill_value: The value to fill missing values with.
+            :return: scaling matrix.
+            """
+
+
+            missing = set(scales.index) - set(new_index)
+            if len(missing) > 0:
+                raise ValueError(f"Index1 contains {missing} which are not in index2")
+            scales_index = scales.reindex(index=new_index, fill_value=fill_value)
+            cov_index = pd.DataFrame(np.outer(scales_index, scales_index), index=new_index, columns=new_index)
+            return cov_index
+
+        if name is None:
+            name=''
+
+
+
+        if obs_names is not None:
+            result = cov.reindex(index=obs_names,columns=obs_names) # extract the obs requested.
+        else:
+            result = cov.copy() # just copy the dataframe
+
+
+
+        if diagonalize:
+            result = pd.DataFrame(np.diag(np.diag(result)), index=result.index, columns=result.columns)
+            my_logger.debug(f"Diagonalising Covariance matrix {name}")
+
+        if scales is not None:
+            cov_scale = scale_cov_matrix(scales, result.index)
+            result = result * cov_scale
+            my_logger.debug(f"Scaling Covariance matrix {name}")
+
+
+        # convert everything to a number.
+        result = result.apply(pd.to_numeric, errors='raise')
+
+        return result
+    def transMatrix(self, scale:bool=False, verbose:bool=False,
+                    obsNames:typing.Optional[list[str]]=None,
+                    minEvalue:float=1e-6,
+                    dataFrame:bool=True,
+                    inverse:bool = False,
+                    warn_scale:float = 1e-1):
+        """
+        Dummy version raised NotImplementedError so new code used.
+        :param scale:
+        :param verbose:
+        :param obsNames:
+        :param minEvalue:
+        :param dataFrame:
+        :param inverse:
+        :param warn_scale:
+        :return:
+        """
+        raise NotImplementedError("Use transform_matrix method instead")
+
+    def transform_matrix(self, scale:bool=False,
+                    obsNames: typing.Optional[list[str]] = None,
+                    inverse: typing.Optional[bool] = None,
+                    min_evalue:typing.Optional[float]=None,  # 1e-6,
+                    regularise:typing.Optional[float] = None,
+                    warn_scale:typing.Optional[float]=None  # default 1e-1
+                    ) -> pd.DataFrame:
+        """
+        Return matrix that projects data onto eigenvectors of total covariance matrix
+        :param scale: (Default False) Scale covariance.
+        :param inverse: return the inverse of the transformation matrix
+        :param min_evalue: evalues less than minEvalue * max(eigenvalues) are removed. Meaning a non-square transMatrix
+        Default if nothing set is 1e-6
+        :param warn_scale: If the min/max evalue (after truncation/regularisation) is less than warn_scale a warning is issued.
+        :param regularise: Value to add to diagonal if not None - gives "noise" floor
+
+        For min_evalue, warn_scale & regularize values used if var is None come from study.Covariance.transform_matrix.
+        If can't be found in that they are 1e-6, 1e-1 and None respectively.
+        :return: Transformation matrix that makes Total covariance matrix I.
+        """
+        # get default values. These come from the config file.
+        transform_matrix_config = self.getv('study',None).get('covariance').get('transform_matrix',{})
+        if transform_matrix_config is None:
+            transform_matrix_config = {}
+        # get the transform_matrix.  Config MUST have study and Covariance and optionally can have tranform_matrix
+        if min_evalue is None: #
+            min_evalue = transform_matrix_config.get('min_evalue', 1e-6)
+        if warn_scale is None:
+            warn_scale = transform_matrix_config.get('warn_scale', 1e-1)
+        if regularise is None:
+            regularise = transform_matrix_config.get('regularize', None)
+
+        # compute the matrix that diagonalizes total covariance.
+        cov = self.Covariances(obsNames=obsNames, scale=scale)  # get covariances.
+        errCov = cov['CovTotal']
+        if regularise is not None:
+            reg = pd.DataFrame(np.identity(errCov.shape[0]) * regularise, index=errCov.index, columns=errCov.columns)
+            errCov += reg # regularize it
+            my_logger.info(f'Regularised error covariance matrix  by adding diag({regularise} to it')
+            # compute eigenvector and eigenvalues of covariances so we can transform residual into diagonal space.
+        evalue, evect = np.linalg.eigh(errCov)
+        # deal with small evalues.
+        crit = evalue.max() * min_evalue
+        indx = evalue > crit
+        ev_index=np.arange(0, indx.sum(),dtype='int64')
+        obs_index=errCov.columns
+        evalue = pd.Series(evalue[indx], index=ev_index)
+        evect = pd.DataFrame(evect[:, indx], columns=ev_index, index=obs_index)
+        if inverse: # return the inverse matrix
+            transMatrix = evect@pd.DataFrame(np.diag(evalue ** (0.5)),index=ev_index,columns=ev_index)
+        else:
+            transMatrix =pd.DataFrame(np.diag(evalue ** (-0.5)),index=ev_index,columns=ev_index)@ evect.T
+
+            #(np.diag(evalue[indx] ** (-0.5)).dot(evect[:, indx].T))  # what we need to do to transform to
+
+        ev_range = evalue.min()/evalue.max()
+        if ev_range < warn_scale:
+            my_logger.warning(f"Eigenvalues range is {ev_range} which is less than {warn_scale} -- can lead to over focus on small errors")
+        return transMatrix
+

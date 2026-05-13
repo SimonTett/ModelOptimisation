@@ -132,8 +132,7 @@ class TestStudy(unittest.TestCase):
             cost = self.study.cost(scale=scale)
             self.assertIsInstance(cost, pd.Series)
             obs = self.study.obs(scale=scale)
-            tMat = self.config.transMatrix(scale=scale,
-                                           dataFrame=True)  # which puts us into space where totalError is Identity matrix.
+            tMat = self.config.transform_matrix(scale=scale)  # which puts us into space where totalError is Identity matrix.
             nObs = len(obs.columns)
             tgt = self.config.targets(scale=scale)
             resid = (obs - tgt) @ tMat.T
