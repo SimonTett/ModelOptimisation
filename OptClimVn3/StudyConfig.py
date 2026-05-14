@@ -3298,6 +3298,10 @@ class OptClimConfigVn4(OptClimConfigVn3):
 
         if obs_names is not None:
             result = cov.reindex(index=obs_names,columns=obs_names) # extract the obs requested.
+            # check for nan and complain if any found.
+            if result.isnull().values.any():
+                raise ValueError(
+                    f"Covariance {name} has missing values after reindexing -- probably missing observations")
         else:
             result = cov.copy() # just copy the dataframe
 
@@ -3315,6 +3319,8 @@ class OptClimConfigVn4(OptClimConfigVn3):
 
         # convert everything to a number.
         result = result.apply(pd.to_numeric, errors='raise')
+
+
 
         return result
     def transMatrix(self, scale:bool=False, verbose:bool=False,
