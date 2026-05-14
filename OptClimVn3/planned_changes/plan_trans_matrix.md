@@ -1,4 +1,4 @@
-# Planned changes to better handle Covariances and tranform_matrix
+# Planned changes to better handle Covariances and transform matrix
 
 ## Problems
 - Current code around Covariance calculation is a bit horrid. Want to add some way of empirically scaling covariances and have 
@@ -21,8 +21,8 @@ warn_scale -- ratio of min to max eigenvalues (after truncation) below which a w
 Example case (used for testing ) have default values consistent with those used in vn3 transMatrix code.
 
 # Add new methods
-1 read_covariance -- reads in covariance and does processing returnign None (nothing found) or pandas dataframe of cov matrix
-2 transform_matrix -- computed transform_matrix from TotalCov matrix applying regularisation 
+1 read_covariance -- reads in covariance and does processing returning None (nothing found) or pandas dataframe of cov matrix
+2 transform_matrix -- computed transform_matrix from TotalCov matrix applying regularization 
 
 make readCovariance and transMatrix in vn4 raise NotImplementedError. 
 Have transform_matrix in vn3 call transMatrix. 
