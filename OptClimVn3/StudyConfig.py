@@ -824,10 +824,10 @@ class OptClimConfig(dictFile):
                          obs_names: typing.Optional[list[str]] = None,
                          inverse: bool = False,
                          min_evalue:typing.Optional[float]=None,
-                         regularise:typing.Optional[float] = None,
+                         regularize:typing.Optional[float] = None,
                          warn_scale:typing.Optional[float]=None
                          ) -> pd.DataFrame:
-        if regularise is not None:
+        if regularize is not None:
             raise NotImplementedError("Regularisation not implemented in vn < 4. Update to version 4.")
         my_logger.warning(f"Calling transform_matrix at version {self.version()}. Update your config to version >= 4")
         base_kwargs = dict(minEvalue=min_evalue, warn_scale=warn_scale)
