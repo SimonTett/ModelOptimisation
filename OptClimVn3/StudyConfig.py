@@ -3124,7 +3124,7 @@ class OptClimConfigVn4(OptClimConfigVn3):
         :return: a dictionary containing CovTotal,CovIntVar, CovObsErr-  the covariance matrices and ancillary data.
          None if not present. Also may modify the configuration.
 
-        TODO: Modify internal var covariance matrix as depends on ensemble size.
+
         """
         if trace:
             raise ValueError("Do not specify trace as using logging")
@@ -3151,6 +3151,12 @@ class OptClimConfigVn4(OptClimConfigVn3):
                     kwargs ={} # empty
 
                 cov[k] = self.read_covariance( obs_names=obsNames, name=k,**kwargs)
+            # scale the internal var by the ensemble size.
+            intvar = cov.get('CovIntVar')
+            if intvar is not None and self.ensembleSize() > 1:
+                intvar /= self.ensembleSize()
+                my_logger.info("Scaled internal variability by ensemble size")
+                cov['CovIntVar'] = intvar
 
 
             # make total covariance from CovIntVar and CovObsErr if CovTotal is not defined.
