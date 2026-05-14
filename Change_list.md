@@ -12,9 +12,9 @@
 - filename keys in log config dict get expanded and expand checks if expansion works. 
 
 2026-03-10
-- added ability to have different post-processing for different models in a multi-model configuration.
+- added ability to have different post-processing for different models in a multimodel configuration.
 - model now includes reference attribute and config_name method.
-- Cleaned up how logical_info handles models. Main change is that multi-model function should return  obs AND list of models
+- Cleaned up how logical_info handles models. Main change is that multimodel function should return  obs AND list of models
 
 2026-03-30 [plan_check_no_determ.md]
 - Fixes for non-deterministic algorithm check. Uses model_status to track which models have been called, read in or initialised.
@@ -24,3 +24,8 @@
   - Added control script. 
   - Added SubmitStudy.next_command with values of None or  stop. When stop no new model creation but allow existing models to run.
   - Added file locking to runAlgorithm to allow safe use of control and runAlgorithm scripts.
+
+2026-05-14 [plan_trans_matrix.md]
+  - Added planned changes to better handle covariances and transform matrix.
+  - New structure for covariances in config file which bumps version to 4.
+  - Now handles ensemble size for internal variability. 

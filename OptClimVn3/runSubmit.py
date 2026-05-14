@@ -956,7 +956,7 @@ class runSubmit(SubmitStudy):
         if stop:
             raise NotImplementedError("runJacobian stop not implemented as have no use case")
         configData = self.config
-        Tmat = configData.transMatrix(scale=scale)
+        Tmat = configData.transform_matrix(scale=scale)
         modelFn = self.genOptFunction(raiseError=True, df=True, residual=True, transform=Tmat, scale=scale)
         base = configData.optimumParams()  # try with optimum parameters
         if base is None:  # if none go with the begin parameters.
@@ -1013,7 +1013,10 @@ class runSubmit(SubmitStudy):
         """
         param_names = self.config.paramNames()
         obs_names = self.config.obsNames()
-        transform = self.config.transMatrix(scale=scale)
+        trans_matrix_kw = self.config.get('Covariances',{}).get('transform_matrix',{})
+        if trans_matrix_kw is None:
+            trans_matrix_kw = {}
+        transform = self.config.transform_matrix(scale=scale,**trans_matrix_kw)
         eval_config = self.config.DFOLS_config().get('evaluation_database')
         if eval_config is None:
             return None
@@ -1087,7 +1090,7 @@ class runSubmit(SubmitStudy):
         :param scale: scaling or not
         :return: final configuration saved to file.
         """
-        tMat = self.config.transMatrix(scale=scale)
+        tMat = self.config.transform_matrix(scale=scale)
         var_param_names = self.config.paramNames()
         filename = self.rootDir / (self.config.fileName().stem + "_final.json")  # final config
         best = pd.Series(solution.x, index=var_param_names)  # best soln from DFOLS
@@ -1170,7 +1173,7 @@ class runSubmit(SubmitStudy):
             raise ValueError(m)
 
         # setup transform matrix and optFn
-        tMat = configData.transMatrix(scale=scale)
+        tMat = configData.transform_matrix(scale=scale)
 
         optFn = self.genOptFunction(transform=tMat, residual=True, raiseError=False, scale=scale)
         rhobeg = dfols_config.get('rhobeg', 1e-1)
@@ -1259,7 +1262,7 @@ class runSubmit(SubmitStudy):
         intCov = configData.Covariances(trace=verbose, scale=scale)['CovIntVar']
         # Scaling done for compatibility with optFunction.
         # need to transform intCov. errCov should be I after transform.
-        tMat = configData.transMatrix(scale=scale)
+        tMat = configData.transform_matrix(scale=scale)
         intCov = tMat.dot(intCov).dot(tMat.T)
         # This is correct-- it is the internal covariance transformed
         optimise['sigma'] = False  # wrapped optimisation into cost function.
@@ -1378,7 +1381,7 @@ class runSubmit(SubmitStudy):
             raise NotImplementedError("runPYSOT stop not implemented as have no use case")
         configData = self.config
         optimise = configData.optimise().copy_files()  # get optimisation info
-        tMat = configData.transMatrix()
+        tMat = configData.transform_matrix()
         optFn = self.genOptFunction(transform=tMat, residual=True)  # need scale??
         paramNames = self.paramNames()
         from pySOT.experimental_design import SymmetricLatinHypercube

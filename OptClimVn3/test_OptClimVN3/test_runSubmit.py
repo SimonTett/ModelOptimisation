@@ -213,7 +213,7 @@ class testRunSubmit(unittest.TestCase):
         self.assertEqual(result.shape, (1, nobs), 'Size not expected')
 
         # check if we apply a transform that works. Only verify size and column names not values..
-        trans = rSubmit.config.transMatrix()
+        trans = rSubmit.config.transform_matrix()
         # will truncate this...
         trans = trans.iloc[0:5, :]
         # using params from prev test
@@ -587,7 +587,7 @@ class testRunSubmit(unittest.TestCase):
         np.random.seed(123456)  # make sure RNG is initialised to same value for first eval of dfols.
         # This should be the same seed as used in runDFOLS
         tgt = configData.targets(scale=scale)
-        Tmat = configData.transMatrix(scale=scale)
+        Tmat = configData.transform_matrix(scale=scale)
         varParamNames = configData.paramNames()
 
         def fn_opt(param_v):  # function for optimisation,
@@ -733,7 +733,7 @@ class testRunSubmit(unittest.TestCase):
         trans_obs = obs - tgt
         scales = config.scales()
         trans_obs *= scales  # scale obs
-        tMat = config.transMatrix(scale=True)
+        tMat = config.transform_matrix(scale=True)
         trans_obs = trans_obs @ tMat.T  # get transformed obs and then work out cost
         cost = (trans_obs ** 2).sum(axis=1)
         min_indx = cost.idxmin()
@@ -809,7 +809,7 @@ class testRunSubmit(unittest.TestCase):
         np.random.seed(123456)  # make sure RNG is initialised to same value for first eval of dfols.
         # This should be the same seed as used in runDFOLS
         tgt = configData.targets(scale=scale)
-        Tmat = configData.transMatrix(scale=scale)
+        Tmat = configData.transform_matrix(scale=scale)
         param_names = configData.paramNames()
         obs_names = configData.obsNames()[0:len(param_names)]  # truncate obs so problem is not overdetermined.
         configData.obsNames(obs_names)  # reset obsNames
@@ -941,7 +941,7 @@ class testRunSubmit(unittest.TestCase):
             # and divide by steps to get jacobian
             jac = jac.div(-steps, axis=0)
             # and apply linear transform
-            Tmat = configData.transMatrix(scale=scale)
+            Tmat = configData.transform_matrix(scale=scale)
             jac_trans = jac @ Tmat.T
             return jac.T, jac_trans.T
 
@@ -1016,7 +1016,7 @@ class testRunSubmit(unittest.TestCase):
 
         configData = self.config
         tgt = configData.targets(scale=scale)
-        Tmat = configData.transMatrix(scale=scale)
+        Tmat = configData.transform_matrix(scale=scale)
         varParamNames = configData.paramNames()
 
         def fn_opt(param_v):  # function for optimisation,

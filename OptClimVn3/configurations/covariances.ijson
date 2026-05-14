@@ -1,0 +1,40 @@
+{
+    "comment": "Covariance matrices and operations on them. If CovObsErr and CovIntVar are *both* specified then CovTotal will be computed from them if its path is null. If only one of CovObsErr and CovIntVar is specified then CovTotal must be specified. If CovTotal is specified then CovObsErr and CovIntVar are not used in its computation which could lead to inconsistency.",
+    "CovTotal": {
+        "file": null,
+        "file_comment": "Name of file containing Covariance Matrix for total Error. If null then covariance computed from CovIntVar and CovObsErr.",
+        "diagonalize": false,
+        "diagonalize_comment": "If true diagonalise the covariance matrix",
+        "importance_scaling": null,
+        "importance_scaling_comment": "If not null then dict of scaling factors for importance scaling. Keys should be observation names and values should be scaling factors. More is less important.  ",
+        "example_importance_scaling_comment": {
+            "netflux_global": 0.5,
+            "netflux_global_comment": "1/2 error on netflux_global to make it more important in optimisation"
+        }
+    },
+    "CovTotal_Comment": "How to generate Covariance Matrix for total Error.",
+    "CovIntVar": {
+        "file": "$OPTCLIMTOP/covariance/cov_intvar_20.csv",
+        "file_comment": "Name of file containing Covariance Matrix of Internal Variability",
+        "diagonalize": false,
+        "diagonalize_comment": "If true diagonalise the  covariance matrix"
+    },
+    "CovIntVar_Comment": "How to generate Covariance Matrix for Internal Variability",
+    "CovObsErr": {
+        "file": "$OPTCLIMTOP/covariance/cov_obserr_20.csv",
+        "file_comment": "Name of file containing Covariance Matrix for Observational Error ",
+        "diagonalize": true,
+        "diagonalize_comment": "If true diagonalise the  covariance matrix"
+    },
+    "CovObsErr_Comment": "How to generate Covariance Matrix for Observational Error",
+    "transform_matrix": {
+        "_comment": "Example of how to specify transform matrix options. See StudyConfig.transform_matrix for details. Just pass **strip_comments(config.Covariances.transform_matrix) into transform_matrix to get reqd behaviour.",
+        "min_evalue":1e-6,
+        "min_evalue_comment":"If not null then minimum eigenvalue to keep in transform matrix. If null then keep all eigenvalues.",
+        "regularize":null,
+        "regularize_comment":"If not null then regularise covariance matrix by adding this value to diagonal before computing eigenvalues.",
+        "warn_scale": 0.1,
+        "warn_scale_comment": "If not null then value to scale warning threshold for small eigenvalues. If null then no warnings given."
+    },
+    "transform_matrix_comment": "Generation of transform matrix that diagonalizes the CovTotal matrix."
+}
