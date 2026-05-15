@@ -1,8 +1,17 @@
 # setup env for OptCLIMVn3 on Archer2
-# Run with . ./setup_archer2
-# change OPTCLIMTOP for your system
-export OPTCLIMTOP=/work/n02/shared/tetts/ModelOptimisation
-conda activate optclim # activate optclim env.
+# Run with . PATH_TO_DIR/setup_archer2
+export OMP_NUM_THREADS=1 # needed for login node to reproduce behaviour on worker nodes
+# WORKOUT whht OPTCLIMTOP should be
+pth=$(readlink -f "${BASH_SOURCE[0]}")
+export OPTCLIMTOP=$(dirname -- $(dirname -- "${pth}"))
+# rather convulted need to get parent directory of directory containting this file.
+echo "OPCLIMTOP: ${OPTCLIMTOP}"
+# load necessary modules
+module load PrgEnv-gnu
+module load cray-python/3.10.10
+# activate python env
+source /work/n02/shared/tetts/venv/ModelOptimisation/bin/activate # activate environment
+## conda activate optclim # activate optclim env.
 VN3=$OPTCLIMTOP/OptClimVn3
 export PYTHONPATH=$VN3:$VN3/Models:$VN3/support:$PYTHONPATH
 export PATH=$VN3/scripts:$PATH
