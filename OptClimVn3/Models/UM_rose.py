@@ -145,7 +145,8 @@ class UM_rose(Model):
            if kwargs contains model_data_dir that will be used to set model_data_dir
         Sets up the following no_key variables:
         runModelTime, runUser, runCode,OPTCLIM_ARGS,runEnvSetup,prebuild from run_info
-        Sets up MODEL_CONFIG and OPTCLIM_SET_STATUS_SCRIPT
+        Sets up MODEL_CONFIG (path to the model config), OPTCLIM_SET_STATUS_SCRIPT (path to script that updates model status),
+         and OPTCLIM_SIMULATED_OBS_PATH (path to where simulated obs are expected to be)
         and sets submit and continue scripts to be in config_dir
         """
 
@@ -205,10 +206,16 @@ class UM_rose(Model):
             # setup OPTCLIMTOP
             self.parameters_no_key['OPTCLIMTOP'] = str(genericLib.expand('$OPTCLIMTOP'))  # setup OPTCLIMTOP
 
-        # set up MODEL_CONFIG to point to the configuration.
+        # set up MODEL_CONFIG to point to the configuration. TODO -- change to OPTCLIM_MODEL_CONFIG
         if self.config_path is not None:
             self.parameters_no_key['MODEL_CONFIG'] = self.config_path.as_posix()
             my_logger.debug(f"Set MODEL_CONFIG to {self.parameters_no_key['MODEL_CONFIG']}")
+
+        if (self.model_dir is not None) and (self._post_process_output is not None): # where the simulated obs are expected to be.
+            # some apps want this as the workflow makes the simulated obs and want to copy it into this directory.
+            # this means a "null" post-processing code.
+            self.parameters_no_key['OPTCLIM_SIMULATED_OBS_PATH'] = (self.model_dir/self._post_process_output).as_posix()
+            my_logger.debug(f"Set OPTCLIM_SIMULATED_OBS_PATH to {self.parameters_no_key['OPTCLIM_SIMULATED_OBS_PATH']}")
 
         # set up OPTCLIM_SET_STATUS_SCRIPT
         if self.set_status_script is not None:

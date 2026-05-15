@@ -143,8 +143,10 @@
         "lprecip_nhx": 86400.0,
         "lprecip_tropics": 86400.0,
         "lprecip_shx": 86400.0,
+        "lprecip_comment": "Scaling to convert from kg/m2/s to mm/day",
         "mslp_nhx_dgm": 0.01,
-        "mslp_tropics_dgm": 0.01
+        "mslp_tropics_dgm": 0.01,
+        "mslp_comment": "Scaling to convert from Pa to hPa"
     },
     "standardModel": {
         "SimulatedValues": {
