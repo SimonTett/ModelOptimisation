@@ -18,16 +18,16 @@ import stat
 import sys
 import typing
 import tempfile
-
+import collections
 import argparse
 import json
-
 
 import numpy as np
 import pandas as pd
 import filelock
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
+
 
 def _reset_logger(logger_name):
     """
@@ -40,12 +40,6 @@ def _reset_logger(logger_name):
     logger.handlers.clear()
     logger.setLevel(logging.NOTSET)
     logger.propagate = True
-
-
-
-
-
-
 
 
 def _reset_all_loggers():
@@ -94,10 +88,13 @@ def _reset_all_loggers():
             logger.setLevel(logging.NOTSET)
             logger.propagate = True
 
-error_handle_types = typing.Literal['fail','warn','ignore']
+
+error_handle_types = typing.Literal['fail', 'warn', 'ignore']
+
+
 # will use error handle in various different places so define it here.
 # It will be used to control whether to raise an error, log a warning or ignore an error when something goes wrong.
-def error_handle(message:str, error:error_handle_types='fail'):
+def error_handle(message: str, error: error_handle_types = 'fail'):
     """
     Handle an error according to the error handling strategy.
     :param message: message to be used in error or warning
@@ -113,29 +110,37 @@ def error_handle(message:str, error:error_handle_types='fail'):
     else:
         raise ValueError(f"Unknown error handling option {error}")
 
-def expand_filelike_keys(dct: dict) -> dict:
+
+def expand_filelike_keys(dct: dict, mkdir: bool = False) -> dict:
     """
     Expand any keys in the dict that are filepath
     :param dct: dict to be processed
+    :param mkdir -- If True create needed directories.
     :return: new dict with expanded keys
     """
     filepath_strings = ['filename']
     new_dct = {}
     for key, value in dct.items():
-        if isinstance(value, (str,pathlib.PurePath)) and key in filepath_strings:
+        if isinstance(value, (str, pathlib.PurePath)) and key in filepath_strings:
             # value is string or path and key is in filepath_strings so expand it.
             new_dct[key] = expand(value)
+            if mkdir:
+                new_dct[key].parent.mkdir(exist_ok=True, parents=True)
+                logging.debug(f"Created directory {new_dct[key].parent} for {key}")
             logging.debug(f"Expanded {value} to {new_dct[key]}")
         elif isinstance(value, dict):
             # value is a dict so process it recursively
-            new_dct[key] = expand_filelike_keys(value)
+            new_dct[key] = expand_filelike_keys(value,mkdir=mkdir)
         else:
             new_dct[key] = value
     return new_dct
 
-def setup_logging(level:typing.Optional[typing.Union[int,str]] = None,
-                  rootname:typing.Optional[str] = None,
-                  log_config:typing.Optional[dict]=None):
+
+## Code to support logging
+
+def setup_logging(level: typing.Optional[typing.Union[int, str]] = None,
+                  rootname: typing.Optional[str] = None,
+                  log_config: typing.Optional[dict] = None):
     """
     Setup logging. 
     :param: level: level of logging. If None logging.WARNING will be used
@@ -145,37 +150,40 @@ def setup_logging(level:typing.Optional[typing.Union[int,str]] = None,
           If not None will only be used if level is not None and the actual 
           value of level will be ignored. 
     """
-    
+
     if rootname is None:
-        rootname  = 'OPTCLIM'
-    
-    optclim_logger = logging.getLogger(rootname) # get OPTCLIM root logger
+        rootname = 'OPTCLIM'
+
+    optclim_logger = logging.getLogger(rootname)  # get OPTCLIM root logger
 
     # need both debugging turned on and a logging config
     # to use the logging_cong
     if level is not None and log_config is not None:
         logging.debug("Using log_config to set up logging")
-        log_config_expanded = expand_filelike_keys(log_config) # expand any file like keys in the log config
-        logging.config.dictConfig(log_config_expanded) # assume this is sensible
+        mkdir = log_config.pop('mkdir', False)
+        log_config_expanded = expand_filelike_keys(log_config,
+                                                   mkdir=mkdir)  # expand any file like keys in the log config
+        logging.config.dictConfig(log_config_expanded)  # assume this is sensible
         return optclim_logger
 
     if level is None:
         level = logging.WARNING
-        
+
     # set up a sensible default logging behaviour. 
 
-    optclim_logger.handlers.clear() #  clear any existing handles there are
-    optclim_logger.setLevel(level) # set the level
-    
+    optclim_logger.handlers.clear()  #  clear any existing handles there are
+    optclim_logger.setLevel(level)  # set the level
+
     console_handler = logging.StreamHandler()
     fmt = '%(levelname)s:%(name)s:%(funcName)s: %(message)s'
     formatter = logging.Formatter(fmt)
     console_handler.setFormatter(formatter)
 
-    optclim_logger.addHandler(console_handler) # turning this on gives duplicate messages.
-    optclim_logger.propagate = False # stop propogation to root level which suppresses duplicate messages.
-# see https://jdhao.github.io/2020/06/20/python_duplicate_logging_messages/
+    optclim_logger.addHandler(console_handler)  # turning this on gives duplicate messages.
+    optclim_logger.propagate = False  # stop propogation to root level which suppresses duplicate messages.
+    # see https://jdhao.github.io/2020/06/20/python_duplicate_logging_messages/
     return optclim_logger
+
 
 def init_log(
         log: logging.Logger,
@@ -213,7 +221,49 @@ def init_log(
     log.propagate = False
     return log
 
-def get_fn(mod_fn_str:str) -> typing.Callable:
+
+
+
+
+class DuplicateFilter(logging.Filter):
+    """
+    Code to support filtering out duplicate log messages. AI generated
+    """
+
+    def __init__(self, max_duplicates: int = 1000,
+                 level: int|str = logging.WARNING):
+        """
+        :param max_duplicates: maximum number of duplicates
+        """
+        super().__init__()
+        self.seen = collections.deque(maxlen=max_duplicates) # where we store what we have seen.
+        if isinstance(level, str): # convert level to string
+            level = logging.getLevelName(level.upper())
+            if not isinstance(level, int):
+                raise TypeError(f"level {level} is not an integer. Check your value of level for typos")
+        self.level = level
+
+    def filter(self, record) -> bool:
+        """
+
+        :param record: logging record
+        :return: True if keep, False if not to keep
+        """
+        # Only apply filtering to  level and above
+        if record.levelno < self.level:
+            return True  # Let it through without checking duplicates
+
+        msg = record.getMessage()
+
+        if msg in self.seen:
+            return False
+
+        self.seen.append(msg)
+
+        return True
+
+
+def get_fn(mod_fn_str: str) -> typing.Callable:
     """
     Load a function from a module.
     :param mod_fn_str:
@@ -226,6 +276,8 @@ def get_fn(mod_fn_str:str) -> typing.Callable:
         raise AttributeError(f"{fn_name} is not a callable in {mod}")
 
     return fn
+
+
 def fake_fn(config: "OptClimConfigVn3", params: dict) -> pd.Series:
     """
     Wee test fn for trying out things.
@@ -243,7 +295,7 @@ def fake_fn(config: "OptClimConfigVn3", params: dict) -> pd.Series:
     max_p = pranges.loc['maxParam', :]
     scale_params = max_p - min_p
     keys = list(params.keys())
-    for k in keys: # remove parameters that do not have a range.
+    for k in keys:  # remove parameters that do not have a range.
         if k not in pranges.columns:
             params.pop(k)
     param_series = pd.Series(params).combine_first(config.standardParam())  # merge in the std params
@@ -265,7 +317,8 @@ def fake_fn(config: "OptClimConfigVn3", params: dict) -> pd.Series:
     result += tgt
     return result
 
-def seconds_to_isoduration(seconds: int|float) -> str:
+
+def seconds_to_isoduration(seconds: int | float) -> str:
     """
     Convert seconds to ISO-8601 duration.
     :param seconds: Seconds (int or float).
@@ -278,17 +331,17 @@ def seconds_to_isoduration(seconds: int|float) -> str:
     if seconds < 0:
         raise ValueError("Seconds must be positive")
     minutes, seconds = divmod(seconds, 60)
-    minutes = int(minutes) # convert minutes to an int
+    minutes = int(minutes)  # convert minutes to an int
     hours, minutes = divmod(minutes, 60)
     days, hours = divmod(hours, 24)
     result = 'P'
-    for value,prd,format in zip([days, hours, minutes, seconds],['D','H','M','S'],
-                                ['d','d',f'd',f'2.3f']):
+    for value, prd, format in zip([days, hours, minutes, seconds], ['D', 'H', 'M', 'S'],
+                                  ['d', 'd', f'd', f'2.3f']):
         if prd == 'H':
             result += 'T'
         if value > 0:
             result += f'{value:{format}}{prd}'
-        elif prd == 'S' and result == 'PT': # if no time then add 0S
+        elif prd == 'S' and result == 'PT':  # if no time then add 0S
             result += '0S'
         else:
             pass
@@ -299,7 +352,8 @@ def seconds_to_isoduration(seconds: int|float) -> str:
 
     return result
 
-def parse_isoduration( s: str | typing.List) -> typing.List|str:
+
+def parse_isoduration(s: str | typing.List) -> typing.List | str:
     """ Parse a str ISO-8601 Duration: https://en.wikipedia.org/wiki/ISO_8601#Durations
       OR convert a 6 element list (y m, d, h m s) into a ISO duration.
     Originally copied from:
@@ -309,7 +363,7 @@ def parse_isoduration( s: str | typing.List) -> typing.List|str:
     :return: 6 element list [YYYY,MM,DD,HH,mm,SS.ss] which is suitable for the UM namelists
     """
 
-    def get_isosplit(s:str, split):
+    def get_isosplit(s: str, split):
         if split in s:
             n, s = s.split(split, 1)
         else:
@@ -325,7 +379,7 @@ def parse_isoduration( s: str | typing.List) -> typing.List|str:
         split = s.split('T')
         if (len(split) == 1 and 'Y' in split[0]) or 'T' not in s:
             sYMD, sHMS = split[0], ''
-        elif len(split) == 1 :
+        elif len(split) == 1:
             sYMD, sHMS = '', split[0]
         else:
             sYMD, sHMS = split  # pull them out
@@ -357,10 +411,8 @@ def parse_isoduration( s: str | typing.List) -> typing.List|str:
     return durn
 
 
-
-
-def expand(filestr: str|pathlib.PurePath,
-           error:error_handle_types='fail') -> pathlib.Path:
+def expand(filestr: str | pathlib.PurePath,
+           error: error_handle_types = 'fail') -> pathlib.Path:
     """
 
     Expand any env vars, convert to path and then expand any user constructs.
@@ -369,14 +421,15 @@ def expand(filestr: str|pathlib.PurePath,
       If 'warn' then log a warning but return the path. If 'ignore' then just return the path.
     :return:expanded path
     """
-    if isinstance(filestr,pathlib.PurePath):
+    if isinstance(filestr, pathlib.PurePath):
         filestr = filestr.as_posix()
     if '%' in filestr:
         message = 'Expanding path with % in it. This may not work on all platforms. Use $ instead of % for env vars.'
         error_handle(message, error)
     path = os.path.expandvars(filestr)
     path = pathlib.Path(path).expanduser()
-    if '$' in str(path) :  # if there is still a $ or % in the path then an env var was not expanded. So raise an error or log a warning.
+    if '$' in str(
+            path):  # if there is still a $ or % in the path then an env var was not expanded. So raise an error or log a warning.
         message = f"Path {path} contains unexpanded env vars. Original string was {filestr}"
         error_handle(message, error)
     return path
@@ -425,7 +478,8 @@ def delDirContents(dir):
             elif entry.is_dir():  # directory -- remove everything in it.
                 shutil.rmtree(entry.path, onerror=errorRemoveReadonly)  # remove all directories
 
-def delete_dir_contents(direct:pathlib.Path):
+
+def delete_dir_contents(direct: pathlib.Path):
     """
     Recursively Delete the contents of a directory
     :param direct: path to directory to have all contents removed.
@@ -445,7 +499,7 @@ def delete_dir_contents(direct:pathlib.Path):
                 entry.chmod(stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)
             except WindowsError:  # dam windows.
                 entry.chmod(stat.S_IWRITE)
-            entry.unlink() # and remove it
+            entry.unlink()  # and remove it
         elif entry.is_dir():  # directory -- remove everything in it.
             shutil.rmtree(entry, onerror=errorRemoveReadonly)  # remove all directories
 
@@ -535,9 +589,7 @@ def genSeed(param: pd.Series) -> int:
     return seed
 
 
-
-
-def std_post_process_setup(parser: argparse.ArgumentParser) -> typing.Tuple[argparse.Namespace,  dict]:
+def std_post_process_setup(parser: argparse.ArgumentParser) -> typing.Tuple[argparse.Namespace, dict]:
     """
     Adds standard post-processing arguments to a parser and then parse the parser.
      Then read in the post_processing information
@@ -559,7 +611,8 @@ def std_post_process_setup(parser: argparse.ArgumentParser) -> typing.Tuple[argp
         dir -- path to directory where data to be read from.
         verbose -- level of verbosity.
     """
-    parser.add_argument("CONFIG", type=str,help="The Name of the Config file. Should be a json file with a postProcess entry.")
+    parser.add_argument("CONFIG", type=str,
+                        help="The Name of the Config file. Should be a json file with a postProcess entry.")
     parser.add_argument("-d", "--dir", type=str, help="The path to the input directory", default=os.getcwd())
     parser.add_argument("OUTPUT", nargs='?', default=None,
                         help="The name of the output file. Will override what is in the config file")
@@ -578,7 +631,7 @@ def std_post_process_setup(parser: argparse.ArgumentParser) -> typing.Tuple[argp
         output_file = args.OUTPUT
 
     args.OUTPUT = expand(output_file)  # expand users and env vars.
-    args.dir = expand(args.dir) # expand users and env vars
+    args.dir = expand(args.dir)  # expand users and env vars
 
     if args.verbose == 1:
         logging.basicConfig(force=True, level=logging.INFO)
@@ -591,7 +644,7 @@ def std_post_process_setup(parser: argparse.ArgumentParser) -> typing.Tuple[argp
     for key, value in post_process.items():
         my_logger.debug(f"{key}:{value}")
 
-    return args,  post_process
+    return args, post_process
 
 
 def setup_env():
@@ -608,6 +661,7 @@ def setup_env():
     else:
         my_logger.debug(f"OPTCLIMTOP already set to {os.environ['OPTCLIMTOP']}")
     return
+
 
 def backup_file(path: pathlib.Path,
                 ext: str = '.bak',
@@ -645,9 +699,10 @@ def backup_file(path: pathlib.Path,
 
     return backup_path
 
+
 def likely_text_file(file_path: pathlib.Path,
-                 sample_size: int = 1024,
-                 encoding: str = 'ascii') -> bool:
+                     sample_size: int = 1024,
+                     encoding: str = 'ascii') -> bool:
     """
     Guess if a file is likely a text file by checking if its sample_size bytes can be
       decoded to only printable or space chars.
@@ -668,9 +723,11 @@ def likely_text_file(file_path: pathlib.Path,
         # If decoding fails or the file cannot be read, assume it's not a text file
         return False
 
-try_symlinks = True # try to use symlinks
 
-def copy_files(in_direct:pathlib.Path,
+try_symlinks = True  # try to use symlinks
+
+
+def copy_files(in_direct: pathlib.Path,
                out_direct: pathlib.Path,
                files: list[pathlib.Path],
                symlinks: bool = False
@@ -686,7 +743,7 @@ def copy_files(in_direct:pathlib.Path,
 
     :return: Copied object and list of files copied. (which should be inheriting from model_base)
     """
-    global try_symlinks # have to be global vars
+    global try_symlinks  # have to be global vars
 
     out_direct.mkdir(parents=True, exist_ok=True)  # make it so we check it is not same as config dir
     if in_direct.samefile(out_direct):
@@ -695,7 +752,6 @@ def copy_files(in_direct:pathlib.Path,
     # remove all existing files in out_direct
     delete_dir_contents(out_direct)  # remove all existing files in direct
     my_logger.debug(f"Created and cleaned {out_direct}")
-
 
     files_to_copy = set(files)  # just the unique files.
     files_copied = []
@@ -706,36 +762,35 @@ def copy_files(in_direct:pathlib.Path,
             continue
 
         tgt_path = out_direct / file
-        tgt_path.parent.mkdir(parents=True, exist_ok=True) # make parent dirs
+        tgt_path.parent.mkdir(parents=True, exist_ok=True)  # make parent dirs
         if in_file.is_dir():
             # work recursively to copy directory
-            copy_files(in_file, tgt_path, symlinks=symlinks, files=list(p.relative_to(in_file) for p in in_file.glob('*')))
+            copy_files(in_file, tgt_path, symlinks=symlinks,
+                       files=list(p.relative_to(in_file) for p in in_file.glob('*')))
             files_copied.append(file)
-        else: # its a file
+        else:  # its a file
             if tgt_path.exists():  # should not happen as we have deleted everything in direct
                 raise FileExistsError(f"File {tgt_path} already exists")
             # rather complex logic to try and create symlink first, then use path.copy if available
             copy_file = True
-            if symlinks and try_symlinks: # want symlinks and no exception from trying symlinks yet
+            if symlinks and try_symlinks:  # want symlinks and no exception from trying symlinks yet
                 try:
-                    tgt_path.symlink_to(in_file) # need elev priv on windows so may fail
-                    copy_file = False # have worked so no need to copy
+                    tgt_path.symlink_to(in_file)  # need elev priv on windows so may fail
+                    copy_file = False  # have worked so no need to copy
                 except OSError as e:
-                    my_logger.warning(f"Could not create symlink from {in_file} to {tgt_path}. Error: {e}. Copying instead.")
-                    try_symlinks = False # no more trying symlinks.
-            if copy_file: # need to copy the file
-                if  hasattr(in_file, 'copy'):
-                    in_file.copy(tgt_path) # works on py 3.14+
+                    my_logger.warning(
+                        f"Could not create symlink from {in_file} to {tgt_path}. Error: {e}. Copying instead.")
+                    try_symlinks = False  # no more trying symlinks.
+            if copy_file:  # need to copy the file
+                if hasattr(in_file, 'copy'):
+                    in_file.copy(tgt_path)  # works on py 3.14+
                 else:
-                    shutil.copy2(in_file, tgt_path) #TODO remove this when we move to python 3.14+ (py pi :-)
-
-
+                    shutil.copy2(in_file, tgt_path)  #TODO remove this when we move to python 3.14+ (py pi :-)
 
             files_copied += [file]  # record relative path copied
             my_logger.debug(f"Copied  {in_file} to {tgt_path} ")
 
     return files_copied
-    
 
 
 # AI generated code for locking and then modified.
@@ -751,6 +806,7 @@ class ContextFileLock:
       with ContextFileLock("/path/to/config.json", timeout=30):
           # protected region
     """
+
     def __init__(self, target_path: pathlib.Path, timeout: float = 0.0,
                  poll_interval: typing.Optional[float] = None):
         """
@@ -759,17 +815,16 @@ class ContextFileLock:
         :param timeout: timeout interval in seconds. Must be >= 0.0
         :param poll_interval:  polling interval in seconds
         """
-        if timeout <0 :
+        if timeout < 0:
             raise ValueError(f"timeout={timeout} must be non-negative")
         if poll_interval is None:
-            poll_interval = max(timeout/10,0.01)
+            poll_interval = max(timeout / 10, 0.01)
         if poll_interval <= 0.0:
             raise ValueError(f"poll_interval={poll_interval} must be positive")
-        poll_interval:float # poll_interval is a float now as None been dealt with.
-        lock_path = target_path.with_suffix(target_path.suffix + ".lock") # lock file is target file with .lock suffix
-        self._lock = filelock.FileLock(lock_path, timeout=timeout,poll_interval=poll_interval)
+        poll_interval: float  # poll_interval is a float now as None been dealt with.
+        lock_path = target_path.with_suffix(target_path.suffix + ".lock")  # lock file is target file with .lock suffix
+        self._lock = filelock.FileLock(lock_path, timeout=timeout, poll_interval=poll_interval)
         self._acquired = False
-
 
     def __enter__(self):
         self._lock.acquire()
@@ -777,15 +832,12 @@ class ContextFileLock:
         my_logger.debug(f"Acquired lock for {self._lock.lock_file}")
         return self
 
-
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self._acquired:
             try:
                 self._lock.release()
             finally:
                 self._acquired = False
-
-
 
     @property
     def lockfile_path(self) -> pathlib.Path:

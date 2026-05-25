@@ -927,12 +927,13 @@ class testStudyConfig(unittest.TestCase):
         pth = pathlib.Path(tfile.name)
         dumpConfig = self.config.copy(filename=pth)
         dumpConfig.save()
+        cov = self.config.Covariances()
         optclimtop = os.environ.pop('OPTCLIMTOP', None) # undefine optclimtop. Readin should work!
         newConfig = StudyConfig.readConfig(pth)
         print(newConfig == dumpConfig)  # equality does a lot of magic!
         self.assertEqual(newConfig, dumpConfig)
         # check that the saved covariances are sensible.
-        cov = self.config.Covariances()
+
         cov2 = newConfig.Covariances()
         for k in ['CovIntVar', 'CovObsErr', 'CovTotal']:
             self.assertTrue(np.isclose(cov[k], cov2[k]).all(),msg=f"{k} not as expected")
