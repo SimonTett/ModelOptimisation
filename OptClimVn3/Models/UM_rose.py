@@ -233,6 +233,7 @@ class UM_rose(Model):
         :param suite_name: name of the suite.
          If not provided, it is derived from self.name (an X is prepended if the name starts with a character not allowed as start char by cylc).
           If local_root_dir is set in run_info and model_dir is relative to local_root_dir, the relative path from local_root_dir to the parent of model_dir is prepended to the suite name.
+          otherwise self.model_dir.parent/name is appended to the modified form of self.name
         :return: None
         """
         if suite_name is None: # work out suite_name
@@ -245,10 +246,14 @@ class UM_rose(Model):
 
             if (local_root_dir is not None)  and (
                 parent := self.model_dir.parent).is_relative_to(local_root_dir):
-
                 part = parent.relative_to(local_root_dir)
                 suite_name= (part/suite_name).as_posix()
                 my_logger.debug(f'Added {part} from {local_root_dir} giving suite_name =  {suite_name}')
+            elif local_root_dir is not None:
+                raise ValueError(f"model_dir: {self.model_dir.parent} is not relative to run_info.local_root_dir: {local_root_dir}")
+            else:
+                suite_name = self.model_dir.parent.name + '/' + suite_name
+
         self.suite_name = suite_name
 
     @staticmethod
@@ -295,53 +300,7 @@ class UM_rose(Model):
         return file, count_match
 
 
-    # utility fns.
-    def guess_prebuild(self, prebuild:typing.Union[bool,str,None]) -> typing.Optional[pathlib.PurePath]:
-        """
-        Guess or extract the prebuild dict. Will only work on archer2/puma. Paths should be specified on archer2 and exist on puma2.
-        :param self:
-        :param prebuild: bool or str or None.
-        :return: PurePath -- successfully guessed prebuild dct. (path is a dir) 
-                 None -- guess did not work.
-                 Consider removing this functionality as reference configs should have it in.
-        """
-        # ARCHER2
-        raise NotImplementedError('Too hard to support!')
 
-        # get the name from the reference and assume userid the same as this
-        if isinstance(prebuild, str):
-            prebuild = genericLib.expand(prebuild) # should be path on machine we are running on.
-            if prebuild.is_dir():
-                my_logger.debug(f'prebuild {prebuild} is a directory')
-                return self._puma_path(prebuild) # convert to puma path and return.
-            else:
-                my_logger.warning(f'prebuild {prebuild} is not a directory')
-                return None
-        elif not prebuild: # bool False or None
-           return None
-        else: # anything else so let main code handle.
-            pass
-
-        ref_suite_name = self.reference.name
-        # work out user and id.
-        # work out user id in reference if it is an abs path.
-        user_id = self.user_id
-        if self.reference.is_absolute():
-            # work out user-id from  path
-            user_id = self.reference.parts[4]
-        # try some directories...
-        for cpt in [ref_suite_name,f'{ref_suite_name}/runN']: # check possible places. runN for cylc8 as can have run dirs...
-            prebuild = pathlib.Path('/home/n02/n02-puma/') / f'{user_id}/cylc-run/{cpt}/share/fcm_make_um'
-            if prebuild.is_dir():
-                break # exit the loop
-        if (prebuild / 'extract').is_dir():  # dct  a dir which exists and had an extract.
-            my_logger.warning(f'Guessed prebuild on Archer2 to be {prebuild}')
-        else:
-            my_logger.warning(f'Prebuild: {prebuild / "extract"} is not a directory')
-            return None
-        # but actually need path on puma2. Sigh!
-        prebuild = self._puma_path(prebuild)  # get the puma path -- which is what is needed!
-        return prebuild
 
     def modify_model(self):
         """
@@ -417,34 +376,64 @@ class UM_rose(Model):
            if not will raise FileNotFoundError.
         :return: True if the model is valid, False otherwise.
         """
-        if not super().check():
+        # handy helper function
+        def parse_iso_value(value:str, name:str,
+                            parser_obj:parse.DurationParser|parse.TimePointParser):
+            """"
+            Parse an iso formated data/time or duration string raising helpful error messages.
+            :param value: The value to parse.
+            :param name: The name of the parameter.
+            :param parser_obj: The parser object. Should be a DurationParser for durations and a TimePointParser for datetimes.
+            :param expected:
+            """
+            if isinstance(parser_obj, parse.DurationParser):
+                expected = "Should be an ISO duration -- e.g. P1Y"
+            elif isinstance(parser_obj, parse.TimePointParser):
+                expected = "Should be an ISO time point -- e.g. P1Y"
+            else:
+                raise ValueError("parser_obs should be a TimePointParser or a DurationParser")
+            try:
+                return parser_obj.parse(value)
+            except metomi.isodatetime.exceptions.ISO8601SyntaxError as err:
+
+                raise ValueError(
+                    f"Invalid {name} value {value}. \n"
+                    f"Expected {expected}. Original error: {err}"
+                ) from err
+
+        if not super().check(): # try super class check first and if that fails then return False.
             return False  # failed so return False.
+
+
         ## UM_rose specific checks.
         # 1) Check that START_TIME, RUN_TARGET and RESUB_TIME are compatible. Won't work perfectly for 360 day calendar
-        # as then need to deal with 360 day calendar.
+        # as then need to deal with 360 day calendar. And only works if have atmos model
         # By converting them to Time Points and Durations we are also checking that
         # strings are valid.
-        # see what calendar is and if it is 360 day raise warning.
-        cal = self.calendar()  # get the calendar.
-        if cal != 'standard' :
-            my_logger.warning(f'''
-             model calendar is set to {cal}. This means that START_TIME, RUN_TARGET and RESUB_TIME 
-            may not be compatible with it. Please check these values. Fix code to deal with {cal} if get error''')
-        try:
-            start_time = parse.TimePointParser().parse(self.read_param('START_TIME'))
-            run_target = parse.DurationParser().parse(self.read_param('RUN_TARGET'))
-            resub_time = parse.DurationParser().parse(self.read_param('RESUB_TIME'))
-        except metomi.isodatetime.exceptions.ISO8601SyntaxError as err:  # catch any parsing errors.
-            raise ValueError(f'Problem parsing one of START_TIME, RUN_TARGET or RESUB_TIME. {err}')
-        # iterate from start_time  to start_time + run_target.
-        # Doing this because months are not the same (second) duration throughout the year...
-        end_time = start_time + run_target
-        time = start_time
-        while time < end_time:
-            time += resub_time
-        # Now time should be start_time + run_target
-        if time != end_time:
-            raise ValueError(f'RUN_TARGET {run_target} and RESUB_TIME {resub_time} are not compatible')
+        atmos_time_params =  ['START_TIME','RUN_TARGET','RESUB_TIME'] # time variables
+        parser = parse.TimePointParser()
+        parser_durn = parse.DurationParser()
+        parser_list = [parser,parser_durn,parser_durn]
+        times = self.read_params(atmos_time_params,fail=False)
+        if len(times) > 0 : # have atmos times  in workflow.
+            # see what calendar is and if it is 360 day raise warning.
+            cal = self.calendar()  # get the calendar.
+            if cal != 'standard':
+                my_logger.warning(f'''
+                 model calendar is set to {cal}. This means that START_TIME, RUN_TARGET and RESUB_TIME 
+                may not be compatible with it. Please check these values. Fix code to deal with {cal} if get error''')
+
+            start_time, run_target, resub_time = (parse_iso_value(times[n],n,parse_obj) for n,parse_obj in zip(atmos_time_params,parser_list))
+            # iterate from start_time  to start_time + run_target.
+            # Doing this because months are not the same (second) duration throughout the year...
+            end_time = start_time + run_target
+            time = start_time
+            while time < end_time:
+                time += resub_time
+            # Now time should be start_time + run_target
+            if time != end_time:
+                raise ValueError(f'RUN_TARGET {run_target} and RESUB_TIME {resub_time} are not compatible')
+
         # 2)  check the various scripts we want exist
         for script in [self.submit_script, self.continue_script,self.clean_script]:
             if not (script is None or script.is_file()):
@@ -456,26 +445,6 @@ class UM_rose(Model):
                                   f' Your data will not be copied into {self.model_dir/self.model_data_dir} and post-processing may fail.')
 
         return True
-
-    @staticmethod
-    def _puma_path(path: pathlib.Path) -> pathlib.PurePath:
-        """
-        Convert an archer2 path to a path on puma2 -- very specific to archer2/puma2.
-        :param path: path to convert. Must begin with /home/n02/n02-puma which will be converted to /home/n02/n02
-        If not then the path will be unmodified and retuned as a purePath.
-        :return: puma path as a purePath.
-        """
-        raise NotImplementedError('No longer needed')
-        if not isinstance(path, pathlib.Path):
-            raise ValueError(f'path {path} is not a pathlib.Path')
-        cpts = path.parts
-        # ARCHER2
-        if cpts[1:4] != ('home', 'n02', 'n02-puma'):  # ignoring root so works on windows...
-            my_logger.warning(f'path {path} does not start with /home/n02/n02-puma')
-            return pathlib.PurePath(path)
-        result = cpts[0:3] + tuple(['n02']) + cpts[4:]  # replace n02-puma with n02
-        result = pathlib.PurePath(*result)  # convert to a pure path.
-        return result
 
     def running(self,jid:typing.Optional[str]='NOJID') -> typing.Optional[str]:
         """
@@ -489,7 +458,7 @@ class UM_rose(Model):
 
 
 
-    def submit_cmd(self) -> typing.List[str]:
+    def submit_cmd(self) -> typing.List[str|pathlib.Path]:
         """"
         Generate the submission command. Overrides the super-class version.
 
@@ -508,7 +477,7 @@ class UM_rose(Model):
 
     def copyConfig(self, direct: pathlib.Path,
              extra_files: typing.Optional[list[pathlib.Path]] = None,
-             update_paths: bool = True) -> "Um_rose":
+             update_paths: bool = True) -> "UM_rose":
 
         """
         Copy method for UM_rose class. Calls the super-class method with extra files

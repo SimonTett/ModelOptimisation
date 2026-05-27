@@ -399,6 +399,10 @@ class testRunSubmit(unittest.TestCase):
         :return:
         """
         r = copy.deepcopy(self.extract_runSubmit)
+        # If UKESM model set local_root_dir to None to avoid checks for model_dir.relative_to
+        run_info = r.config.run_info()
+        if run_info['modelName'].startswith('UKESM'): # UKESM model.
+            run_info['local_root_dir']=None
         params = dict(CT=1e-4, EACF=0.5, ENTCOEF=3, ICE_SIZE=3e-5, RHCRIT=0.7, VF1=0.5, CW=2e-4)
         len_index = len(r.model_index)
 
