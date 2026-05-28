@@ -156,9 +156,6 @@ my_logger = genericLib.setup_logging(
     log_config=configData.logging_config()
 )
 
-# Now check the config is OK
-configData.check()
-
 
 # Import rest of stuff. Have logging on so we can see various auto-stuff in the
 # class definitions

@@ -5,7 +5,7 @@ export OMP_NUM_THREADS=1 # needed for login node to reproduce behaviour on worke
 pth=$(readlink -f "${BASH_SOURCE[0]}")
 export OPTCLIMTOP=$(dirname -- $(dirname -- "${pth}"))
 # rather convulted need to get parent directory of directory containting this file.
-echo "OPCLIMTOP: ${OPTCLIMTOP}"
+echo "OPTCLIMTOP: ${OPTCLIMTOP}"
 # load necessary modules
 module load PrgEnv-gnu
 module load cray-python/3.10.10
@@ -16,3 +16,11 @@ VN3=$OPTCLIMTOP/OptClimVn3
 export PYTHONPATH=$VN3:$VN3/Models:$VN3/support:$PYTHONPATH
 export PATH=$VN3/scripts:$PATH
 
+
+# --- 3) Project path directory ---
+# Files/folders live at ../ModelOptimisation/OptClimVn3/ relative to OPT_NEMO_ROOT
+export OPT_NEMO_ROOT=$(readlink -f "${OPTCLIMTOP}/../OptClim_NEMO")
+echo "OPT_NEMO_ROOT: ${OPT_NEMO_ROOT}"
+
+export PATH=$OPT_NEMO_ROOT/processing:$PATH
+export PYTHONPATH=$OPT_NEMO_ROOT:$PYTHONPATH

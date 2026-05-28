@@ -2,14 +2,13 @@
 [scheduling]
   [[ graph ]]
         {# Set OptClim Pre-Processing to start before the first run #}
-            R1 = optclim_pre => fcm_make_um
+            R1 = optclim_pre => install_ancil
 
         {# Set OptClim Post-Processing to start after the last cycle #}
-            R1//^+{{EXPT_RUNLEN}}-{{EXPT_RESUB}} = housekeeping => optclim_post 
+            R1/$ = analysis => create_json => fetch_diagnostics => optclim_post
 
-        {# Run optclim_um_fail if atmos_main fails; remove optclim_um_fail if it succeeds #}
+        {# Run optclim_fail if nemo_cice fails; remove optclim_fail if it succeeds #}
         #TODO make atmos_main something variable. For coupled model will want all sub-models to succeed..
-        # {{EXPT_RESUB}} =  atmos_main:fail? => optclim_um_fail # FIXME!!
   [[ queues ]] ## Limit number of jobs running at once in a suite. No queue would, I think, limit to 3 (5 for cylc 8).
         [[[ default ]]]
             limit = 2
@@ -17,14 +16,12 @@
 {# Stuff for actually running the tasks #}
 [runtime]
     [[OPTCLIM_HPC]]
-    inherit = HPC_SERIAL
-    execution time limit = PT10M
-    [[[environment]]]
-	 DATAM = {{DATAM}}
-	 OPTCLIMTOP = {{OPTCLIMTOP}}
+        inherit = HPC_SERIAL
+        execution time limit = PT10M
+        [[[environment]]]
+            DATAM = {{DATAM}}
+            OPTCLIMTOP = {{OPTCLIMTOP}}
 
-
-[runtime]
     [[optclim_pre]]
         inherit = OPTCLIM_HPC
         script = """
@@ -43,11 +40,23 @@
         """
         ## need more time for optclim_post as could be copying lots of files
         execution time limit = PT15M
-    [[optclim_um_fail]]
+    [[optclim_fail]]
         inherit = OPTCLIM_HPC
         script = """
         . {{PY_ENV_SETUP}} # setup the environment
         {{OPTCLIM_SET_STATUS_SCRIPT}} {{OPTCLIM_ARGS}} {{MODEL_CONFIG}} FAILED
         """
+    [[create_json]]
+        inherit = None, LOTUS_DIAGNOSTIC_RESOURCE
+        script = "rose task-run --verbose --command-key=create_json"
+        [[[environment]]]
+            ROSE_TASK_APP = analysis
+            ROSE_APP_OPT_CONF_KEYS =
+
+    [[fetch_diagnostics]]
+       inherit = None, FETCH_FROM_JASMIN_RESOURCE
+       script = "rose task-run --verbose --command-key=fetch"
+       [[[environment]]]
+            ROSE_TASK_APP = analysis
 
 

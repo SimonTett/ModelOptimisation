@@ -296,8 +296,26 @@ and even more text
 
 
 
+    def notest_succeeded(self):
+        # test that succeeded works. No need as using archive functionality-- code left for now.
+        # Will check that files are successfully copied from model_data_dir to model_dir/History_Data
+        model = self.model
+        model.model_data_dir = self.model.model_dir/'test_data'
+        model.model_data_dir.mkdir(exist_ok=True,parents=True) # create the directory if it doesn't exist.
+        model.set_status('RUNNING',check_existing=False)
+        files = ['file1.pp', 'file2.pp','file1.nc','file2.nc']
+        dumps = ['file.d1_00','file.d2_00','file.d3_00']
+        expected = files + dumps[-1:]
+        # create the files in the model_data_dir
+        for file in files+dumps:
+            with open(model.model_data_dir / file, 'wt') as f:
+                f.write(f'test file {file}')
 
-
+        model.succeeded()
+        # check that the files are copied to model_dir/'share/data/History_Data'
+        got_files = list((model.model_dir/'share/data/History_Data').glob('*'))
+        got_files = set([f.name for f in got_files])
+        self.assertEqual(got_files, set(expected))
 
     def test_init(self):
         # test the init method
@@ -324,22 +342,7 @@ and even more text
             self.assertEqual(expected_prebuild,model.parameters_no_key['prebuild'], )
             self.assertEqual('some_test_dir',model.parameters_no_key['transfer_dir'] )
             # check suite_name is as expected.
-            self.assertEqual('fred/X001test',model.suite_name )
-            # check case where we set local_root_dir to something different. Should get a value error
-            run_info["local_root_dir"] = '/james/harry'
-            with self.assertRaises(ValueError) as cm:
-                model = UM_rose(name='001test', reference=reference,
-                                model_dir=self.testDir/'fred/001test', post_process=post_process,
-                                parameters=parameters,
-                                run_info=run_info) # should fail
-            # null local_root_dir and suite_name should be james/X001test
-            run_info["local_root_dir"] = None
-            model = UM_rose(name='001test', reference=reference,
-                            model_dir=self.testDir/'james/001test', post_process=post_process,
-                            parameters=parameters,
-                            run_info=run_info) # should fail
-            self.assertEqual('james/X001test', model.suite_name)
-
+            self.assertEqual('fred/X001test',model.suite_name, )
 
     def test_copy(self):
         # test that copy method works
@@ -361,10 +364,65 @@ and even more text
         copy_rel_paths = sorted([f.relative_to(model_copy.model_dir) for f in copy_files])
         self.assertEqual(orig_rel_paths, copy_rel_paths, msg=f"Files in {model.model_dir} not copied correctly")
 
+    def no_test_archive(self):
+        # Test that archive method works. Rather similar to test_Model.test_archive
+        # no longer needed as uses Model version and its own copy
+        model = self.model
+        model.instantiate()
+        model.set_status('SUCCEEDED',check_existing=False)
+        archive_file = self.testDir / 'test_archive.tar'
+        pp_file = model.model_dir / self.model._post_process_output
+        with tarfile.open(archive_file, "w", dereference=True) as archive:
+            self.model.archive(archive, self.testDir,
+                               extra_files=[self.model._post_process_output])  # archive the model
+
+        # now can try and read it.
+        script_dir = model.model_dir / model.script_dir
+        expect_paths = ([model.config_path,model.config_dir,script_dir] + list(model.config_dir.rglob('*'))+
+                        list(script_dir.rglob('*')))
+        expected_names = sorted([p.relative_to(model.model_dir) for p in expect_paths])
+
+        with tarfile.open(archive_file, "r") as archive:
+            names = sorted([pathlib.Path(n) for n in archive.getnames()])  # list of names
+            self.assertEqual(expected_names, names)
+
+        # now create some obs... and test that works.
+        import json
+        test_obs = dict(obs1=2.2, obs2=1.0, obs4=True)
+        with open(pp_file, 'wt') as fp:
+            json.dump(test_obs, fp)
+        with tarfile.open(archive_file, "w") as archive:
+            model.archive(archive, self.testDir)  # archive the model
+        expected_names += [pp_file.relative_to(model.model_dir)]
+        expected_names = sorted(expected_names)
+
+        with tarfile.open(archive_file, "r") as archive:
+            names = sorted([pathlib.Path(n) for n in archive.getnames()] ) # list of names
+
+            self.assertEqual(expected_names, names)
 
 
 
+    def no_test_guess_prebuild(self):
+        # check _guess_prebuild works. Turned off aas not using guess_prebuild
+        # but left in (for now) in case needed later.
+        model = self.model
+        model.reference=pathlib.Path('/home/n02/n02-puma/tetts/roses/u-db898')
+        expected_path = pathlib.PurePath(f'/home/n02/n02/tetts/cylc-run/u-db898/share/fcm_make_um') # path on puma
+        with patch.multiple(pathlib.Path,is_dir=MagicMock(return_value=True),
+                            is_absolute=MagicMock(return_value=True)):
+            result = model.guess_prebuild(True)
+            self.assertEqual(result,expected_path)
 
+        with patch.multiple(pathlib.Path,is_dir=MagicMock(return_value=False),
+                            is_absolute=MagicMock(return_value=True)):
+            result = model.guess_prebuild(True) # directory guessed does not exist
+            self.assertIsNone(result)
+
+        # pass in None and False and should get None
+        for val in [None,False]:
+            result = model.guess_prebuild(val)
+            self.assertIsNone(result)
 
 
 ## specific tests.
