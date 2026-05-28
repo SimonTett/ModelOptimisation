@@ -597,6 +597,36 @@ class Model(ModelBaseClass, journal):
                                 dirs_exist_ok=True)  # copy from reference.
                 my_logger.debug(f"Copied {self.reference} to {direct}")
 
+    def check_status(self,new_status: type_status,
+                     check_existing: bool = True,
+                     check_allowed: bool = True
+                     ) -> bool:
+        """
+        check new_status is OK
+        :param new_status: new status for model
+        :param check_existing: Check current status is as expected.
+        :param check_allowed: Check that new status is allowed.
+
+        If both set to False then no checking will actually be done
+
+        Will raise an error if there is a problem.
+
+        """
+
+        if check_allowed:
+            if new_status not in self.allowed_status:
+                raise ValueError(f"Status {new_status} should be one of " + " ".join(self.allowed_status))
+            if new_status == 'CREATED':
+                raise ValueError(f"Do not set status to CREATED")
+
+        if check_existing:
+            expected_status = self.status_info[new_status]
+            if self.status not in expected_status:
+                raise ValueError(
+                    f"Expected current status {self.status}  to be one of " + " ".join(
+                        expected_status) + f" as changing to {new_status}")
+        return True
+
     def set_status(self, new_status: type_status,
                    check_existing: bool = True,
                    check_allowed: bool = True) -> None:
@@ -608,19 +638,10 @@ class Model(ModelBaseClass, journal):
         :param new_status: new status for model
         :param check_existing: Check current status is as expected.
         :param check_allowed: Check that new status is allowed.
+
         """
+        ok = self.check_status(new_status, check_existing, check_allowed)
 
-        if check_allowed:  # only check
-            if new_status not in self.allowed_status:
-                raise ValueError(f"Status {new_status} should be one of " + " ".join(self.allowed_status))
-            if new_status == 'CREATED':
-                raise ValueError(f"Do not set status to CREATED")
-
-        expected_status = self.status_info[new_status]
-        if check_existing and (self.status not in expected_status):
-            raise ValueError(
-                f"Expected current status {self.status}  to be one of " + " ".join(
-                    expected_status) + f" as changing to {new_status}")
         my_logger.debug(f"Changing status from {self.status} to {new_status}")
         self.update_history(f"Status set to {new_status} in {self.model_dir}")
         self.status = new_status
@@ -637,6 +658,9 @@ class Model(ModelBaseClass, journal):
         Also runs install_remote using run_info['remote_machine'] and run_info['remote_dir'] if they are not None.
         :return:
         """
+        # check we are OK to instantiate
+        status:type_status = 'INSTANTIATED'
+        self.check_status(status)
         self.fake = self.fake or fake
         # if fake is True then we are faking it unless we are already faking it!
         self.create_model()  # create model
@@ -663,7 +687,7 @@ class Model(ModelBaseClass, journal):
             self.fake = True  # we are faking now!
         # possibly do remote_install
 
-        self.set_status('INSTANTIATED')
+        self.set_status(status)
 
     def modify_model(self):
         """
@@ -739,6 +763,7 @@ class Model(ModelBaseClass, journal):
          model.submit_model()
         """
         status: type_status = 'SUBMITTED'
+        self.check_status(status)  # check we are allowed to submit.
         pp_jid = None  # unless we do something will have no pp job.
 
         # deal with fake_function.
@@ -831,6 +856,8 @@ class Model(ModelBaseClass, journal):
            This allows this method to be called from versions that do more.
         :return: current job id
         """
+        status:type_status = 'RUNNING'
+        self.check_status(status)  # check we are allowed to set to running.
         if not self.fake and (jid is None):  # not faking and don't have a jid
             my_jid = self.engine.my_job_id()
             my_logger.debug(f"My jobid is {my_jid}")
@@ -840,7 +867,7 @@ class Model(ModelBaseClass, journal):
 
         self.model_jids.append(my_jid)
 
-        self.set_status('RUNNING')
+        self.set_status(status)
         return my_jid
 
     def guess_failed(self) -> bool:
@@ -894,7 +921,7 @@ class Model(ModelBaseClass, journal):
         """
 
         status: type_status = 'SUCCEEDED'
-
+        self.check_status(status)
         if self.pp_jid is not None:
             # release_job the post-processing job.
             cmd = self.engine.release_job(self.pp_jid)
@@ -924,6 +951,7 @@ class Model(ModelBaseClass, journal):
         :return: output from post-processing.
         """
         status: type_status = 'PROCESSED'
+        self.check_status(status)  # check we are allowed to set to processed.
         if update:  # handle updating.
             if self.status != 'PROCESSED':
                 raise ValueError(f"Updating and status is {self.status} != PROCESSED")
@@ -1379,6 +1407,8 @@ class Model(ModelBaseClass, journal):
             parameters=dict(rand_init=random())
             super().perturb(parameters)
         """
+        status:type_status = 'PERTURBED'
+        self.check_status(status)
         if parameters is None:
             parameters = {}
             my_logger.debug("Setting perturb parameters to empty dict")
@@ -1387,7 +1417,7 @@ class Model(ModelBaseClass, journal):
         self.set_params(backup=False)  # set parameter values but with no backup done.
         self.update_history(f'Perturbed using {parameters}')  # so at least we can find out what was done
         self.perturb_count += 1
-        self.set_status('PERTURBED')
+        self.set_status(status)
         my_logger.debug(f" parameters_no_key is now {self.parameters_no_key}")
 
     @classmethod
