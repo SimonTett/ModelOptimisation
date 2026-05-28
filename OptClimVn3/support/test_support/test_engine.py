@@ -25,11 +25,7 @@ if (stat.returncode == 0) and 'archer2.ac.uk' in stat.stdout:
         raise ValueError("On Archer2 but PROJECT_CODE env var not set")
     args.update(
         run_queue='serial', # running in the serial q
-<<<<<<< Updated upstream
         run_code=run_code, # project code
-=======
-        run_code='n02-promote', # running with no2-promote TODO
->>>>>>> Stashed changes
         extra_args=['--qos=serial'] # and need to set qos
     )
 

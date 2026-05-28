@@ -38,7 +38,7 @@ import xarray  # TODO -- consider removing dependence on xarray
 
 __version__ = '4.0.0'
 
-from numpy.ma.core import diagonal
+
 
 import genericLib
 
@@ -2112,7 +2112,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
        return pandas series or dataframes as appropriate.
     """
 
-    def __init__(self, config: dictFile, check: bool = True):
+    def __init__(self, config: dictFile, check: bool = False):
         """
 
         Call super class __init__ method and then add comment_end attribute
@@ -2134,7 +2134,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
             if isinstance(v, dict) and 'dataframe' in v:  # we encoded a dataframe when we wrote it. So decode it
                 self.Config['_covariance_matrices'][k] = self.dict2cov(v)
                 my_logger.debug(f"covariance {k} converted to dataframe")
-        cov = self.Covariances()  #  read in covariances in case we don't have them.
+
         if check:
             self.check()  # check we are OK
 
@@ -2233,8 +2233,12 @@ class OptClimConfigVn3(OptClimConfigVn2):
 
         # convert covariance matrices to json so we can write them out.
         # Will need to convert back on read.
+
+        cov = self.getv('_covariance_matrices')  # Covariance matrix
+        if cov is None: # have not generated covariances (for saving).
+            self.Covariances()  # generate them and save them in the config.
         dct = self.Config.copy()
-        cov = dct['_covariance_matrices']  # saving on typing!
+        cov = dct.get('_covariance_matrices')  # Covariance matrix
         json_cov = cov.copy()
         for k, v in cov.items():
             if isinstance(v, pd.DataFrame):
@@ -2542,7 +2546,9 @@ class OptClimConfigVn3(OptClimConfigVn2):
 
         return result
 
-    def logging_config(self, cfg: typing.Optional[dict] = None) -> typing.Optional[dict]:
+    def logging_config(self,
+                       cfg: typing.Optional[dict] = None,
+                       remove_file_handlers:bool = False) -> typing.Optional[dict]:
         """
         Extract logging configuration from studyConfig.
         You can pass this straight into logging.config.dictConfig() to set up logging.
@@ -2552,6 +2558,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
         This is designed for codes that make use of the library.
 
         :param: cfg -- if not None set the value of logging to this value.
+        :param: remove_file_handlers -- remove any file handlers.
           
         """
         if cfg is not None:  # got something so use it to set the value
@@ -2563,6 +2570,18 @@ class OptClimConfigVn3(OptClimConfigVn2):
             return None
 
         cfg = self.strip_comment(cfg)
+        # potentially remove file handlers
+
+        if remove_file_handlers:
+            loggers = cfg['loggers']
+
+            keys = list(loggers.keys())
+            for k in keys:
+                handlers = loggers[k]['handlers']
+                loggers[k]['handlers'] = [h for h in handlers if
+                                          cfg['handlers'][h].get('filename') is None]
+                # remove file loggers.. Defined as when the handler has a filename property so keep those which don't!
+
         return cfg
 
     def beginParam(self,
