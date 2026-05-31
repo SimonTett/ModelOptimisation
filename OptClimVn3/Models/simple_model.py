@@ -8,33 +8,25 @@ import fileinput
 import json
 import re
 import platform
+
 from Model import Model
-import engine  # need the engine!
 import pathlib
 import copy
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 class simple_model(Model):
-    StudyconfigPath:pathlib.Path
     # simple model.. Need to have personal version of submit_cmd, modify_model, perturb and set_params
     # all other methods are as Model.
 
-    def __init__(self, *args, study= None, **kwargs): # study should be a study but study imports model.
+    def __init__(self, *args, **kwargs): # study should be a study but study imports model.
         """
         simple_model init -- calls super class -- see Model.__init__ for documentation on these.
         :param args:  arguments
-        :param study: a Study.
         :param kwargs: keyword arguments
-        This makes use of study and stores the path to the configuration in self.StudyConfig_path.
-        If study is None then self.StudyConfig_path is None.
+        kwargs & args are passed to the super class.
         """
+        super().__init__(*args,  ** kwargs)  # call the super class init.
 
-        super().__init__(*args, study=study, **kwargs)  # call the super class init.
-        self.StudyConfig_path = None  # setup StudyConfig_path attribute.
-        if study is not None:
-            self.StudyConfig_path = study.config.fileName()  # store the path to the config.
-            if not self.StudyConfig_path.is_absolute(): # not absolute so make it so
-                self.StudyConfig_path = pathlib.Path.cwd()/self.StudyConfig_path
         self.submit_script = pathlib.PurePath('run_simple_model.py')
         self.continue_script = self.submit_script # continue is just submit
 

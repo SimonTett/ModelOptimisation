@@ -237,7 +237,6 @@ class SubmitStudy(Study, model_base, journal):
         model_name = param_dir.pop('model_name', self.model_name)
         post_process = self.config.getv('postProcess')
         run_info = self.config.run_info()
-        study = self.to_study()  # convert SubmitStudy to Study
         model = Model.model_init(model_name, name=name,
                                  reference=reference,
                                  reference_name=reference_name,
@@ -245,7 +244,7 @@ class SubmitStudy(Study, model_base, journal):
                                  config_path=config_path,
                                  parameters=param_dir,
                                  post_process=post_process,
-                                 study=study,
+                                 study_config_path=self.config.fileName(),
                                  engine=self.engine,
                                  run_info=run_info
                                  )

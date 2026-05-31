@@ -81,6 +81,7 @@ from namelist_var import NamelistVar, GroupConfig, type_allowed_fortran
 from engine import abstractEngine
 import shlex
 
+
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 
 type_status = typing.Literal['CREATED', 'INSTANTIATED', 'SUBMITTED',
@@ -117,6 +118,7 @@ class Model(ModelBaseClass, journal):
     _post_process_output: typing.Optional[str]
     configs: GroupConfig
     remote: dict[str, str | pathlib.PurePath]
+    StudyConfig_path:typing.Optional[pathlib.Path]
 
     """
     Abstract model class. Any class that inherits from this will have name lookup.
@@ -144,6 +146,7 @@ class Model(ModelBaseClass, journal):
         pertub_count -- no of times model has been perturbed.
         submission_count -- no of times model has been submitted.
         remote -- dict containing info on remote machine and directory if needed. Keys are machine and directory respectively.
+        StudyConfig_path -- path to StudyConfig.
         
         Private attributes:
           _post_process_input -- name of input file for post-procesing
@@ -203,8 +206,7 @@ class Model(ModelBaseClass, journal):
                  run_info: typing.Optional[dict] = None,
                  fake: bool = False,
                  config_dir: typing.Optional[pathlib.Path] = None,
-                 study: typing.Optional["Study"] = None):
-        # TODO add in verbose option so that set_model_status script has verbose options provided in.
+                 study_config_path:typing.Optional[pathlib.Path] = None,):
         """
         Initialize the Model class.
 
@@ -240,10 +242,8 @@ class Model(ModelBaseClass, journal):
             runUser -- the UserId to run the job with.
 
         :param fake -- if True then model is faked. No submission will be done.
-        :param study -- a study. This is there in case model wants to interrogate it at init time.
-        It is recommended that study **not** be stored as an attribute.
-           If you do take great care and worry about recursion as study stores models.
-           Note that this implementation does not take use study
+        :param study_config_path -- path to StudyCon. This is there in case model wants to interrogate it at init time.
+
         """
         # set up default values.
 
@@ -278,6 +278,12 @@ class Model(ModelBaseClass, journal):
             raise ValueError("config_dir must be specified if model_dir is None")
         if status not in self.allowed_status:
             raise ValueError(f"Status {status} not in " + " ".join(self.allowed_status))
+
+        self.StudyConfig_path = None  # setup StudyConfig_path attribute.
+        if study_config_path is not None:
+            self.StudyConfig_path = study_config_path # store the path to the config.
+            if not self.StudyConfig_path.is_absolute(): # not absolute so make it so
+                self.StudyConfig_path = pathlib.Path.cwd()/self.StudyConfig_path
 
         # attributes to do with post-processing
         self.post_process = {}  # where all post-processing info stored.
@@ -583,19 +589,19 @@ class Model(ModelBaseClass, journal):
         """
         if direct is None:
             direct = self.config_dir
-        direct.mkdir(parents=True, exist_ok=True)  # create the directory if needed.
-        my_logger.debug(f"Created {direct}")
-        if not self.fake:
+        if (not self.fake) and copy_ref:
+            direct.mkdir(parents=True, exist_ok=True)  # create the directory if needed.
+            my_logger.debug(f"Created {direct}")
             # empty the directory (if we are creating)
             for file in direct.iterdir():
                 if file.is_dir():
                     shutil.rmtree(file)
                 else:
                     file.unlink()
-            if copy_ref:
-                shutil.copytree(str(self.reference), str(direct), symlinks=True,
-                                dirs_exist_ok=True)  # copy from reference.
-                my_logger.debug(f"Copied {self.reference} to {direct}")
+            # now copy the reference config in
+            shutil.copytree(str(self.reference), str(direct), symlinks=True,
+                            dirs_exist_ok=True)  # copy from reference.
+            my_logger.debug(f"Copied {self.reference} to {direct}")
 
     def check_status(self,new_status: type_status,
                      check_existing: bool = True,
@@ -1258,7 +1264,7 @@ class Model(ModelBaseClass, journal):
         return value
 
     def gen_params(self,
-                   parameters: typing.Optional[dict] = None) -> dict[NamelistVar:type_allowed_fortran]:
+                   parameters: typing.Optional[dict] = None) -> dict[NamelistVar,type_allowed_fortran]:
         """
         Compute dict of namelists/values that will be used to set the parameters.
         :param parameters: If None use self.parameters augmented by self.parameters_no_key.

@@ -51,7 +51,7 @@ class Test_simple_model_pars_json(unittest.TestCase):
         params = dict(VF1=2.3,RHCRIT=0.5)
         model = simple_model('model002',reference=self.refDir,engine=eng,
                                           model_dir=self.submit.rootDir/'model002',
-                                          study=self.submit.to_study(),parameters=params)
+                                          study_config_path=self.submit.config.fileName(),parameters=params)
         self.model = model
 
 
@@ -69,7 +69,7 @@ class Test_simple_model_pars_json(unittest.TestCase):
         """
         model = simple_model('model001',reference=self.refDir,
                                           model_dir=self.submit.rootDir/'model001',
-                                          study=self.submit.to_study())
+                                          study_config_path=self.submit.config.fileName())
         self.assertEqual(model.StudyConfig_path,self.submit.config.fileName())
         model = simple_model('model002',reference=self.refDir,
                                           model_dir=self.submit.rootDir/'model002')
@@ -100,7 +100,7 @@ class Test_simple_model_pars_json(unittest.TestCase):
         model = simple_model('model001',reference=self.refDir,
                                         run_info=dict(submit_engine='SGE'),
                                         model_dir=self.submit.rootDir/'model001',
-                                        study=self.submit.to_study(),parameters=params)
+                                        study_config_path=self.submit.config.fileName(),parameters=params)
 
         shutil.copytree(self.refDir,model.model_dir)
         model.set_params(params)

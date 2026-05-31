@@ -4,7 +4,7 @@ import sys
 import unittest
 
 import genericLib
-import generic_json
+
 import unittest.mock
 import SubmitStudy
 import tempfile
@@ -44,7 +44,8 @@ class Test_simple_model(unittest.TestCase):
         params = dict(vf1=2.3,rhcrit=0.5)
         model = simple_model('model002',reference=self.refDir,engine=eng,
                                           model_dir=self.submit.rootDir/'model002',
-                                          study=self.submit.to_study(),parameters=params)
+                                          study_config_path=self.submit.config.fileName(),
+                             parameters=params)
         self.model = model
 
 
@@ -61,8 +62,8 @@ class Test_simple_model(unittest.TestCase):
         :return:
         """
         model = simple_model('model001',reference=self.refDir,
-                                          model_dir=self.submit.rootDir/'model001',
-                                          study=self.submit.to_study())
+                                        study_config_path = self.submit.config.fileName(),
+                                          model_dir=self.submit.rootDir/'model001')
         self.assertEqual(model.StudyConfig_path,self.submit.config.fileName())
         model = simple_model('model002',reference=self.refDir,
                                           model_dir=self.submit.rootDir/'model002')
@@ -92,8 +93,7 @@ class Test_simple_model(unittest.TestCase):
         params = self.model.parameters
         model = simple_model('model001',reference=self.refDir,
                                         run_info=dict(submit_engine='SGE'),
-                                        model_dir=self.submit.rootDir/'model001',
-                                        study=self.submit.to_study(),parameters=params)
+                                        model_dir=self.submit.rootDir/'model001',parameters=params)
         model.model_dir.mkdir(exist_ok=True,parents=True)
         model.set_params(params)
         with open(model.model_dir/'params.json','r') as fp:

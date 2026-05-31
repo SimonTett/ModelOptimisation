@@ -369,8 +369,10 @@ class UM_rose(Model):
         """
         Check the model. This is a UM_rose specific version of check.
         Calls the superclass method and then does the following checks:
-          1) Check that START_TIME, RUN_TARGET and RESUB_TIME are compatible. 
-             RUN_TARGET is an integer multiple of RESUB_TIME. Complication is if RESUB_TIME is in months...
+        If START_TIME, RUN_TARGET and RESUB_TIME exist then
+          1) Check they are parsable
+          2) Check they are compatible.
+             n*RUN_TARGET+START_TIME should be STATRT_TIME+RESUB_TIME.
         Will raise ValueError if any of these fail.
         2) Check that the submit and continue scripts are files.
            if not will raise FileNotFoundError.
@@ -389,7 +391,7 @@ class UM_rose(Model):
             if isinstance(parser_obj, parse.DurationParser):
                 expected = "Should be an ISO duration -- e.g. P1Y"
             elif isinstance(parser_obj, parse.TimePointParser):
-                expected = "Should be an ISO time point -- e.g. P1Y"
+                expected = "Should be an ISO time point -- e.g. 2022-01-12"
             else:
                 raise ValueError("parser_obs should be a TimePointParser or a DurationParser")
             try:
@@ -602,7 +604,7 @@ class UM_rose_cylc8(UM_rose):
             if not config_directory.is_absolute(): # need abs path
                 config_directory = pathlib.PurePath('~')/config_directory
         else:
-            # this code unlikely to be well tested as on archer2 run cylc from pum!
+            # this code unlikely to be well tested as on archer2 run cylc from puma!
             config_directory = self.config_dir
             if not config_directory.is_absolute(): # need abs path
                 config_directory = pathlib.Path.cwd()/config_directory
@@ -613,6 +615,9 @@ class UM_rose_cylc8(UM_rose):
             if script_type == 'clean':
                 f.write(f'cylc stop --now --now --max-polls=100 {self.suite_name}\n')
                 f.write(f'cylc clean --yes {self.suite_name}\n')
+                # TODO cylc clean does not appear to remove the linked work directory
+                # Estanislao thinks there is a ROSE variable which can always be queried here.
+                # and then added as a rm -rf {which is rather risky)
 
             else:
                 cmd = ['cylc']
