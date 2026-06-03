@@ -615,9 +615,7 @@ class UM_rose_cylc8(UM_rose):
             if script_type == 'clean':
                 f.write(f'cylc stop --now --now --max-polls=100 {self.suite_name}\n')
                 f.write(f'cylc clean --yes {self.suite_name}\n')
-                # TODO cylc clean does not appear to remove the linked work directory
-                # Estanislao thinks there is a ROSE variable which can always be queried here.
-                # and then added as a rm -rf {which is rather risky)
+
 
             else:
                 cmd = ['cylc']
