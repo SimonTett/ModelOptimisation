@@ -1,4 +1,5 @@
 #/bin/env bash
+export PYTHONPATH=$PYTHONPATH:$OPTCLIMTOP/OptClimVn3/test_OptClimVN3:$OPTCLIMTOP/OptClimVn3/Models/test_Models
 # run all tests. First run . setup to set up search paths.
 for f in OptClimVn3/Models/test_Models/test_*.py  OptClimVn3/test_OptClimVN3/test_*.py OptClimVn3/support/test_support/test_*.py
 do 

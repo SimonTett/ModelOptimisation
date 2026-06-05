@@ -11,7 +11,7 @@
         #TODO make atmos_main something variable. For coupled model will want all sub-models to succeed..
   [[ queues ]] ## Limit number of jobs running at once in a suite. No queue would, I think, limit to 3 (5 for cylc 8).
         [[[ default ]]]
-            limit = 2
+            limit = 4
             # limit to two jobs running at once... No obvious way of having a limit only for serial q's.
 {# Stuff for actually running the tasks #}
 [runtime]
@@ -52,11 +52,13 @@
         [[[environment]]]
             ROSE_TASK_APP = analysis
             ROSE_APP_OPT_CONF_KEYS =
+            OPTCLIM_SIMULATED_OBS_PATH = {{ OPTCLIM_SIMULATED_OBS_PATH }}
 
     [[fetch_diagnostics]]
        inherit = None, FETCH_FROM_JASMIN_RESOURCE
        script = "rose task-run --verbose --command-key=fetch"
        [[[environment]]]
             ROSE_TASK_APP = analysis
+            OPTCLIM_SIMULATED_OBS_PATH = {{ OPTCLIM_SIMULATED_OBS_PATH }}
 
 
