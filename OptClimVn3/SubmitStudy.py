@@ -823,6 +823,23 @@ class SubmitStudy(Study, model_base, journal):
             self.dump_config() # and write ourselves out
         return models
 
+    def reload_obs(self) -> list[Model]:
+        """
+        Reload the observations for all processed models.
+        This is for dealing with cases where the observations have been updated.
+        :return: list of models that were reloaded.
+        """
+        my_logger.warning("Needs test cases written")
+        models = self.processed_models()
+        for model in models:
+            path = model.model_dir/model._post_process_output # TODO -- should really be part of read_simulated_obs
+            model.read_simulated_obs(path)
+            model.update_history("Reloaded observations")
+        my_logger.info(f"Reloaded obs for {len(models)} models")
+        self.update_history(f"Reloaded obs for {len(models)} models")
+        self.dump_config(dump_models=True) # and write ourselves AND modified models out
+        return models
+
     def resub_status(self) -> typing.Optional[str]:
         """"
         Get the status of the next iteration job.

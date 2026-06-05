@@ -566,6 +566,20 @@ class runSubmit(SubmitStudy):
         self._logical_info.cost[name] = (obs ** 2).sum() / n_obs  # store the avg cost
         return obs
 
+    def xxxx_reload_obs(self) -> list[Model]:
+        """
+        Reload observations into models and then update the logical info
+        :return: list of models that were reloaded.
+        """
+        raise NotImplementedError("reload_obs not implemented and no test cases written.")
+        models = super().reload_obs() # call the super class.
+        # now to update the logical_obs info.
+        # but that requires some deep work in logical_obs
+        self._logical_info.update_obs()
+        self._logical_info.update_params()  # update the parameters as well as obs as they may have changed.
+        return models
+
+
     @classmethod
     def from_dict(cls, dct: dict) -> runSubmit:
         """
