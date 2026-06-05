@@ -1,4 +1,4 @@
-#!/bin/env bash
+#!/usr/bin/env bash
 # run all tests. First run . setup to set up search paths.
 # Check that OPTCLIMTOP is set. If not, exit and ask user to set it.
 if [[ -z "$OPTCLIMTOP" ]]; then
