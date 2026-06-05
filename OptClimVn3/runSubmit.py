@@ -183,8 +183,10 @@ class LogicalInfo(model_base):
         :param model_index: dict of models indexed by key.
         :return: Nada as models updated inplace.
         """
+        names_to_remove=[] # list of names to remove if we do not find a model.
         for name, model_list in self.models.items():
             final_model_list = []
+            got_model =True
             for model_or_key in model_list:
                 if update_models:
                     key = runSubmit.key_for_model(model_or_key)
@@ -193,9 +195,30 @@ class LogicalInfo(model_base):
                 try:
                     final_model_list += [model_index[key]]  # this is a model
                 except KeyError:
-                    raise ValueError(f"Key {key} not found in model_index")
+                    my_logger.warning(f"Key {key} not found in model_index. Will delete {name}")
+                    names_to_remove+=[name]
+                    
+                    #raise ValueError(f"Key {key} not found in model_index")
             # done dealing with models for this logical name.
-            self.models[name] = final_model_list  # update models to be Model objects.
+            if final_model_list: # got some models for this name?
+                self.models[name] = final_model_list  # update models to be Model objects.
+
+
+        for name in names_to_remove: # remove things. 
+            my_logger.warning(f"Removing {name} from cos &  logical_obs and logical_params")
+            self.cost.pop(name,None)
+            self.obs.pop(name,None)
+            self.parameters.pop(name,None)
+        # final step -- reset the iteration count(s).  Setting of these seems a bit buggy and could be cleaner
+
+        self.count_within_iteration-= len(names_to_remove)
+        if self.count_within_iteration < 0:
+            self.iteration_count += self.count_within_iteration # reduce iteration_count as count_within_iteration is -ve
+            self.count_within_iteration = 0 # reset the within count to zero.
+            if self.iteration_count < 0: # Hopefully we never get here. 
+                raise ValueError("Something very wrong. Abandon all hope...")
+        
+            
 
     # End of LogicalInfo class.
 
@@ -565,6 +588,20 @@ class runSubmit(SubmitStudy):
         n_obs = len(obs)
         self._logical_info.cost[name] = (obs ** 2).sum() / n_obs  # store the avg cost
         return obs
+
+    def xxxx_reload_obs(self) -> list[Model]:
+        """
+        Reload observations into models and then update the logical info
+        :return: list of models that were reloaded.
+        """
+        raise NotImplementedError("reload_obs not implemented and no test cases written.")
+        models = super().reload_obs() # call the super class.
+        # now to update the logical_obs info.
+        # but that requires some deep work in logical_obs
+        self._logical_info.update_obs()
+        self._logical_info.update_params()  # update the parameters as well as obs as they may have changed.
+        return models
+
 
     @classmethod
     def from_dict(cls, dct: dict) -> runSubmit:

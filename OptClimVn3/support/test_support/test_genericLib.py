@@ -349,21 +349,22 @@ class genericLib_test(unittest.TestCase):
         """
         file = self.tmp_path / 'timeout_subproc.txt'
         lock_file = self.tmp_path / 'timeout_subproc.txt.lock'
-
+        import textwrap
         # Build an inline Python script that the child process will run.
         # It receives two extra args: <path> <hold_seconds>.
-        child_script = (
-            "import sys, time, genericLib\n"
-            "from pathlib import Path\n"
-            "p = Path(sys.argv[1])\n"
-            "hold = float(sys.argv[2])\n"
-            "with genericLib.ContextFileLock(p):\n"
-            "    time.sleep(hold)\n"
-        )
-
-        # Start the child: hold lock for 1 second.
-        p = subprocess.Popen([sys.executable, "-c", child_script, str(file), "1.0"],
-                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        child_script = textwrap.dedent("""
+            import sys, time, genericLib
+            from pathlib import Path
+            p = Path(sys.argv[1])
+            hold = float(sys.argv[2])
+            with genericLib.ContextFileLock(p):
+                time.sleep(hold)
+            print("all done")
+            """)
+    
+        # Start the child: hold lock for 4 seconds.
+        p = subprocess.Popen([sys.executable,"-c", (child_script), str(file), "4.0"],
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE,text=True)
 
         try:
             # Wait until lock file appears (give child a short window)
@@ -385,7 +386,13 @@ class genericLib_test(unittest.TestCase):
             with genericLib.ContextFileLock(file,timeout=4.0):
                 self.assertTrue(lock_file.exists())
 
-
+            print("Std Out",p.stdout.readlines())
+            print("Std Err",p.stderr.readlines())
+            # remove annoying resource messages
+            p.stdout.close()
+            p.stderr.close()
+            p.kill()
+                
 
         finally:
             if p.poll() is None:

@@ -237,7 +237,6 @@ class SubmitStudy(Study, model_base, journal):
         model_name = param_dir.pop('model_name', self.model_name)
         post_process = self.config.getv('postProcess')
         run_info = self.config.run_info()
-        study = self.to_study()  # convert SubmitStudy to Study
         model = Model.model_init(model_name, name=name,
                                  reference=reference,
                                  reference_name=reference_name,
@@ -245,7 +244,7 @@ class SubmitStudy(Study, model_base, journal):
                                  config_path=config_path,
                                  parameters=param_dir,
                                  post_process=post_process,
-                                 study=study,
+                                 study_config_path=self.config.fileName(),
                                  engine=self.engine,
                                  run_info=run_info
                                  )
@@ -822,6 +821,23 @@ class SubmitStudy(Study, model_base, journal):
             my_logger.info(f"Processed {count_models_processed} models")
             self.update_history(f"Processed {count_models_processed} models")
             self.dump_config() # and write ourselves out
+        return models
+
+    def reload_obs(self) -> list[Model]:
+        """
+        Reload the observations for all processed models.
+        This is for dealing with cases where the observations have been updated.
+        :return: list of models that were reloaded.
+        """
+        my_logger.warning("Needs test cases written")
+        models = self.processed_models()
+        for model in models:
+            path = model.model_dir/model._post_process_output # TODO -- should really be part of read_simulated_obs
+            model.read_simulated_obs(path)
+            model.update_history("Reloaded observations")
+        my_logger.info(f"Reloaded obs for {len(models)} models")
+        self.update_history(f"Reloaded obs for {len(models)} models")
+        self.dump_config(dump_models=True) # and write ourselves AND modified models out
         return models
 
     def resub_status(self) -> typing.Optional[str]:

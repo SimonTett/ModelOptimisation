@@ -242,7 +242,7 @@ class ModelTestCase(unittest.TestCase):
                             submission_count=0, continue_script=pathlib.PurePath('continue.sh'),
                             submit_script=pathlib.PurePath('submit.sh'), submitted_jid=None,
                             set_status_script=pathlib.PurePath(self.model.expand("$OPTCLIMTOP/OptClimVn3/scripts/set_model_status.py")),
-                            remote=dict(remote_machine=None,remote_model_dir=None),
+                            remote=dict(remote_machine=None,remote_model_dir=None),  StudyConfig_path=None,
                             )
 
         dct = model.to_dict()
