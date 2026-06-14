@@ -209,16 +209,7 @@ class LogicalInfo(model_base):
             self.cost.pop(name,None)
             self.obs.pop(name,None)
             self.parameters.pop(name,None)
-        # final step -- reset the iteration count(s).  Setting of these seems a bit buggy and could be cleaner
-
-        self.count_within_iteration-= len(names_to_remove)
-        if self.count_within_iteration < 0:
-            self.iteration_count += self.count_within_iteration # reduce iteration_count as count_within_iteration is -ve
-            self.count_within_iteration = 0 # reset the within count to zero.
-            if self.iteration_count < 0: # Hopefully we never get here. 
-                raise ValueError("Something very wrong. Abandon all hope...")
         
-            
 
     # End of LogicalInfo class.
 
