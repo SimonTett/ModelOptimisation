@@ -310,7 +310,7 @@ class SubmitStudy(Study, model_base, journal):
                 model.dump_model()
 
     @classmethod
-    def load_SubmitStudy(cls, config_path: typing.Union[pathlib.Path, str],
+    def load(cls, config_path: typing.Union[pathlib.Path, str],
                          error:generic_json.type_error='error',
                          Study: bool = False) -> typing.Union[Study, SubmitStudy]:
         """
@@ -324,7 +324,7 @@ class SubmitStudy(Study, model_base, journal):
         config_path = cls.expand(config_path)
         # convert str to path and or expand user or env vars.
 
-        obj:SubmitStudy = cls.load(config_path,check_types=[SubmitStudy],error=error)
+        obj:SubmitStudy = super().load(config_path,check_types=[cls],error=error) # call the super class load.
 
         obj.config_path=config_path # modify config path
 

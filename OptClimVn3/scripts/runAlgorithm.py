@@ -210,7 +210,7 @@ monitor_file = rootDir / (jsonFile.stem + "_monitor.png")
 rSUBMIT = None  # set it to None
 if config_path.exists():  # config file exists. Read it in.
     my_logger.info(f"Reading status from {config_path}")
-    rSUBMIT = runSubmit.runSubmit.load_SubmitStudy(config_path)
+    rSUBMIT = runSubmit.runSubmit.load(config_path)
 
     if not isinstance(rSUBMIT, runSubmit.runSubmit):
         raise ValueError(f"Something wrong")
@@ -363,7 +363,7 @@ with rSUBMIT.lock(timeout=30) as lock: # 30 second timeout.
             else:  # reload the configuration (and all models).
                 # This necessary as writing out/reading in changes (slightly) the floating point value of some values
                 # which in turn changes the way the algorithms behave.
-                rSUBMIT = runSubmit.runSubmit.load_SubmitStudy(config_path)
+                rSUBMIT = runSubmit.runSubmit.load(config_path)
 
         # end of try/except.
 

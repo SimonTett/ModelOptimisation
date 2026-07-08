@@ -110,7 +110,7 @@ class archive_study(model_base, journal):
             model_base._translate_path_var = (archive_config.rootDir,direct)  # setup for translation.
             model_base._convert_path2pure = True  # convert paths to pure paths.
             # QUITE ugly to use class variables to translate. Needed because can't pass args into from_dict
-            cfg = SubmitStudy.load_SubmitStudy(cfg_path)  # read the extracted data
+            cfg = SubmitStudy.load(cfg_path)  # read the extracted data
             # Save the configuration in the new space which should be normally readable.
             cfg.dump_config(dump_models=True) # and write it back again
             #turn off translation.

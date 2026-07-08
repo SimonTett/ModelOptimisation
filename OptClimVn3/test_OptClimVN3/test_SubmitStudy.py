@@ -188,15 +188,15 @@ class MyTestCase(unittest.TestCase):
             self.assertEqual(m1['object'], str(m2.config_path))
             self.assertEqual(k1, k2)
 
-    def test_load_config(self):
+    def test_load(self):
         # test some functionality in load_config works.
         pth = self.submit.config_path
         self.submit.dump_config()
-        newSub = self.submit.load_SubmitStudy(pth)
+        newSub = self.submit.load(pth)
         self.assertEqual(self.submit, newSub)
         # explicitly check
 
-        study = self.submit.load_SubmitStudy(pth, Study=True)
+        study = self.submit.load(pth, Study=True)
         # return as a study
         self.assertIsInstance(study, Study.Study)
 

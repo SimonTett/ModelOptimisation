@@ -159,6 +159,13 @@ class journal:
             my_logger.warning(s)
             raise
         except FileNotFoundError as e:  # cmd not found
+            s=f"""{cmd_report} failed.
+            STDOUT 
+            {e.output}
+            {"=" * 60}
+            STDERR 
+            { e.stderr}"""
+            my_logger.warning(s)
             raise subprocess.CalledProcessError(
                 returncode=e.errno,
                 cmd=cmd_to_run,

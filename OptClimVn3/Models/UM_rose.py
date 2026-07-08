@@ -417,6 +417,7 @@ class UM_rose(Model):
         parser_durn = parse.DurationParser()
         parser_list = [parser,parser_durn,parser_durn]
         times = self.read_params(atmos_time_params,fail=False)
+        times = {k:v for k,v in times.items() if v is not None} # remove any none values
         if len(times) > 0 : # have atmos times  in workflow.
             # see what calendar is and if it is 360 day raise warning.
             cal = self.calendar()  # get the calendar.
