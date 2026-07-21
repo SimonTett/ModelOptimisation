@@ -59,4 +59,7 @@ rn_avt0,um_rose,app/nemo_cice/rose-app.conf,namelist:namzdf,rn_avt0,1.2e-5,,
 rn_bfri2,um_rose,app/nemo_cice/rose-app.conf,namelist:nambfr,rn_bfri2,1.0e-3,,
 rn_ediff,um_rose,app/nemo_cice/rose-app.conf,namelist:namzdf_tke,rn_ediff,0.1,,
 rn_efr,um_rose,app/nemo_cice/rose-app.conf,namelist:namzdf_tke,rn_efr,0.05,,
+rn_mxl0,um_rose,app/nemo_cice/rose-app.conf,namelist:namzdf_tke,rn_mxl0,0.04,,
 rn_aht_0,um_rose,app/nemo_cice/rose-app.conf,namelist:namtra_ldf,rn_aht_0,1000.0,,
+rn_aeiv_0,um_rose,app/nemo_cice/rose-app.conf,namelist:namtra_ldf,rn_aeiv_0,1000.0,,
+

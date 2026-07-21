@@ -1,6 +1,18 @@
-#/bin/env bash
+#!/usr/bin/env bash
 # run all tests. First run . setup to set up search paths.
-for f in OptClimVn3/Models/test_Models/test_*.py  OptClimVn3/test_OptClimVN3/test_*.py OptClimVn3/support/test_support/test_*.py
+# Check that OPTCLIMTOP is set. If not, exit and ask user to set it.
+if [[ -z "$OPTCLIMTOP" ]]; then
+    echo "OPTCLIMTOP is not set. Please run the appropriate setup file."
+    exit 1
+fi
+
+# then check if PROJECT_CODE setup
+if [[ -z "$PROJECT_CODE" ]]; then
+    echo "PROJECT_CODE is not set. Please set it to the project you are running under. This is needed for some tests to run."
+    exit 1
+fi
+export PYTHONPATH=$PYTHONPATH:$OPTCLIMTOP/OptClimVn3/test_OptClimVN3:$OPTCLIMTOP/OptClimVn3/Models/test_Models
+for f in ${OPTCLIMTOP}/OptClimVn3/Models/test_Models/test_*.py  ${OPTCLIMTOP}/OptClimVn3/test_OptClimVN3/test_*.py ${OPTCLIMTOP}/OptClimVn3/support/test_support/test_*.py
 do 
     echo $f 
     python -m unittest $f 
