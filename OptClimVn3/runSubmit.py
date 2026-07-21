@@ -626,17 +626,26 @@ class runSubmit(SubmitStudy):
 
         return obj
 
-    def update_params(self, update_parameters: list[str]):
+    def update_params(self, update_parameters: list[str]) -> dict[str, str]:
         """
         Update in-place the parameters in logical_info for all logical names
         Calls super_class method and then handles logical_info
         :param update_parameters: list of parameter names to update.
-        :return: None
+        :return: Key mapping from old to new keys
         """
-        super().update_params(update_parameters)  # call the super  class method.
+
+        key_mapping = super().update_params(update_parameters)  # call the super  class method.
         names = list(self._logical_info.names.values())
         for name in names:  # sort out the logical info
             self.update_logical_params(name, update_parameters)
+        # update the keys for model_status.
+        my_logger.info(f"Updating {len(key_mapping)} model_status keys ")
+        model_status = dict()
+        for k, v in self.model_status.items():
+            new_key = key_mapping.get(k, k)
+            model_status[new_key] = v
+        self.model_status = model_status
+        return key_mapping # return the key mapping in case it is needed.
 
     def copyConfig(self, direct: pathlib.Path,
                    extra_files: typing.Optional[list[pathlib.Path]] = None,

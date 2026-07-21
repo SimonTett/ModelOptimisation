@@ -530,7 +530,7 @@ class SubmitStudy(Study, model_base, journal):
         :return: Copied SubmitStudy.
         """
 
-        # check that direct is a abs path. If not make it abs.
+        # check that direct is an abs path. If not make it abs.
         if not direct.is_absolute():
             direct = pathlib.Path.cwd() / direct
             my_logger.info("Converting direct to absolute path {direct}")
@@ -568,21 +568,23 @@ class SubmitStudy(Study, model_base, journal):
         # and we are done!
         return cp_submit_study
 
-    def update_params(self,update_parameters:list[str]):
+    def update_params(self,update_parameters:list[str]) -> dict[str,str]:
         """
         Update parameters in config & models based on update_parameters list.
         Update done in place by changing model_index
         :param update_parameters: parameters to update
-        :return: nothing. Config is updated in place
+        :return: key mappings from old key to new key.  This to allow other things to be updated.
         """
-
+        key_mappings  = dict()
         model_info = dict()
-        for model in self.model_index.values():
+        for key,model in self.model_index.items():
             model.update_params(update_parameters)
-            key = self.key_for_model(model)
-            model_info[key] = model
+            new_key = self.key_for_model(model)
+            model_info[new_key] = model
+            key_mappings[key] = new_key
         self.model_index = model_info # update the model index
         self.update_history(f"Updated parameters {update_parameters} in all models")
+        return key_mappings
 
     def archive(self,
                 archive: tarfile.TarFile,
