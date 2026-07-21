@@ -247,9 +247,13 @@ if config_path.exists():  # config file exists. Read it in.
 
 if rSUBMIT is None:  # no configuration exists. So create it.
     # We can get here either because config_path does not exist or we deleted the config.
-    args_not_for_restart = ['--delete','--purge','--update','--update_config','--kill','--process','--model_pattern']
+    args_not_for_restart = ['--delete','--purge','--update','--update_config','--kill','--process'] # logical flags
     # Arguments to be removed from the restart cmd
     restartCMD = [arg for arg in sys.argv if arg not in args_not_for_restart]  # generate restart cmd.
+    # Remove --model_pattern's value if it's in the list
+    if '--model_pattern' in restartCMD:
+        idx = restartCMD.index('--model_pattern')
+        del restartCMD[idx:idx + 2]  # remove the flag and its value
     my_logger.info(f"restartCMD is {restartCMD}")
     rSUBMIT = runSubmit.runSubmit(configData, rootDir=rootDir, config_path=config_path,next_iter_cmd=restartCMD)
     if args.model_pattern is not None: # we have a model pattern to load models from.
