@@ -209,16 +209,7 @@ class LogicalInfo(model_base):
             self.cost.pop(name,None)
             self.obs.pop(name,None)
             self.parameters.pop(name,None)
-        # final step -- reset the iteration count(s).  Setting of these seems a bit buggy and could be cleaner
-
-        self.count_within_iteration-= len(names_to_remove)
-        if self.count_within_iteration < 0:
-            self.iteration_count += self.count_within_iteration # reduce iteration_count as count_within_iteration is -ve
-            self.count_within_iteration = 0 # reset the within count to zero.
-            if self.iteration_count < 0: # Hopefully we never get here. 
-                raise ValueError("Something very wrong. Abandon all hope...")
         
-            
 
     # End of LogicalInfo class.
 
@@ -635,17 +626,26 @@ class runSubmit(SubmitStudy):
 
         return obj
 
-    def update_params(self, update_parameters: list[str]):
+    def update_params(self, update_parameters: list[str]) -> dict[str, str]:
         """
         Update in-place the parameters in logical_info for all logical names
         Calls super_class method and then handles logical_info
         :param update_parameters: list of parameter names to update.
-        :return: None
+        :return: Key mapping from old to new keys
         """
-        super().update_params(update_parameters)  # call the super  class method.
+
+        key_mapping = super().update_params(update_parameters)  # call the super  class method.
         names = list(self._logical_info.names.values())
         for name in names:  # sort out the logical info
             self.update_logical_params(name, update_parameters)
+        # update the keys for model_status.
+        my_logger.info(f"Updating {len(key_mapping)} model_status keys ")
+        model_status = dict()
+        for k, v in self.model_status.items():
+            new_key = key_mapping.get(k, k)
+            model_status[new_key] = v
+        self.model_status = model_status
+        return key_mapping # return the key mapping in case it is needed.
 
     def copyConfig(self, direct: pathlib.Path,
                    extra_files: typing.Optional[list[pathlib.Path]] = None,

@@ -117,6 +117,14 @@ class testRunSubmit(unittest.TestCase):
         self.assertEqual(len(r.model_status), len(models))
         self.assertTrue(all([s == 'initial' for k, s in r.model_status.items()]))  # check everything is 'initial'
 
+    def test_update_params(self):
+        # Test that updating a param changes params..
+        rsub:runSubmit.runSubmit = copy.deepcopy(self.extract_runSubmit)
+        rsub.update_params(['sigma_updraught_scaling'])
+        for m in rsub.model_index.values():
+            self.assertEqual(m.parameters['sigma_updraught_scaling'], 1.0)
+        self.assertSetEqual(set(rsub.model_status.keys()), set(rsub.model_index.keys()))
+
     # test case for _stdFunction
 
     def test_stdFunction(self):
@@ -1395,6 +1403,8 @@ class testRunSubmit(unittest.TestCase):
                 self.assertIs(run_submit_copy.model_index[key], model,
                               msg=f'{model.name}:{model} with key:{key} not same as in model_index')
                 self.assertIsInstance(run_submit_copy.model_index[key], Model.Model)
+        # check that model_info & model_status are consistent
+        self.assertSetEqual(set(run_submit_copy.model_index.keys()), set(run_submit_copy.model_status.keys()))
 
     def test_from_dict(self):
         """
@@ -1600,6 +1610,7 @@ class TestLogicalInfo(unittest.TestCase):
         # check that parameters have been updated
         updated_params = logical_info.parameters[names[1]]
         self.assertTrue(updated_params.equals(new_params), msg='Parameters not updated correctly in logical_info')
+
 
     def test_to_dict(self):
         # test that to_dict works correctly

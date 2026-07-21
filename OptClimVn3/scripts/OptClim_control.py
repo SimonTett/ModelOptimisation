@@ -55,8 +55,9 @@ def main(argv=None):
     p_kill = subparsers.add_parser('kill', help='Kill and Stop study')
     p_stop = subparsers.add_parser('stop',
                                    help='Stop study. Will run any instantiated cases but generate no new runs')
-    p_continue = subparsers.add_parser('continue', help='Continue study (after stopping)')
+    p_continue = subparsers.add_parser('continue', help='Continue study (after previously stopping )')
 
+    cmds_to_dump = ['continue','stop','kill','update'] # list of commands where config gets dumped.
     args = parser.parse_args(argv)
 
     # configure logging
@@ -108,8 +109,8 @@ def main(argv=None):
             study.plot(fname=plot_file)
         else:
             raise ValueError(f"Unknown command {args.command}")
-
-        study.dump_config()
+        if args.command in cmds_to_dump:
+            study.dump_config()
     return 0
 
 

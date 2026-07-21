@@ -310,7 +310,7 @@ class SubmitStudy(Study, model_base, journal):
                 model.dump_model()
 
     @classmethod
-    def load_SubmitStudy(cls, config_path: typing.Union[pathlib.Path, str],
+    def load(cls, config_path: typing.Union[pathlib.Path, str],
                          error:generic_json.type_error='error',
                          Study: bool = False) -> typing.Union[Study, SubmitStudy]:
         """
@@ -324,7 +324,7 @@ class SubmitStudy(Study, model_base, journal):
         config_path = cls.expand(config_path)
         # convert str to path and or expand user or env vars.
 
-        obj:SubmitStudy = cls.load(config_path,check_types=[SubmitStudy],error=error)
+        obj:SubmitStudy = super().load(config_path,check_types=[cls],error=error) # call the super class load.
 
         obj.config_path=config_path # modify config path
 
@@ -530,7 +530,7 @@ class SubmitStudy(Study, model_base, journal):
         :return: Copied SubmitStudy.
         """
 
-        # check that direct is a abs path. If not make it abs.
+        # check that direct is an abs path. If not make it abs.
         if not direct.is_absolute():
             direct = pathlib.Path.cwd() / direct
             my_logger.info("Converting direct to absolute path {direct}")
@@ -568,21 +568,23 @@ class SubmitStudy(Study, model_base, journal):
         # and we are done!
         return cp_submit_study
 
-    def update_params(self,update_parameters:list[str]):
+    def update_params(self,update_parameters:list[str]) -> dict[str,str]:
         """
         Update parameters in config & models based on update_parameters list.
         Update done in place by changing model_index
         :param update_parameters: parameters to update
-        :return: nothing. Config is updated in place
+        :return: key mappings from old key to new key.  This to allow other things to be updated.
         """
-
+        key_mappings  = dict()
         model_info = dict()
-        for model in self.model_index.values():
+        for key,model in self.model_index.items():
             model.update_params(update_parameters)
-            key = self.key_for_model(model)
-            model_info[key] = model
+            new_key = self.key_for_model(model)
+            model_info[new_key] = model
+            key_mappings[key] = new_key
         self.model_index = model_info # update the model index
         self.update_history(f"Updated parameters {update_parameters} in all models")
+        return key_mappings
 
     def archive(self,
                 archive: tarfile.TarFile,

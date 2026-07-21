@@ -12,7 +12,8 @@ if [[ -z "$PROJECT_CODE" ]]; then
     exit 1
 fi
 export PYTHONPATH=$PYTHONPATH:$OPTCLIMTOP/OptClimVn3/test_OptClimVN3:$OPTCLIMTOP/OptClimVn3/Models/test_Models
-for f in ${OPTCLIMTOP}/OptClimVn3/Models/test_Models/test_*.py  ${OPTCLIMTOP}/OptClimVn3/test_OptClimVN3/test_*.py ${OPTCLIMTOP}/OptClimVn3/support/test_support/test_*.py
+for f in ${OPTCLIMTOP}/OptClimVn3/Models/test_Models/test_*.py  ${OPTCLIMTOP}/OptClimVn3/test_OptClimVN3/test_*.py \
+		      ${OPTCLIMTOP}/OptClimVn3/support/test_support/test_*.py
 do 
     echo $f 
     python -m unittest $f 
