@@ -37,7 +37,9 @@ if args.eval_db_path and not (args.output_obs and args.output_params):
 my_logger = genericLib.setup_logging(args.log)
 my_logger.debug(f"Output path is: {args.output}")
 
-
+# check that output_args.parent does not exist!
+if args.output and (args.output.parent.exists()):
+    raise FileExistsError(f"{args.output.parent} exists. ")
 
 # Load existing configuration
 
@@ -80,8 +82,8 @@ if args.output: # Want to write out  modified config?
         # Then take the updated models (with new params), and copy them -- updating paths as we do so.
         # FInally use read_model_configs to include the modified models in the config.
         my_logger.info(f"Creating new config from {study_config.fileName()}")
-        rootDir=args.output.parent
-        rootDir.mkdir(parents= True,exist_ok=True) # make root dir (and all parents)
+        rootDir=args.output.parent 
+        rootDir.mkdir(parents= True) # make root dir (and all parents). Will fail if directory exists.
 
         new_config = runSubmit(study_config, rootDir=rootDir,
                                          config_path=args.output,name=args.output.name  )
@@ -92,7 +94,7 @@ if args.output: # Want to write out  modified config?
             new_files.append(m.config_path)
         my_logger.info("Copied len(new_files) models")
         new_config.read_model_configs(new_files) # and get the models configs
-        new_config.set_history(f"Copied {len(new_files)} models from {config.rootDir} with params updated.")
+        new_config.update_history(f"Copied {len(new_files)} models from {config.rootDir} with params updated.")
         new_config.dump_config(dump_models=False) # no need to dump the models as already done so.
         
     else:
