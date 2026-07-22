@@ -164,6 +164,7 @@ class SubmitStudy(Study, model_base, journal):
 
         self.run_info = copy.deepcopy(config.run_info())  # copy run_info as modifying it.
         my_logger.debug(f"Set run_info to {self.run_info}")
+        self.update_history(f"Updated configuration from {config.fileName()}") # fix history
 
     def lock(self,timeout:float=0.0,poll_interval:typing.Optional[float] = None):
         """
@@ -533,7 +534,7 @@ class SubmitStudy(Study, model_base, journal):
         # check that direct is an abs path. If not make it abs.
         if not direct.is_absolute():
             direct = pathlib.Path.cwd() / direct
-            my_logger.info("Converting direct to absolute path {direct}")
+            my_logger.info(f"Converting direct to absolute path {direct}")
         direct.mkdir(parents=True, exist_ok=True)  # create directory if need be.
 
 

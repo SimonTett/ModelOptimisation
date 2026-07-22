@@ -18,7 +18,7 @@ group.add_argument('--parameters',  nargs='+',
 
 group.add_argument('--study_config_path', type=genericLib.expand, help='StudyConfig to use to define parameters')
 parser.add_argument('--output', type=genericLib.expand,
-                    help='Path to save the updated configuration file. If not provided, nothing will be saved.')
+                    help='Path to save the updated configuration file. If not provided, nothing will be saved. Parent dir will be used to save modified model files')
 parser.add_argument('--output_obs', type=genericLib.expand,
                     help='Path to save the updated observations file. If not provided, observations will not be saved.')
 parser.add_argument('--output_params', type=genericLib.expand,
@@ -32,6 +32,7 @@ parser.add_argument('--log', help="Logging level", default="WARNING",choices=['D
 args = parser.parse_args()
 if args.eval_db_path and not (args.output_obs and args.output_params):
     raise ValueError("If --eval_db_path is specified, both --output_obs and --output_params must also be specified.")
+
 
 my_logger = genericLib.setup_logging(args.log)
 my_logger.debug(f"Output path is: {args.output}")
@@ -71,8 +72,12 @@ if args.output_params: # Want to write out  parameters ?
     params.to_csv(args.output_params)
     my_logger.debug(f"Saved parameters to {args.output_params}")
 if args.output: # Want to write out  modified config?
-    new_config = config.copyConfig(args.output)  # copy modified config.
-    my_logger.info(f"Updated configuration saved to {args.output}")
+    new_config = config.copyConfig(args.output.parent)  # copy modified config.
+    my_logger.info(f"Updated configuration saved to {args.output.parent}")
+    # move the new confile file to the new name
+    if config.config_path.name != args.output.name: # only move if different name
+        new_config.config_path.rename(args.output)
+        my_logger.info(f"Renamed configuration file to {args.output}")
 if args.eval_db_path:
     comment = f"Generated using {__file__} at {datetime.datetime.now()} with cmd line args {' '.join(sys.argv)}"
     my_logger.debug(comment)

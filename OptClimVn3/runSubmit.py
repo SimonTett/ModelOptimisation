@@ -699,6 +699,20 @@ class runSubmit(SubmitStudy):
 
         return models
 
+    def update_config(self, config: "OptClimConfigVn3"):
+        """
+        Partially set up self with the configuration. This allows updating following a change to the configuration.
+          Resets model_status to 'unknown' in addition to whatever the superclass methods do.
+        To update from configuration simply do self.update_config(config).
+        :param config: Configuration to be used.
+        :return: nada
+        """
+
+        super().update_config(config)  # call the superclass
+        for key in self.model_status.keys():
+            self.model_status[key] = 'unknown'
+
+
     def stdFunction(self, params: np.ndarray,
                     df: bool = False,
                     raiseError: bool = True,
