@@ -170,7 +170,7 @@ class testRunSubmit(unittest.TestCase):
 
         # test 1 # run same model and should raise ValueError as status is not processed
         rSubmit.config.ensembleSize(1)  # 1 member ensemble
-        with self.assertRaises(ValueError):  # should also get a warning.
+        with self.assertRaises(optclim_exceptions.useCreatedModel):  # trying to use created model
             result = rSubmit.stdFunction(params)  # should get ValueError as running twice.
         # no of models to run should be 1. (as we already have it just asked for it twice)
         models = rSubmit.model_index.values()
@@ -442,8 +442,8 @@ class testRunSubmit(unittest.TestCase):
         params = dict(VF1=1.03, ENTCOEF=4.01)
         model = rsub.make_model(params)
         self.assertEqual(len(rsub.model_index), 1)
-        # do it again -- should raise a ValueError
-        with self.assertRaises(ValueError):
+        # do it again -- should raise optclim_exceptions.useCreatedModel
+        with self.assertRaises(optclim_exceptions.useCreatedModel):
             model2 = rsub.make_model(params)
         # instantiate model.
         model.instantiate()
