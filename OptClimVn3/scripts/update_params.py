@@ -2,6 +2,8 @@
 import json
 import pathlib
 import argparse
+
+from runAlgorithm import rootDir
 from runSubmit import runSubmit
 import genericLib
 from StudyConfig import readConfig
@@ -16,7 +18,7 @@ group = parser.add_mutually_exclusive_group(required=False) # support getting pa
 group.add_argument('--parameters',  nargs='+',
                     help='List of parameters to update from model config')
 
-group.add_argument('--study_config_path', type=genericLib.expand, help='StudyConfig to use to define parameters')
+group.add_argument('--study_config_path', type=genericLib.expand, help='StudyConfig to use to define parameters. If provided will be used to update config.')
 parser.add_argument('--output', type=genericLib.expand,
                     help='Path to save the updated configuration file. If not provided, nothing will be saved. Parent dir will be used to save modified model files')
 parser.add_argument('--output_obs', type=genericLib.expand,
@@ -40,6 +42,8 @@ my_logger.debug(f"Output path is: {args.output}")
 
 
 # Load existing configuration
+
+study_config = None
 config = runSubmit.load(args.config_path)
 if config is None:
     raise  ValueError(f"Failed to load configuration from {args.config_path}")
@@ -47,6 +51,7 @@ if config is None:
 # setup parameters
 if args.parameters:
     parameters=args.parameters
+    study_config = None
 elif args.study_config_path:
     study_config = readConfig(args.study_config_path)
     parameters = study_config.paramNames()
@@ -78,6 +83,9 @@ if args.output: # Want to write out  modified config?
     if config.config_path.name != args.output.name: # only move if different name
         new_config.config_path.rename(args.output)
         my_logger.info(f"Renamed configuration file to {args.output}")
+    if study_config is not None: # update the config with the study config used to generate the params
+        new_config.update_config(study_config)
+
 if args.eval_db_path:
     comment = f"Generated using {__file__} at {datetime.datetime.now()} with cmd line args {' '.join(sys.argv)}"
     my_logger.debug(comment)
