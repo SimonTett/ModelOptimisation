@@ -2,8 +2,6 @@
 import json
 import pathlib
 import argparse
-
-from runAlgorithm import rootDir
 from runSubmit import runSubmit
 import genericLib
 from StudyConfig import readConfig
@@ -77,14 +75,33 @@ if args.output_params: # Want to write out  parameters ?
     params.to_csv(args.output_params)
     my_logger.debug(f"Saved parameters to {args.output_params}")
 if args.output: # Want to write out  modified config?
-    new_config = config.copyConfig(args.output.parent)  # copy modified config.
-    my_logger.info(f"Updated configuration saved to {args.output.parent}")
-    # move the new confile file to the new name
-    if config.config_path.name != args.output.name: # only move if different name
-        new_config.config_path.rename(args.output)
-        my_logger.info(f"Renamed configuration file to {args.output}")
-    if study_config is not None: # update the config with the study config used to generate the params
-        new_config.update_config(study_config)
+    if study_config is not None: # generate a new config with the study config used to generate the params
+        # Approach here is to creatre a new runSubmit object using the study_config provided.
+        # Then take the updated models (with new params), and copy them -- updating paths as we do so.
+        # FInally use read_model_configs to include the modified models in the config.
+        my_logger.info(f"Creating new config from {study_config.fileName()}")
+        rootDir=args.output.parent
+        rootDir.mkdir(parents= True,exist_ok=True) # make root dir (and all parents)
+
+        new_config = runSubmit(study_config, rootDir=rootDir,
+                                         config_path=args.output,name=args.output.name  )
+        new_files=[]
+        for model in config.model_index.values(): # get the models and copy them into the new directory
+            new_dir = rootDir/(model.model_dir.relative_to(config.rootDir) )# new directory for model.
+            m =  model.copyConfig(new_dir, update_paths=True)
+            new_files.append(m.config_path)
+        my_logger.info("Copied len(new_files) models")
+        new_config.read_model_configs(new_files) # and get the models configs
+        new_config.set_history(f"Copied {len(new_files)} models from {config.rootDir} with params updated.")
+        new_config.dump_config(dump_models=False) # no need to dump the models as already done so.
+        
+    else:
+        new_config = config.copyConfig(args.output.parent)  # copy modified config.
+        my_logger.info(f"Updated configuration saved to {args.output.parent}")
+        # move the new confile file to the new name
+        if config.config_path.name != args.output.name: # only move if different name
+            new_config.config_path.rename(args.output)
+            my_logger.info(f"Renamed configuration file to {args.output}")
 
 if args.eval_db_path:
     comment = f"Generated using {__file__} at {datetime.datetime.now()} with cmd line args {' '.join(sys.argv)}"
