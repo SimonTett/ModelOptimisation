@@ -270,7 +270,8 @@ class runSubmit(SubmitStudy):
         If model already exists then behaviour depends on model state  though model_status is set to 'called'
           Instantiated -- raise optclim_exceptions.submitModel as model needs to be submitted.
           Processed -- return model
-          Anything else (including Created) -- raise ValueError as should not be here
+          Created -- raise useCreatedModel (whcih if algorithm wants can be handled)
+          Anything else  -- raise ValueError as should not be here
 
         :param params: dictionary of parameters
         :param reference_name: name of reference model to use. Pass None if want Model default behaviour.
@@ -304,6 +305,8 @@ class runSubmit(SubmitStudy):
             raise optclim_exceptions.submitModel
         elif model.status in ["PROCESSED"]:  # model has been Processed
             my_logger.debug(f"Using existing model {model}")
+        elif model.status in ['CREATED']: # model has been created -- raise a useCreatedModel exception -- what happens next depends on alg.
+            raise optclim_exceptions.useCreatedModel(f"Model {model}") 
         else:  # not processed/Instantiated so raise ValueError and complain.
             raise ValueError(f"{model} status != PROCESSED but is {model.status}")
         return model
@@ -699,7 +702,7 @@ class runSubmit(SubmitStudy):
 
         return models
 
-    def update_config(self, config: "OptClimConfigVn3"):
+    def XXXX_update_config(self, config: "OptClimConfigVn3"):
         """
         Partially set up self with the configuration. This allows updating following a change to the configuration.
           Resets model_status to 'unknown' in addition to whatever the superclass methods do.
@@ -1250,26 +1253,31 @@ class runSubmit(SubmitStudy):
                                        rhoend=rhoend,
                                        user_params=userParams)
 
-        except np.linalg.linalg.LinAlgError:
+        except np.linalg.linalg.LinAlgError: # time to submit new models.
             n_inst_models = len(self.models_to_instantiate())
             my_logger.info(f"Have just generated {n_inst_models} to instantiate")
             neval = len(self.logical_cost())
             if (neval > 1):  # got some evaluations.
                 # Run DFOLS again with reduced number of fn evals to provide some diagnostic info.
+                
                 my_logger.debug('Running DFOLS again with reduced number of fn evals to get diagnostic info')
                 random.seed(rng_seed)  # reset rng seed back to first value.
                 with warnings.catch_warnings():  # catch the complaints from DFOLS about NaNs encountered...
                     warnings.filterwarnings('ignore')  # Ignore all warnings...
-                    solution = dfols.solve(optFn, x0, do_logging=False,
-                                           objfun_has_noise=True,
-                                           bounds=prange, scaling_within_bounds=True,
-                                           maxfun=len(self.logical_cost()),  # should get it to terminate.
-                                           rhobeg=rhobeg,
-                                           rhoend=rhoend,
-                                           user_params=userParams)
-                # this will give diagnostic info from DFOLS now to use it.
-                # need to wrap the best sol and put in other information into the final results file.
-                finalConfig = self.dfols_write_final_config(solution, scale=scale)
+                    # catch created models (generated on first tiem around). Occurs becuase have new runs mixed in with old runs.
+                    try:
+                        solution = dfols.solve(optFn, x0, do_logging=False,
+                                               objfun_has_noise=True,
+                                               bounds=prange, scaling_within_bounds=True,
+                                               maxfun=len(self.logical_cost()),  # should get it to terminate.
+                                               rhobeg=rhobeg,
+                                               rhoend=rhoend,
+                                               user_params=userParams)
+                        # this will give diagnostic info from DFOLS now to use it.
+                        # need to wrap the best sol and put in other information into the final results file.
+                        finalConfig = self.dfols_write_final_config(solution, scale=scale)
+                    except optclim_exceptions.useCreatedModel as e:
+                        my_logger.warning(f"Trying to run a created model {e}") 
             raise optclim_exceptions.submitModel("dfols failed with lin alg error")
             # this is how DFOLS tells us it got NaN which then triggers running the next set of simulations.
 

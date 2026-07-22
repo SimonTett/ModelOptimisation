@@ -18,3 +18,13 @@ class enoughProvisionalCases(Exception):
     """
 
     pass
+
+class useCreatedModel(Exception):
+    """" 
+    Error when using a created model which can happen when reusing old models and doing 2nd run.
+    Inherits from Exception.
+    """
+
+    pass
+
+
