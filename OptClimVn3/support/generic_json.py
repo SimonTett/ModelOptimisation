@@ -273,7 +273,7 @@ class obj_to_from_dict:
             name = dct["__cls__name__"]
             module = dct.get("__module__",None)
             if module is not None: # have a module. Let's try and import it.
-                my_logger.info(f"importing {module}")
+                my_logger.debug(f"importing {module}")
                 mod = importlib.import_module(module)
                 expect_count=3
 
