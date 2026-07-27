@@ -54,3 +54,43 @@ The aim is to make it easier to move the study to a different location, simplify
 - Will need to audit various old configs to see what the mixture of relative and absolute paths is.
 
 
+## Implementation approach
+- add data_version to Study & Model. from_dict then updates old versions to new versions.
+- Relative paths have an attribute XXXX_rel_path which is a PurePosixPath.
+- Use a focussed class to handle conversion of relative paths to absolute paths.
+ This to be used everywhere and so goes into genericLib
+- make this class a descriptor class:
+
+```
+from pathlib import Path, PurePath
+
+class RelativePath:
+    def __init__(self, rel_attr: str, base_attr: str):
+        self.rel_attr = rel_attr
+        self.base_attr = base_attr
+
+    def __set_name__(self, owner, name):
+        self.name = name
+
+    def __get__(self, obj, owner=None):
+        if obj is None:
+            return self
+        rel = getattr(obj, self.rel_attr)
+        base = getattr(obj, self.base_attr)
+        return Path(base) / rel
+```
+
+and use it like this, as part of the class definition:
+```
+config_path = RelativePath("_config_rel_path", "study_dir")
+```
+Making sure to set _config_rel_path to a PurePosixPath in init. 
+- Stage 1 do this for things that are currently abs paths.
+    * Run tests and think of more tests.  
+    * Generate a new config and check that it works. 
+    * Read an old config to check update works
+    * Add tests to genericLib for RelativePath class. 
+- Stage 2 do this for things that are relative paths. [This will be more complicated.]
+
+
+
