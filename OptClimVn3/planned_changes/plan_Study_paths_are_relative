@@ -32,6 +32,7 @@ The aim is to make it easier to move the study to a different location, simplify
 - study_dir (and possibly model_dir) get modified on load (they need to be set to the absolute path of the parent directory).
 - add to Study a method to generate full paths for any file access. Add similar to Model.
 - Add new **small** class to handle conversion of relative paths to absolute paths. This to be used everywhere.
+- could be done by using dataclass
 
 ## Handling old configs.
 - If a config is read in from a file it will be updated to the new format.
