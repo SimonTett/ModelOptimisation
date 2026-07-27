@@ -1,0 +1,40 @@
+# Plan to make paths in Study/SubmitStudy/runSubmitStudy mostly relative paths
+
+## Goals
+ Simplify path handling for SubmitStudy, Study & runSubmit objects.
+
+## Why change paths in Study/SubmitStudy?
+- There is a lack of clarity within Study, SubmitStudy & runSubmitStudy about model paths, paths to config and rootDir.
+- Only reused models from  outside the directory where things are running are the initial perturbation cases. (though others are possible).
+- Will handle this by copying (and optionally updating)  model cases from a single old SubmitStudy config.
+- Relative paths make archiving and reuse so much easier. No need to adjust paths in the archive.
+- Downside – may break a lot of exising configs. Will handle this by picking it up in from_dict.
+- To make generalised updating easier in the future, we will introduce version numbering within from_dict/to_dict in Model and Study.
+
+
+## Path Contract.
+
+- Most paths in Study, except study_dir, (and anything that  inherits it) should be relative to study_dir.
+- study_dir should be the absolute path to the directory where the study is being run which will be the parent of the config file.
+- Study etc objects then deal with converting paths to absolute paths when IO is needed.
+- When reading in a config file study_dir should be updated to the absolute path of the parent directory.
+- This should also be so for Model and model_dir. [I think this is the case now.]
+
+## Path refactoring
+The aim is to make it easier to move the study to a different location, simplify logic and support reuse of existing models.
+- rename rootDir to study_dir.
+- Most paths in Study (and anything it inherits from) should be relative to study_dir.
+- Most paths in Model should be relative to model_dir. I think this is the case now.
+     Exception is config_path which is absolute. Will need changing
+- When using relative paths will need to generate full paths for any file access.
+- Done by prepending study_dir or model_dir to the relative path as neeed.
+- This implies changes to config_path which should now be relative to study_dir.
+- study_dir (and possibly model_dir) get modified on load (they need to be set to the absolute path of the parent directory).
+- add to Study a method to generate full paths for any file access. Add similar to Model.
+- Add new **small** class to handle conversion of relative paths to absolute paths. This to be used everywhere.
+
+## Handling old configs.
+- If a config is read in from a file it will be updated to the new format.
+- Will need to audit various old configs to see what the mixture of relative and absolute paths is.
+
+
