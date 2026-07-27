@@ -363,7 +363,7 @@ class genericLib_test(unittest.TestCase):
             """)
     
         # Start the child: hold lock for 4 seconds.
-        p = subprocess.Popen([sys.executable,"-c", (child_script), str(file), "4.0"],
+        p = subprocess.Popen([sys.executable,"-c", (child_script), str(file), "2.0"],
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,text=True)
 
         try:
@@ -385,19 +385,34 @@ class genericLib_test(unittest.TestCase):
             # now with 4 second time out
             with genericLib.ContextFileLock(file,timeout=4.0):
                 self.assertTrue(lock_file.exists())
-
-            print("Std Out",p.stdout.readlines())
-            print("Std Err",p.stderr.readlines())
+            txt_stdout,txt_stderr = p.communicate(timeout=2.0)
+            print("Std Out",txt_stdout)
+            print("Std Err",txt_stderr)
             # remove annoying resource messages
             p.stdout.close()
             p.stderr.close()
-            p.kill()
+
                 
 
         finally:
             if p.poll() is None:
                 p.kill()
             p.wait(timeout=2.0)
+
+    def test_setup_config_env(self):
+        # Test that setup_config_env sets the environment variable correctly
+        import os
+        log_dir = self.tmp_path / 'logging'
+        log_dir.mkdir(parents=True, exist_ok=True)
+        root_dir = self.tmp_path / 'root'
+        root_dir.mkdir(parents=True, exist_ok=True)
+
+
+        genericLib.setup_config_env(root_dir, log_dir)
+        self.assertEqual(os.environ.get('OPTCLIM_ROOT_DIR'), root_dir.as_posix())
+        self.assertEqual(os.environ.get('OPTCLIM_LOG_DIR'), log_dir.as_posix())
+        self.assertIsNotNone(os.environ.get('OPTCLIM_JOB_ID'))  # Check that JOB_ID is set
+
 
 if __name__ == '__main__':
     unittest.main()

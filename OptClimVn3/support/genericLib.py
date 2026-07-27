@@ -138,6 +138,7 @@ def expand_filelike_keys(dct: dict, mkdir: bool = False) -> dict:
 
 ## Code to support logging
 
+
 def setup_logging(level: typing.Optional[typing.Union[int, str]] = None,
                   rootname: typing.Optional[str] = None,
                   log_config: typing.Optional[dict] = None):
@@ -791,6 +792,31 @@ def copy_files(in_direct: pathlib.Path,
             my_logger.debug(f"Copied  {in_file} to {tgt_path} ")
 
     return files_copied
+
+def setup_config_env(rootDir: pathlib.Path,log_dir: pathlib.Path):
+    """
+    Setup std env vars for use in configs and elsewhere.
+    :param: rootDir -- path to root directory of Config
+    :param: log_dir -- path to directory where log files are written
+    The ones provided are:
+    OPTCLIM_ROOT_DIR -- path to root directory of OptClim (as posix path)
+    OPTCLIM_LOG_DIR -- path to directory where log files are written (as posix path)
+    OPTCLIM_JOB_ID -- the job id of the job. If not set then will be set to the process id.
+    :return:
+    """
+    import engine
+    JOB_ID = os.getpid() # use getpid as default.
+    eng = engine.abstractEngine.guess_engine()  # do a guess at the engine so can set env var for that.
+
+    if eng is not None:
+        try:
+            JOB_ID = eng.my_job_id()
+        except ValueError:
+            pass
+
+    os.environ['OPTCLIM_ROOT_DIR'] = rootDir.as_posix()
+    os.environ['OPTCLIM_LOG_DIR'] = log_dir.as_posix()
+    os.environ['OPTCLIM_JOB_ID'] = str(JOB_ID)  # have JOB ID
 
 
 # AI generated code for locking and then modified.

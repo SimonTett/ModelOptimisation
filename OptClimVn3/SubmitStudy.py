@@ -89,7 +89,8 @@ class SubmitStudy(Study, model_base, journal):
                  models: Optional[List[Model]] = None,
                  model_name: Optional[str] = None,
                  config_path: Optional[pathlib.Path] = None,
-                 next_iter_cmd: typing.Optional[typing.List[str]] = None):
+                 next_iter_cmd: Optional[list[str|pathlib.Path]] = None
+                 ):
         """
         Create ModelSubmit instance
         :param config: configuration information
@@ -332,6 +333,7 @@ class SubmitStudy(Study, model_base, journal):
         if not (isinstance(obj.rootDir,pathlib.Path) and obj.rootDir.exists() and config_path.parent.samefile(obj.rootDir)):
             my_logger.info(f"Modifying config rootDir from  {obj.rootDir} to {config_path.parent}")
             obj.config_path = config_path
+            obj.rootDir= config_path.parent
             obj.update_history(f"Modified config path from  {obj.rootDir} to {config_path.parent}")
 
         if Study:  # convert to a study
@@ -671,11 +673,13 @@ class SubmitStudy(Study, model_base, journal):
             my_logger.warning(f"Ran out of names name_values = {self.name_values}")
         return name  # return name
 
-    def submit_all_models(self, fake_fn: Optional[Callable] = None):
+    def submit_all_models(self, fake_fn: Optional[Callable] = None,
+                          next_iter_cmd:typing.Optional[list[str]] = None,):
         """
         Submit models, the post-processing and the next iteration in the algorithm to job control system.
         :param fake_fn:Function to fake model runs -- will skip most stages including post-processing.
           fake and anything to be continued will generate an error.  No pp or next submission will be done if provided,
+        :param next_iter_cmd: Update next_iter_cmd (if not None) and use the command to run the next iteration.
         :return: number of models submitted
 
         Does the following:
@@ -688,6 +692,7 @@ class SubmitStudy(Study, model_base, journal):
         Releasing them will be quite tricky! You can always kill everything, remove any continuing models and start again.
         The models and study will contain info on jobs so you might be able to fix/kill by hand.
         """
+
 
         model_list = self.models_to_submit()  # models that need submitting!
         if len(model_list) == 0:  # nothing to do. We are done (no post-processing or resubmission to be submitted)
@@ -744,7 +749,7 @@ class SubmitStudy(Study, model_base, journal):
             self.update_history(f"Submitted {len(model_list)} models")
 
         # now (re)submit this entire script so that the next iteration in the algorithm can be ran
-        # All the pp_jids should be not None. We remove the None whens if Faking it.
+        # pp_jids are the jobs ids from the post-processing. We remove the None when if Faking it.
 
         if (self.next_iter_cmd is not None) and (len(pp_jids) > 0):
             # submit the next job in the iteration if have one and submitted post-processing.
@@ -865,7 +870,7 @@ class SubmitStudy(Study, model_base, journal):
             killed += model.kill() # record the job ids that were killed.
         # kill next iteration job
         status = self.resub_status()  # get the status of the next iteration job
-        if  ((status is not  None) and (status != 'notFound')):
+        if  ((status is not  None) and (status != 'notFound') and (len(self.next_iter_jids) > 0)):
             curr_resub_id = self.next_iter_jids[-1]
             cmd = self.engine.kill_job(curr_resub_id)
             self.run_cmd(cmd)
