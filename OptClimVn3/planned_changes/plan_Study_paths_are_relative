@@ -19,6 +19,8 @@
 - Study etc objects then deal with converting paths to absolute paths when IO is needed.
 - When reading in a config file study_dir should be updated to the absolute path of the parent directory.
 - This should also be so for Model and model_dir. [I think this is the case now.]
+- the rule is configurations store relative paths, when needed they become absolute paths.
+- code will be provided to do the needed conversions.
 
 ## Path refactoring
 The aim is to make it easier to move the study to a different location, simplify logic and support reuse of existing models.
@@ -32,7 +34,20 @@ The aim is to make it easier to move the study to a different location, simplify
 - study_dir (and possibly model_dir) get modified on load (they need to be set to the absolute path of the parent directory).
 - add to Study a method to generate full paths for any file access. Add similar to Model.
 - Add new **small** class to handle conversion of relative paths to absolute paths. This to be used everywhere.
-- could be done by using dataclass
+- could be done by using dataclass. Use @property to generate full paths for any file access. Add similar to Model. Paths needed:
+- Model:
+     config_path (be made relative to model_dir??)
+     config_dir (already relative to model_dir)
+     submit_script (already relative to model_dir)
+     continue_script (already relative to model_dir)
+ - Study:
+        change rootDir to study_dir.
+ - SubmitStudy:
+        model_index. Only for saving/read in.  See to_dict/from_dict to handle this.
+        config_path -- path to config. On load make relative and update study_dir
+        Change:   copyConfig(), archive(), create_model(), load_SubmitStudy() and dump_config()
+        Modify runAlgorithm to use study_dir rather than rootDir.
+
 
 ## Handling old configs.
 - If a config is read in from a file it will be updated to the new format.
