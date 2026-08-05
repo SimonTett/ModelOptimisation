@@ -118,6 +118,8 @@ class simple_model(Model):
         """
         runTime = self.run_info.get('runTime', 30)  # default is 30 seconds.
         runCode = self.run_info.get('runCode')
+        runQueue = self.run_info.get('runQueue',None)
+        extra_args=self.run_info.get('runExtraArgs',None)
         if self.status in ['INSTANTIATED', 'PERTURBED']:
             script = self.submit_script
         elif self.status == 'CONTINUE':
@@ -130,9 +132,9 @@ class simple_model(Model):
         my_logger.debug(f"Created {outdir}")
         cmd = self.engine.submit_cmd([self.model_dir/script, str(self.StudyConfig_path)],
                                      f"{self.name}{len(self.model_jids):05d}",
-                                     outdir,
+                                     outdir,run_queue=runQueue,
                                      run_code=runCode, time=runTime,
-                                     rundir=self.model_dir)
+                                     rundir=self.model_dir,extra_args=extra_args)
 
         return cmd
 
