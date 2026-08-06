@@ -481,7 +481,7 @@ class slurm_engine(abstractEngine):
         :param outdir: Directory where output will be put. If None then will be cwd/output
         :param rundir: Directory where job will be ran. If None will run in current working dir when command ran.
         :param run_code: If provided, code to use to run the job. 
-        :param run_queue: If provided, partion (queue)  to use to run the job. 
+        :param run_queue: If provided, partition (queue)  to use to run the job.
         :param hold: If provided as a string, this jobid will need to successfully run before cmd is ran.
           If a list (of jobid's) then all jobs will need to be run
           If provided as a bool then job will held if hold_jid is True. If False no hold will be done

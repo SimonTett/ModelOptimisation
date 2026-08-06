@@ -113,20 +113,12 @@ if args.dir is not None:
 else:  # set rootDir to cwd/name
     rootDir = pathlib.Path.cwd() / configData.name()  # default path
 
-# setup env vars for use in logging etc
-eng = engine.abstractEngine.guess_engine() # do a guess at the engine so can set env var for that.
-if eng is not None:
-    try:
-        JOB_ID = eng.my_job_id()
-    except ValueError:
-        JOB_ID = os.getpid()
-else:
-    JOB_ID = os.getpid()
-os.environ['OPTCLIM_ROOT_DIR'] = rootDir.as_posix()
 output_dir = rootDir / 'jobOutput'
-os.environ['OPTCLIM_LOG_DIR'] = output_dir.as_posix()
-os.environ['OPTCLIM_JOB_ID'] = str(JOB_ID) # have JOB ID
 output_dir.mkdir(parents=True, exist_ok=True)  # make sure output dir (and in current implementation rootDir exists.)
+# setup env vars for use in logging etc
+genericLib.setup_config_env(rootDir,output_dir)
+
+
 
 # check we have what is expected
 for var in expected_env_vars:
