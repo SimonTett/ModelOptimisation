@@ -279,44 +279,57 @@ def get_fn(mod_fn_str: str) -> typing.Callable:
     return fn
 
 
-def fake_fn(config: "OptClimConfigVn3", params: dict) -> pd.Series:
+
+def fake_fn(config: "OptClimConfigVn3", params: dict,obs_names:typing.Optional[list[str]]=None) -> pd.Series:
     """
     Wee test fn for trying out things.
     :param config -- configuration. Provides, parameter min, max & ranges and targets.
     :param params -- dict of parameter values
+    :param obs_names -- optional list of obs_names. If not provided will use config.obsNames()
     returns  "fake" data as a pandas Series
     """
+    import itertools
     params = copy.deepcopy(params)
     my_logger.debug("faking with params: " + str(params))
     # remove ensembleMember param.
     params.pop('ensembleMember', None)  # remove ensembleMember as a key.
     pranges = config.paramRanges()
-    tgt = config.targets()
+    param_series = pd.Series(params).combine_first(config.standardParam())  # merge in the std params
     min_p = pranges.loc['minParam', :]
     max_p = pranges.loc['maxParam', :]
     scale_params = max_p - min_p
-    keys = list(params.keys())
-    for k in keys:  # remove parameters that do not have a range.
-        if k not in pranges.columns:
-            params.pop(k)
-    param_series = pd.Series(params).combine_first(config.standardParam())  # merge in the std params
-    #TODO fix FutureWarning: The behavior of array concatenation with empty entries is deprecated.
-    pscale = (param_series - min_p) / scale_params
-    pscale -= 0.5  # tgt is at params = 0.5
-    result = 100 * (pscale + pscale ** 2)
-    if np.any(result.isnull()):
-        raise ValueError("Got null in result")
-    # this fn has one minimum and  no maxima between the boundaries and the minima. So should be easy to optimise.
-    result = result.to_numpy()
-    while (len(tgt) > result.shape[-1]):
-        result = np.append(result, result, axis=-1)
-    result = result[0:len(tgt)]  # truncate it to len of tgt.
-    result = pd.Series(result, index=tgt.index)  # brutal conversion to obs space.
-    var_scales = 10.0 ** np.round(np.log10(config.scales()))
-    result /= var_scales  # make sure changes are roughly right scales.
+    tgt = config.targets()
+    scales = config.scales()
+    if obs_names is None:
+        obs_names = config.obsNames()
 
-    result += tgt
-    return result
+    else: # fix tgt as we need it with different obs
+        new_names = {k:v for k,v in zip(config.obsNames(),obs_names)}
+        tgt = tgt.rename(index=new_names) # rename
+        tgt = tgt.reindex(obs_names).fillna(0.0) # any new names missing we fill with 0.
+        scales = scales.rename(index=new_names)
+        scales = scales.reindex(obs_names).fillna(1.0) # scales are whaterever + 1 for undefined ones
+
+    var_scales = 10.0 ** np.round(np.log10(scales))
+    pscale = (param_series.reindex(min_p.index) - min_p) / scale_params
+    pscale.fillna(0.0) # fill any values that are nan with 0.0.
+    pscale -= 0.5  # tgt is at params = 0.5
+    sim_obs=dict()
+
+    for oname, k in zip(obs_names, itertools.cycle(pscale.index)):
+        try:
+            sim_obs[oname] = 100 * (pscale[k] + pscale[k] ** 2)
+        except TypeError:
+            sim_obs[oname] = 0.0
+    sim_obs = pd.Series(sim_obs)/var_scales# make sure changes are roughly right scales.
+
+
+
+    #TODO fix FutureWarning: The behavior of array concatenation with empty entries is deprecated.
+
+
+    sim_obs += tgt
+    return sim_obs
 
 
 def seconds_to_isoduration(seconds: int | float) -> str:

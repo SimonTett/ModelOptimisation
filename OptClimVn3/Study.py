@@ -15,6 +15,7 @@ import typing
 import numpy as np
 import pandas as pd
 
+from Models import Model
 from model_base import model_base
 from Model  import Model # root class for all models.
 #from StudyConfig import OptClimConfigVn3
@@ -41,7 +42,7 @@ class Study:
     def __init__(self, config: "OptClimConfigVn3",
                  name: typing.Optional[str] = None,
                  rootDir: typing.Optional[pathlib.Path] = None,
-                 models: typing.Optional[typing.List[Model]] = None):
+                 models: typing.Optional[list[Model]] = None):
         """
         Create read-only study instance.
         :param config: Configuration information.
@@ -141,9 +142,11 @@ class Study:
         :param fpFmt -- format to convert float to string. (Default is %.4g)
         :return: a tuple as an index. tuple is key_name, value in sorted order of key_name.
         """
-
+        params_to_ignore = ['reference_name'] # parameters to ignore when constructing the key
         keys = []
         param_keys = sorted(parameters.keys())  # fixed ordering
+        param_keys = [ p for p in param_keys if p not in params_to_ignore ] # remove params_to_ignore from key construction
+        # params to ignore.
 
         # deal with variable parameters -- produced by optimisation so have names and values.
         for k in param_keys:  # iterate over keys in sorted order.
@@ -154,7 +157,6 @@ class Study:
             elif isinstance(v,str):
                 keys.append(v)  # string so just append
             elif isinstance(v,pathlib.PurePath): # pathlib object # Path inherits from PurePath
-                #keys.append(str(v))  # convert path to string
                 keys.append(v.as_posix())
             else:  # just append the value.
                 keys.append(repr(v))  # use the object repr method.
@@ -179,6 +181,7 @@ class Study:
             raise ValueError(f'Expected even number of keys, got {len(values)}')
         result = dict(zip(values[0::2], values[1::2]))
         return result
+
 
     def get_model(self, parameters: typing.Mapping, fpFmt: str = '%.4g') -> typing.Optional[Model]:
         """
@@ -208,7 +211,7 @@ class Study:
         files = direct.glob("**/" + pattern)
         self.read_model_configs(files)
 
-    def read_model_configs(self, path_list: list[pathlib.Path]) -> typing.List[Model]:
+    def read_model_configs(self, path_list: list[pathlib.Path]) -> typing.list[Model]:
         """
         Read model configurations from path_list and store them in self.model_index
           key will be generated from the model parameters and value will be the model.
@@ -230,6 +233,7 @@ class Study:
                 my_logger.warning(f"Failed to load_model from {f}. Ignoring.")
 
         return models
+    
 
     def status(self) -> pd.Series:
         """
@@ -241,7 +245,7 @@ class Study:
     def params(self, normalize: bool = False,
                numeric:bool = False,
                model:typing.Optional[Model]=None,
-               keys:typing.Optional[typing.List[typing.Hashable]]=None) -> pd.DataFrame|pd.Series:
+               keys:typing.Optional[list[typing.Hashable]]=None) -> pd.DataFrame|pd.Series:
         """
         Extract the parameters used in the simulations. Will include ensembleMember -- as a "fake" parameter
         :param numeric -- if True convert all parameters to numeric values using errors='coerce'.
@@ -267,6 +271,30 @@ class Study:
 
         return paramsDF
 
+
+    def processed_models(self) -> list[Model]:
+        """
+
+        :return: List of models that have processed
+        """
+        return [model for model in self.model_index.values() if model.is_processed()]
+
+    def simulated_observations(self,use_cache:bool = True) -> pd.DataFrame:
+        """
+        Get the simulated observations for all processed models.
+        :param use_cache: Whether to use cached data if available. Passed through to model.simulated_obs().
+         Set to False to force reload of observations
+        :return: dataframe with all simulated observations. Empty dataframe if nothing available.
+        """
+
+        observations = [model.compute_simulated_observations(use_cache=use_cache) for model in self.model_index.values()
+               if model.is_processed()]
+
+
+
+        return pd.DataFrame(observations) if observations else pd.DataFrame()
+
+
     def obs(self, scale: bool = True,
             normalize: bool = False,
             obsNames:typing.Optional[list[str]]=None) -> typing.Optional[pd.DataFrame]:
@@ -278,11 +306,11 @@ class Study:
         :return: pandas dataframe of observations possibly scaled and normalized.
            None will be returned if there are no obs
         """
-        obs = [model.simulated_obs.rename(model.name)
-               for model in self.model_index.values() if model.simulated_obs is not None]
-        if len(obs) == 0:  # empty list
+
+        obsDF = self.simulated_observations()  # get obs for all processed models.
+        if obsDF.empty: # got an empty dataframe
             return None
-        obsDF = pd.DataFrame(obs)
+
         if obsNames is None:
             obsNames = obsDF.columns.values.tolist()
         else:

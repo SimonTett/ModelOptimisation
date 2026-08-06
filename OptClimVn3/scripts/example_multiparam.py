@@ -3,16 +3,17 @@
 import typing
 import pandas as pd
 
-import Model
 
 type_basic = int|float|str|bool
-def ctl_plus4k(run_submit_instance,
-                      parameter_dict:dict[str,dict[str,type_basic]]) -> tuple[list[Model.Model],typing.Optional[pd.Series]]:
+from Model import Model # just needed for type checking.
+def ctl_plus4k(comp_sim_obs: typing.Callable[[dict],tuple[list[Model]|None, pd.Series|None]],
+                      parameter_dict:dict[str,dict[str,type_basic]]) -> tuple[list[Model],typing.Optional[pd.Series]]:
 
     """
     Return control values concatenated with differences from plus4k case. This is an example case
-    :param run_submit_instance: a runSubmit instance
+    :param comp_sim_obs: fn to compute/read simulated observations
     :param parameter_dict: Dict of parameters for models. Should have the keys control and plus4k
+    :param use_cache: Passed to compute_simulated_observations
     :return: List of models & Pandas series (or None) of concatenated series of ctl and delta.
 
     """
@@ -22,19 +23,23 @@ def ctl_plus4k(run_submit_instance,
     # a more complex case would be where one model depends on another.
     # in that case would need to run models in expected order checking that they exist before running dependent models.
     # more complex cases could be handled by modifying parameters in models based on results from other models.
+    all_models=dict()
+    all_sim_obs = dict()
     for name, param_dict in parameter_dict.items():
-        models[name] = run_submit_instance.make_model(param_dict,reference_name=name)
+        models, obs = comp_sim_obs(param_dict)
         # this will create a new model or return an existing one.
+        if len(models)!=1:
+            raise ValueError("Something went wrong")
+        all_models[name] = models[0] # should get a list of models back.
+        all_sim_obs[name] = obs
 
-
-    # get the simulated obs for this model. If None model not been run yet.
-    # test that all models ran and produced obs. Any that are None will mean can't compute result.
-    if any([m.simulated_obs is None for m in models.values()]):
-        return list(models.values()),None
-    ctl:pd.Series = models['control'].simulated_obs # get the obs
-    plus4k:pd.Series = models['plus4k'].simulated_obs
+    # check whether any of the simulated observations are None. If so return the models and None for the series.
+    if any([sim_obs is None for sim_obs in all_sim_obs.values()]):
+        return list(all_models.values()),None
+    ctl:pd.Series = all_sim_obs['control'] # get the obs
+    plus4k:pd.Series = all_sim_obs['plus4k']
 
     new_index = ['delta_'+idx for idx in ctl.index] # new index for delta
     delta = (plus4k - ctl).set_axis(new_index) # compute delta and set axis
     result:pd.Series = pd.concat([ctl,delta]) # concat values together.
-    return list(models.values()),result
+    return list(all_models.values()),result

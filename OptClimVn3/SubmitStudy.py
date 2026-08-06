@@ -31,6 +31,7 @@ import pandas as pd
 import engine
 import generic_json
 from Model import Model
+from Models import Model
 from model_base import model_base, journal
 from Study import Study
 from StudyConfig import dictFile
@@ -195,9 +196,28 @@ class SubmitStudy(Study, model_base, journal):
 
         return s
 
+    def compute_simulated_observations(self,param:dict,
+                                       use_cache:bool = True) -> \
+            tuple[list[Model|None],typing.Optional[pd.Series]]:
+        """"
+        Compute simulated obs for a param. If param not in dict then return None.
+        :param param: dict of params to compute simulated observations for
+        :param use_cache -- whether to use cached simulated observations or not.
+        :return: one element list of Model and simulated observations as pd.Series. All obs are returned.
+          TODO: refactor this approach so that model is not returned as can just be retrieved using param.
+        """
+        key = self.key(param) # problem is (I think) that self.key(param) is not the same as self.key_for_model(param)
+        # Key failing to match key_for_model as do not have reference_name
+        #raise NotImplementedError("Key gen going wrong. Likely because missing reference_name. FIXME please")
+        if key not in self.model_index:
+            model = self.create_model(param,dump=False ) # create the model.
+            return [model],None
+        model = self.model_index[key]
+        sim_obs = model.compute_simulated_observations(use_cache=use_cache)
+        return [model],sim_obs
+
     def create_model(self, params: dict,
-                     dump: bool = True,
-                     reference_name:typing.Optional[str]=None) -> typing.Optional[Model]:
+                     dump: bool = True) -> typing.Optional[Model]:
         """
         Create a model, update list of created models and index of models.
         If self.next_command is 'stop' immediately returns None.
@@ -237,6 +257,7 @@ class SubmitStudy(Study, model_base, journal):
         param_dir = copy.deepcopy(params)
         reference = self.expand(param_dir.pop('reference', str(self.refDir)))
         model_name = param_dir.pop('model_name', self.model_name)
+        reference_name = param_dir.pop('reference_name', None)
         post_process = self.config.getv('postProcess')
         run_info = self.config.run_info()
         model = Model.model_init(model_name, name=name,
@@ -355,67 +376,7 @@ class SubmitStudy(Study, model_base, journal):
         my_logger.info(f"Instantiated {len(models)} models")
         return iter_count
 
-    def models_to_instantiate(self) -> List[Model]:
-        """
-        return a list of  models that need instantiation.
-        :return:list of models that need instantiation
-        """
-        models_to_instantiate = [model for model in self.model_index.values() if model.is_instantiable()]
 
-        return models_to_instantiate
-
-    def models_to_submit(self) -> List[Model]:
-        """
-        return a list of  models that need submission.
-        :return:list of models that need submission
-        """
-        models_to_submit = [model for model in self.model_index.values() if model.is_submittable()]
-
-        return models_to_submit
-
-    def models_to_continue(self) -> List[Model]:
-        """
-
-        :return: a list of models that are marked to continue
-        """
-        models_to_continue = [model for model in self.model_index.values() if model.is_continuable()]
-
-        return models_to_continue
-
-    def failed_models(self) -> List[Model]:
-        """
-
-        :return: list of models that have failed
-        """
-
-        return [model for model in self.model_index.values() if model.is_failed()]
-
-    def running_models(self) -> List[Model]:
-        """
-
-        :return: List of models that are running
-        """
-        return [model for model in self.model_index.values() if model.is_running()]
-
-    def submitted_models(self) -> List[Model]:
-        """
-
-        :return: List of models that are running
-        """
-        return [model for model in self.model_index.values() if model.is_submitted()]
-
-    def processed_models(self) -> List[Model]:
-        """
-
-        :return: List of models that have processed
-        """
-        return [model for model in self.model_index.values() if model.is_processed()]
-
-    def succeeded_models(self) -> List[Model]:
-        """
-        :return: List of models that have succeeded
-        """
-        return [model for model in self.model_index.values() if model.is_succeeded()]
 
     def to_dict(self) -> dict:
         """
@@ -484,6 +445,7 @@ class SubmitStudy(Study, model_base, journal):
                 if key != got_key:  # key changed.
                     dct = cls.key_to_dict(key)
                     dct['reference'] = dct.get('reference',model.reference)
+                    dct['reference_name'] = dct.get('reference_name', model.reference_name)
                     try:
                         dct['reference']= pathlib.PurePath(dct['reference'])
                     except KeyError:
@@ -673,13 +635,73 @@ class SubmitStudy(Study, model_base, journal):
             my_logger.warning(f"Ran out of names name_values = {self.name_values}")
         return name  # return name
 
-    def submit_all_models(self, fake_fn: Optional[Callable] = None,
-                          next_iter_cmd:typing.Optional[list[str]] = None,):
+    def models_to_instantiate(self) -> list[Model]:
         """
-        Submit models, the post-processing and the next iteration in the algorithm to job control system.
-        :param fake_fn:Function to fake model runs -- will skip most stages including post-processing.
+        return a list of  models that need instantiation.
+        :return:list of models that need instantiation
+        """
+        models_to_instantiate = [model for model in self.model_index.values() if model.is_instantiable()]
+
+        return models_to_instantiate
+
+    def models_to_submit(self) -> list[Model]:
+        """
+        return a list of  models that need submission.
+        :return:list of models that need submission
+        """
+        models_to_submit = [model for model in self.model_index.values() if model.is_submittable()]
+
+        return models_to_submit
+
+    def models_to_continue(self) -> list[Model]:
+        """
+
+        :return: a list of models that are marked to continue
+        """
+        models_to_continue = [model for model in self.model_index.values() if model.is_continuable()]
+
+        return models_to_continue
+
+    def failed_models(self) -> list[Model]:
+        """
+
+        :return: list of models that have failed
+        """
+
+        return [model for model in self.model_index.values() if model.is_failed()]
+
+    def running_models(self) -> list[Model]:
+        """
+
+        :return: List of models that are running
+        """
+        return [model for model in self.model_index.values() if model.is_running()]
+
+    def submitted_models(self) -> list[Model]:
+        """
+
+        :return: List of models that are running
+        """
+        return [model for model in self.model_index.values() if model.is_submitted()]
+
+    def processed_models(self) -> list[Model]:
+        """
+
+        :return: List of models that have processed
+        """
+        return [model for model in self.model_index.values() if model.is_processed()]
+
+    def succeeded_models(self) -> list[Model]:
+        """
+        :return: List of models that have succeeded
+        """
+        return [model for model in self.model_index.values() if model.is_succeeded()]
+
+    def submit_all_models(self, fake_fn: Optional[Callable] = None):
+        """
+        Submit models, the post-processing, and the next iteration in the algorithm to job control system.
+        :param fake_fn:Function to fake model runs -- will skip most stages, including post-processing.
           fake and anything to be continued will generate an error.  No pp or next submission will be done if provided,
-        :param next_iter_cmd: Update next_iter_cmd (if not None) and use the command to run the next iteration.
         :return: number of models submitted
 
         Does the following:
@@ -831,22 +853,6 @@ class SubmitStudy(Study, model_base, journal):
             self.dump_config() # and write ourselves out
         return models
 
-    def reload_obs(self) -> list[Model]:
-        """
-        Reload the observations for all processed models.
-        This is for dealing with cases where the observations have been updated.
-        :return: list of models that were reloaded.
-        """
-        my_logger.warning("Needs test cases written")
-        models = self.processed_models()
-        for model in models:
-            path = model.model_dir/model._post_process_output # TODO -- should really be part of read_simulated_obs
-            model.read_simulated_obs(path)
-            model.update_history("Reloaded observations")
-        my_logger.info(f"Reloaded obs for {len(models)} models")
-        self.update_history(f"Reloaded obs for {len(models)} models")
-        self.dump_config(dump_models=True) # and write ourselves AND modified models out
-        return models
 
     def resub_status(self) -> typing.Optional[str]:
         """"

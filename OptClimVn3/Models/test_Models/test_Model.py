@@ -666,8 +666,9 @@ class ModelTestCase(unittest.TestCase):
 
         with unittest.mock.patch('subprocess.check_output',
                                  autospec=True, return_value="Submitted something"):
-            model.process()  # run the post-processing. Nothing should be ran because of the mock
-        pdtest.assert_series_equal(pd.Series(fake_obs).rename(model.name), model.simulated_obs)
+            model.process()  # run the post-processing. Nothing should actually be ran because of the mock though it shoudl read in the data.
+        model_obs = model.compute_simulated_observations()
+        pdtest.assert_series_equal(pd.Series(fake_obs).rename(model.name), model_obs)
         self.assertEqual(model.status, 'PROCESSED')
 
     # patching end_to_end so time always ticks in controlled way. gen_time does 1 seconds increments.
@@ -705,7 +706,7 @@ class ModelTestCase(unittest.TestCase):
                 model.process()  # and do the post-processing
                 # need to run a bunch of tests here.
                 # having got to here should have simulated_obs be post_process['fake_obs']
-                pdtest.assert_series_equal(model.simulated_obs, pd.Series(post_process['fake_obs']).rename(model.name))
+                pdtest.assert_series_equal(model.compute_simulated_observations(), pd.Series(post_process['fake_obs']).rename(model.name))
                 # should have 8 history entries.
                 self.assertEqual(len(model._history), 8)
                 # four    outputs -- from  model submission, post_process submission, post-process release_job and

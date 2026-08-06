@@ -18,6 +18,7 @@ Provides classes and methods suitable for manipulating study configurations.  In
 """
 from __future__ import annotations
 
+import functools
 import typing
 import copy
 import datetime
@@ -1783,7 +1784,7 @@ class OptClimConfigVn2(OptClimConfig):
         return svalues.rename(self.name())
 
     def paramRanges(self, paramNames=None,
-                    values: dict = None,
+                    values: typing.Optional[dict] = None,
                     ensemble: bool = False) -> pd.DataFrame:
         """
         :param paramNames -- a list of the parameters to extract ranges for.
@@ -1797,9 +1798,11 @@ class OptClimConfigVn2(OptClimConfig):
             self.Config['Parameters']['minmax'] = values
         param = pd.DataFrame(self.Config['Parameters']['minmax'],
                              index=['minParam', 'maxParam'])
+        # reindex based on paramNames -- will give nan for missing values.
+        param = param.reindex(columns= paramNames)
         # work out which names we have to avoid complaints from pandas.
-        names = [p for p in paramNames if p in param.columns]
-        param = param.loc[:, names]  # just keep the parameters we want and have.
+        #names = [p for p in paramNames if p in param.columns]
+        #param = param.loc[:, names]  # just keep the parameters we want and have.
         param = param.astype(float)
         if ensemble:
             # add ensemble member parameters if needed.
@@ -2650,23 +2653,37 @@ class OptClimConfigVn3(OptClimConfigVn2):
 
         return keys
 
-    def fixed_param_function(self) -> typing.Optional[type_fixed_param_function]:
+    def fixed_param_function(self,multiple_function:typing.Optional[str]=None) -> typing.Optional[type_fixed_param_function|str]:
         """
-        Extract the function from string. Note will import the file that contains the function.
+        Extract or set the function from fuxedParams block. Note will import the file that contains the function.
         Be very careful...
 
-        :return: function or None if no multiple_function found.
+        :param multiple_function -- set the multiple function. Should be of the form path_to_file.function_name
+          path_to_file will have .py appended and then expanded
+
+        :return: function to run  or None if no multiple_function found. If path_to_file does not exist or somethign else is bad an error will be raised.
         """
         import importlib.util
-        import sys
-        fn_test = self.getv('initial').get('fixedParams', {}).get('multiple_function', None)
+        mf_name = 'multiple_function'
+        fp_block = self.getv('initial').get('fixedParams', {})
+        if multiple_function is not None:
+            my_logger.debug(f"Setting {mf_name} to {multiple_function}")
+            fp_block[mf_name] = multiple_function
+            init_block = self.getv('initial') # python magic -- this is really pointer to dict in the config.
+            init_block['fixedParams'] = fp_block
+
+
+
+
+        fn_test = fp_block.get(mf_name, None)
         if fn_test is None:
             return fn_test
         path, fn_name = fn_test.rsplit('.', 1)
         path = self.expand(path+'.py')  # expand it
         if not path.is_file():  # path is a file so use that
-            my_logger.warning(f"Cannot find file {path} for fixed parameter function")
-            return None
+            raise ValueError(f"Cannot find file {path} for fixed parameter function."
+                              f" Fix initial.fixedParams.{mf_name}={fn_test}" )
+
 
 
 
@@ -2885,34 +2902,87 @@ class OptClimConfigVn3(OptClimConfigVn2):
 
         return cov
 
+    @staticmethod
+    def test_call(function:typing.Callable,
+                  errors: tuple[type[Exception],...] | type[Exception],
+                  OK: bool = True,
+                  message:str = '') -> tuple[bool,typing.Any]:
+        """
+        Test call catching specified exceptions (if any)
+        :param function: method or fn to run. Use functools.partial to wrap in arguments
+        :param errors: errors to catch
+        :param OK: input value of OK returned if no problems with function
+        :param message: message to give on my_logger
+
+        :return: state of fn (OK or not) and results
+        """
+        if hasattr(function, 'func'): # partial function
+            fn_name = function.func.__name__
+        else:
+            fn_name = function.__name__
+
+        try:
+            result = function()
+        except errors as e:
+            my_logger.warning(f"{fn_name} {message} raised Exception: {e}")
+            return False, None
+        return OK, result
+
     def check_obs(self, obsNames=None):
         """
         Check that observation related stuff is OK.
           Check targets, scalings and covariances. Trapping errors and then reporting at end
         :return: True if OK/False if not.
         """
-        bad = []  # where we store all the error messages
-        try:
-            targets = self.targets(obsNames=obsNames)
-        except ValueError as exception:  # missing some errors
-            bad += ['Targets have problems ' + str(exception)]
 
-        try:
-            covar = self.Covariances(obsNames=obsNames)
-        except ValueError as exception:  # missing some errors
-            bad += ['Covariances have problems ' + str(exception)]
+        OK, targets = self.test_call(functools.partial(self.targets, obsNames=obsNames), ValueError)
+        OK, covar = self.test_call(functools.partial(self.Covariances, obsNames=obsNames), ValueError, OK=OK)
+        OK, scales = self.test_call(functools.partial(self.scales, obsNames=obsNames), ValueError, OK=OK)
 
-        try:
-            scales = self.scales(obsNames=obsNames)
-        except ValueError as exception:  # missing some errors
-            bad += ['scales have problems ' + str(exception)]
+        return OK
 
 
-        if len(bad):  # something went wrong. So report all the trapped errors with a failure.
-            for m in bad:
-                my_logger.warning(m)
+    def check_fixed_params(self) -> bool:
+        """
+        Check that fixed parameters are valid.
+        :return: True if OK, False if not.
+        """
+        errors=(KeyError, ValueError)
+        OK, fixed_params = self.test_call(self.fixedParams,errors)
+        OK, n_ensemble = self.test_call(self.ensembleSize,errors, OK=OK)
+        OK, multi_config_fn = self.test_call(self.fixed_param_function,errors, OK=OK)
 
-        return len(bad) == 0
+        # check compatible with ensemble & multi_config_fn
+        if n_ensemble > 1:  # running ensemble so check don't have ensembleMember in fixed_params.
+            if multi_config_fn is not None:
+                for k, par in fixed_params.items():
+                    if 'ensembleMember' in par:
+                        my_logger.warning(f"ensembleMember should not be in fixed_params for multi_config_fn key {k}")
+                        OK = False
+
+            else:
+                if 'ensembleMember' in fixed_params:
+                    my_logger.warning("ensembleMember should not be in fixed_params for single model")
+                    OK = False
+
+        # check nothing in fixed_params is in params or vice versa
+        # Two branches -- one with multi_config_fn and one without. In the multi_config_fn case fixed_params is a dict of dicts with keys being the labels.
+        params = set(self.paramNames())
+        if multi_config_fn is not None:
+            for k, par in fixed_params.items():
+                common_params = set(par.keys()) & params
+                if common_params:
+                    my_logger.warning(f'params and fixed_params[{k}] have common parameters: {common_params}')
+                    OK = False
+        else:
+            common_params = set(fixed_params.keys()) & params
+            if common_params:
+                my_logger.warning(f'params and fixed_params have common parameters: {common_params}')
+                OK = False
+
+        return OK
+
+
 
     def check_params(self) -> bool:
         """
@@ -2921,54 +2991,34 @@ class OptClimConfigVn3(OptClimConfigVn2):
         Raises warnings if not consistent
         :return: True if OK, False if Not
         """
-        bad = []
+
 
         errors_to_catch = (KeyError, ValueError)
+        OK, params = self.test_call(self.paramNames, errors_to_catch)
+        OK, default = self.test_call(functools.partial(self.standardParam, paramNames=params), errors_to_catch, OK=OK)
+        if default.isnull().any():
+            my_logger.warning('Missing values for standard: ' + ", ".join(default[default.isnull()].index))
+            OK = False
 
-        try:
-            expected_params = self.paramNames()
-            my_logger.debug(f'Expected params are: {expected_params}')
-        except errors_to_catch:  # some error
-            bad += ['Problem running paramNames']
-            expected_params = []  # so other tests do not fail.
-        try:
-            default = self.standardParam(paramNames=expected_params)
-            if default.isnull().any():
-                bad += ['Missing values for standard: ' + ", ".join(default[default.isnull()].index)]
-        except errors_to_catch:
-            bad += ['Problem running standardParam']
-        try:
-            range = self.paramRanges(paramNames=expected_params)
-            if range.isnull().any().any():
-                bad += ['Missing values for range: ' + ", ".join(range.loc[:, range.isnull().any()].columns)]
-        except errors_to_catch:
-            bad += ['Problem running paramRanges']
-        try:
-            begin = self.beginParam(paramNames=expected_params)
-            if begin.isnull().any():
-                bad += ['Missing values for begin: ' + ", ".join(begin[begin.isnull()].index)]
-        except errors_to_catch:  # some error
-            bad += ['Problem running beginParam']
+        OK, range = self.test_call(functools.partial(self.paramRanges, paramNames=params), errors_to_catch, OK=OK)
+        if range.isnull().any().any():
+            my_logger.warning('Missing values for range: ' + ", ".join(range.loc[:, range.isnull().any()].columns))
+            OK = False
 
-        try:
-            ensembleSize = self.ensembleSize()
-            if ensembleSize < 1:
-                bad += [f'ensembleSize {ensembleSize} < 1']
-        except (KeyError, ValueError):  # some error
-            bad += ['Problem running ensembleSize']
+        OK, ensemble_size = self.test_call(self.ensembleSize, errors_to_catch, OK=OK)
+        if ensemble_size < 1:
+            my_logger.warning(f'ensembleSize {ensemble_size} < 1')
+            OK = False
+        if ensemble_size > 1 and 'ensembleMember' in params:
+            my_logger.warning(f'ensembleMember {ensemble_size} > 1 and ensembleMember in paramNames')
+            OK = False
 
-        try:
-            fixed = self.fixedParams()
-            if not isinstance(fixed, dict):
-                bad += ['fixedParams is not a dict']
-        except (KeyError,ValueError):  # some error
-            bad += ['Problem running fixedParams']
+        OK = OK and self.check_fixed_params()   # carry out fixed param tests.
+        # verify nothing in fixed_params is in params... (or vice versa)
 
-        if len(bad) > 0:
-            for m in bad:
-                my_logger.warning(m)
 
-        return len(bad) == 0
+
+        return OK
 
     def check(self) -> bool:
         """
@@ -2984,7 +3034,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
     def obsNames(self,
                  obsNames:typing.Optional[list[str]]=None,
                  add_constraint:bool=True,
-                 strip_comments:bool=True):
+                 strip_comments:bool=True) -> list[str]:
         """
 
         :param obsNames  If not None set obsNames to values
