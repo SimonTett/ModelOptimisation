@@ -322,52 +322,6 @@ class runSubmit(SubmitStudy):
             for model in models:
                 self.set_model_status(model, 'initial')
 
-    def make_model(self, params: dict, reference_name: typing.Optional[str] = None) -> Model:
-        """
-        Make a model from a dictionary of parameters. If model already exists then return that model.
-        If fail to make model then raise optclim_exceptions.submitModel.
-        If model already exists then behaviour depends on model state  though model_status is set to 'called'
-          Instantiated -- raise optclim_exceptions.submitModel as model needs to be submitted.
-          Processed -- return model
-          Created -- raise useCreatedModel (whcih if algorithm wants can be handled)
-          Anything else  -- raise ValueError as should not be here
-
-        :param params: dictionary of parameters
-        :param reference_name: name of reference model to use. Pass None if want Model default behaviour.
-        :return: Model object
-        """
-        raise NotImplementedError("No need to use make_model. Just call create_model")
-        # add reference model to params if not already there.
-        if 'reference' not in params and self.refDir is not None:
-            params['reference'] = self.refDir
-
-        model = self.get_model(params)
-
-        if model is None:  # no model so time to create one.
-            model = self.create_model(params, reference_name=reference_name,
-                                      dump=False)  # returns None if no model was created.
-            if model is None:  # no model can be created.
-                raise optclim_exceptions.submitModel
-                # Immediately raise exception as None means no model created and nothing else can be done
-                # will run out any remaining models.
-            # otherwise just return model. To do this as go through creation path once.
-            return model
-        else:  # std path -- model already exists so set status and potentially update reference.
-            if reference_name is not None:
-                model.update_reference_name(reference_name)  # reset reference_name if provided.
-            self.set_model_status(model, 'called')  # we are calling the model.
-
-        # Check model.status
-        if model.status in ["INSTANTIATED"]:  # model is created or instantiated.
-            my_logger.debug(f"Model {model} has been instantiated but not run -- need to submit")
-            raise optclim_exceptions.submitModel
-        elif model.status in ["PROCESSED"]:  # model has been Processed
-            my_logger.debug(f"Using existing model {model}")
-        elif model.status in ['CREATED']: # model has been created -- raise a useCreatedModel exception -- what happens next depends on alg.
-            raise optclim_exceptions.useCreatedModel(f"Model {model}") 
-        else:  # not processed/Instantiated so raise ValueError and complain.
-            raise ValueError(f"{model} status != PROCESSED but is {model.status}")
-        return model
 
     def transform_check(self, observations: pd.Series,
                         transform: typing.Optional[pd.DataFrame] = None,
@@ -498,11 +452,24 @@ class runSubmit(SubmitStudy):
                     scale: bool = True,
                     obs_names: typing.Union[bool, list[str], None] = None) -> pd.DataFrame:
         """
+        DO NOT USE. Use simulated_obs() instead.
+        :param normalize:
+        :param scale:
+        :param obs_names:
+        :return:
+        """
+        raise NotImplementedError("Use simulated_obs() instead.")
+    def simulated_observations(self,
+                    normalize: bool = False,
+                    scale: bool = True,
+                    obs_names: typing.Union[bool, list[str], None] = None,use_cache:bool = True) -> pd.DataFrame:
+        """
         Return a dataframe of observations for all logical names.
-        :param normalize: normalise the observations by error estimates from target
+        :param normalize: normalize the observations by error estimates from target
         :param scale: scale the observations by self.config.scales()
         :param obs_names: Names to use, If None -- use config obsNames.
            If True uses all observations in self._logical_info.observations. This might fail with normalize if not all observations are present in tgt.
+        :param use_cache: Whether to use cached observations or not.
         :return: dataframe of observations
         """
         obs_df = pd.DataFrame(self._logical_info.observations).T
@@ -641,72 +608,6 @@ class runSubmit(SubmitStudy):
 
 
 
-
-    # def compute_logical_observations(self,
-    #                      params: dict,
-    #                      use_cache: bool = True,
-    #                      transform: typing.Optional[pd.DataFrame] = None,
-    #                      scale: bool = False,
-    #                      residual: bool = False,
-    #                      ) -> typing.Optional[pd.Series]:
-    #     """
-    #     Compute the observations for a given set of parameters.
-    #     Broadly this function generates (via make_model & simulated_obs) the model(s) needed to compute the observations or gets the observations from those models that have been ran.
-    #
-    #       Adds in fixed params and calls make_model or multi_config_fn to actually get data from the model.
-    #
-    #       Stores the parameters, observations and cost in self._logical_info.parameters, self._logical_info.observations and self._logical_info.cost respectively.
-    #         For the later two only once observations are generated.  Cost is sum of squares of observations (after processing by transform_check) divided by no of observations.
-    #     :param params: dictionary of parameters which vary
-    #     The following parameters are applied after ensemble averaging (if any) and using transform_check method.
-    #     :param transform -- transform matrix to apply to observations.
-    #     :param scale -- if True scale observations by self.config.scales()
-    #     :param residual -- if True compute observations as difference from target.
-    #
-    #
-    #     :return: pandas series of potentially transformed observations  or None if some run is needed.
-    #     """
-    #     raise ValueError("Should not call this method at all")
-    #     # params should only contain parameters that vary and so none should  be a string.
-    #     for k,v in params.items():
-    #         if isinstance(v,str):
-    #             raise ValueError(f"params should not contain strings but got {k} = {v}")
-    #
-    #     models, sim_obs = self.compute_simulated_observations(params,use_cache=use_cache)
-    #     # TODO. Remove the need for models as can generate on the fly from the params and gen_param_dict
-    #     name,params = self._logical_info.params(params)    # store parameters
-    #     # Got sim obs back; now for final processing.
-    #     if sim_obs is None:  # some model needs running so return None
-    #         return None
-    #
-    #     sim_obs = self._logical_info.obs(name, sim_obs)
-    #
-    #
-    #     # now apply transform fn and compute cost
-    #     sim_obs = self.transform_check(sim_obs, transform=transform, scale=scale, residual=residual)
-    #     n_obs = len(sim_obs)
-    #     self._logical_info.cost[name] = (sim_obs ** 2).sum() / n_obs  # store the avg cost
-    #     return sim_obs
-    #
-    # def update_obs(self) -> list[str]:
-    #     """
-    #     Reload observations into models and then update the logical info
-    #     :return: list of names that were updated.
-    #     """
-    #
-    #     models = super().update_obs() # call the super class which updates the individual model sims.
-    #     # now to update the logical_obs
-    #     n_ensemble = self.config.ensembleSize() # ensemble size
-    #     multi_config_fn = self.config.fixed_param_function() # multi config fn?
-    #     fixed_params = self.config.fixedParams()  # get fixed parameters
-    #     updated_names = []
-    #     for name,param_series in self._logical_info.parameters.items():
-    #         models, observations = self.simulated_obs(param_series.to_dict(), fixed_params=fixed_params, n_ensemble=n_ensemble,
-    #                                     multi_config_fn=multi_config_fn)
-    #         if observations is not None: # have computed obs
-    #             self._logical_info.obs(name,observations)
-    #
-    #     return models
 
     def update_obs(self) -> pd.DataFrame:
         """
