@@ -236,12 +236,6 @@ class testRunSubmit(unittest.TestCase):
 
         # test 1 # run same model and should raise useCreatedModel as status is not processed
         rSubmit.config.ensembleSize(1)  # 1 member ensemble
-        #raise NotImplementedError("Not yet implemented catching double use of created model")
-        #with self.assertRaises(optclim_exceptions.useCreatedModel):  # trying to use created model
-        #    result = rSubmit.stdFunction(params)  # should get useCreatedModel as running twice.
-        # no of models to run should be 1. (as we already have it just asked for it twice)
-        #models = rSubmit.model_index.values()
-        #self.assertEqual(len(models), 1, "Expect only 1 model to submit")
         rSubmit.delete()  # restart.
 
         # test 2. Set ensemble size to 2.
@@ -396,6 +390,13 @@ class testRunSubmit(unittest.TestCase):
         pDict = dict(zip(rSubmit.config.paramNames(), params))
         expect = fk_fn(pDict).rename(result.name)
         pdtest.assert_series_equal(expect, result)
+
+    def notest_compute_simulated_observations(self):
+        """
+        Test compute_simulated_observations.
+        :return:
+        """
+        raise NotImplementedError("Impliment tests!")
 
     @unittest.mock.patch.object(engine.sge_engine, 'job_status', autospec=True, return_value='notFound')
     def test_runOptimized(self, mck):
@@ -1731,3 +1732,4 @@ class TestLogicalInfo(unittest.TestCase):
                 self.assertIsInstance(model_key, str)
                 expect_model = self.run_submit.model_index[model_key]
                 self.assertEqual(self.run_submit.key_for_model(expect_model), model_key)
+
