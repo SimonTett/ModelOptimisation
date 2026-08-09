@@ -56,7 +56,7 @@ class SubmitStudy(Study, model_base, journal):
     config_path: pathlib.Path
     name_values: typing.Optional[list[int]]
     iter_keys: dict
-    next_iter_cmd: typing.Optional[list[str]]
+    next_iter_cmd: typing.Optional[list[str|pathlib.PurePath]]
     next_iter_jids: list[str]
     next_command:typing.Optional[typing.Literal['stop']] # next command to run. Only None or stop are allowed.
 
@@ -887,6 +887,22 @@ class SubmitStudy(Study, model_base, journal):
         my_logger.info(f"Killed {len(killed)} jobs")
         self.update_history(f"Killed {len(killed)} jobs")
         return killed
+
+    def iter_cmd(self, iter_cmd:typing.Optional[ list[str | pathlib.Path]]) -> \
+            typing.Optional[list[str | pathlib.Path]]:
+        """
+        If iter_cmd is Truthy set next_iter_cmd and update history. If it is the same as current value no change will be made.
+        :param next_iter_cmd: Command to be used -- a list of strings or pathlib.Path objects.
+        :return:whatever next_iter_cmd was set to.
+        """
+        if (iter_cmd and ((self.next_iter_cmd is None) or (self.next_iter_cmd != iter_cmd))):
+            # only update self.next_iter_cmd if  either self.next_iter_cmd is empty/None or
+            #  self.next_iter_cmd is different from iter_cmd
+            self.update_history(f'Modifying {self.next_iter_cmd} to {iter_cmd}')
+            logging.debug(f'Setting next_iter_cmd to {iter_cmd}')
+            self.next_iter_cmd = iter_cmd
+
+        return iter_cmd
 
 
 
