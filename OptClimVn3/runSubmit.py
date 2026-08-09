@@ -458,7 +458,7 @@ class runSubmit(SubmitStudy):
         :param obs_names:
         :return:
         """
-        raise NotImplementedError("Use simulated_obs() instead.")
+        raise NotImplementedError("Use simulated_observations() instead.")
     def simulated_observations(self,
                     normalize: bool = False,
                     scale: bool = True,
@@ -959,7 +959,7 @@ class runSubmit(SubmitStudy):
         if cost is None:
             cost = self.logical_cost()
         if obs is None:
-            obs = self.logical_obs(scale=True, normalize=True).dropna()
+            obs = self.simulated_observations(scale=True, normalize=True).dropna()
         if params is None:
             params = self.logical_params(normalize=True)
         # call the super class plotter to actually plot

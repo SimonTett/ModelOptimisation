@@ -211,7 +211,7 @@ class Study:
         files = direct.glob("**/" + pattern)
         self.read_model_configs(files)
 
-    def read_model_configs(self, path_list: list[pathlib.Path]) -> typing.list[Model]:
+    def read_model_configs(self, path_list: list[pathlib.Path]) -> list[Model]:
         """
         Read model configurations from path_list and store them in self.model_index
           key will be generated from the model parameters and value will be the model.

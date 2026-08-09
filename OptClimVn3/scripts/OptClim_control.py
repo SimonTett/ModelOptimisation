@@ -40,12 +40,16 @@ def main(argv=None):
                         help='Path to SubmitStudy file. Will search for .scfg files in current dir if not specified. ',
                         nargs='?')
 
+
+
     subparsers = parser.add_subparsers(dest='command', help='sub-command help')
 
     # update
     p_update = subparsers.add_parser('update', help='Update study configuration from a JSON file')
     p_update.add_argument('NEWCONFIG', type=genericLib.expand, nargs='?',
                           help='Alternate config file to read for update. If not provided will use filename originally used')
+    p_update.add_argument('--output', type=genericLib.expand,
+                          help='Output path for modified configuration. If not provided will use same path as original config file')
 
     # plot
     p_plot = subparsers.add_parser('plot', help='Plot study')
@@ -63,6 +67,7 @@ def main(argv=None):
     # configure logging
     my_logger = genericLib.setup_logging(level=args.log_level, rootname='OPTCLIM.control')
 
+    # noinspection PyUnreachableCode
     if args.CONFIG is None:  # try and find a config file to read in.
         sconfig_files = list(pathlib.Path.cwd().glob("*.scfg"))
         if len(sconfig_files) != 1:
@@ -75,7 +80,7 @@ def main(argv=None):
     if args.command is None:
         parser.print_help()
         raise ValueError("No command specified. ")
-
+    dump_models = False # default is not to dump models.
     with genericLib.ContextFileLock(args.CONFIG,timeout=args.timeout) as lock:     # acquire lock with requested timeout
         study = runSubmit.load(args.CONFIG)  # load config file.
         if args.command == 'stop':
@@ -102,6 +107,9 @@ def main(argv=None):
             my_logger.info(f"Updating study configuration from {cfg_file}")
             cfg = readConfig(cfg_file)
             study.update_config(cfg)
+            if args.output:
+                study.config_path = pathlib.Path(args.output)
+                dump_models = True
         elif args.command == 'plot':
 
             plot_file = args.MONITORFILE or pathlib.Path(f"monitor_{study.name}.png")
@@ -110,7 +118,7 @@ def main(argv=None):
         else:
             raise ValueError(f"Unknown command {args.command}")
         if args.command in cmds_to_dump:
-            study.dump_config()
+            study.dump_config(dump_models=dump_models)
     return 0
 
 
