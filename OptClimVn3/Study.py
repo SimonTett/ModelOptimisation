@@ -312,9 +312,9 @@ class Study:
             return None
 
         if obsNames is None:
-            obsNames = obsDF.columns.values.tolist()
-        else:
-            obsDF=obsDF.reindex(columns=obsNames).dropna(axis=1)
+            obsNames = self.config.obsNames()
+
+        obsDF=obsDF.reindex(columns=obsNames).dropna(axis=1)
 
         if scale:  # scale ?
             obsDF *= self.config.scales(obsNames=obsNames)
