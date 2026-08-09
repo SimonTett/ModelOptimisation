@@ -81,7 +81,11 @@ def main(argv=None):
         parser.print_help()
         raise ValueError("No command specified. ")
     dump_models = False # default is not to dump models.
-    with genericLib.ContextFileLock(args.CONFIG,timeout=args.timeout) as lock:     # acquire lock with requested timeout
+    file_to_lock = args.CONFIG
+    if args.output:
+        file_to_lock = args.output
+        args.output.parent.mkdir(exist_ok=True,parents=True) # create dir if neede
+    with genericLib.ContextFileLock(file_to_lock,timeout=args.timeout) as lock:     # acquire lock with requested timeout
         study = runSubmit.load(args.CONFIG)  # load config file.
         if args.command == 'stop':
             study.next_command = "stop"
@@ -108,8 +112,19 @@ def main(argv=None):
             cfg = readConfig(cfg_file)
             study.update_config(cfg)
             if args.output:
+                ## TEMP (till refactor paths. Modify config paths for models)
+                orig_root_dir = study.rootDir
                 study.config_path = pathlib.Path(args.output)
+                study.rootDir = study.config_path.parent
+                study.rootDir.mkdir(exist_ok=True,parents=True)
                 dump_models = True
+                # update the model paths.
+                model_index=dict()
+                for key,model in study.model_index.items():
+                    rel_path = model.model_dir.relative_to(orig_root_dir)
+                    dir_path = study.rootDir/rel_path
+                    model_index[key] = model.copyConfig(dir_path)
+                study.model_index = model_index
         elif args.command == 'plot':
 
             plot_file = args.MONITORFILE or pathlib.Path(f"monitor_{study.name}.png")

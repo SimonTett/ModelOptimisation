@@ -615,7 +615,11 @@ class runSubmit(SubmitStudy):
         :return: dataframe of obs.
         """
         params = self._logical_info.parameters.values()
-        obs = [self.compute_simulated_observations(param.to_dict(), use_cache=False) for param in params]
+        obs=[]
+        for param in params:
+            models,sim_obs = self.compute_simulated_observations(param.to_dict(), use_cache=False)
+            if sim_obs is not None:
+                obs.append(sim_obs)
         obs = pd.DataFrame(obs) # return dataframe
 
         return obs
@@ -666,7 +670,8 @@ class runSubmit(SubmitStudy):
         key_mapping = super().update_params(update_parameters)  # call the super  class method.
         names = list(self._logical_info.names.values())
         for name in names:  # sort out the logical info
-            self.update_logical_params(name, update_parameters)
+            if name in self._logical_info.models:
+                self.update_logical_params(name, update_parameters)
         # update the keys for model_status.
         my_logger.info(f"Updating {len(key_mapping)} model_status keys ")
         model_status = dict()
