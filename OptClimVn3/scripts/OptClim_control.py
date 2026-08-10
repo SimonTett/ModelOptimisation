@@ -106,9 +106,19 @@ def main(argv=None):
                 raise FileNotFoundError(f"NEWCONFIG {cfg_file} not found")
             my_logger.info(f"Updating study configuration from {cfg_file}")
             cfg = readConfig(cfg_file)
-            study.update_config(cfg)
+            # see if we need to update the params.
+            new_params = cfg.paramNames()
+            old_params = study.config.paramNames()
+            if new_params != old_params:
+                my_logger.warning(f"Parameter names have changed from {old_params} to {new_params}. This may cause problems with existing runs.")
+                params_to_update = set(new_params) - set(old_params)
+                if not set(old_params).issubset(set(new_params)):
+                    raise ValueError(f"Some parameters in {old_params} are not in {new_params}. This is not allowed. Please check your configuration.")
+                study.update_params(list(params_to_update)) # update params to match new config.
+            study.update_config(cfg) # update config.
             if args.output:
                 study.config_path = pathlib.Path(args.output)
+                study.rootDir = args.output.parent
                 dump_models = True
         elif args.command == 'plot':
 
