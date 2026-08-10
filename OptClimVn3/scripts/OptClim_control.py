@@ -81,7 +81,12 @@ def main(argv=None):
         parser.print_help()
         raise ValueError("No command specified. ")
     dump_models = False # default is not to dump models.
-    with genericLib.ContextFileLock(args.CONFIG,timeout=args.timeout) as lock:     # acquire lock with requested timeout
+    # work out what we want to lock.
+    if args.output:
+        file_to_lock = args.output
+    else:
+        file_to_lock = args.CONFIG
+    with genericLib.ContextFileLock(file_to_lock,timeout=args.timeout) as lock:     # acquire lock with requested timeout
         study = runSubmit.load(args.CONFIG)  # load config file.
         if args.command == 'stop':
             study.next_command = "stop"
