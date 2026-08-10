@@ -1,4 +1,5 @@
 # test code for Study class.
+import json
 import unittest
 from pathlib import Path
 
@@ -26,6 +27,8 @@ class TestStudy(unittest.TestCase):
         self.test_dir = tempfile.TemporaryDirectory()
         direct = pathlib.Path(self.test_dir.name)
         self.direct = direct
+        post_process=dict(input_file='input.json', output_file='output.json',script='$OPTCLIMTOP/OptClimVn3/scripts/comp_sim_obs.py')
+
         # Define simulated observations and parameters
         params = {f'param{pcnt}': float(pcnt) for pcnt in range(1, 100)}
         optclim_root = genericLib.expand("$OPTCLIMTOP/OptClimVn3")
@@ -43,10 +46,17 @@ class TestStudy(unittest.TestCase):
             if status == 'PROCESSED':
                 sim_obs = self.fake_fn(params).rename(name)
 
-            model = Model(name, reference=reference_dir,  parameters=params,
-                          config_path=direct / (name + '.mcfg'), status=status)
+            model_dir = direct / name
+            model = Model(name, reference=reference_dir,  parameters=params,model_dir=model_dir,
+                           status=status,post_process=post_process)
             model.simulated_obs = sim_obs # actually set the simulated obs.
             model.dump_model()
+            if status == 'PROCESSED':
+                path = model.model_dir / model._post_process_output
+                if path.suffix != '.json':
+                    raise ValueError(f"Expected {path} to be a .json file")
+                with path.open("wt") as fp:
+                    json.dump(model.simulated_obs.to_dict(), fp)
             self.models.append(model)
 
         # create a study instance
@@ -209,6 +219,21 @@ class TestStudy(unittest.TestCase):
         file = self.direct/'fred.png'
         self.study.plot(fname=file)
         self.assertTrue(file.exists())
+
+
+    def test_simulated_observations(self):
+        """
+        Test that simulated_observations works.
+        :return:
+        """
+        # work out what we expect to get back.
+        # all models have ran.
+        expect_df = pd.DataFrame([m.compute_simulated_observations() for m in self.study.model_index.values() if m.is_processed()])
+        df = self.study.simulated_observations()
+        pdtest.assert_frame_equal(expect_df,df)
+        # next test -- don't use the cache which forces reload.
+        df = self.study.simulated_observations(use_cache=False)
+        pdtest.assert_frame_equal(expect_df,df) # no change
 
 
 

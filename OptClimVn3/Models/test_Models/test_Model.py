@@ -12,6 +12,8 @@ import unittest.mock
 import tarfile
 import shlex
 
+import warnings
+
 import Model
 import StudyConfig  # so can read in a config for fake_fn.
 import numpy as np
@@ -25,7 +27,7 @@ from namelist_var import NamelistVar
 from test_Models.myModel import myModel # needed when testing in linux..
 
 genericLib.setup_env()
-
+warnings.warn("This test code has some notests in it. Impliment them and remove this.")
 def gen_time():
     # used to mock Model.now()
     time = datetime.datetime(2000, 1, 11, 0, 0, 0)
@@ -1234,6 +1236,15 @@ class ModelTestCase(unittest.TestCase):
             self.assertEqual(len(model._history), old_history_len + 1)
 
         tmpdir.cleanup()
+
+
+    def notest_compute_simulated_observations(self):
+        """
+        Test that compute_simulated_observations works
+
+        :return:
+        """
+        raise NotImplementedError
 
 
 

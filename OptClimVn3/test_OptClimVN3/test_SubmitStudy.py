@@ -11,6 +11,7 @@ import tempfile
 import typing
 import unittest.mock  # need to mock the run case.
 import unittest
+import warnings
 
 import Study
 import StudyConfig
@@ -40,7 +41,7 @@ class myModel(Model):
 times = gen_time()
 pth = myModel.expand("$OPTCLIMTOP/OptClimVn3/Models/parameter_config/example_Parameters.csv")
 myModel.update_from_file(pth)
-
+warnings.warn("Three tests are not yet implemented. Do impliment them...")
 
 class MyTestCase(unittest.TestCase):
 
@@ -507,7 +508,30 @@ class MyTestCase(unittest.TestCase):
         with self.submit.lock() as lock:
             self.assertTrue(lock.is_locked)
 
+    def notest_compute_simulated_observations(self):
+        """
+        Run tests for compute_simulated_observations
+        :return:
+        """
 
+        raise NotImplementedError("Not yet implemented")
+
+    def notest_reload_obs(self):
+        """
+        Run tests for reload_obs
+        :return:
+        """
+
+        raise NotImplementedError("Not yet implemented")
+
+
+    def notest_iter_cmd(self):
+        """
+          Run tests for iter_cmd
+        :return:
+        """
+
+        raise NotImplementedError("Not yet implemented")
 
     """
     AI PROMPT/Spec:

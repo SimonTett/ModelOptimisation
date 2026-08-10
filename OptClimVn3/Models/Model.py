@@ -242,7 +242,7 @@ class Model(ModelBaseClass, journal):
             runUser -- the UserId to run the job with.
 
         :param fake -- if True then model is faked. No submission will be done.
-        :param study_config_path -- path to StudyCon. This is there in case model wants to interrogate it at init time.
+        :param study_config_path -- path to StudyConfig. This is there in case model wants to interrogate it at init time.
 
         """
         # set up default values.

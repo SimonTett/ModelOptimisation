@@ -15,10 +15,10 @@ import typing
 import numpy as np
 import pandas as pd
 
-from Models import Model
+
 from model_base import model_base
 from Model  import Model # root class for all models.
-#from StudyConfig import OptClimConfigVn3
+
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 #TOMAYBEDO: Consider removing keeping the config. Instead, just parse bits of it that we need and store them in the Study.
 
@@ -282,7 +282,7 @@ class Study:
     def simulated_observations(self,use_cache:bool = True) -> pd.DataFrame:
         """
         Get the simulated observations for all processed models.
-        :param use_cache: Whether to use cached data if available. Passed through to model.simulated_obs().
+        :param use_cache: Whether to use cached data if available. Passed through to model.compute_simulated_obs().
          Set to False to force reload of observations
         :return: dataframe with all simulated observations. Empty dataframe if nothing available.
         """
@@ -358,8 +358,7 @@ class Study:
             raise ValueError(
                 "No usable observation columns remain after dropping missing data"
             )
-        cost = np.sqrt(
-            (resid ** 2).sum(1).astype(float) /nobs)
+        cost = np.sqrt( (resid ** 2).astype(float).mean(1))
         cost = pd.Series(cost, index=obs.index).rename('cost ' + self.name)
         return cost
 

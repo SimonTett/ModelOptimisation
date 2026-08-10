@@ -33,6 +33,14 @@ def fake_run(rSubmit: runSubmit, scale: bool = True) -> typing.Callable:
 
     rSubmit.instantiate()
     rSubmit.submit_all_models(fake_fn=fake_function)
+    # write all the obs out to disk.
+    for model in rSubmit.processed_models():
+        model._post_process_output = 'obs.json'
+        path = model.model_dir / model._post_process_output
+        with path.open('wt') as fp:
+            model.simulated_obs.to_json(fp) # write it out
+    rSubmit.update_obs(use_cache=True)
+    #raise NotImplementedError("Not yet implemented -- need to compute the simulated obs from the data")
     return fake_function
 
 
@@ -183,13 +191,16 @@ class testRunSubmit(unittest.TestCase):
                 json.dump(obs_values.to_dict(),fp) # dump values.
         obs = rsubmit.update_obs() # should update the obs values in the models.
         # check that the obs values have been updated.
+        obs_names = rsubmit.config.obsNames()+['obs2']
         with self.assertRaises(AssertionError): # expect a difference so should fail with assertion error.
-            pdtest.assert_frame_equal(rsubmit.logical_obs(),rsubmit_orig.logical_obs())
+            pdtest.assert_frame_equal(rsubmit.simulated_observations(obs_names=obs_names),rsubmit_orig.simulated_observations(obs_names=obs_names))
         # and change is extra obs so  common indices should have the same values
 
-        common_index =set(rsubmit.logical_obs().columns) & set(rsubmit_orig.logical_obs().columns)
+        common_index =set(rsubmit.simulated_observations().columns) & set(rsubmit_orig.simulated_observations().columns)
+        common_index = list(common_index)
 
-        pdtest.assert_frame_equal(rsubmit.obs(obsNames=common_index),rsubmit_orig.obs(obsNames=common_index))
+        pdtest.assert_frame_equal(rsubmit.simulated_observations(obs_names=common_index),
+                                  rsubmit_orig.simulated_observations(obs_names=common_index))
 
     # test case for _stdFunction
 
@@ -456,7 +467,7 @@ class testRunSubmit(unittest.TestCase):
         best = finalConfig.best_obs()
         expected = fake_function(pDict).rename(best.name)
         pdtest.assert_series_equal(best, expected)
-        self.assertEqual(finalConfig.simObs().shape[0], 4)
+        self.assertEqual(finalConfig.simObs().shape[0], 1) # will be ensemble avg.
 
         optConfig = copy.deepcopy(configData)
         # set to min range.
@@ -469,7 +480,7 @@ class testRunSubmit(unittest.TestCase):
         best = finalConfig.best_obs()
         expected = fake_function(pDict).rename(best.name)
         pdtest.assert_series_equal(best, expected)
-        self.assertEqual(finalConfig.simObs().shape[0], 4)
+        self.assertEqual(finalConfig.simObs().shape[0], 1)
 
     def test_create_model(self):
         """
@@ -1358,13 +1369,13 @@ class testRunSubmit(unittest.TestCase):
         pdtest.assert_frame_equal(got, expected_df)
 
         expected_obs_df = pd.DataFrame(obs_list, index=index)
-        got = r_submit.logical_obs()
+        got = r_submit.simulated_observations()
         pdtest.assert_frame_equal(got, expected_obs_df)
         # Now try normalised cost.
         cov = r_submit.config.Covariances(scale=True)['CovTotal']
         sd = np.sqrt(np.diag(cov))
         expected_obs_df = (expected_obs_df - r_submit.config.targets(scale=True)) / sd
-        got = r_submit.logical_obs(normalize=True)
+        got = r_submit.simulated_observations(normalize=True)
         pdtest.assert_frame_equal(got, expected_obs_df)
         # get the cost. WIll just check the index matches.
         got = r_submit.logical_cost()
@@ -1418,7 +1429,7 @@ class testRunSubmit(unittest.TestCase):
         pdtest.assert_frame_equal(got, expected_df)
         # and obs
         expected_obs_df = pd.DataFrame(obs_list, index=index)
-        got = r_submit.logical_obs()
+        got = r_submit.simulated_observations()
         pdtest.assert_frame_equal(got, expected_obs_df)
         # and cost
         got = r_submit.logical_cost()

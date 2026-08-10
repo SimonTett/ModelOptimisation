@@ -121,6 +121,7 @@ class LogicalInfo(model_base):
         :param observations: observations to set. If None will just return current obs corresponding to name
         :return: the updated observations or None if not found
         """
+
         if observations is not None: # got some obs 
             if name in self.observations: 
                 my_logger.info(f"Overwriting observations for {name}")
@@ -467,7 +468,7 @@ class runSubmit(SubmitStudy):
         Return a dataframe of observations for all logical names.
         :param normalize: normalize the observations by error estimates from target
         :param scale: scale the observations by self.config.scales()
-        :param obs_names: Names to use, If None -- use config obsNames.
+        :param obs_names: Names to use, If None return everything in self.config.obsNames().
            If True uses all observations in self._logical_info.observations. This might fail with normalize if not all observations are present in tgt.
         :param use_cache: Whether to use cached observations or not.
         :return: dataframe of observations
@@ -609,15 +610,16 @@ class runSubmit(SubmitStudy):
 
 
 
-    def update_obs(self) -> pd.DataFrame:
+    def update_obs(self,use_cache:bool = False) -> pd.DataFrame:
         """
-        Reload observations
+        Reload observations for all logical names. This will recompute the simulated observations for all logical names.
+        :param use_cache: If True use the cache. Setting use_cache to False will force regeneration of obs all the way down to the underlying models.
         :return: dataframe of obs.
         """
         params = self._logical_info.parameters.values()
         obs=[]
         for param in params:
-            models,sim_obs = self.compute_simulated_observations(param.to_dict(), use_cache=False)
+            models,sim_obs = self.compute_simulated_observations(param.to_dict(), use_cache=use_cache)
             if sim_obs is not None:
                 obs.append(sim_obs)
         obs = pd.DataFrame(obs) # return dataframe
@@ -640,7 +642,15 @@ class runSubmit(SubmitStudy):
         :return:runSubmit
         """
         obj: runSubmit = super(runSubmit, cls).from_dict(dct)  # create the runSubmit object
-        obj._logical_info.keys_to_models(obj.model_index)  # create the models in logical_info from the keys.
+        # deal with legacy when have no _logical_info.parameter set. In this case we just iterate over the models in model_index and set the parameters to those in the model.
+        if '_logical_info' not in dct:
+            my_logger.warning('legacy change: adding existing models to _logical_info.parameters')
+            for model in obj.model_index.values():
+                name, param = obj._logical_info.params(model.parameters)  # add the parameters to logical_info
+                obj._logical_info.models[name] = [model]  # add the model to logical_info
+                obj.compute_simulated_observations(model.parameters)  # compute the simulated observations for this model.
+        else:
+            obj._logical_info.keys_to_models(obj.model_index)  # create the models in logical_info from the keys.
         # legacy if model_status is not in dct then fill it in from the model_index set status to unknown
         if 'model_status' not in dct:
             my_logger.warning('legacy change: adding existing models to model_status with status "unknown"')
