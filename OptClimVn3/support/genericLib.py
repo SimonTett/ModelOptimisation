@@ -493,7 +493,8 @@ def delDirContents(dir):
                 shutil.rmtree(entry.path, onerror=errorRemoveReadonly)  # remove all directories
 
 
-def delete_dir_contents(direct: pathlib.Path):
+def delete_dir_contents(direct: pathlib.Path,
+                        keep_list: typing.Optional[typing.List[pathlib.Path]] = None):
     """
     Recursively Delete the contents of a directory
     :param direct: path to directory to have all contents removed.
@@ -501,14 +502,15 @@ def delete_dir_contents(direct: pathlib.Path):
     """
     # from stack exchange
     # https://stackoverflow.com/questions/185936/how-to-delete-the-contents-of-a-folder-in-python
-
+    if keep_list is None:
+        keep_list = []
     if not direct.exists():  # doesn't exist so return
         return
     if not direct.is_dir():
         raise ValueError(f"{direct} is not a directory")
 
     for entry in direct.iterdir():
-        if entry.is_file() or entry.is_symlink():
+        if (entry not in keep_list) and (entry.is_file() or entry.is_symlink()) :
             try:
                 entry.chmod(stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)
             except WindowsError:  # dam windows.
@@ -744,7 +746,8 @@ try_symlinks = True  # try to use symlinks
 def copy_files(in_direct: pathlib.Path,
                out_direct: pathlib.Path,
                files: list[pathlib.Path],
-               symlinks: bool = False
+               symlinks: bool = False,
+               keep_list: typing.Optional[list[pathlib.Path]] = None,
                ) -> list[pathlib.Path]:
     """
 
@@ -752,6 +755,7 @@ def copy_files(in_direct: pathlib.Path,
     :param in_direct: directory where study is currently located
     :param out_direct: directory where study is to be copied. Will be created if it does not exist and emptied if it does.
     :param files: list of  files (paths provided relative to in_direct) to be copied to new directory.
+    :param keep_list: list of files to keep in out_direct. If not provided then all files will be deleted.
     :param symlinks: if True then rather than copying files, symlinks will be created.
       This should be faster but is less reliable
 
@@ -764,7 +768,7 @@ def copy_files(in_direct: pathlib.Path,
         raise FileExistsError(f"Cannot copy to same directory {out_direct}")
 
     # remove all existing files in out_direct
-    delete_dir_contents(out_direct)  # remove all existing files in direct
+    delete_dir_contents(out_direct, keep_list=keep_list)  # remove all existing files in direct
     my_logger.debug(f"Created and cleaned {out_direct}")
 
     files_to_copy = set(files)  # just the unique files.

@@ -485,13 +485,18 @@ class SubmitStudy(Study, model_base, journal):
         self.update_history("Deleted")
 
     def copyConfig(self,direct:pathlib.Path,
+
              extra_files:typing.Optional[list[pathlib.Path]]=None,
+             keep_list:typing.Optional[list[pathlib.Path]]=None,
+             new_config_name: typing.Optional[str] = None,
              update_paths:bool = True) -> SubmitStudy:
         """
         Copy SubmitStudy to a new directory. By default, only the config file is copied.
         :param direct: directory where study is to be copied. Will be created if it does not exist
         :param extra_files: list of extra files (paths provided relative to rootDir) to be copied to new directory.
+        :param keep_list: list of files to keep in the new directory.
         :param update_paths -- If True then any path parameters will be updated to reflect new directory structure.
+        :param new_config_name: If not None then the config file will be renamed to new_config_name and name updated.
         :return: Copied SubmitStudy.
         """
 
@@ -501,18 +506,23 @@ class SubmitStudy(Study, model_base, journal):
             my_logger.info(f"Converting direct to absolute path {direct}")
         direct.mkdir(parents=True, exist_ok=True)  # create directory if need be.
 
-
-        files_to_copy = [self.config_path.resolve().relative_to(self.rootDir)]
+        config_path = self.config_path.resolve().relative_to(self.rootDir)
+        if new_config_name is not None:
+            config_path = config_path.parent / new_config_name
+            my_logger.info(f"Renaming config file to {config_path}")
+        files_to_copy = [config_path]  # default is just the config file.
         if extra_files is not None:
             files_to_copy += extra_files
 
         files_to_copy = list(set(files_to_copy))  # make unique
 
-        files_copied = genericLib.copy_files(self.rootDir, direct, files_to_copy)
+        files_copied = genericLib.copy_files(self.rootDir, direct, files_to_copy, keep_list=keep_list)
         missing = set(files_to_copy) - set(files_copied)
         if len(missing) > 0:
             my_logger.warning(f"Failed to copy  {missing} from {self.rootDir} to {direct}")
         cp_submit_study = copy.deepcopy(self)  # copy the submit study
+        if new_config_name is not None:
+            cp_submit_study.name=config_path.stem
         cp_config_path = direct /files_to_copy[0] # new config path
         # now copy the model(s) to the new directory
         model_index = dict()  # empty  model index

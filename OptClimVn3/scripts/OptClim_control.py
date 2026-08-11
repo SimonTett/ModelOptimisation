@@ -63,6 +63,9 @@ def main(argv=None):
 
     cmds_to_dump = ['continue','stop','kill','update'] # list of commands where config gets dumped.
     args = parser.parse_args(argv)
+    # see if have output. If not set it to None.
+    if not hasattr(args, 'output'):
+        args.output = None
 
     # configure logging
     my_logger = genericLib.setup_logging(level=args.log_level, rootname='OPTCLIM')
@@ -122,7 +125,7 @@ def main(argv=None):
                 study.update_params(list(params_to_update)) # update params to match new config.
             study.update_config(cfg) # update config.
             if args.output:
-                study = study.copyConfig(pathlib.Path(args.output.parent))
+                study = study.copyConfig(pathlib.Path(args.output.parent),keep_list=[lock.lockfile_path.absolute()],new_config_name=args.output.name)
                 dump_models = True
                 # 
         elif args.command == 'plot':
@@ -134,6 +137,8 @@ def main(argv=None):
             raise ValueError(f"Unknown command {args.command}")
         if args.command in cmds_to_dump:
             study.dump_config(dump_models=dump_models)
+            if not study.config_path.exists():
+                raise FileNotFoundError(f"Config file {study.config_path} does not exist.")
     return 0
 
 

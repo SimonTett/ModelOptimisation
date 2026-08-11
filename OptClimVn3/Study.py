@@ -279,20 +279,52 @@ class Study:
         """
         return [model for model in self.model_index.values() if model.is_processed()]
 
-    def simulated_observations(self,use_cache:bool = True) -> pd.DataFrame:
+    def simulated_observations(self,
+                               scale: bool = True,
+                               normalize: bool = False,
+                               obs_names: typing.Optional[list[str],bool] = None,
+                               use_cache:bool = True) -> typing.Optional[pd.DataFrame]:
         """
-        Get the simulated observations for all processed models.
+        Get a dataframe of simulated observations for all processed models.
+        :param scale: If True data are scaled.
+        :param normalize: If True data are normalized -- distance in SD's from tgt
+        :param obs_names: list of names of observations. If not provided will be extracted from self.config.obsNames().
+          If True will use all observations. False will use self.config.obsNames()
         :param use_cache: Whether to use cached data if available. Passed through to model.compute_simulated_obs().
          Set to False to force reload of observations
-        :return: dataframe with all simulated observations. Empty dataframe if nothing available.
+        :return: dataframe with all simulated observations. None if no observations.
         """
 
         observations = [model.compute_simulated_observations(use_cache=use_cache) for model in self.model_index.values()
                if model.is_processed()]
 
+        if len(observations) == 0:
+            return None
+        observations = pd.DataFrame(observations)
+        # deal with obsNames
+        if isinstance(obs_names, bool) and obs_names:
+            obs_names = observations.columns
+        elif obs_names is None or (isinstance(obs_names, list) and not obs_names):
+            obs_names = self.config.obsNames()
+        else:
+            pass # anything else is assumed to be a list of obsNames
 
+        observations = observations.reindex(columns=obs_names).dropna(axis=1) # extract to specified obsNames dropna any missing data
+        if scale:  # scale ?
+            observations *= self.config.scales(obsNames=obs_names)
 
-        return pd.DataFrame(observations) if observations else pd.DataFrame()
+        if normalize:  # normalize
+            tgt = self.config.targets(scale=scale, obsNames=obs_names)
+            observations -= tgt  # difference from tgt.
+            # drop any nana which might have come from tgt
+            observations = observations.dropna(axis=1)
+            cov = self.config.Covariances(scale=scale)  # get covariances.
+            errCov = cov['CovTotal']  # just want the total
+            sd = pd.Series(np.sqrt(np.diag(errCov)),
+                           index=errCov.index)  # square root of diagonal elements. Need to reindex.
+            observations /= sd  # normalise by SD
+
+        return observations
 
 
     def obs(self, scale: bool = True,
@@ -306,6 +338,8 @@ class Study:
         :return: pandas dataframe of observations possibly scaled and normalized.
            None will be returned if there are no obs
         """
+
+        raise NotImplementedError("Use self.simulated_observations() instead")
 
         obsDF = self.simulated_observations()  # get obs for all processed models.
         if obsDF.empty: # got an empty dataframe
@@ -339,7 +373,8 @@ class Study:
         :param: scale -- scale data.
         :return pandas series of costs.
         """
-        obs = self.obs(scale=scale,obsNames=obsNames)  # get obs
+
+        obs = self.simulated_observations(scale=scale,obs_names=obsNames)
         if obs is None:  # no data
             return None
 
@@ -403,8 +438,8 @@ class Study:
         # But function wants models. So suggests including some meta-data in the model
         # when we do this,
         params = self.params()  # get params & obs
-        obs = self.obs()
-        # update newConfig with obs & params. As normal all are unscaled.
+        obs = self.simulated_observations(scale=False)
+        # update newConfig with obs & params. All are unscaled.
 
         newConfig.parameters(params)
         newConfig.simObs(obs)
@@ -470,7 +505,7 @@ class Study:
         :param fig_name: name of figure to make -- default is monitor
         :param fname: path to save figure to if not None. Default is None
         :param cost -- cost values to plot. If None then will use self.cost
-        :param obs -- obs values to plot. If None then will use self.obs(normalise=True)
+        :param obs -- obs values to plot. If None then will use self.simulated_observations(normalise=True)
         :param params - param values to plot. If None then will self.params(normalise=True)
         :param savefig_kwargs: dict of kwargs to pass to fig.savefig. Default is empty dict.
         :return: figure, (costAxis, paramAxis, obsAxis)
@@ -485,7 +520,7 @@ class Study:
         if params is None:
             params = self.params(normalize=True,numeric=True)
         if obs is None:
-            obs = self.obs(scale=True,normalize=True,obsNames=obsNames).dropna()
+            obs = self.simulated_observations(scale=True,normalize=True,obs_names=obsNames).dropna()
             obsNames = obs.columns #
         if cost is None:
             cost = self.cost(obsNames=obsNames)

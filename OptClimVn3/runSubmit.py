@@ -463,40 +463,52 @@ class runSubmit(SubmitStudy):
     def simulated_observations(self,
                     normalize: bool = False,
                     scale: bool = True,
-                    obs_names: typing.Union[bool, list[str], None] = None,use_cache:bool = True) -> pd.DataFrame:
+                    obs_names: typing.Union[bool, list[str], None] = None,
+                               use_cache:bool = True) -> typing.Optional[pd.DataFrame]:
         """
-        Return a dataframe of observations for all logical names.
+        Return a dataframe of observations for all logical params.
         :param normalize: normalize the observations by error estimates from target
         :param scale: scale the observations by self.config.scales()
         :param obs_names: Names to use, If None return everything in self.config.obsNames().
            If True uses all observations in self._logical_info.observations. This might fail with normalize if not all observations are present in tgt.
         :param use_cache: Whether to use cached observations or not.
-        :return: dataframe of observations
+        :return: dataframe of observations or None if nothing found
         """
-        obs_df = pd.DataFrame(self._logical_info.observations).T
-        if obs_names is None:
-            obs_names = self.config.obsNames()  # use config supplied one.
-        elif isinstance(obs_names, bool) and obs_names:  # if True
-            obs_names = obs_df.columns
-        else:
-            pass
 
-        obs_df = obs_df.reindex(columns=obs_names)
+        # use compute_simulated_observations to actually compute the observations for each logical name. This will use the cache if available.
+        obs = []
+        for name, params in self._logical_info.parameters.items():
+            model, sim_obs = self.compute_simulated_observations(params.to_dict(), use_cache=use_cache)
+            if sim_obs is not None:
+                obs.append(sim_obs)
+
+        if len(obs) == 0:
+            return None
+        observations = pd.DataFrame(obs)
+        # deal with obsNames
+        if isinstance(obs_names, bool) and obs_names:
+            obs_names = observations.columns
+        elif obs_names is None or (isinstance(obs_names, list) and not obs_names):
+            obs_names = self.config.obsNames()
+        else:
+            pass  # anything else is assumed to be a list of obsNames
+
+        observations = observations.reindex(columns=obs_names).dropna(axis=1)
 
         if scale:  # scale ?
-            obs_df *= self.config.scales(obsNames=obs_names)
+            observations *= self.config.scales(obsNames=obs_names)
 
         if normalize:  # normalize
             tgt = self.config.targets(scale=scale, obsNames=obs_names)
-            obs_df -= tgt  # difference from tgt.
+            observations -= tgt  # difference from tgt.
             cov = self.config.Covariances(scale=scale)  # get covariances.
             errCov = cov['CovTotal']  # just want the total
             sd = pd.Series(np.sqrt(np.diag(errCov)),
                            index=errCov.index)  # square root of diagonal elements. Need to reindex.
             sd = sd.reindex(obs_names)  # extract only those we want.
-            obs_df /= sd  # normalise by SD
+            observations /= sd  # normalise by SD
 
-        return obs_df
+        return observations
 
     type_multi_model_fn = typing.Callable[
         ["runSubmit", dict[str, dict]], tuple[list[Model|None], typing.Optional[pd.Series]]]
@@ -693,18 +705,21 @@ class runSubmit(SubmitStudy):
 
     def copyConfig(self, direct: pathlib.Path,
                    extra_files: typing.Optional[list[pathlib.Path]] = None,
+                   keep_list: typing.Optional[list[pathlib.Path]] = None,
+                   new_config_name: typing.Optional[str] = None,
                    update_paths: bool = True) -> runSubmit:
         """
         Copy the config to a new directory. Uses super class method and then updates LogicalInfo
         :param direct: directory to copy to.
         :param extra_files: extra files to copy.
+        :param keep_list: list of files to keep in the new directory.
         :param update_paths: if True update paths in config to point to new directory.
         :return: new runSubmit object with config copied to new directory.
         """
         # if extra_files is None:
         #    extra_files = []
         # extra_files += [self.config.config_path.relate_to(self.rootDir)]  # always copy config file.
-        new_run_submit = super().copyConfig(direct, extra_files, update_paths)
+        new_run_submit = super().copyConfig(direct, extra_files, keep_list=keep_list, update_paths=update_paths,new_config_name=new_config_name)
         # update the logical info model info.
         new_run_submit._logical_info.keys_to_models(new_run_submit.model_index, update_models=True)
         return new_run_submit
