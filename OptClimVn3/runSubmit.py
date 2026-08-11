@@ -860,7 +860,6 @@ class runSubmit(SubmitStudy):
             if observations is not None:
                 observations = self.transform_check(observations, transform=transform, scale=scale, residual=residual)
                 # compute the cost which uses the transformed data.
-                n_obs = len(observations)
                 self._logical_info.cost[observations.name] = (observations ** 2).mean()  # store the mean square diff.
             result.append(observations)
 

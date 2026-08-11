@@ -65,7 +65,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     # configure logging
-    my_logger = genericLib.setup_logging(level=args.log_level, rootname='OPTCLIM.control')
+    my_logger = genericLib.setup_logging(level=args.log_level, rootname='OPTCLIM')
 
     # noinspection PyUnreachableCode
     if args.CONFIG is None:  # try and find a config file to read in.
@@ -122,9 +122,9 @@ def main(argv=None):
                 study.update_params(list(params_to_update)) # update params to match new config.
             study.update_config(cfg) # update config.
             if args.output:
-                study.config_path = pathlib.Path(args.output)
-                study.rootDir = args.output.parent
+                study = study.copyConfig(pathlib.Path(args.output.parent))
                 dump_models = True
+                # 
         elif args.command == 'plot':
 
             plot_file = args.MONITORFILE or pathlib.Path(f"monitor_{study.name}.png")
