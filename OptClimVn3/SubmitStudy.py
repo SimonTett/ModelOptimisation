@@ -437,6 +437,13 @@ class SubmitStudy(Study, model_base, journal):
                 continue
 
             path = pathlib.Path(path)  # make path version which we can then load.
+            if not path.is_absolute(): # A relative path. Append rootdir
+                
+                new_path = obj.rootDir/path
+                if not new_path.exists(): # path does not exist. Try with slightly different path
+                    new_path = obj.rootDir.parent/path
+                path  = pathlib.Path(new_path)
+                
             if path.exists():
                 my_logger.debug(f"Loading model from {path}")
                 # verify key is as expected.

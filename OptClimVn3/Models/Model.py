@@ -182,11 +182,11 @@ class Model(ModelBaseClass, journal):
         """
         model = super().load(model_path)  # Using json "magic". See generic_json for what actually happens.
 
-        if not model.config_path.samefile(model_path):
+        if not (isinstance(model.config_path,pathlib.Path) and model.config_path.samefile(model_path)):
             my_logger.warning(f"Model {model} model_path changed to {model_path}")
             model.config_path = model_path  # Replace config_path with where we actually loaded it from.
 
-        if not model.model_dir.samefile(model_path.parent):
+        if not (isinstance(model.model_dir,pathlib.Path) and model.model_dir.samefile(model_path.parent)):
             my_logger.warning(f"Model {model} model_dir changed to {model_path.parent} ")
             model.model_dir = model_path.parent  # update directory with where we actually loaded it from.
 
