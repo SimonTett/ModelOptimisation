@@ -108,11 +108,16 @@ def main(argv=None):
             # if this running at same time as runAlgorithm is running but runAlgorithm is waiting on file lock
             # making next_command 'stop' will stop any more runs being made. Though will run an instantated cases.
         elif args.command == 'update':
+            # TODO -- move this to a new create study script.
+            # Which has a way of using existing model simulations
             cfg_file = args.NEWCONFIG or study.config.fileName()
             cfg_file = genericLib.expand(cfg_file)
             if not cfg_file.exists():
                 raise FileNotFoundError(f"NEWCONFIG {cfg_file} not found")
             my_logger.info(f"Updating study configuration from {cfg_file}")
+            # Setp 1 set ALL model_status to "read" as don't know if we watn them.
+            for model in study.model_index.values():
+                study.set_model_status(model,'read')
             cfg = readConfig(cfg_file)
             # see if we need to update the params.
             new_params = cfg.paramNames()

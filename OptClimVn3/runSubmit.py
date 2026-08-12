@@ -867,7 +867,6 @@ class runSubmit(SubmitStudy):
                 all_params += [ param | dict(ensembleMember=ens_index)  for ens_index in range(0, n_ensemble)]
             params = all_params # rename it.
 
-
         for param in params:  # iterate over the simulations.
             models, observations = self.compute_simulated_observations(param)
 
@@ -1357,8 +1356,10 @@ class runSubmit(SubmitStudy):
         # Code here will be run when DFOLS has completed.
         # It mostly puts stuff in the final JSON file so can easily be looked at for subsequent analysis.
         if solution.flag not in (solution.EXIT_SUCCESS, solution.EXIT_MAXFUN_WARNING):
-            print("dfols failed with flag %i error : %s" % (solution.flag, solution.msg))
-            raise Exception("Problem with dfols")
+            raise ValueError(f"dfols failed with flag {solution.flag} error : {solution.msg}")
+
+        else: # suceeded.
+            print(f"dfols completed  with flag {solution.flag}: {solution.msg}")
 
         finalConfig = self.dfols_write_final_config(solution, scale=scale)
 

@@ -239,7 +239,7 @@ class SubmitStudy(Study, model_base, journal):
         Will raise ValueError if model_dir or config path already exist.
         """
         if self.next_command == 'stop':
-            my_logger.debug("Stopping. Returning None")
+            my_logger.warning("Stopping. Returning None")
             return None
         existing_names = [model.name for model in self.model_index.values() ] # list of existing model names
         while True: # loop until we find a name that does not exist.
