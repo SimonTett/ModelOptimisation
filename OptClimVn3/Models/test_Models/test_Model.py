@@ -12,6 +12,8 @@ import unittest.mock
 import tarfile
 import shlex
 
+import warnings
+
 import Model
 import StudyConfig  # so can read in a config for fake_fn.
 import numpy as np
@@ -25,7 +27,7 @@ from namelist_var import NamelistVar
 from test_Models.myModel import myModel # needed when testing in linux..
 
 genericLib.setup_env()
-
+warnings.warn("This test code has some notests in it. Impliment them and remove this.")
 def gen_time():
     # used to mock Model.now()
     time = datetime.datetime(2000, 1, 11, 0, 0, 0)
@@ -666,8 +668,9 @@ class ModelTestCase(unittest.TestCase):
 
         with unittest.mock.patch('subprocess.check_output',
                                  autospec=True, return_value="Submitted something"):
-            model.process()  # run the post-processing. Nothing should be ran because of the mock
-        pdtest.assert_series_equal(pd.Series(fake_obs).rename(model.name), model.simulated_obs)
+            model.process()  # run the post-processing. Nothing should actually be ran because of the mock though it shoudl read in the data.
+        model_obs = model.compute_simulated_observations()
+        pdtest.assert_series_equal(pd.Series(fake_obs).rename(model.name), model_obs)
         self.assertEqual(model.status, 'PROCESSED')
 
     # patching end_to_end so time always ticks in controlled way. gen_time does 1 seconds increments.
@@ -705,7 +708,7 @@ class ModelTestCase(unittest.TestCase):
                 model.process()  # and do the post-processing
                 # need to run a bunch of tests here.
                 # having got to here should have simulated_obs be post_process['fake_obs']
-                pdtest.assert_series_equal(model.simulated_obs, pd.Series(post_process['fake_obs']).rename(model.name))
+                pdtest.assert_series_equal(model.compute_simulated_observations(), pd.Series(post_process['fake_obs']).rename(model.name))
                 # should have 8 history entries.
                 self.assertEqual(len(model._history), 8)
                 # four    outputs -- from  model submission, post_process submission, post-process release_job and
@@ -1233,6 +1236,15 @@ class ModelTestCase(unittest.TestCase):
             self.assertEqual(len(model._history), old_history_len + 1)
 
         tmpdir.cleanup()
+
+
+    def notest_compute_simulated_observations(self):
+        """
+        Test that compute_simulated_observations works
+
+        :return:
+        """
+        raise NotImplementedError
 
 
 

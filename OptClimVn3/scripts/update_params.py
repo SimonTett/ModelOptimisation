@@ -78,9 +78,9 @@ if args.output_params: # Want to write out  parameters ?
     my_logger.debug(f"Saved parameters to {args.output_params}")
 if args.output: # Want to write out  modified config?
     if study_config is not None: # generate a new config with the study config used to generate the params
-        # Approach here is to creatre a new runSubmit object using the study_config provided.
+        # Approach here is to create a new runSubmit object using the study_config provided.
         # Then take the updated models (with new params), and copy them -- updating paths as we do so.
-        # FInally use read_model_configs to include the modified models in the config.
+        # Finally use read_model_configs to include the modified models in the config.
         my_logger.info(f"Creating new config from {study_config.fileName()}")
         rootDir=args.output.parent 
         rootDir.mkdir(parents= True) # make root dir (and all parents). Will fail if directory exists.
@@ -92,7 +92,7 @@ if args.output: # Want to write out  modified config?
             new_dir = rootDir/(model.model_dir.relative_to(config.rootDir) )# new directory for model.
             m =  model.copyConfig(new_dir, update_paths=True)
             new_files.append(m.config_path)
-        my_logger.info("Copied len(new_files) models")
+        my_logger.info(f"Copied {len(new_files)} models")
         new_config.read_model_configs(new_files) # and get the models configs
         new_config.update_history(f"Copied {len(new_files)} models from {config.rootDir} with params updated.")
         new_config.dump_config(dump_models=False) # no need to dump the models as already done so.

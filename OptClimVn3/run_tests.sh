@@ -8,7 +8,7 @@ fi
 
 # then check if PROJECT_CODE setup
 if [[ -z "$PROJECT_CODE" ]]; then
-    echo "PROJECT_CODE is not set. Please set it to the project you are running under. This is needed for some tests to run."
+     echo "PROJECT_CODE is not set. Please set it to the project you are running under or to a dummy value. This is needed for some tests to run."
     exit 1
 fi
 export PYTHONPATH=$PYTHONPATH:$OPTCLIMTOP/OptClimVn3/test_OptClimVN3:$OPTCLIMTOP/OptClimVn3/Models/test_Models

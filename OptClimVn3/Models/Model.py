@@ -137,7 +137,7 @@ class Model(ModelBaseClass, journal):
         fake -- If True model is faked.
         perturb_count -- no of times perturbation has been done.
         parameters -- dict of parameters/values. Used to generate key and set values.
-        parameters_no_key -- dict of parameters/values. Overrides parameters to set values and do form part of the key
+        parameters_no_key -- dict of parameters/values. Overrides parameters to set values but  do not form part of the key
         set_status_script -- path to script that sets_status. Your model will need to call this.
         engine -- submission engine.
         pp_jid -- post-processing job id. This gets released when model status changes to SUCCEEDS
@@ -182,11 +182,11 @@ class Model(ModelBaseClass, journal):
         """
         model = super().load(model_path)  # Using json "magic". See generic_json for what actually happens.
 
-        if not model.config_path.samefile(model_path):
+        if not (isinstance(model.config_path,pathlib.Path) and model.config_path.samefile(model_path)):
             my_logger.warning(f"Model {model} model_path changed to {model_path}")
             model.config_path = model_path  # Replace config_path with where we actually loaded it from.
 
-        if not model.model_dir.samefile(model_path.parent):
+        if not (isinstance(model.model_dir,pathlib.Path) and model.model_dir.samefile(model_path.parent)):
             my_logger.warning(f"Model {model} model_dir changed to {model_path.parent} ")
             model.model_dir = model_path.parent  # update directory with where we actually loaded it from.
 
@@ -242,7 +242,7 @@ class Model(ModelBaseClass, journal):
             runUser -- the UserId to run the job with.
 
         :param fake -- if True then model is faked. No submission will be done.
-        :param study_config_path -- path to StudyCon. This is there in case model wants to interrogate it at init time.
+        :param study_config_path -- path to StudyConfig. This is there in case model wants to interrogate it at init time.
 
         """
         # set up default values.
@@ -950,12 +950,17 @@ class Model(ModelBaseClass, journal):
         1) takes a json file as input (arg#1) and puts output in file (arg#2).
         2) It is being ran in the model_directory.
          arg#1 needs json.load to read the json file. Code should expect a dict and use the postProcess entry.
-             This allows it ot read in and act on a StudyConfig file.
-         arg#2 can be .json or .csv or .nc
+             This allows it to read in and act on a StudyConfig file.
+         arg#2 can be .json or .csv or .nc which is where the output will be written.
 
-        :param update If True update the post-processed. State must be Processed.
+        :param update If True update the post-processed data which will rereun the post-processing script. State must be Processed.
         :return: output from post-processing.
         """
+        # various checks
+        if self._post_process_input is None:
+            raise FileNotFoundError("Set _post_process_output to something.")
+        if self.post_process_cmd_script is None:
+            raise FileNotFoundError("Set post_process_cmd_script to something.")
         status: type_status = 'PROCESSED'
         self.check_status(status)  # check we are allowed to set to processed.
         if update:  # handle updating.
@@ -974,29 +979,40 @@ class Model(ModelBaseClass, journal):
             json.dump(output, fp, indent=2)
         # dump the post-processing dict for the post-processing to  pick up.
 
-        post_process_output = self.model_dir / self._post_process_output
         result = self.run_cmd(self.post_process_cmd_script, cwd=self.model_dir)  #
-
-        # get in the simulated obs which also sets them 
-        self.read_simulated_obs(post_process_output)
-
-        if update:  # if we are updating there is no status change -- we have already checked we are processed.
+        # get in the simulated obs which also sets them
+        obs = self.compute_simulated_observations(use_cache=False)
+        if update:  # Update the history for updating
             self.update_history("Reprocessed model")
 
-        my_logger.debug(f"Sim obs are {self.simulated_obs}")
+        my_logger.debug(f"Sim obs are {obs}")
         self.set_status(status)  #  update the status (and dump state to disk)
         return result  # Should this actually return the simulated observations??
 
-    def read_simulated_obs(self, post_process_file: pathlib.Path):
+    def compute_simulated_observations(self, use_cache:bool = True) -> typing.Optional[pd.Series]:
         """
-        Read the post processed data.
-         This default implementation reads simulated obs from netcdf, json or csv data and
+        Read the post-processed data.
+         This default implementation reads, if necessary,  simulated obs from netcdf, json or csv data and
          stores it in the Model as a pandas series. Tests that nothing is null.
-         :param post_process_file: path to the post processed data containing the simulated observations,
-        :return: a pandas series of the simulated
+         Will read from self.model_dir/self._post_process_output
+         If use_cache is True AND self.simulated_obs are not None then just returns the simulated_obs.
+        :param use_cache: whether to use cached data if available.
+        :return: a pandas series of the simulated obs or None if not available
         """
+        # see if we can use cached value to start with.
 
+
+        if use_cache and (self.simulated_obs is not None):
+            return self.simulated_obs # do this first as test cases don't want to set _post_process_output and don't want to read in data.
+
+        if self.status != 'PROCESSED': # No obs for this model.
+            return None
+        if self._post_process_output is None:
+            raise FileNotFoundError("self._post_process_output is None. Should be set")
+
+        post_process_file = self.model_dir / self._post_process_output
         fileType = post_process_file.suffix  # type of file wanted
+
         # read in data. Details depend on type of file.
         if fileType == '.nc':  # netcdf
             ds = xarray.load_dataset(post_process_file)
@@ -1018,12 +1034,13 @@ class Model(ModelBaseClass, journal):
 
         my_logger.info(f"Read {fileType} data from {post_process_file}")
         obs = pd.Series(obs).rename(self.name)
-        self.simulated_obs = obs
+
 
         # check for nulls
         null = obs.isnull()
         if np.any(null):
             raise ValueError("Obs contains null values at: " + ", ".join(obs.index[null]))
+        self.simulated_obs = obs # set obs.
 
         return obs  # return the obs.
 
@@ -1102,11 +1119,14 @@ class Model(ModelBaseClass, journal):
     def attrs_for_key(self) -> dict:
         """
         Return dict  that can be used to generate a key for this model.
-        :return: a tuple as an index. tuple is key_name, value in sorted order of key_name.
+        :return: a dict.
         """
 
         params = self.parameters.copy()
         params.update(reference=self.reference)  # add reference
+
+
+
 
         return params
 

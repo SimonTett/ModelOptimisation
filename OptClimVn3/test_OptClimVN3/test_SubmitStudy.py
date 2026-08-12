@@ -2,12 +2,16 @@
 Test cases for SubmitStudy classes
 """
 import datetime
+import itertools
+import json
 
 import pathlib
 
 import tempfile
+import typing
 import unittest.mock  # need to mock the run case.
 import unittest
+import warnings
 
 import Study
 import StudyConfig
@@ -17,6 +21,7 @@ from Model import Model
 import copy
 import pandas as pd
 import genericLib
+import pandas.testing as pdtest
 genericLib.setup_env()
 
 def gen_time():
@@ -36,12 +41,35 @@ class myModel(Model):
 times = gen_time()
 pth = myModel.expand("$OPTCLIMTOP/OptClimVn3/Models/parameter_config/example_Parameters.csv")
 myModel.update_from_file(pth)
-
+warnings.warn("Three tests are not yet implemented. Do impliment them...")
 
 class MyTestCase(unittest.TestCase):
 
-    @unittest.mock.patch.object(SubmitStudy.SubmitStudy, 'now', side_effect=times)  # regen times every time!
-    @unittest.mock.patch.object(myModel, 'now', side_effect=times)
+
+    # fake function used when need to fake things
+    @staticmethod
+    def fake_function(parameters:dict[str,float|int|str],obs_names:typing.Optional[list[str]]=None):
+        """
+        Simple fake function that returns a series of simulated obs.
+        :param parameters: parameters dict with name,value pairs
+        :param obs_names: Optional obs_names. If provided will be used to generate obs names.
+        :return:
+        """
+        sim_obs = dict()
+        obs_count = 0
+        if obs_names is None:
+            obs_names = [f'obs{obs_count}' for obs_count in range(len(parameters))]
+        for oname,k in zip(obs_names,itertools.cycle(parameters.keys())):
+            try:
+                sim_obs[oname] = parameters[k] ** 2
+            except TypeError:
+                sim_obs[oname] = 0.0
+
+        return pd.Series(sim_obs)
+
+
+    @unittest.mock.patch.object(SubmitStudy.SubmitStudy, 'now', side_effect=times)  # type: ignore  # noqa: F821  # regen times every time!
+    @unittest.mock.patch.object(myModel, 'now', side_effect=times)  # type: ignore  # noqa: F821
     def setUp(self, mck_now, mck_model):
         self.tmpDir = tempfile.TemporaryDirectory()
         testDir = pathlib.Path(self.tmpDir.name)
@@ -138,6 +166,36 @@ class MyTestCase(unittest.TestCase):
                 self.assertEqual(val1,val2,msg=f"Attribute {key} should be identical between model and loaded copy")
             #self.assertEqual(model,mcopy,msg="Model in copy should be identical to loaded model from path")
 
+    def xxxx_test_update_obs(self):
+        """
+        Test case for update_obs method
+        Simple test -- will generate a new obs file with new obs and then run update_obs to update the obs values
+        :return:  Nada
+        """
+        # need to fake some obs
+        submit = self.submit
+        submit.instantiate() # instantiate all models.
+        submit.submit_all_models(fake_fn=self.fake_function)
+
+        for m in submit.processed_models():
+            # update the obs values and write them to disk as a json file.
+            obs_file = m._post_process_output
+
+            path = m.model_dir / obs_file
+            if path.suffix != '.json':
+                raise ValueError(f"Expecting json file for obs but got {path}")
+            obs_values = self.fake_function(m.parameters,obs_names=['obs0','obs1','obs2'])
+            print(path)
+            with path.open('w') as fp:
+                json.dump(obs_values.to_dict(),fp) # dump values.
+        submit2 = copy.deepcopy(submit) # copy it
+        submit2.update_obs() # should update the obs values in the models.
+        # check that the obs values have been updated.
+        with self.assertRaises(AssertionError): # expect a difference so should fail with assertion error.
+            pdtest.assert_frame_equal(submit.obs(),submit2.obs())
+        # and have an extra one. So removing extra obs should  give equal dataframes.
+        obs_same=['obs0','obs1']
+        pdtest.assert_frame_equal(submit.obs(obsNames=obs_same),submit2.obs(obsNames=obs_same))
 
 
 
@@ -150,7 +208,13 @@ class MyTestCase(unittest.TestCase):
 
 
 
-    @unittest.mock.patch.object(SubmitStudy.SubmitStudy, 'now', side_effect=times)
+
+
+
+
+
+
+    @unittest.mock.patch.object(SubmitStudy.SubmitStudy, 'now', side_effect=times) # type: ignore  # noqa: F821
     def test_delete(self, mck_now):
         # can we delete things.
         pth = self.submit.config_path
@@ -245,8 +309,8 @@ class MyTestCase(unittest.TestCase):
         self.assertEqual(set(pths_got), set(pths_expect))
 
     # need to mock both SubmitStudy and myModel now.
-    @unittest.mock.patch.object(SubmitStudy.SubmitStudy, 'now', side_effect=times)
-    @unittest.mock.patch.object(myModel, 'now', side_effect=times)
+    @unittest.mock.patch.object(SubmitStudy.SubmitStudy, 'now', side_effect=times)# type: ignore  # noqa: F821
+    @unittest.mock.patch.object(myModel, 'now', side_effect=times)# type: ignore  # noqa: F821
     def test_submit_all_models(self, mck_now, mck_model_now):
 
         # set up the fake rtn output
@@ -317,36 +381,38 @@ class MyTestCase(unittest.TestCase):
         self.assertEqual(len(submit._history), 8)
         self.assertEqual(len(submit._output), 1)  # Next iter.
 
-        # now fake it. subprocess.check_output should not run anything.
 
-        def fake_function(param):
-            sim_obs = dict()
-            obs_count = 0
-            for k, v in param.items():
-                oname = f"obs{obs_count}"
-                try:
-                    sim_obs[oname] = v ** 2
-                    obs_count += 1
-                except TypeError: # multiplication not defined
-                    pass
-            return pd.Series(sim_obs)
 
         with unittest.mock.patch("subprocess.check_output",
                                  autospec=True, return_value="some value 345678") as mck_output:
             submit = copy.deepcopy(self.submit)
             submit.instantiate()  # instantiate all models.
-            submit.submit_all_models(fake_fn=fake_function)
+            # now fake it. subprocess.check_output should not run anything.
+            submit.submit_all_models(fake_fn=self.fake_function)
             mck_output.assert_not_called()
 
     dt = datetime.datetime(2022, 1, 1, 0, 0, 0)
 
-    @unittest.mock.patch.object(SubmitStudy.SubmitStudy, 'now', return_value=dt)
+    @unittest.mock.patch.object(SubmitStudy.SubmitStudy, 'now', return_value=dt)# type: ignore  # noqa: F821
     def test_repr(self, mck_now):
 
         self.submit.update_history('DOne!')
         got_repr = repr(self.submit)
         expect_repr = "Name: dfols_r Nmodels:3 Status: CREATED: 3 Model_Types:myModel: 3 Last changed at 2022-01-01 00:00:00"
         self.assertEqual(got_repr, expect_repr)
+
+    def test_running_models(self):
+        # test running_models works
+        submit = self.submit
+        # nothing is running so expect no running models
+        rmodels = submit.running_models()
+        self.assertEqual(len(rmodels),2)
+        # now make models running!
+        # set the status to RUNNING
+        for model in submit.model_index.values():
+            model.status = "RUNNING"
+        rmodels = submit.running_models()
+        self.assertEqual(rmodels,list(submit.model_index.values()))
 
     def test_models_to_submit(self):
         # test models_to_submit works. Should get models
@@ -442,7 +508,30 @@ class MyTestCase(unittest.TestCase):
         with self.submit.lock() as lock:
             self.assertTrue(lock.is_locked)
 
+    def notest_compute_simulated_observations(self):
+        """
+        Run tests for compute_simulated_observations
+        :return:
+        """
 
+        raise NotImplementedError("Not yet implemented")
+
+    def notest_reload_obs(self):
+        """
+        Run tests for reload_obs
+        :return:
+        """
+
+        raise NotImplementedError("Not yet implemented")
+
+
+    def notest_iter_cmd(self):
+        """
+          Run tests for iter_cmd
+        :return:
+        """
+
+        raise NotImplementedError("Not yet implemented")
 
     """
     AI PROMPT/Spec:
@@ -641,7 +730,7 @@ def resub_status_side_effect(self, *args, **kwargs):
     status = getattr(self, 'resub_job_status', 'notFound')
     return status
 
-@unittest.mock.patch.object(SubmitStudy.SubmitStudy, 'run_cmd', autospec=True, return_value='nonsense')
+@unittest.mock.patch.object(SubmitStudy.SubmitStudy, 'run_cmd', autospec=True, return_value='nonsense')# type: ignore  # noqa: F821
 @unittest.mock.patch.object(SubmitStudy.SubmitStudy, 'resub_status', autospec=True,side_effect=resub_status_side_effect)
 @unittest.mock.patch.object(Model, 'kill', autospec=True,side_effect=model_kill)
 class test_KILL(unittest.TestCase):

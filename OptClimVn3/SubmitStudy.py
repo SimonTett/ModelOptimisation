@@ -31,6 +31,7 @@ import pandas as pd
 import engine
 import generic_json
 from Model import Model
+from Models import Model
 from model_base import model_base, journal
 from Study import Study
 from StudyConfig import dictFile
@@ -55,7 +56,7 @@ class SubmitStudy(Study, model_base, journal):
     config_path: pathlib.Path
     name_values: typing.Optional[list[int]]
     iter_keys: dict
-    next_iter_cmd: typing.Optional[list[str]]
+    next_iter_cmd: typing.Optional[list[str|pathlib.PurePath]]
     next_iter_jids: list[str]
     next_command:typing.Optional[typing.Literal['stop']] # next command to run. Only None or stop are allowed.
 
@@ -89,7 +90,8 @@ class SubmitStudy(Study, model_base, journal):
                  models: Optional[List[Model]] = None,
                  model_name: Optional[str] = None,
                  config_path: Optional[pathlib.Path] = None,
-                 next_iter_cmd: typing.Optional[typing.List[str]] = None):
+                 next_iter_cmd: Optional[list[str|pathlib.Path]] = None
+                 ):
         """
         Create ModelSubmit instance
         :param config: configuration information
@@ -194,9 +196,28 @@ class SubmitStudy(Study, model_base, journal):
 
         return s
 
+    def compute_simulated_observations(self,param:dict,
+                                       use_cache:bool = True) -> \
+            tuple[list[Model|None],typing.Optional[pd.Series]]:
+        """"
+        Compute simulated obs for a param. If param not in dict then return None.
+        :param param: dict of params to compute simulated observations for
+        :param use_cache -- whether to use cached simulated observations or not.
+        :return: one element list of Model and simulated observations as pd.Series. All obs are returned.
+          TODO: refactor this approach so that model is not returned as can just be retrieved using param.
+        """
+        key = self.key(param) # problem is (I think) that self.key(param) is not the same as self.key_for_model(param)
+        # Key failing to match key_for_model as do not have reference_name
+        #raise NotImplementedError("Key gen going wrong. Likely because missing reference_name. FIXME please")
+        if key not in self.model_index:
+            model = self.create_model(param,dump=False ) # create the model.
+            return [model],None
+        model = self.model_index[key]
+        sim_obs = model.compute_simulated_observations(use_cache=use_cache)
+        return [model],sim_obs
+
     def create_model(self, params: dict,
-                     dump: bool = True,
-                     reference_name:typing.Optional[str]=None) -> typing.Optional[Model]:
+                     dump: bool = True) -> typing.Optional[Model]:
         """
         Create a model, update list of created models and index of models.
         If self.next_command is 'stop' immediately returns None.
@@ -236,6 +257,7 @@ class SubmitStudy(Study, model_base, journal):
         param_dir = copy.deepcopy(params)
         reference = self.expand(param_dir.pop('reference', str(self.refDir)))
         model_name = param_dir.pop('model_name', self.model_name)
+        reference_name = param_dir.pop('reference_name', None)
         post_process = self.config.getv('postProcess')
         run_info = self.config.run_info()
         model = Model.model_init(model_name, name=name,
@@ -332,6 +354,7 @@ class SubmitStudy(Study, model_base, journal):
         if not (isinstance(obj.rootDir,pathlib.Path) and obj.rootDir.exists() and config_path.parent.samefile(obj.rootDir)):
             my_logger.info(f"Modifying config rootDir from  {obj.rootDir} to {config_path.parent}")
             obj.config_path = config_path
+            obj.rootDir= config_path.parent
             obj.update_history(f"Modified config path from  {obj.rootDir} to {config_path.parent}")
 
         if Study:  # convert to a study
@@ -353,67 +376,7 @@ class SubmitStudy(Study, model_base, journal):
         my_logger.info(f"Instantiated {len(models)} models")
         return iter_count
 
-    def models_to_instantiate(self) -> List[Model]:
-        """
-        return a list of  models that need instantiation.
-        :return:list of models that need instantiation
-        """
-        models_to_instantiate = [model for model in self.model_index.values() if model.is_instantiable()]
 
-        return models_to_instantiate
-
-    def models_to_submit(self) -> List[Model]:
-        """
-        return a list of  models that need submission.
-        :return:list of models that need submission
-        """
-        models_to_submit = [model for model in self.model_index.values() if model.is_submittable()]
-
-        return models_to_submit
-
-    def models_to_continue(self) -> List[Model]:
-        """
-
-        :return: a list of models that are marked to continue
-        """
-        models_to_continue = [model for model in self.model_index.values() if model.is_continuable()]
-
-        return models_to_continue
-
-    def failed_models(self) -> List[Model]:
-        """
-
-        :return: list of models that have failed
-        """
-
-        return [model for model in self.model_index.values() if model.is_failed()]
-
-    def running_models(self) -> List[Model]:
-        """
-
-        :return: List of models that are running
-        """
-        return [model for model in self.model_index.values() if model.is_running()]
-
-    def submitted_models(self) -> List[Model]:
-        """
-
-        :return: List of models that are running
-        """
-        return [model for model in self.model_index.values() if model.is_submitted()]
-
-    def processed_models(self) -> List[Model]:
-        """
-
-        :return: List of models that have processed
-        """
-        return [model for model in self.model_index.values() if model.is_processed()]
-
-    def succeeded_models(self) -> List[Model]:
-        """
-        :return: List of models that have succeeded
-        """
-        return [model for model in self.model_index.values() if model.is_succeeded()]
 
     def to_dict(self) -> dict:
         """
@@ -474,6 +437,13 @@ class SubmitStudy(Study, model_base, journal):
                 continue
 
             path = pathlib.Path(path)  # make path version which we can then load.
+            if not path.is_absolute(): # A relative path. Append rootdir
+                
+                new_path = obj.rootDir/path
+                if not new_path.exists(): # path does not exist. Try with slightly different path
+                    new_path = obj.rootDir.parent/path
+                path  = pathlib.Path(new_path)
+                
             if path.exists():
                 my_logger.debug(f"Loading model from {path}")
                 # verify key is as expected.
@@ -482,6 +452,7 @@ class SubmitStudy(Study, model_base, journal):
                 if key != got_key:  # key changed.
                     dct = cls.key_to_dict(key)
                     dct['reference'] = dct.get('reference',model.reference)
+                    dct['reference_name'] = dct.get('reference_name', model.reference_name)
                     try:
                         dct['reference']= pathlib.PurePath(dct['reference'])
                     except KeyError:
@@ -521,13 +492,18 @@ class SubmitStudy(Study, model_base, journal):
         self.update_history("Deleted")
 
     def copyConfig(self,direct:pathlib.Path,
+
              extra_files:typing.Optional[list[pathlib.Path]]=None,
+             keep_list:typing.Optional[list[pathlib.Path]]=None,
+             new_config_name: typing.Optional[str] = None,
              update_paths:bool = True) -> SubmitStudy:
         """
         Copy SubmitStudy to a new directory. By default, only the config file is copied.
         :param direct: directory where study is to be copied. Will be created if it does not exist
         :param extra_files: list of extra files (paths provided relative to rootDir) to be copied to new directory.
+        :param keep_list: list of files to keep in the new directory.
         :param update_paths -- If True then any path parameters will be updated to reflect new directory structure.
+        :param new_config_name: If not None then the config file will be renamed to new_config_name and name updated.
         :return: Copied SubmitStudy.
         """
 
@@ -537,18 +513,23 @@ class SubmitStudy(Study, model_base, journal):
             my_logger.info(f"Converting direct to absolute path {direct}")
         direct.mkdir(parents=True, exist_ok=True)  # create directory if need be.
 
-
-        files_to_copy = [self.config_path.resolve().relative_to(self.rootDir)]
+        config_path = self.config_path.resolve().relative_to(self.rootDir)
+        if new_config_name is not None:
+            config_path = config_path.parent / new_config_name
+            my_logger.info(f"Renaming config file to {config_path}")
+        files_to_copy = [config_path]  # default is just the config file.
         if extra_files is not None:
             files_to_copy += extra_files
 
         files_to_copy = list(set(files_to_copy))  # make unique
 
-        files_copied = genericLib.copy_files(self.rootDir, direct, files_to_copy)
+        files_copied = genericLib.copy_files(self.rootDir, direct, files_to_copy, keep_list=keep_list)
         missing = set(files_to_copy) - set(files_copied)
         if len(missing) > 0:
             my_logger.warning(f"Failed to copy  {missing} from {self.rootDir} to {direct}")
         cp_submit_study = copy.deepcopy(self)  # copy the submit study
+        if new_config_name is not None:
+            cp_submit_study.name=config_path.stem
         cp_config_path = direct /files_to_copy[0] # new config path
         # now copy the model(s) to the new directory
         model_index = dict()  # empty  model index
@@ -671,10 +652,72 @@ class SubmitStudy(Study, model_base, journal):
             my_logger.warning(f"Ran out of names name_values = {self.name_values}")
         return name  # return name
 
+    def models_to_instantiate(self) -> list[Model]:
+        """
+        return a list of  models that need instantiation.
+        :return:list of models that need instantiation
+        """
+        models_to_instantiate = [model for model in self.model_index.values() if model.is_instantiable()]
+
+        return models_to_instantiate
+
+    def models_to_submit(self) -> list[Model]:
+        """
+        return a list of  models that need submission.
+        :return:list of models that need submission
+        """
+        models_to_submit = [model for model in self.model_index.values() if model.is_submittable()]
+
+        return models_to_submit
+
+    def models_to_continue(self) -> list[Model]:
+        """
+
+        :return: a list of models that are marked to continue
+        """
+        models_to_continue = [model for model in self.model_index.values() if model.is_continuable()]
+
+        return models_to_continue
+
+    def failed_models(self) -> list[Model]:
+        """
+
+        :return: list of models that have failed
+        """
+
+        return [model for model in self.model_index.values() if model.is_failed()]
+
+    def running_models(self) -> list[Model]:
+        """
+
+        :return: List of models that are running
+        """
+        return [model for model in self.model_index.values() if model.is_running()]
+
+    def submitted_models(self) -> list[Model]:
+        """
+
+        :return: List of models that are running
+        """
+        return [model for model in self.model_index.values() if model.is_submitted()]
+
+    def processed_models(self) -> list[Model]:
+        """
+
+        :return: List of models that have processed
+        """
+        return [model for model in self.model_index.values() if model.is_processed()]
+
+    def succeeded_models(self) -> list[Model]:
+        """
+        :return: List of models that have succeeded
+        """
+        return [model for model in self.model_index.values() if model.is_succeeded()]
+
     def submit_all_models(self, fake_fn: Optional[Callable] = None):
         """
-        Submit models, the post-processing and the next iteration in the algorithm to job control system.
-        :param fake_fn:Function to fake model runs -- will skip most stages including post-processing.
+        Submit models, the post-processing, and the next iteration in the algorithm to job control system.
+        :param fake_fn:Function to fake model runs -- will skip most stages, including post-processing.
           fake and anything to be continued will generate an error.  No pp or next submission will be done if provided,
         :return: number of models submitted
 
@@ -688,6 +731,7 @@ class SubmitStudy(Study, model_base, journal):
         Releasing them will be quite tricky! You can always kill everything, remove any continuing models and start again.
         The models and study will contain info on jobs so you might be able to fix/kill by hand.
         """
+
 
         model_list = self.models_to_submit()  # models that need submitting!
         if len(model_list) == 0:  # nothing to do. We are done (no post-processing or resubmission to be submitted)
@@ -744,7 +788,7 @@ class SubmitStudy(Study, model_base, journal):
             self.update_history(f"Submitted {len(model_list)} models")
 
         # now (re)submit this entire script so that the next iteration in the algorithm can be ran
-        # All the pp_jids should be not None. We remove the None whens if Faking it.
+        # pp_jids are the jobs ids from the post-processing. We remove the None when if Faking it.
 
         if (self.next_iter_cmd is not None) and (len(pp_jids) > 0):
             # submit the next job in the iteration if have one and submitted post-processing.
@@ -826,22 +870,6 @@ class SubmitStudy(Study, model_base, journal):
             self.dump_config() # and write ourselves out
         return models
 
-    def reload_obs(self) -> list[Model]:
-        """
-        Reload the observations for all processed models.
-        This is for dealing with cases where the observations have been updated.
-        :return: list of models that were reloaded.
-        """
-        my_logger.warning("Needs test cases written")
-        models = self.processed_models()
-        for model in models:
-            path = model.model_dir/model._post_process_output # TODO -- should really be part of read_simulated_obs
-            model.read_simulated_obs(path)
-            model.update_history("Reloaded observations")
-        my_logger.info(f"Reloaded obs for {len(models)} models")
-        self.update_history(f"Reloaded obs for {len(models)} models")
-        self.dump_config(dump_models=True) # and write ourselves AND modified models out
-        return models
 
     def resub_status(self) -> typing.Optional[str]:
         """"
@@ -865,7 +893,7 @@ class SubmitStudy(Study, model_base, journal):
             killed += model.kill() # record the job ids that were killed.
         # kill next iteration job
         status = self.resub_status()  # get the status of the next iteration job
-        if  ((status is not  None) and (status != 'notFound')):
+        if  ((status is not  None) and (status != 'notFound') and (len(self.next_iter_jids) > 0)):
             curr_resub_id = self.next_iter_jids[-1]
             cmd = self.engine.kill_job(curr_resub_id)
             self.run_cmd(cmd)
@@ -876,6 +904,22 @@ class SubmitStudy(Study, model_base, journal):
         my_logger.info(f"Killed {len(killed)} jobs")
         self.update_history(f"Killed {len(killed)} jobs")
         return killed
+
+    def iter_cmd(self, iter_cmd:typing.Optional[ list[str | pathlib.Path]]) -> \
+            typing.Optional[list[str | pathlib.Path]]:
+        """
+        If iter_cmd is Truthy set next_iter_cmd and update history. If it is the same as current value no change will be made.
+        :param next_iter_cmd: Command to be used -- a list of strings or pathlib.Path objects.
+        :return:whatever next_iter_cmd was set to.
+        """
+        if (iter_cmd and ((self.next_iter_cmd is None) or (self.next_iter_cmd != iter_cmd))):
+            # only update self.next_iter_cmd if  either self.next_iter_cmd is empty/None or
+            #  self.next_iter_cmd is different from iter_cmd
+            self.update_history(f'Modifying {self.next_iter_cmd} to {iter_cmd}')
+            logging.debug(f'Setting next_iter_cmd to {iter_cmd}')
+            self.next_iter_cmd = iter_cmd
+
+        return iter_cmd
 
 
 
