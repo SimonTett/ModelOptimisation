@@ -81,7 +81,6 @@ from namelist_var import NamelistVar, GroupConfig, type_allowed_fortran
 from engine import abstractEngine
 import shlex
 
-
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 
 type_status = typing.Literal['CREATED', 'INSTANTIATED', 'SUBMITTED',
@@ -1005,7 +1004,8 @@ class Model(ModelBaseClass, journal):
         if use_cache and (self.simulated_obs is not None):
             return self.simulated_obs # do this first as test cases don't want to set _post_process_output and don't want to read in data.
 
-        if self.status != 'PROCESSED': # No obs for this model.
+        if self.status not in ('PROCESSED', 'SUCCEEDED'):
+        # if self.status != 'PROCESSED': # No obs for this model.
             return None
         if self._post_process_output is None:
             raise FileNotFoundError("self._post_process_output is None. Should be set")

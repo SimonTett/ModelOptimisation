@@ -219,7 +219,7 @@ if config_path.exists():  # config file exists. Read it in.
     if args.process:
         my_logger.info(f"Processing all models in {rSUBMIT} that are SUCCEEDED and have no jobs.")
         rSUBMIT.process()
-        cmd = rSUBMIT.engine.kill_job(rSUBMIT.next_iter_jids[1]) # kill the next iter job.
+        cmd = rSUBMIT.engine.kill_job(rSUBMIT.next_iter_jids[-1]) # kill the next iter job.
         rSUBMIT.run_cmd(cmd)
         my_logger.info(f"Killing next iteration job with cmd: {cmd}")
 

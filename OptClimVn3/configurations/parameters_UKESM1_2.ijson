@@ -1,0 +1,570 @@
+{
+    "_comment": "File auto-generated from HadGEM3 parameters spreadsheet. Version 0.9 of 2025-07-30",
+    "number_params_comment": "This file has 64 parameters.",
+    "sourceurl_comment": "Source URLs for HadGEM3 parameters: https://github.com/qump-project/qump-hadgem3/blob/master/data/GA7Parameters_fakedata.csv, https://github.com/qump-project/qump-hadgem3/blob/master/data/GA8Parameters.csv, https://github.com/qump-project/qump-hadgem3/blob/master/data/GA9Parameters.csv",
+    "defaultParams": {
+        "_comment": "Default parameters for UKESM1.1. These are the parameters that are used if not specified in the configuration file.",
+        "gs_nvg_io": 0.01,
+        "gs_nvg_io_function_comment": "gs_nvg_io",
+        "gs_nvg_io_namelist_comment": "jules_nvegparm",
+        "dz0v_dh_io": 0.05,
+        "dz0v_dh_io_function_comment": "dz0v_dh_io",
+        "dz0v_dh_io_namelist_comment": "jules_pftparm",
+        "f0_io": 0.875,
+        "f0_io_function_comment": "f0_io",
+        "f0_io_namelist_comment": "jules_pftparm",
+        "fsmc_p0_io_qump_value_comment": 0.6,
+        "fsmc_p0_io": 0,
+        "fsmc_p0_io_function_comment": "fsmc_p0_io",
+        "fsmc_p0_io_namelist_comment": "jules_pftparm",
+        "nl0_io_qump_value_comment": 0.04,
+        "nl0_io": 0.046,
+        "nl0_io_function_comment": "nl0_io",
+        "nl0_io_namelist_comment": "jules_pftparm",
+        "rootd_ft_io_qump_value_comment": 3.0,
+        "rootd_ft_io": 2,
+        "rootd_ft_io_function_comment": "rootd_ft_io",
+        "rootd_ft_io_namelist_comment": "jules_pftparm",
+        "tupp_io_qump_value_comment": 36.0,
+        "tupp_io": 43,
+        "tupp_io_function_comment": "tupp_io",
+        "tupp_io_namelist_comment": "jules_pftparm",
+        "u10_max_coare": 22.0,
+        "u10_max_coare_namelist_comment": "jules_sea_seaice",
+        "a_snow_et": 2.8e-06,
+        "a_snow_et_namelist_comment": "jules_snow",
+        "rho_snow_et_crit_delta": 41.0,
+        "rho_snow_et_crit_delta_function_comment": "rho_snow_fresh",
+        "rho_snow_et_crit_delta_namelist_comment": "jules_snow",
+        "rho_snow_fresh": 109.0,
+        "rho_snow_fresh_function_comment": "rho_snow_fresh",
+        "rho_snow_fresh_namelist_comment": "jules_snow",
+        "unload_rate_u": 2.31e-06,
+        "unload_rate_u_function_comment": "unload_rate_u",
+        "unload_rate_u_namelist_comment": "jules_snow",
+        "orog_drag_param": 0.15,
+        "orog_drag_param_comment": "Orographic form drag coefficient",
+        "orog_drag_param_namelist_comment": "jules_surface",
+        "a_ent_2": 0.056,
+        "a_ent_2_comment": "Generation of turbulent mixing and cloud-top entrainment by buoyancy reversal",
+        "a_ent_2_namelist_comment": "run_bl",
+        "dec_thres_cloud": 0.1,
+        "dec_thres_cloud_comment": "Decoupling threshold for cloudy Bls",
+        "dec_thres_cloud_namelist_comment": "run_bl",
+        "near_neut_z_on_l": 1.6,
+        "near_neut_z_on_l_namelist_comment": "run_bl",
+        "zhloc_depth_fac": 0.4,
+        "zhloc_depth_fac_comment": "Threshold fraction of the cloud layer depth",
+        "zhloc_depth_fac_namelist_comment": "run_bl",
+        "allicetdegc0to1_qump_value_comment": 0.50332384,
+        "allicetdegc0to1": 0.5,
+        "allicetdegc0to1_function_comment": "starticetkelvin",
+        "allicetdegc0to1_namelist_comment": "run_cloud",
+        "dbsdtbs_turb_0": 0.00015,
+        "dbsdtbs_turb_0_comment": "Cloud erosion",
+        "dbsdtbs_turb_0_namelist_comment": "run_cloud",
+        "ez_max_bm": 400.0,
+        "ez_max_bm_comment": "Maximum entrainment zone depth",
+        "ez_max_bm_namelist_comment": "run_cloud",
+        "forced_cu_fac": 0.5,
+        "forced_cu_fac_namelist_comment": "run_cloud",
+        "ice_width": 0.02,
+        "ice_width_comment": "Ice width",
+        "ice_width_namelist_comment": "run_cloud",
+        "starticetkelvin": 263.15,
+        "starticetkelvin_function_comment": "starticetkelvin",
+        "starticetkelvin_namelist_comment": "run_cloud",
+        "amdet_fac": 3.0,
+        "amdet_fac_comment": "Deep mixing detrainment",
+        "amdet_fac_namelist_comment": "run_convection",
+        "c_mass_sh": 0.03,
+        "c_mass_sh_namelist_comment": "run_convection",
+        "cape_timescale_qump_value_comment": 1800.0,
+        "cape_timescale": 3600,
+        "cape_timescale_comment": "CAPE timescale",
+        "cape_timescale_namelist_comment": "run_convection",
+        "cca_md_knob_qump_value_comment": 0.8,
+        "cca_md_knob": 0.1,
+        "cca_md_knob_comment": "CCA scaling (mid)",
+        "cca_md_knob_function_comment": "cca_md_knob",
+        "cca_md_knob_namelist_comment": "run_convection",
+        "cca_sh_knob_qump_value_comment": 0.2,
+        "cca_sh_knob": 0.5,
+        "cca_sh_knob_comment": "CCA scaling (shallow)",
+        "cca_sh_knob_namelist_comment": "run_convection",
+        "cpress_term_qump_value_comment": 0.3,
+        "cpress_term": 0.7,
+        "cpress_term_comment": "Coefficient for pressure term relative to shear term ",
+        "cpress_term_namelist_comment": "run_convection",
+        "eff_dcff_qump_value_comment": 3.0,
+        "eff_dcff": 1.0,
+        "eff_dcff_comment": "Efficiency of frozen cloud creation",
+        "eff_dcff_namelist_comment": "run_convection",
+        "eff_dcfl": 1.0,
+        "eff_dcfl_comment": "Efficiency of liquid cloud creation",
+        "eff_dcfl_namelist_comment": "run_convection",
+        "ent_fac_dp": 1.13,
+        "ent_fac_dp_comment": "Amplitude of deep entrainment",
+        "ent_fac_dp_namelist_comment": "run_convection",
+        "ent_fac_md": 0.9,
+        "ent_fac_md_comment": "Amplitude of mid entrainment",
+        "ent_fac_md_namelist_comment": "run_convection",
+        "ent_fac_sh": 1.0,
+        "ent_fac_sh_comment": "Shallow entrainment coefficient",
+        "ent_fac_sh_namelist_comment": "run_convection",
+        "mparwtr_qump_value_comment": 0.001,
+        "mparwtr": 0.0015,
+        "mparwtr_comment": "Maximum condensate",
+        "mparwtr_namelist_comment": "run_convection",
+        "orig_mdet_fac": 1.0,
+        "orig_mdet_fac_comment": "Deep mixing detrainment",
+        "orig_mdet_fac_namelist_comment": "run_convection",
+        "qlmin_qump_value_comment": 0.0004,
+        "qlmin": 0.0003,
+        "qlmin_comment": "Min critical cloud condensate",
+        "qlmin_namelist_comment": "run_convection",
+        "r_det_qump_value_comment": 0.5,
+        "r_det": 0.8,
+        "r_det_comment": "Adaptive detrainment",
+        "r_det_namelist_comment": "run_convection",
+        "thpixs_mid_qump_value_comment": 0.5,
+        "thpixs_mid": 0.2,
+        "thpixs_mid_comment": "Size of the initial mid-level buoyancy perturbation",
+        "thpixs_mid_namelist_comment": "run_convection",
+        "fbcd": 4.0,
+        "fbcd_comment": "Flow blocking drag coefficient",
+        "fbcd_namelist_comment": "run_gwd",
+        "gsharp_qump_value_comment": 0.7,
+        "gsharp": 0.5,
+        "gsharp_comment": "Mountain wave amplitude constant",
+        "gsharp_namelist_comment": "run_gwd",
+        "gwd_frc": 4.0,
+        "gwd_frc_comment": "Critical Froude number",
+        "gwd_frc_namelist_comment": "run_gwd",
+        "gwd_fsat": 0.25,
+        "gwd_fsat_comment": "Inverse critical Froude number for wave saturation",
+        "gwd_fsat_namelist_comment": "run_gwd",
+        "nsigma_qump_value_comment": 2.6,
+        "nsigma": 2.5,
+        "nsigma_comment": "Scales sub-grid orography st dev",
+        "nsigma_namelist_comment": "run_gwd",
+        "ai": 0.0257,
+        "ai_comment": "Aggregate mass scaling",
+        "ai_namelist_comment": "run_precip",
+        "ar": 1.0,
+        "ar_comment": "Aspect ratio of ice crystal",
+        "ar_namelist_comment": "run_precip",
+        "aut_qc": 2.47,
+        "aut_qc_namelist_comment": "run_precip",
+        "c_r_correl": 0.9,
+        "c_r_correl_namelist_comment": "run_precip",
+        "mp_dz_scal": 2.0,
+        "mp_dz_scal_comment": "Mixed-phase turbulent production of supercooled liquid water",
+        "mp_dz_scal_namelist_comment": "run_precip",
+        "x1r": 0.22,
+        "x1r_comment": "Rain PSD shape",
+        "x1r_namelist_comment": "run_precip",
+        "aparam_qump_value_comment": 0.077,
+        "aparam": 0.07,
+        "aparam_comment": "Liu beta in spectral dispersion",
+        "aparam_function_comment": "aparam",
+        "aparam_namelist_comment": "run_radiation",
+        "dp_corr_strat": 10000.0,
+        "dp_corr_strat_comment": "Decorrelation scale pressure",
+        "dp_corr_strat_namelist_comment": "run_radiation",
+        "liu_latent_qump_value_comment": 0.00599,
+        "liu_latent": 0.0066,
+        "liu_latent_function_comment": "aparam",
+        "liu_latent_namelist_comment": "run_radiation",
+        "two_d_fsd_factor_qump_value_comment": 1.65,
+        "two_d_fsd_factor": 1.5,
+        "two_d_fsd_factor_comment": "Fractional Standard Deviation",
+        "two_d_fsd_factor_namelist_comment": "run_radiation",
+        "acc_cor_scav_scaling": 1.0,
+        "acc_cor_scav_scaling_namelist_comment": "run_ukca",
+        "anth_so2_ems_scaling": 1.0,
+        "anth_so2_ems_scaling_comment": "Anthropogenic SO2 emission flux",
+        "anth_so2_ems_scaling_namelist_comment": "run_ukca",
+        "bc_refrac_im_scaling": 1.0,
+        "bc_refrac_im_scaling_namelist_comment": "run_ukca",
+        "biom_aer_ems_scaling": 2.0,
+        "biom_aer_ems_scaling_comment": "BC/OC mass emission flux from biomass burning sources",
+        "biom_aer_ems_scaling_namelist_comment": "run_ukca",
+        "dry_depvel_acc_scaling": 1.0,
+        "dry_depvel_acc_scaling_namelist_comment": "run_ukca",
+        "dry_depvel_so2_scaling": 1.0,
+        "dry_depvel_so2_scaling_comment": "The rate of dry deposition of SO2",
+        "dry_depvel_so2_scaling_namelist_comment": "run_ukca",
+        "marine_pom_ems_scaling": 1.0,
+        "marine_pom_ems_scaling_namelist_comment": "run_ukca",
+        "sea_salt_ems_scaling": 1.0,
+        "sea_salt_ems_scaling_comment": "The emission mass flux of sea spray aerosols",
+        "sea_salt_ems_scaling_namelist_comment": "run_ukca",
+        "seadms_ems_scaling": 1.0,
+        "seadms_ems_scaling_namelist_comment": "run_ukca",
+        "sigma_updraught_scaling": 1.0,
+        "sigma_updraught_scaling_comment": "The standard deviation used to define the pdf of updraft velocity",
+        "sigma_updraught_scaling_namelist_comment": "run_ukca",
+        "albicei": 0.36,
+        "albicei_comment": "Sea ice Albedo",
+        "albicei_namelist_comment": "shortwave_nml",
+        "albicev": 0.78,
+        "albicev_comment": "Visible ice albedo for thicker ice",
+        "albicev_namelist_comment": "shortwave_nml",
+        "albsnowi": 0.68,
+        "albsnowi_comment": "Near infrared, cold snow albedo",
+        "albsnowi_namelist_comment": "shortwave_nml",
+        "albsnowv": 0.96,
+        "albsnowv_comment": "Visible, cold snow albedo",
+        "albsnowv_namelist_comment": "shortwave_nml",
+        "saltmax": 9.6,
+        "saltmax_comment": "Ice salinity",
+        "saltmax_namelist_comment": "thermo_nml",
+        "rn_ahm_0_lap": 20000.0,
+        "rn_ahm_0_lap_comment": "Horizontal Laplacian eddy viscosity (m2/s)",
+        "rn_ahm_0_lap_namelist_comment": "namdyn_ldf",
+        "rn_avm0": 1.2e-4,
+        "rn_avm0_comment": "Vertical eddy viscosity",
+        "rn_avm0_namelist_comment": "namzdf",
+        "rn_avt0": 1.2e-5,
+        "rn_avt0_comment": "Vertical eddy diffusivity",
+        "rn_avt0_namelist_comment": "namzdf",
+        "rn_bfri2": 1.0e-3,
+        "rn_bfri2_comment": "bottom drag coefficient (non-linear)",
+        "rn_bfri2_namelist_comment": "nambfr",
+        "rn_ediff": 0.1,
+        "rn_ediff_comment": "TKE vert. diff. eddy coef",
+        "rn_ediff_namelist_comment": "namzdf_tke",
+        "rn_efr": 0.05,
+        "rn_efr_comment": "TKE vert. diff. Fraction of surface penetrates below the mixed layer",
+        "rn_efr_namelist_comment": "namzdf_tke",
+        "rn_emin": 1.0e-6,
+        "rn_emin_comment": "TKE vert. diff. Minimum value of tke [m2/s2]",
+        "rn_emin_namelist_comment": "namzdf_tke",
+        "rn_aht_0": 1000.0,
+        "rn_aht_0_comment": "horizontal eddy diffusivity for tracers [m2/s]",
+        "rn_aht_0_namelist_comment": "namtra_ldf",
+        "rn_aeiv_0": 1000.0,
+        "rn_aeiv_0_comment": "eddy induced velocity coefficient [m2/s]",
+        "rn_aeiv_0_namelist_comment": "namtra_ldf"
+
+
+
+    },
+    "minmax": {
+        "comment": "Defines the minimum and maximum ranges for UKESM parameters. Must be defined for ALL parameters",
+        "gs_nvg_io": [
+            0.005,
+            0.02
+        ],
+        "dz0v_dh_io": [
+            0.0,
+            0.16
+        ],
+        "f0_io": [
+            0.65,
+            0.972
+        ],
+        "fsmc_p0_io": [
+            0.0,
+            0.8
+        ],
+        "nl0_io": [
+            0.0,
+            0.12
+        ],
+        "rootd_ft_io": [
+            0.0,
+            8.0
+        ],
+        "tupp_io": [
+            25.0,
+            43.0
+        ],
+        "u10_max_coare": [
+            14.0,
+            24.0
+        ],
+        "a_snow_et": [
+            1e-06,
+            8e-06
+        ],
+        "rho_snow_et_crit_delta": [
+            0.0,
+            82.0
+        ],
+        "rho_snow_fresh": [
+            50.0,
+            160.0
+        ],
+        "unload_rate_u": [
+            1.155e-06,
+            4.62e-06
+        ],
+        "orog_drag_param": [
+            0.0,
+            1.0
+        ],
+        "a_ent_2": [
+            0.0,
+            0.1
+        ],
+        "dec_thres_cloud": [
+            0.01,
+            1.0
+        ],
+        "near_neut_z_on_l": [
+            0.0,
+            10.0
+        ],
+        "zhloc_depth_fac": [
+            0.0,
+            1.0
+        ],
+        "allicetdegc0to1": [
+            0.0,
+            1.0
+        ],
+        "dbsdtbs_turb_0": [
+            0.0,
+            0.001
+        ],
+        "ez_max_bm": [
+            300.0,
+            500.0
+        ],
+        "forced_cu_fac": [
+            0.0,
+            1.0
+        ],
+        "ice_width": [
+            0.001,
+            1.0
+        ],
+        "starticetkelvin": [
+            233.15,
+            273.15
+        ],
+        "amdet_fac": [
+            0.0,
+            15.0
+        ],
+        "c_mass_sh": [
+            0.01,
+            0.09
+        ],
+        "cape_timescale": [
+            900.0,
+            10800.0
+        ],
+        "cca_md_knob": [
+            0.0,
+            2.0
+        ],
+        "cca_sh_knob": [
+            0.0,
+            1.0
+        ],
+        "cpress_term": [
+            0.0,
+            0.99
+        ],
+        "eff_dcff": [
+            0.8,
+            9.0
+        ],
+        "eff_dcfl": [
+            0.8,
+            4.5
+        ],
+        "ent_fac_dp": [
+            0.0,
+            4.0
+        ],
+        "ent_fac_md": [
+            0.0,
+            3.0
+        ],
+        "ent_fac_sh": [
+            0.33,
+            3.0
+        ],
+        "mparwtr": [
+            0.001,
+            0.002
+        ],
+        "orig_mdet_fac": [
+            0.0,
+            5.0
+        ],
+        "qlmin": [
+            5e-05,
+            0.001
+        ],
+        "r_det": [
+            0.3,
+            0.99
+        ],
+        "thpixs_mid": [
+            0.0,
+            1.0
+        ],
+        "fbcd": [
+            0.0,
+            10.0
+        ],
+        "gsharp": [
+            0.0,
+            3.0
+        ],
+        "gwd_frc": [
+            0.5,
+            7.0
+        ],
+        "gwd_fsat": [
+            0.1,
+            2.0
+        ],
+        "nsigma": [
+            1.0,
+            4.5
+        ],
+        "ai": [
+            0.0061,
+            0.0555
+        ],
+        "ar": [
+            0.0,
+            1.0
+        ],
+        "aut_qc": [
+            2.15,
+            3.31
+        ],
+        "c_r_correl": [
+            0.0,
+            1.0
+        ],
+        "mp_dz_scal": [
+            0.0,
+            4.0
+        ],
+        "x1r": [
+            0.07,
+            0.52
+        ],
+        "aparam": [
+            0.03,
+            0.12
+        ],
+        "dp_corr_strat": [
+            2500.0,
+            40000.0
+        ],
+        "liu_latent": [
+            -0.007,
+            0.007
+        ],
+        "two_d_fsd_factor": [
+            1.0,
+            2.0
+        ],
+        "acc_cor_scav_scaling": [
+            0.0,
+            2.0
+        ],
+        "anth_so2_ems_scaling": [
+            0.6,
+            1.5
+        ],
+        "bc_refrac_im_scaling": [
+            0.38,
+            1.14
+        ],
+        "biom_aer_ems_scaling": [
+            0.25,
+            4.0
+        ],
+        "dry_depvel_acc_scaling": [
+            0.1,
+            10.0
+        ],
+        "dry_depvel_so2_scaling": [
+            0.2,
+            5.0
+        ],
+        "marine_pom_ems_scaling": [
+            0.25,
+            4.0
+        ],
+        "sea_salt_ems_scaling": [
+            0.12,
+            4.0
+        ],
+        "seadms_ems_scaling": [
+            0.5,
+            2.0
+        ],
+        "sigma_updraught_scaling": [
+            0.25,
+            1.75
+        ],
+        "albicei": [
+            0.26,
+            0.46
+        ],
+        "albicev": [
+            0.68,
+            0.88
+        ],
+        "albsnowi": [
+            0.58,
+            0.78
+        ],
+        "albsnowv": [
+            0.86,
+            1
+        ],
+        "saltmax": [
+            8.64,
+            10.56
+        ],
+        "rn_ahm_0_lap": [
+            1e4,
+            5e4
+        ],
+        "rn_avm0": [
+            1e-5,
+            1e-3
+        ],
+        "rn_avt0": [
+            1e-6,
+            1e-4
+        ],
+        "rn_bfri2": [
+            1e-5,
+            1e-3
+        ],
+        "rn_ediff": [
+            0.05,
+            0.5
+        ],
+        "rn_efr": [
+            0,
+            0.1
+        ],
+        "rn_emin": [
+            1e-7,
+            1e-5
+        ],
+        "rn_aht_0": [
+            750,
+            1750
+        ],
+        "rn_aeiv_0": [
+            750,
+            1750
+        ]
+
+    }
+}
