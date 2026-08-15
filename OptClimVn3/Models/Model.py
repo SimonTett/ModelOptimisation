@@ -635,7 +635,8 @@ class Model(ModelBaseClass, journal):
 
     def set_status(self, new_status: type_status,
                    check_existing: bool = True,
-                   check_allowed: bool = True) -> None:
+                   check_allowed: bool = True,
+                   dump:bool = True) -> None:
         """
         Set the status of Model.
         Checks that new status is allowed and consistent with current status
@@ -651,7 +652,8 @@ class Model(ModelBaseClass, journal):
         my_logger.debug(f"Changing status from {self.status} to {new_status}")
         self.update_history(f"Status set to {new_status} in {self.model_dir}")
         self.status = new_status
-        self.dump_model()  # write to disk
+        if dump:
+            self.dump_model()  # write to disk
 
     def instantiate(self, fake: bool = False) -> None:
         """
@@ -979,14 +981,17 @@ class Model(ModelBaseClass, journal):
             json.dump(output, fp, indent=2)
         # dump the post-processing dict for the post-processing to  pick up.
 
-        result = self.run_cmd(self.post_process_cmd_script, cwd=self.model_dir)  #
+        result = self.run_cmd(self.post_process_cmd_script, cwd=self.model_dir)  # run post-processing
+        self.set_status(status,dump=False)  #  update the status but do not dump the model.
         # get in the simulated obs which also sets them
-        obs = self.compute_simulated_observations(use_cache=False)
+        obs = self.compute_simulated_observations(use_cache=False) # ISSUE HERE IS THAT this method needs the status to be processed
+        # CONSIDER change -- if status is SUCCEEDED then regardless of cache read obs? But that might lead to other problems as processing is handled here..
+        # ALT -- split compute_simulated_observations into "control" and read which goes back to read_obs or similar.
         if update:  # Update the history for updating
             self.update_history("Reprocessed model")
 
         my_logger.debug(f"Sim obs are {obs}")
-        self.set_status(status)  #  update the status (and dump state to disk)
+        self.dump_model() # dump model to disk.
         return result  # Should this actually return the simulated observations??
 
     def compute_simulated_observations(self, use_cache:bool = True) -> typing.Optional[pd.Series]:
