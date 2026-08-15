@@ -362,10 +362,10 @@ class SubmitStudy(Study, model_base, journal):
 
         return obj
 
-    def instantiate(self):
+    def instantiate(self) -> int:
         """
         Instantiate all created models. And update_iter so we can see what was done.
-        :return: True if all were instantiated. False otherwise
+        :return: iteration count,
         """
 
         models = [model for model in self.model_index.values() if model.status == 'CREATED']
