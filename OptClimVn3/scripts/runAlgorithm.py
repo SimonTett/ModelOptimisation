@@ -24,6 +24,7 @@ do runAlgorithm -h to see what the remaining  command line arguments are.
 """
 import os
 
+
 # often this script runs on a headless display.
 # so need to set up maplotlib (if we plot) for that case.
 # this bit of code needs to run before any other matplotlib code.
@@ -218,10 +219,8 @@ if config_path.exists():  # config file exists. Read it in.
 
     if args.process:
         my_logger.info(f"Processing all models in {rSUBMIT} that are SUCCEEDED and have no jobs.")
-        rSUBMIT.process()
-        cmd = rSUBMIT.engine.kill_job(rSUBMIT.next_iter_jids[1]) # kill the next iter job.
-        rSUBMIT.run_cmd(cmd)
-        my_logger.info(f"Killing next iteration job with cmd: {cmd}")
+        rSUBMIT.process() # note if next iter run
+
 
     if delete:  # delete the config
         result = input(f">>>Going to delete existing configs in {rootDir}<<<. OK ? (yes if so): ") 

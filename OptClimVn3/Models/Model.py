@@ -635,8 +635,7 @@ class Model(ModelBaseClass, journal):
 
     def set_status(self, new_status: type_status,
                    check_existing: bool = True,
-                   check_allowed: bool = True,
-                   dump:bool = True) -> None:
+                   check_allowed: bool = True) -> None:
         """
         Set the status of Model.
         Checks that new status is allowed and consistent with current status
@@ -652,8 +651,7 @@ class Model(ModelBaseClass, journal):
         my_logger.debug(f"Changing status from {self.status} to {new_status}")
         self.update_history(f"Status set to {new_status} in {self.model_dir}")
         self.status = new_status
-        if dump:
-            self.dump_model()  # write to disk
+        self.dump_model()  # write to disk
 
     def instantiate(self, fake: bool = False) -> None:
         """
@@ -965,9 +963,8 @@ class Model(ModelBaseClass, journal):
             raise FileNotFoundError("Set post_process_cmd_script to something.")
         status: type_status = 'PROCESSED'
         self.check_status(status)  # check we are allowed to set to processed.
-        if update:  # handle updating.
-            if self.status != 'PROCESSED':
-                raise ValueError(f"Updating and status is {self.status} != PROCESSED")
+        if update and self.status != 'PROCESSED':  # handle updating.
+            raise ValueError(f"Updating and status is {self.status} != PROCESSED")
 
         if self.fake:  # faking?
             my_logger.debug("Faking")
@@ -982,16 +979,13 @@ class Model(ModelBaseClass, journal):
         # dump the post-processing dict for the post-processing to  pick up.
 
         result = self.run_cmd(self.post_process_cmd_script, cwd=self.model_dir)  # run post-processing
-        self.set_status(status,dump=False)  #  update the status but do not dump the model.
         # get in the simulated obs which also sets them
-        obs = self.compute_simulated_observations(use_cache=False) # ISSUE HERE IS THAT this method needs the status to be processed
-        # CONSIDER change -- if status is SUCCEEDED then regardless of cache read obs? But that might lead to other problems as processing is handled here..
-        # ALT -- split compute_simulated_observations into "control" and read which goes back to read_obs or similar.
+        obs = self.compute_simulated_observations(use_cache=False)
         if update:  # Update the history for updating
             self.update_history("Reprocessed model")
 
         my_logger.debug(f"Sim obs are {obs}")
-        self.dump_model() # dump model to disk.
+        self.set_status(status)  #  update the status
         return result  # Should this actually return the simulated observations??
 
     def compute_simulated_observations(self, use_cache:bool = True) -> typing.Optional[pd.Series]:
@@ -1010,12 +1004,14 @@ class Model(ModelBaseClass, journal):
         if use_cache and (self.simulated_obs is not None):
             return self.simulated_obs # do this first as test cases don't want to set _post_process_output and don't want to read in data.
 
-        if self.status != 'PROCESSED': # No obs for this model.
+        if self.status not in ['PROCESSED','SUCCEEDED']: # No obs for this model.
             return None
         if self._post_process_output is None:
             raise FileNotFoundError("self._post_process_output is None. Should be set")
 
         post_process_file = self.model_dir / self._post_process_output
+        if not post_process_file.is_file():
+            raise FileNotFoundError(f"Could not find post-processed file {post_process_file}")
         fileType = post_process_file.suffix  # type of file wanted
 
         # read in data. Details depend on type of file.
