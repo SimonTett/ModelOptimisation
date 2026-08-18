@@ -478,7 +478,7 @@ class runSubmit(SubmitStudy):
         # use compute_simulated_observations to actually compute the observations for each logical name. This will use the cache if available.
         obs = []
         for name, params in self._logical_info.parameters.items():
-            model, sim_obs = self.compute_simulated_observations(params.to_dict(), use_cache=use_cache)
+            sim_obs = self.compute_simulated_observations(params.to_dict(), use_cache=use_cache)
             if sim_obs is not None:
                 obs.append(sim_obs)
 
@@ -565,23 +565,23 @@ class runSubmit(SubmitStudy):
 
         return param_list
 
-    def  compute_simulated_observations(self,
+    def compute_simulated_observations(self,
                         params: dict[str,type_param],
                         use_cache: bool = True,
-                        reference_name: typing.Optional[str] = None,
-                        ) -> tuple[list[Model|None],typing.Optional[pd.Series]]:
+                        ) -> typing.Optional[pd.Series]:
         """
         Compute the simulated observations for a *single* parameter set. This could involve running multiple models and averaging the results/doing some processing.
         If any simulated obs is None then return None.
         :param params: dictionary of parameters and values
         :param use_cache: If True use the cache. Setting use_cache to False will force regeneration of obs all the way down to the underlying models.
         :param reference_name: name for reference.
-        :return: list of models used and pandas series of simulated observations or None if some run is needed.
-             Should be possible to remove the list of models being used.
+        :return: pandas series of simulated observations or None if some run is needed.
 
-        This method caches generated observations, models * params.
 
-        It ensemble averages
+        This method caches generated observations, models & params.
+
+        It ensemble averages the simulated observations for each ensemble member and returns the average.
+
         """
 
 
@@ -591,7 +591,7 @@ class runSubmit(SubmitStudy):
             sim_obs = self._logical_info.obs(name)
             if sim_obs is not None:
                 my_logger.debug("Used cache to return simulated observations")
-                return self._logical_info.models[name],sim_obs
+                return sim_obs
 
         # otherwise we need to compute it.
         self._logical_info.params(params)  # store the parameters
@@ -601,23 +601,25 @@ class runSubmit(SubmitStudy):
         all_models = [] # list of models
         for param in params_list:
             if multi_config_fn:
-                fn = functools.partial(super().compute_simulated_observations,use_cache=use_cache)
-                models,sim_obs = multi_config_fn(fn,param)
+                models,sim_obs = multi_config_fn(self.get_model,param,use_cache=use_cache)
+                all_models += models
             else:
-                models,sim_obs  = super().compute_simulated_observations(param,use_cache=use_cache)
-            all_sim_obs.append(sim_obs)
-            all_models += models
+                sim_obs  = super().compute_simulated_observations(param,use_cache=use_cache)
+                key = self.key(param) # will have a model now (which might be just created)
+                all_models += [self.model_index[key]]
+            all_sim_obs.append(sim_obs) # append the obs.
+
 
         # got all observations we need so can compute mean.
         if any(sim_obs is None for sim_obs in all_sim_obs):
-            return [all_models],None  # missing some data so can't compute mean. Calling level can deal with this.
+            return None  # missing some data so can't compute mean. Calling level can deal with this.
         # make average
         sim_obs = pd.concat(all_sim_obs, axis=1).mean(axis=1).rename(name)  # average over ensemble members.
         # and update the cache.
 
         self._logical_info.obs(name,sim_obs)
         self._logical_info.models[name] = all_models # store all the models.
-        return all_models,self._logical_info.obs(name)
+        return self._logical_info.obs(name)
 
 
 
@@ -625,13 +627,13 @@ class runSubmit(SubmitStudy):
     def update_obs(self,use_cache:bool = False) -> pd.DataFrame:
         """
         Reload observations for all logical names. This will recompute the simulated observations for all logical names.
-        :param use_cache: If True use the cache. Setting use_cache to False will force regeneration of obs all the way down to the underlying models.
+        :param use_cache: If True use the cache. Setting use_cache to False (default) will force regeneration of obs all the way down to the underlying models.
         :return: dataframe of obs.
         """
         params = self._logical_info.parameters.values()
         obs=[]
         for param in params:
-            models,sim_obs = self.compute_simulated_observations(param.to_dict(), use_cache=use_cache)
+            sim_obs = self.compute_simulated_observations(param.to_dict(), use_cache=use_cache)
             if sim_obs is not None:
                 obs.append(sim_obs)
         obs = pd.DataFrame(obs) # return dataframe
@@ -761,18 +763,7 @@ class runSubmit(SubmitStudy):
 
         return models
 
-    def XXXX_update_config(self, config: "OptClimConfigVn3"):
-        """
-        Partially set up self with the configuration. This allows updating following a change to the configuration.
-          Resets model_status to 'unknown' in addition to whatever the superclass methods do.
-        To update from configuration simply do self.update_config(config).
-        :param config: Configuration to be used.
-        :return: nada
-        """
 
-        super().update_config(config)  # call the superclass
-        for key in self.model_status.keys():
-            self.model_status[key] = 'unknown'
 
 
     def stdFunction(self, params: np.ndarray,
@@ -868,9 +859,8 @@ class runSubmit(SubmitStudy):
             params = all_params # rename it.
 
         for param in params:  # iterate over the simulations.
-            models, observations = self.compute_simulated_observations(param)
+            observations = self.compute_simulated_observations(param)
 
-            # TODO -- remove need for models. If want models can just ask for them!
             if observations is not None:
                 observations = self.transform_check(observations, transform=transform, scale=scale, residual=residual)
                 # compute the cost which uses the transformed data.

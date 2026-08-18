@@ -183,9 +183,9 @@ class Study:
         return result
 
 
-    def get_model(self, parameters: typing.Mapping, fpFmt: str = '%.4g') -> typing.Optional[Model]:
+    def get_model(self, parameters: dict, fpFmt: str = '%.4g') -> typing.Optional[Model]:
         """
-        Return model  that matches key generated from parameters or None if not match.
+        Return a model that matches a key generated from parameters or None if not match.
         :param parameters: parameters as a dict
         :param fpFmt: float format passed into genKey
         :return: model that has parameters.

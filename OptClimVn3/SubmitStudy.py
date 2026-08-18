@@ -197,24 +197,36 @@ class SubmitStudy(Study, model_base, journal):
         return s
 
     def compute_simulated_observations(self,param:dict,
-                                       use_cache:bool = True) -> \
-            tuple[list[Model|None],typing.Optional[pd.Series]]:
+                                       use_cache:bool = True) -> typing.Optional[pd.Series]:
         """"
-        Compute simulated obs for a param. If param not in dict then return None.
+        Compute simulated obs for a param. Will create model if needed.
         :param param: dict of params to compute simulated observations for
         :param use_cache -- whether to use cached simulated observations or not.
-        :return: one element list of Model and simulated observations as pd.Series. All obs are returned.
-          TODO: refactor this approach so that model is not returned as can just be retrieved using param.
+        :return: simulated observations as pd.Series. All obs are returned.
+
+
         """
-        key = self.key(param) # problem is (I think) that self.key(param) is not the same as self.key_for_model(param)
-        # Key failing to match key_for_model as do not have reference_name
-        #raise NotImplementedError("Key gen going wrong. Likely because missing reference_name. FIXME please")
-        if key not in self.model_index:
-            model = self.create_model(param,dump=False ) # create the model.
-            return [model],None
-        model = self.model_index[key]
+        model = self.get_model(param)
+        if model is None: # failed to create model. This can happen if next_command is 'stop'
+            my_logger.warning(f"Failed to create model for {param}. Returning None")
+            return None
         sim_obs = model.compute_simulated_observations(use_cache=use_cache)
-        return [model],sim_obs
+        return sim_obs
+
+    def get_model(self, parameters: dict, fpFmt: str = '%.4g') -> typing.Optional[Model]:
+
+        """
+        Retrieve model for a given parameter set. If not found then create it.
+        Uses Study.get_model to actually get the model.
+        :param param: param dict.
+        :return: A single model corresponding to the parameter set or None if model could not be created (for example if next_command is 'stop')
+        """
+        model = super().get_model(parameters, fpFmt=fpFmt)
+        if model is None: # Model does not exist. Create it.
+            model = self.create_model(parameters)
+        return model
+
+
 
     def create_model(self, params: dict,
                      dump: bool = True) -> typing.Optional[Model]:
@@ -280,6 +292,13 @@ class SubmitStudy(Study, model_base, journal):
             self.dump_config()  # and configuration
         my_logger.debug(f"Created model {model} with parameters {model.parameters}")
         return model
+
+    def reload_processed_obs(self):
+        """
+        Reload observation values for all processed models.
+        """
+        for model in self.processed_models():
+            model.compute_simulated_observations(use_cache=False)
 
     def update_iter(self, models: List[Model]) -> int:
         """
@@ -905,21 +924,6 @@ class SubmitStudy(Study, model_base, journal):
         self.update_history(f"Killed {len(killed)} jobs")
         return killed
 
-    def iter_cmd(self, iter_cmd:typing.Optional[ list[str | pathlib.Path]]) -> \
-            typing.Optional[list[str | pathlib.Path]]:
-        """
-        If iter_cmd is Truthy set next_iter_cmd and update history. If it is the same as current value no change will be made.
-        :param next_iter_cmd: Command to be used -- a list of strings or pathlib.Path objects.
-        :return:whatever next_iter_cmd was set to.
-        """
-        if (iter_cmd and ((self.next_iter_cmd is None) or (self.next_iter_cmd != iter_cmd))):
-            # only update self.next_iter_cmd if  either self.next_iter_cmd is empty/None or
-            #  self.next_iter_cmd is different from iter_cmd
-            self.update_history(f'Modifying {self.next_iter_cmd} to {iter_cmd}')
-            logging.debug(f'Setting next_iter_cmd to {iter_cmd}')
-            self.next_iter_cmd = iter_cmd
-
-        return iter_cmd
 
 
 

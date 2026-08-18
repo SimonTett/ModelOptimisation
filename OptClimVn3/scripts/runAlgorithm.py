@@ -258,7 +258,6 @@ if rSUBMIT is None:  # no configuration exists. So create it.
         my_logger.info(f"Loaded models in {files} ")
     my_logger.debug(f"Created new runSubmit {rSUBMIT}")
 else:
-    rSUBMIT.iter_cmd(restartCMD)
     my_logger.debug(f"Using existing runSubmit {rSUBMIT}")
 
 

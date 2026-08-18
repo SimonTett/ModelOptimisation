@@ -147,7 +147,7 @@ class testRunSubmit(unittest.TestCase):
         self.assertSetEqual(set(rsub.model_status.keys()), set(rsub.model_index.keys()))
 
     def test_update_obs(self):
-        # test that updating obs works. Using same approach as SubmitStudy.
+        # test that updating obs works. Using the same approach as SubmitStudy.
         """"
         Testing is quite tricky... Issue is faking a configuration.
            runSubmit can run multiple models for each "logical" param set through fixed_param_fn
@@ -166,9 +166,9 @@ class testRunSubmit(unittest.TestCase):
         config.paramNames(['VF1','CT'])
         rsubmit = runSubmit.runSubmit(config,name='test',model_name='HadCM3',rootDir=self.rootDir, next_iter_cmd=['run myself'])
         # create some models
-        models = []
+
         for param in [dict(VF1=3, CT=1e-4), dict(VF1=2.4, CT=1e-4), dict(VF1=2.6, CT=1e-4)]:
-            models,sim_obs = rsubmit.compute_simulated_observations(param)
+            sim_obs = rsubmit.compute_simulated_observations(param)
             if sim_obs is not None:
                 raise ValueError("sim_obs is not None")
 
@@ -244,11 +244,14 @@ class testRunSubmit(unittest.TestCase):
         # no of models to run should be 1.
         models = rSubmit.model_index.values()
         self.assertEqual(len(models), 1, "Expect only 1 model to submit")
+        # run the same model and should get None
+        result = rSubmit.stdFunction(params, raiseError=False)
+        nptest.assert_equal(result, expect)
+        # test 1
 
-        # test 1 # run same model and should raise useCreatedModel as status is not processed
+
         rSubmit.config.ensembleSize(1)  # 1 member ensemble
         rSubmit.delete()  # restart.
-
         # test 2. Set ensemble size to 2.
         rSubmit.config.ensembleSize(2)  # 1 member ensemble
         with self.assertRaises(optclim_exceptions.submitModel):
@@ -402,12 +405,112 @@ class testRunSubmit(unittest.TestCase):
         expect = fk_fn(pDict).rename(result.name)
         pdtest.assert_series_equal(expect, result)
 
-    def notest_compute_simulated_observations(self):
+    def test_compute_simulated_observations(self):
         """
         Test compute_simulated_observations.
-        :return:
+
+        Keep this focused on the two behaviors that matter most for runSubmit:
+        ensemble averaging and multi-config composition.
         """
-        raise NotImplementedError("Impliment tests!")
+        def write_obs(model, obs):
+            model.model_dir.mkdir(parents=True, exist_ok=True)
+            with (model.model_dir / model._post_process_output).open('wt') as fp:
+                json.dump(obs.to_dict(), fp)
+
+        # Case 1: ensemble averaging. Two processed members with different obs should
+        # be averaged before the logical observation is cached.
+        ens_config = copy.deepcopy(self.config)
+        ens_config.ensembleSize(2)
+        # Use a separate temp root so this subcase can create its own models without
+        # colliding with the multi-config case below.
+        ens_root = self.rootDir / 'ensemble_case'
+        ens_root.mkdir(parents=True, exist_ok=True)
+        ens_submit = runSubmit.runSubmit(copy.deepcopy(ens_config), 'ensemble',
+                                         rootDir=ens_root, refDir=self.refDir)
+        ens_base = ens_config.beginParam().to_dict()
+        # gen_param_dict expands one logical parameter set into the concrete ensemble
+        # members that must each be run and then averaged.
+        ens_params = ens_submit.gen_param_dict(ens_base)
+        ens_models = []
+        member_obs = []
+        for param in ens_params:
+            ens_model = ens_submit.create_model(param, dump=False)
+            ens_model.status = 'PROCESSED'
+            obs = fake_fn(ens_submit.config, param).rename(ens_model.name)
+            write_obs(ens_model, obs)
+            ens_models.append(ens_model)
+            member_obs.append(obs)
+
+        got = ens_submit.compute_simulated_observations(ens_base, use_cache=False)
+        expected = pd.concat(member_obs, axis=1).mean(axis=1).rename(got.name)
+        pdtest.assert_series_equal(got, expected)
+        self.assertEqual(len(ens_submit.model_index), 2)
+
+        # Case 2: multi-config function. The helper returns control obs followed by
+        # the delta to the plus4k member.
+        multi_config = copy.deepcopy(self.config)
+        multi_config.ensembleSize(1)
+        # This fixed-param function splits one logical parameter set into two named
+        # model configs. The test checks that the composed obs are returned in the
+        # expected control/delta form.
+        fixed_params = {
+            "_comment": " List of parameters and values that are fixed and not modified in optimisation. Set to null to use default values",
+            "multiple_function": "$OPTCLIMTOP/OptClimVn3/scripts/example_multiparam.ctl_plus4k",
+            "multiple_function_comment": "path with function at the end. Everything should be dot separated. If provided then fixedParams has multiple configurations and this function will combine them.",
+            "control": {
+                "START_TIME": "1998-12-01",
+                "START_TIME_comment": "Start time as an iso string",
+                "RUN_TARGET": "P6Y4M",
+                "RUN_TARGET_comment": "RUN_TARGET as an iso duration string.",
+                "reference_name": "control"
+            },
+            "plus4k": {
+                "START_TIME": "1998-12-01",
+                "START_TIME_comment": "Start time as an iso string",
+                "RUN_TARGET": "P6Y4M",
+                "RUN_TARGET_comment": "RUN_TARGET as an iso duration string.",
+                "SST_PERTURB": 4.0,
+                "SST_PERTURB_comment": "How much to prturb the SST where there is no ice.",
+                "reference_name": "plus4k"
+            }
+        }
+        multi_config.fixedParams(fixed_params=fixed_params)
+        multi_root = self.rootDir / 'multi_case'
+        multi_root.mkdir(parents=True, exist_ok=True)
+        multi_submit = runSubmit.runSubmit(copy.deepcopy(multi_config), 'multi',
+                                           rootDir=multi_root, refDir=self.refDir)
+        multi_base = multi_config.beginParam().to_dict()
+        multi_params = multi_submit.gen_param_dict(multi_base)[0]
+        multi_member_obs = {}
+        for name, param in multi_params.items():
+            multi_model = multi_submit.create_model(param, dump=False)
+            multi_model.status = 'PROCESSED'
+            obs = fake_fn(multi_submit.config, param).rename(multi_model.name)
+            write_obs(multi_model, obs)
+            multi_member_obs[name] = obs
+
+        got = multi_submit.compute_simulated_observations(multi_base, use_cache=False)
+        ctl = multi_member_obs['control']
+        delta = (multi_member_obs['plus4k'] - ctl).set_axis(['delta_' + idx for idx in ctl.index])
+        expected = pd.concat([ctl, delta]).rename(got.name)
+        pdtest.assert_series_equal(got, expected)
+        self.assertEqual(len(multi_submit.model_index), 2)
+
+        # Cache check: change one member on disk. A cached read should ignore the
+        # change, while use_cache=False should pick it up and recompute the delta.
+        control_model = next(model for model in multi_submit.model_index.values()
+                             if model.name == multi_member_obs['control'].name)
+        changed_ctl = ctl.copy()
+        changed_ctl.iloc[0] = changed_ctl.iloc[0] + 111.0
+        write_obs(control_model, changed_ctl)
+
+        cached = multi_submit.compute_simulated_observations(multi_base, use_cache=True)
+        pdtest.assert_series_equal(cached, expected)
+
+        changed_delta = (multi_member_obs['plus4k'] - changed_ctl).set_axis(['delta_' + idx for idx in ctl.index])
+        changed_expected = pd.concat([changed_ctl, changed_delta]).rename(got.name)
+        refreshed = multi_submit.compute_simulated_observations(multi_base, use_cache=False)
+        pdtest.assert_series_equal(refreshed, changed_expected)
 
     @unittest.mock.patch.object(engine.sge_engine, 'job_status', autospec=True, return_value='notFound')
     def test_runOptimized(self, mck):
@@ -1743,4 +1846,3 @@ class TestLogicalInfo(unittest.TestCase):
                 self.assertIsInstance(model_key, str)
                 expect_model = self.run_submit.model_index[model_key]
                 self.assertEqual(self.run_submit.key_for_model(expect_model), model_key)
-

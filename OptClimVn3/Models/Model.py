@@ -697,7 +697,7 @@ class Model(ModelBaseClass, journal):
 
     def modify_model(self):
         """
-        Modify model.This method is minimal; call from your own clqss
+        Modify model.This method is minimal; call from your own class
         Those should call this first as it  updates history
 
         :return: None
@@ -879,7 +879,7 @@ class Model(ModelBaseClass, journal):
     def guess_failed(self) -> bool:
         """
         Guess of a model has failed.
-          STATUS = RUNNING or SUBMITTED and status of last model jobid is unKnown likely means model has failed.
+          STATUS = RUNNING or SUBMITTED, and status of last model jobid is unKnown likely means model has failed.
         :return: True if guessed FAILED, False if not
         """
 
@@ -1002,6 +1002,9 @@ class Model(ModelBaseClass, journal):
 
 
         if use_cache and (self.simulated_obs is not None):
+            if self.status != 'PROCESSED':
+                raise ValueError(f"Should not have simulated observations when status is {self.status}")
+
             return self.simulated_obs # do this first as test cases don't want to set _post_process_output and don't want to read in data.
 
         if self.status not in ['PROCESSED','SUCCEEDED']: # No obs for this model.
@@ -1009,6 +1012,7 @@ class Model(ModelBaseClass, journal):
         if self._post_process_output is None:
             raise FileNotFoundError("self._post_process_output is None. Should be set")
 
+        # Now readin the data.
         post_process_file = self.model_dir / self._post_process_output
         if not post_process_file.is_file():
             raise FileNotFoundError(f"Could not find post-processed file {post_process_file}")
