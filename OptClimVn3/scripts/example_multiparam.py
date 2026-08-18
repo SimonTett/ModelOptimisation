@@ -8,7 +8,7 @@ type_basic = int|float|str|bool
 from Model import Model # just needed for type checking.
 def ctl_plus4k(get_model: typing.Callable[[dict],Model],
                parameter_dict:dict[str,dict[str,type_basic]],
-               use_cache:bool = True) -> tuple[list[Model],typing.Optional[pd.Series]]:
+               use_cache:bool = True) -> tuple[typing.Optional[list[Model]],typing.Optional[pd.Series]]:
 
     """
     Return control values concatenated with differences from plus4k case. This is an example case
@@ -30,8 +30,11 @@ def ctl_plus4k(get_model: typing.Callable[[dict],Model],
         model = get_model(param_dict) # this should create a new model or return an existing one.
         if not isinstance(model,(Model,type(None))):
             raise ValueError(f"get_model returned {type(model)} instead of a Model")
-        all_models[name] = model # should get a list of models back.
+        if model is None: # failed to create a model.
+            return None,None # so just return None for both models and obs pandas series.
+        all_models[name] = model # store the model
         all_sim_obs[name] = model.compute_simulated_observations(use_cache=use_cache)
+
 
     # check whether any of the simulated observations are None. If so return the models and None for the series.
     if any([sim_obs is None for sim_obs in all_sim_obs.values()]):

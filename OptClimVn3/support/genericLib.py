@@ -312,7 +312,7 @@ def fake_fn(config: "OptClimConfigVn3", params: dict,obs_names:typing.Optional[l
 
     var_scales = 10.0 ** np.round(np.log10(scales))
     pscale = (param_series.reindex(min_p.index) - min_p) / scale_params
-    pscale.fillna(0.0) # fill any values that are nan with 0.0.
+    pscale = pscale.fillna(0.0) # fill any values that are nan with 0.0.
     pscale -= 0.5  # tgt is at params = 0.5
     sim_obs=dict()
 

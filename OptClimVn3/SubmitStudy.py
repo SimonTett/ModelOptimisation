@@ -31,12 +31,11 @@ import pandas as pd
 import engine
 import generic_json
 from Model import Model
-from Models import Model
 from model_base import model_base, journal
 from Study import Study
 from StudyConfig import dictFile
 import genericLib
-# check we are version 3.8 or above.
+# check we are version 3.10 or above.
 
 if (sys.version_info.major < 3) or (sys.version_info.major == 3 and sys.version_info.minor < 10):
     raise Exception("Only works at 3.10+ ")
@@ -371,10 +370,12 @@ class SubmitStudy(Study, model_base, journal):
         obj.config_path=config_path # modify config path
 
         if not (isinstance(obj.rootDir,pathlib.Path) and obj.rootDir.exists() and config_path.parent.samefile(obj.rootDir)):
-            my_logger.info(f"Modifying config rootDir from  {obj.rootDir} to {config_path.parent}")
+            msg = f"Modified config rootDir from  {obj.rootDir} to {config_path.parent}"
+
             obj.config_path = config_path
             obj.rootDir= config_path.parent
-            obj.update_history(f"Modified config path from  {obj.rootDir} to {config_path.parent}")
+            my_logger.info(msg)
+            obj.update_history(msg)
 
         if Study:  # convert to a study
             obj = obj.to_study()
@@ -524,6 +525,8 @@ class SubmitStudy(Study, model_base, journal):
         :param update_paths -- If True then any path parameters will be updated to reflect new directory structure.
         :param new_config_name: If not None then the config file will be renamed to new_config_name and name updated.
         :return: Copied SubmitStudy.
+
+        This functionality may disappear in future versions as it is not clear how useful it is. It is also a bit messy and hard to maintain.
         """
 
         # check that direct is an abs path. If not make it abs.

@@ -364,14 +364,16 @@ class runSubmit(SubmitStudy):
             raise ValueError("Obs contains null values at: " + ", ".join(observations.index[null]))
         return observations
 
-    def logical_models(self, name,models:typing.Optional[list[Models]]=None) -> list[Model]:
+    def logical_models(self, name,models:typing.Optional[list[Model]]=None) -> list[Model]:
         """
         Get (or set) list of models associated with a logical name.
         :param name: logical name
         :param models: optional list of models
         :return: list of models associated with this logical name.
         """
-        return self._logical_info.models[name]
+        if models is not None:
+            self._logical_info.models[name] = models # store the models
+        return self._logical_info.models[name] # return them
 
     def logical_params(self, normalize: bool = False,
                        ) -> pd.DataFrame:

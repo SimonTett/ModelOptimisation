@@ -282,7 +282,7 @@ class Study:
     def simulated_observations(self,
                                scale: bool = True,
                                normalize: bool = False,
-                               obs_names: typing.Optional[list[str],bool] = None,
+                               obs_names: typing.Union[list[str],bool,None] = None,
                                use_cache:bool = True) -> typing.Optional[pd.DataFrame]:
         """
         Get a dataframe of simulated observations for all processed models.

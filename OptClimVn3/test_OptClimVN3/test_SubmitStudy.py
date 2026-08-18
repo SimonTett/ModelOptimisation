@@ -11,7 +11,7 @@ import tempfile
 import typing
 import unittest.mock  # need to mock the run case.
 import unittest
-import warnings
+
 
 import Study
 import StudyConfig
@@ -41,7 +41,6 @@ class myModel(Model):
 times = gen_time()
 pth = myModel.expand("$OPTCLIMTOP/OptClimVn3/Models/parameter_config/example_Parameters.csv")
 myModel.update_from_file(pth)
-warnings.warn("Three tests are not yet implemented. Do impliment them...")
 
 class MyTestCase(unittest.TestCase):
 
