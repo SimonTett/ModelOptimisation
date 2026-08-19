@@ -958,7 +958,7 @@ class Model(ModelBaseClass, journal):
         """
         # various checks
         if self._post_process_input is None:
-            raise FileNotFoundError("Set _post_process_output to something.")
+            raise FileNotFoundError("Set _post_process_input to something.")
         if self.post_process_cmd_script is None:
             raise FileNotFoundError("Set post_process_cmd_script to something.")
         status: type_status = 'PROCESSED'

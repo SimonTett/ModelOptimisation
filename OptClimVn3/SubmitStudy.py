@@ -217,7 +217,8 @@ class SubmitStudy(Study, model_base, journal):
         """
         Retrieve model for a given parameter set. If not found then create it.
         Uses Study.get_model to actually get the model.
-        :param param: param dict.
+        :param parameters: param dict.
+        :param fpFmt: format for floating point values. See the superclass get_model method for doc.
         :return: A single model corresponding to the parameter set or None if model could not be created (for example if next_command is 'stop')
         """
         model = super().get_model(parameters, fpFmt=fpFmt)
@@ -238,13 +239,13 @@ class SubmitStudy(Study, model_base, journal):
         :param   params: dictionary of parameters to create the model.
          The following parameters are special and handled differently:
            * reference -- the reference directory. If not there (or None) then self.refDir is used.
-           * model_name -- the model type to be created. If not in params then  self.model_name is used.
+           * model_name -- the model type to be created. If not in params then self.model_name is used.
+           * reference_name -- name of the reference config.
            These support more complex algorithms where multiple models need to be ran.
         These will be augmented by fixedParams
         If you need functionality beyond this you may want to inherit from SubmitStudy and
           override create_model to meet your needs
         :param dump: If True dump  self (using self.dump_config method)
-        :param reference_name: Name of the reference config. If None the default Model behaviour is used.
         :return: Model created.
 
         Will raise ValueError if model_dir or config path already exist.
@@ -518,7 +519,7 @@ class SubmitStudy(Study, model_base, journal):
              new_config_name: typing.Optional[str] = None,
              update_paths:bool = True) -> SubmitStudy:
         """
-        Copy SubmitStudy to a new directory. By default, only the config file is copied.
+        Copy SubmitStudy to a new directory. By default, only the config file & models are copied.
         :param direct: directory where study is to be copied. Will be created if it does not exist
         :param extra_files: list of extra files (paths provided relative to rootDir) to be copied to new directory.
         :param keep_list: list of files to keep in the new directory.
@@ -529,30 +530,40 @@ class SubmitStudy(Study, model_base, journal):
         This functionality may disappear in future versions as it is not clear how useful it is. It is also a bit messy and hard to maintain.
         """
 
+        ## NOTES
+        # config_path is absolute path as load will convert it to absolute.
+        # rootDir is an absolute path. So when we copy the config file we need to make sure it is copied to the new directory and that the rootDir is updated to reflect this.
+
         # check that direct is an abs path. If not make it abs.
         if not direct.is_absolute():
             direct = pathlib.Path.cwd() / direct
             my_logger.info(f"Converting direct to absolute path {direct}")
         direct.mkdir(parents=True, exist_ok=True)  # create directory if need be.
 
-        config_path = self.config_path.resolve().relative_to(self.rootDir)
-        if new_config_name is not None:
-            config_path = config_path.parent / new_config_name
-            my_logger.info(f"Renaming config file to {config_path}")
-        files_to_copy = [config_path]  # default is just the config file.
+        files_to_copy = []
         if extra_files is not None:
             files_to_copy += extra_files
 
         files_to_copy = list(set(files_to_copy))  # make unique
+        if len(files_to_copy) > 0:
+            my_logger.info(f"Copying {len(files_to_copy)}  to {direct}")
+            files_copied = genericLib.copy_files(self.rootDir, direct, files_to_copy, keep_list=keep_list)
+            missing = set(files_to_copy) - set(files_copied)
+            if len(missing) > 0:
+                my_logger.warning(f"Failed to copy  {missing} from {self.rootDir} to {direct}")
+        else:
+            files_copied = [] # no files copied
 
-        files_copied = genericLib.copy_files(self.rootDir, direct, files_to_copy, keep_list=keep_list)
-        missing = set(files_to_copy) - set(files_copied)
-        if len(missing) > 0:
-            my_logger.warning(f"Failed to copy  {missing} from {self.rootDir} to {direct}")
         cp_submit_study = copy.deepcopy(self)  # copy the submit study
+
+        config_path = self.config_path.resolve().relative_to(self.rootDir) # path relative to rootDir
         if new_config_name is not None:
-            cp_submit_study.name=config_path.stem
-        cp_config_path = direct /files_to_copy[0] # new config path
+            config_path = config_path.parent / new_config_name
+            my_logger.info(f"Renaming config file to {config_path}")
+            cp_submit_study.name = config_path.stem
+        cp_config_path = direct /config_path # new config path
+
+
         # now copy the model(s) to the new directory
         model_index = dict()  # empty  model index
         for key,model in self.model_index.items():

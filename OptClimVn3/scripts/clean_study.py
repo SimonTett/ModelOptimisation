@@ -77,7 +77,7 @@ config_path = rootDir / (configData.name() + ".scfg")
 #  Now we actually clean
 ##############################################################
 logging.info(f"Reading status from {config_path}")
-rSUBMIT = runSubmit.runSubmit.load_SubmitStudy(config_path)
+rSUBMIT = runSubmit.runSubmit.load(config_path)
 if not isinstance(rSUBMIT, runSubmit.runSubmit):
     raise ValueError(f"Something wrong")
 

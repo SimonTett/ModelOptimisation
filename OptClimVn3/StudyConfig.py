@@ -46,19 +46,22 @@ import genericLib
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 type_fixed_param_function: typing.TypeAlias = typing.Callable[
-    ["runSubmit",dict[typing.Hashable, typing.Any]], typing.Optional[pd.Series]]
+    ["runSubmit",dict[typing.Hashable, typing.Any]], tuple[list[typing.Optional["Model"]],typing.Optional[pd.Series]]]
 
 
 # functions available to everything.
-def process_include(dct:dict,files_read:list = []) -> dict:
+def process_include(dct:dict,files_read:list = None) -> dict:
     """
-    Process a dict looking for values the form "INCLUDE filename"
+    Process a dict looking for values of the form "INCLUDE filename"
        and read the file using json read and inserting the result into the directory.
        A comment will be inserted saying what the include path was.
     :param dct: dict of values to process
     :param files_read: list of files read so far. Used to avoid recursive includes.
+       Will be modified by this function.
     :return: dict with includes processed (recursively)
     """
+    if files_read is None:
+        files_read=[]
     result=dict() # result dict
     for key,value in dct.items():
         if isinstance(value, dict):
@@ -66,10 +69,10 @@ def process_include(dct:dict,files_read:list = []) -> dict:
         elif isinstance(value, str) and value.startswith('INCLUDE '):
             # process include statement. TODO -- could make this a regexp.
             inc, path = value.split(maxsplit=1)
-            pth = genericLib.expand(path).resolve() # expand path
+            pth = genericLib.expand(path).resolve() # expand path and resolve to get full path.
             if pth in files_read:
                 raise RecursionError(f"Recursive include of {pth} in {files_read[-1]}")
-            files_read.append(pth) # resolve to get full path.
+            files_read.append(pth)
             my_logger.debug(f"Processing include statement: {value} by reading {pth}")
             try:
                 with pth.open('rt') as fp:
@@ -2653,7 +2656,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
 
         return keys
 
-    def fixed_param_function(self,multiple_function:typing.Optional[str]=None) -> typing.Optional[type_fixed_param_function|str]:
+    def fixed_param_function(self,multiple_function:typing.Optional[str]=None) -> typing.Optional[type_fixed_param_function]:
         """
         Extract or set the function from fuxedParams block. Note will import the file that contains the function.
         Be very careful...

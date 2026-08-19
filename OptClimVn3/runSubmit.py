@@ -22,8 +22,9 @@ my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 
 type_model_status = typing.Literal[
     'initial', 'unknown', 'called', 'read', 'not_called']  # allowed status for model_status
+type_none = type(None)  # type for None
 
-#raise NotImplementedError("Fix case when trying to reuse Created. Maybe can ignore; maybe not!")
+
 
 class LogicalInfo(model_base):
     """ Class to hold logical information about parameters, observations etc. 
@@ -146,9 +147,9 @@ class LogicalInfo(model_base):
 
         if name not in self.parameters:
             my_logger.warning(f"Unknown params {new_params}. Storing")
-            params = self.params(new_params)
-        else: # already got it. So update. Tricky part is dealing with key changes.
-            my_logger.info(f"Updating params for {name}")
+            name,params = self.params(new_params)
+        else: # already got it. So up`date. Tricky part is dealing with key changes.
+            my_logger.info(f"Updating `params for {name}")
             orig_params = self.parameters[name].to_dict()  # original params
             key = self.key(orig_params)  # original key
             new_key = self.key(new_params)
@@ -519,6 +520,20 @@ class runSubmit(SubmitStudy):
     #    a list of Models (or Nones)  and pandas series (of observations)/None (if sims do not exist)
     type_param = typing.Union[float,int,str,bool] # allowed types for parameters
 
+    def _set_ref_path(self, param: dict[str, type_param]):
+        """
+        Set the reference path for a given parameter in a param dict.
+        If reference is not in param then set it to self.refDir.
+        Then expand the path and convert to posix path.
+        :param param: dict of parameters
+        :return: Nada. Modifes param in place.
+        Not intended for public use. This is a support function for gen_param_dict.
+        """
+        ref = param.get('reference', self.refDir)
+        # get reference value  if they are there; if not use self.refDir.
+        ref = self.expand(ref).as_posix()  # expand and convert to posix path.
+        param.update(reference=ref)  # add in reference params
+
     def gen_param_dict(self, param: dict) -> list[dict]:
         """
         Generate a list of parameter dicts by merging params, fixed_param and ensemble member.
@@ -527,6 +542,7 @@ class runSubmit(SubmitStudy):
 
         Consider renaming ensembleMember to random seed or similar.
         """
+
 
 
         fixed_params = self.config.fixedParams()
@@ -554,15 +570,13 @@ class runSubmit(SubmitStudy):
 
             if multi_config_fn is None:  # simple calculation. Just need to add ens_param to params.
                 full_params = fixed_params | param | ens_param  # needs to be using  python 3.9+ for | operator. params has higher precidence than fixed_params
-                full_params.update(reference=self.expand(
-                    full_params.get('reference', self.refDir)).as_posix())  # add in reference params if they are there.
-            else:
+                self._set_ref_path(full_params)
+            else: # multi config function. Need to call it to get the full params for each ensemble member.
                 full_params = dict()
                 for key, fixed in fixed_params.items():
-                    full_params[
-                        key] = fixed | param | ens_param  # needs to be using  python 3.9+ for | operator. param has higher precidence than fixed
-                    full_params[key].update(reference=self.expand(full_params.get('reference',
-                                                                                  self.refDir)).as_posix())  # add in reference params if they are there.
+                    full_params[  key] = fixed | param | ens_param
+                    # needs to be using  python 3.9+ for | operator. param has higher precidence than fixed
+                    self._set_ref_path(full_params[key])
             param_list.append(full_params)
 
         return param_list
@@ -604,11 +618,19 @@ class runSubmit(SubmitStudy):
         for param in params_list:
             if multi_config_fn:
                 models,sim_obs = multi_config_fn(self.get_model,param,use_cache=use_cache)
+                # check got back what we expected. Fail if not.
+                if not isinstance(sim_obs,(pd.Series,type_none)):
+                    raise ValueError(f"multi_config_fn returned {type(sim_obs)} instead of pd.Series or None")
+                if not isinstance(models,list):
+                    raise ValueError(f"multi_config_fn returned {type(models)} instead of list")
+                for indx,m in enumerate(models):
+                    if not isinstance(m,(Model,type_none)):
+                        raise ValueError(f"{multi_config_fn.__name__} returned {type(m)} at index {indx} instead of Model or None")
                 all_models += models
             else:
                 sim_obs  = super().compute_simulated_observations(param,use_cache=use_cache)
-                key = self.key(param) # will have a model now (which might be just created)
-                all_models += [self.model_index[key]]
+                model = self.get_model(param) # will have a model now (which might be just created)
+                all_models += [model] # getting key (which might return None
             all_sim_obs.append(sim_obs) # append the obs.
 
 

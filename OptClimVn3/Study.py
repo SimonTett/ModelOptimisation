@@ -138,14 +138,16 @@ class Study:
         """
         Generate key from keys and values in parameters. There should include all fixed and variable parameters.
         This should be unique (to some rounding on float parameters)
-        :param parameters -- a dictionary (or something that behaves likes a dict) of variable parameters.
+        :param parameters -- a dictionary (or something that behaves like a dict) of variable parameters.
+          The following parameters are ignored when constructing the key:
+          reference_name # human name for the reference configuration.
         :param fpFmt -- format to convert float to string. (Default is %.4g)
         :return: a tuple as an index. tuple is key_name, value in sorted order of key_name.
         """
         params_to_ignore = ['reference_name'] # parameters to ignore when constructing the key
         keys = []
         param_keys = sorted(parameters.keys())  # fixed ordering
-        param_keys = [ p for p in param_keys if p not in params_to_ignore ] # remove params_to_ignore from key construction
+        param_keys = [ p for p in param_keys if p not in params_to_ignore ] # remove params_to_ignore from the key construction
         # params to ignore.
 
         # deal with variable parameters -- produced by optimisation so have names and values.
@@ -302,9 +304,10 @@ class Study:
             return None
         observations = pd.DataFrame(observations)
         # deal with obsNames
-        if isinstance(obs_names, bool) and obs_names:
+        if isinstance(obs_names, bool) and obs_names: # obs_names is True, so use all obs.
             obs_names = observations.columns
-        elif obs_names is None or (isinstance(obs_names, list) and not obs_names):
+        elif obs_names is None or ( isinstance(obs_names, bool) and not obs_names) or  (isinstance(obs_names, list) and not obs_names):
+            # obs_names not specified (or None), OR obs_names is False, OR obs_names is an empty list.
             obs_names = self.config.obsNames()
         else:
             pass # anything else is assumed to be a list of obsNames
@@ -337,34 +340,13 @@ class Study:
         :param obsNames list of names of observations. If not provided will be extracted from model obs and target.
         :return: pandas dataframe of observations possibly scaled and normalized.
            None will be returned if there are no obs
+
+           No longer in use -- use self.simulated_observations() instead.
         """
 
         raise NotImplementedError("Use self.simulated_observations() instead")
 
-        obsDF = self.simulated_observations()  # get obs for all processed models.
-        if obsDF.empty: # got an empty dataframe
-            return None
 
-        if obsNames is None:
-            obsNames = self.config.obsNames()
-
-        obsDF=obsDF.reindex(columns=obsNames).dropna(axis=1)
-
-        if scale:  # scale ?
-            obsDF *= self.config.scales(obsNames=obsNames)
-
-        if normalize:  # normalize
-            tgt = self.config.targets(scale=scale, obsNames=obsNames)
-            obsDF -= tgt  # difference from tgt.
-            # drop any nana which might have come from tgt
-            obsDF = obsDF.dropna(axis=1)
-            cov = self.config.Covariances(scale=scale)  # get covariances.
-            errCov = cov['CovTotal']  # just want the total
-            sd = pd.Series(np.sqrt(np.diag(errCov)),
-                           index=errCov.index)  # square root of diagonal elements. Need to reindex.
-            obsDF /= sd  # normalise by SD
-
-        return obsDF
 
     def cost(self, scale: bool = True,
              obsNames:typing.Optional[list[str]]=None) -> pd.Series | None:

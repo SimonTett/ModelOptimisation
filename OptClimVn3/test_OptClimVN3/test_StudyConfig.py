@@ -1128,10 +1128,13 @@ class testFileDict(unittest.TestCase):
             self.assertEqual(result, expect)
 
             # test recursive read fails.
+
             with file1.open('wt') as fp:
-                fp.write(f'{{"a":1,"b":2,"file2":"INCLUDE {file2}"}}')
+                dct = {"a":1,"b":2,"file2":f"INCLUDE {str(file2)}"}
+                json.dump(dct,fp)
             with file2.open('wt') as fp:
-                fp.write(f'{{"c":3,"d":4,"file1":"INCLUDE {file1}"}}')
+                dct = {"c":3,"d":4,"file1":f"INCLUDE {str(file1)}"}
+                json.dump(dct,fp)
             # no change to dct so expect an error
             with self.assertRaises(RecursionError):
                 result = StudyConfig.process_include(dct)
