@@ -2,20 +2,19 @@
 # will just return the control + difference between plus4k and control values + models.
 import typing
 import pandas as pd
-
-
-type_basic = int|float|str|bool
-from Model import Model # just needed for type checking.
-def ctl_plus4k(get_model: typing.Callable[[dict],Model],
+from StudyConfig import type_basic
+from Model import Model # for type hints.
+def ctl_plus4k(get_model: typing.Callable[[dict[str,type_basic]],typing.Optional[Model]],
                parameter_dict:dict[str,dict[str,type_basic]],
-               use_cache:bool = True) -> tuple[list[Model|None],typing.Optional[pd.Series]]:
+               use_cache:bool = True) -> tuple[list[typing.Optional[Model]],typing.Optional[pd.Series]]:
 
     """
     Return control values concatenated with differences from plus4k case. This is an example case
-    :param get_model: fn to compute/read simulated observations
+    :param get_model: fn to compute/read simulated observations.
+      Should take a dict of parameters and return a Model or None.
     :param parameter_dict: Dict of parameters for models. Should have the keys control and plus4k
     :param use_cache: Passed to compute_simulated_observations
-    :return: List of models (or list of None) & Pandas series (or None) of concatenated series of ctl and delta.
+    :return: List of models/None  (or list of None) & Pandas series (or None) of concatenated series of ctl and delta.
 
     """
 
@@ -30,7 +29,7 @@ def ctl_plus4k(get_model: typing.Callable[[dict],Model],
         model = get_model(param_dict) # this should create a new model or return an existing one.
         if not isinstance(model,(Model,type(None))):
             raise ValueError(f"get_model returned {type(model)} instead of a Model")
-        all_models[name] = model # store the model
+        all_models[name] = model # store the model (or None) in the dict.
         if model is None: # None means we failed to get a model.
             all_sim_obs[name] = None
         else: # have  model so compute simulated obs.
@@ -47,3 +46,5 @@ def ctl_plus4k(get_model: typing.Callable[[dict],Model],
     delta = (plus4k - ctl).set_axis(new_index) # compute delta and set axis
     result:pd.Series = pd.concat([ctl,delta]) # concat values together.
     return list(all_models.values()),result
+
+

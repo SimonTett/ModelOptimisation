@@ -385,9 +385,8 @@ class genericLib_test(unittest.TestCase):
             # now with 4 second time out
             with genericLib.ContextFileLock(file,timeout=4.0):
                 self.assertTrue(lock_file.exists())
-            txt_stdout,txt_stderr = p.communicate(timeout=2.0)
-            print("Std Out",txt_stdout)
-            print("Std Err",txt_stderr)
+            txt_stdout,txt_stderr = p.communicate()
+
             # remove annoying resource messages
             p.stdout.close()
             p.stderr.close()

@@ -8,7 +8,8 @@ from StudyConfig import readConfig
 import datetime
 import sys
 
-
+# TODO refactor this into code that just supports DFOLS. And review how DFOLS code handles it.
+#  Updating params while running not to be supported. Best approach there is to start a new case and import old model runs.
 parser = argparse.ArgumentParser(description="Update parameters in an existing OptClimVn3 configuration file. "
                                              "Optionally copy the input configuration to a new file and output logcal_params and logical_obs to files.")
 parser.add_argument('config_path', type=genericLib.expand, help='Path to the existing configuration file (.scfg)')
@@ -65,12 +66,12 @@ if parameters: # got some parameters
 
 # write out the requested files
 if args.output_obs: # want to write out  observations?
-    config.logical_obs().to_csv(args.output_obs)
+    config.simulated_observations().to_csv(args.output_obs) # Want scaled obs.
     my_logger.debug(f"Observations saved to {args.output_obs}")
 
 params = config.logical_params()
 if args.reindex: # reindex params by obs keys. Bit of a hack to cope with non-deterministic cases
-    indx =  config.logical_obs().index
+    indx =  config.simulated_observations(scale=False).index
     params = params.reindex(indx)
     my_logger.info(f"Reindex params -- now has shape {params.shape}")
 if args.output_params: # Want to write out  parameters ?
