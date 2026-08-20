@@ -292,8 +292,8 @@ if any(s not in ['PROCESSED','INSTANTIATED'] for s in status):
     raise ValueError(f"Have unexpected status rSUBMIT:{rSUBMIT}")
 
 algorithmName = configData.optimise()['algorithm'].upper()
-non_determinisitic = configData.optimise().get('nondeterministic', 'fail')
-my_logger.debug(f"Algorithm is {algorithmName} and non_deterministic is {non_determinisitic}")
+check_status = configData.study_checks()
+my_logger.debug(f"Algorithm is {algorithmName}")
 if algorithmName in ['RUNOPTIMISED', 'JACOBIAN']:
     wantCost = False
 else:
@@ -327,10 +327,12 @@ with rSUBMIT.lock(timeout=30) as lock: # 30 second timeout.
                 finalConfig = rSUBMIT.run_params(scale=True,stop=args.stop)
             else:
                 raise ValueError(f"Don't know what to do with Algorithm: {algorithmName}")
-            rSUBMIT.check_deterministic(error=non_determinisitic)
-            break  # we have finished running algorithm so can exit and go to final clear up.
+            rSUBMIT.check_deterministic(error=check_status['check_nondeterministic'])
+            rSUBMIT.check_duplicate_obs(error=check_status['check_duplicate_obs']) # check for duplicate obs. This is a check on the algorithm.
+            break  # we have finished running the algorithm so can exit and go to final clear up.
         except optclim_exceptions.submitModel:  # error which triggers need to instantiate and run more models.
-            rSUBMIT.check_deterministic(error=non_determinisitic) # check are still deterministic.
+            rSUBMIT.check_deterministic(error=check_status['check_nondeterministic']) # check are still deterministic.
+            rSUBMIT.check_duplicate_obs(error=check_status['check_duplicate_obs']) # check for duplicate obs. This is a check on the algorithm.
             if read_only:
                 my_logger.info(f"read_only -- exiting")
                 break  # exit the loop -- we are done as in read_only mode.

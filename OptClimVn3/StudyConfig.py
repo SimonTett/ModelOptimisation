@@ -45,8 +45,19 @@ import genericLib
 
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
-type_fixed_param_function: typing.TypeAlias = typing.Callable[
-    ["runSubmit",dict[typing.Hashable, typing.Any]], tuple[list[typing.Optional["Model"]],typing.Optional[pd.Series]]]
+type_basic = int|float|str|bool
+
+@typing.runtime_checkable
+class type_fixed_param_function(typing.Protocol):
+    def __call__(
+            self,
+            get_model: typing.Callable[[dict], "Model"],
+            parameter_dict: dict[str, dict[str, type_basic]|type_basic],
+            *,
+            use_cache: bool = True) -> tuple[list[typing.Optional["Model"]], typing.Optional[pd.Series]]:...
+
+
+
 
 
 # functions available to everything.
@@ -75,6 +86,8 @@ def process_include(dct:dict,files_read:list = None) -> dict:
             files_read.append(pth)
             my_logger.debug(f"Processing include statement: {value} by reading {pth}")
             try:
+                if not pth.is_file():
+                    raise FileNotFoundError(f"File {pth} not found in INCLUDE statement: {value}. ")
                 with pth.open('rt') as fp:
                     r = json.load(fp)
             except json.decoder.JSONDecodeError as e: # failed to process file. Provide some helpful info.
@@ -1231,23 +1244,9 @@ class OptClimConfig(dictFile):
         :return: values as pandas series.
         """
         raise NotImplementedError("vn1 optimum parameters no longer supported")
-        # TODO merge this with vn2 code which could be done using  if self.version >= 2: etc
-        if hasattr(kwargs, 'scale'):
-            raise Exception("scale no longer supported use normalise")  # scale replaced with normalised 14/7/19
-        if len(kwargs) > 0:  # set the values
-            self.Config['study']['optimumParams'] = kwargs
-        if paramNames is None:
-            paramNames = self.paramNames()
-        stdParams = self.standardParam(paramNames=paramNames)
-        values = self.Config['study'].get('optimumParams', None)
-        values = {k: values.get(k, stdParams[k]) for k in paramNames}
-        if values is not None:
-            values = pd.Series(values)  # wrap it as a pandas series.
-        if normalise:
-            range = self.paramRanges(paramNames=paramNames)  # get param range
-            values = (values - range.loc['minParam', :]) / range.loc['rangeParam', :]
 
-        return values
+
+
 
     def GNsimulatedObs(self, set_obs=None, obsNames=None):
         """
@@ -2661,12 +2660,17 @@ class OptClimConfigVn3(OptClimConfigVn2):
         Extract or set the function from fuxedParams block. Note will import the file that contains the function.
         Be very careful...
 
+        This function uses inspect to check function has the expected calling signature.
+        If the function has type_hints these will be checked to verify that the calling signature is correct.
+
         :param multiple_function -- set the multiple function. Should be of the form path_to_file.function_name
           path_to_file will have .py appended and then expanded
-
-        :return: function to run  or None if no multiple_function found. If path_to_file does not exist or somethign else is bad an error will be raised.
+        :return: function to run or None if no multiple_function found.
+        If path_to_file does not exist or something else is bad an error will be raised.
         """
         import importlib.util
+        import inspect
+        from Model import Model
         mf_name = 'multiple_function'
         fp_block = self.getv('initial').get('fixedParams', {})
         if multiple_function is not None:
@@ -2695,6 +2699,46 @@ class OptClimConfigVn3(OptClimConfigVn2):
         spec.loader.exec_module(module)
 
         fn: type_fixed_param_function = getattr(module, fn_name)  # extract the function
+        # Inspect to check fn as expected... If function uses type hints these will be checked.
+        # Probably overkill and could be wrapped into another fn.
+
+        if not inspect.isfunction(fn):
+            raise ValueError(f"Object {fn_name} from {path} is not a function.")
+        sig = inspect.signature(fn)
+        params = list(sig.parameters.values())
+        if len(params) != 3:
+            raise ValueError(f"Function {fn_name} from {path} does not have the expected number of parameters.")
+        get_model, params, use_cache = params
+        msgs = []
+        # first check all are pos or keyword (std python)
+        if get_model.kind != inspect.Parameter.POSITIONAL_OR_KEYWORD:
+            msgs.append(f"Function {fn_name} from {path} wrong for get_model. Should be POSITIONAL_OR_KEYWORD")
+        if params.kind != inspect.Parameter.POSITIONAL_OR_KEYWORD:
+            msgs.append(f"Function {fn_name} from {path} wrong for params. Should be POSITIONAL_OR_KEYWORD")
+        if use_cache.kind != inspect.Parameter.POSITIONAL_OR_KEYWORD or use_cache.name != 'use_cache':
+            msgs.append(f"Function {fn_name} from {path} wrong for use_cache. Should be POSITIONAL_OR_KEYWORD and named use_cache")
+        # check types are OK.
+        expected_types = {
+            get_model.name: typing.Callable[[dict[str, type_basic]], typing.Optional[Model]],
+            params.name: dict[str, dict[str,type_basic]],
+            use_cache.name: bool,
+            'return': tuple[list[typing.Optional[Model]], typing.Optional[pd.Series]]
+        }
+        hints = typing.get_type_hints(fn)
+        for k, v in hints.items():
+            if k not in expected_types:
+                msgs.append(f"Function {fn_name} from {path} has unexpected parameter {k}")
+            elif v != expected_types[k]:
+                msgs.append(f"Function {fn_name} from {path} has wrong type for parameter {k}. Expected {expected_types[k]} got {v}")
+
+
+        if len(msgs) > 0:
+            for msg in msgs: # print out messages as warnings.
+                my_logger.warning(msg)
+            raise ValueError(f"Function {fn_name} from {path} should be called as fn(get_model, params, use_cache=True/False) "
+                             f"with appropriate type hints. ")
+
+
         return fn
 
     def set_none_std(self, params: dict) -> dict:
@@ -3069,6 +3113,48 @@ class OptClimConfigVn3(OptClimConfigVn2):
             raise ValueError(msg)
 
         return obs
+
+
+    def study_checks(self,check_blk:typing.Optional[dict[str,str]]=None) -> dict[str,genericLib.error_handle_types]:
+        """
+        Extract error check values from the configuration.
+        Currently, returns values for:
+            check_nondeterministic which is optimise.nondeterministic
+            check_duplicate_obs -- optimise.check_duplicate_obs
+        If value is not set or is None (null) will be set to 'fail'.
+        :param check_blk: if not None then set optimise  nondeterministic and check_duplicate_obs to values in check_blk
+         Values will be checked for consistency with genericLib.error_handle_types
+
+        Note version 4 does this differently.
+        :return: dict with keywords and values
+        """
+        keys_wanted = ['nondeterministic','check_duplicate_obs']
+        if check_blk is not None:
+            opt={}
+            for key in keys_wanted:
+                if key in check_blk:
+                    opt[key] = check_blk[key]
+            self.optimise(**opt)
+
+
+        check_blk = self.optimise()
+        allowed_values = typing.get_args(genericLib.error_handle_types)
+        default_value = 'fail'
+        result = {}
+        for key in keys_wanted:
+            value = check_blk.get(key, default_value)
+            if value is None:
+                value = default_value  #
+            # check values OK.
+            if value not in allowed_values:
+                raise ValueError(f"Unknown value {value} for {key}. Should be one of {' '.join(allowed_values)}")
+            if key == 'nondeterministic':
+                store_key = "check_nondeterministic"
+            else:
+                store_key = key
+            result[store_key] = value
+
+        return result
 
 class OptClimConfigVn4(OptClimConfigVn3):
     """
@@ -3491,4 +3577,38 @@ class OptClimConfigVn4(OptClimConfigVn3):
             if ev_range < warn_scale:
                 my_logger.warning(f"Eigenvalues range is {ev_range} which is less than {warn_scale} -- can lead to over focus on small errors")
         return trans_matrix
+
+    def study_checks(self,check_blk:typing.Optional[dict[str,str]]=None) -> dict[str,genericLib.error_handle_types]:
+        """
+        Extract error check values from the configuration check_study block.
+        Currently, returns values for:
+            check_nondeterministic - check_study.check_nondeterministic
+            check_duplicate_obs - check_study.check_duplicate_obs
+        If value is not set or is None (null) will be set to "fail".
+         Values will be checked for consistency with genericLib.error_handle_types
+
+         Use of legacy values will trigger an error.
+
+        :return: dict with keywords and values
+        """
+        if check_blk is not None: # got a value so use to set it.
+            self.setv('study_checks',check_blk)
+        check_blk = self.getv('study_checks', {})
+        allowed_values = typing.get_args(genericLib.error_handle_types)
+        default_value = 'fail'
+        result={}
+        for key in ['check_nondeterministic','check_duplicate_obs']:
+            value = check_blk.get(key,default_value)
+            if value is None:
+                value = default_value #
+            # check values OK.
+            if value not in allowed_values:
+                raise ValueError(f"Unknown value {value} for {key}. Should be one of {' '.join(allowed_values)}")
+            result[key]=value
+        # check for legacy values. Raising an error if any.
+        if 'nondeterministic' in self.optimise():
+            raise ValueError(f"optimise.nondeterministic in {self.fileName()} is deprecated. Use study_checks.check_nondeterministic instead")
+
+        return result
+
 

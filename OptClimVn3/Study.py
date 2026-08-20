@@ -18,6 +18,7 @@ import pandas as pd
 
 from model_base import model_base
 from Model  import Model # root class for all models.
+import genericLib
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 #TOMAYBEDO: Consider removing keeping the config. Instead, just parse bits of it that we need and store them in the Study.
@@ -329,6 +330,19 @@ class Study:
 
         return observations
 
+    def check_duplicate_obs(self,error:genericLib.error_handle_types = "raise") -> None:
+        """
+        Check for duplicates in simulated observations. If any are found then raise an error or warning
+        :return:
+        """
+        obs = self.simulated_observations()
+        if obs is None:
+            my_logger.info("No observations to check for duplicates")
+            return
+        duplicates = obs.duplicated() # checking for duplicates for each row.
+        if duplicates.any():
+            msg = f"Duplicate observations found for {obs.index[duplicates].tolist()}"
+            genericLib.error_handle(msg,error=error)
 
     def obs(self, scale: bool = True,
             normalize: bool = False,

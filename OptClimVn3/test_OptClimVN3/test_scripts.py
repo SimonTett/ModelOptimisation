@@ -184,7 +184,7 @@ class testScripts(unittest.TestCase):
         self.assertIsNone(sconfig.config.run_info().get('local_root_dir'))
         # now use dryrun
         cmd = make_cmd()
-        cmd += ['--dryrun','-v']
+        cmd += ['--dryrun']
         shutil.rmtree(self.tempDir)
         res = subprocess.run(cmd, capture_output=True, text=True)
         if res.returncode != 0:

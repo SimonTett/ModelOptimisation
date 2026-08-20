@@ -235,7 +235,26 @@ class TestStudy(unittest.TestCase):
         tgt = self.config.targets(scale=True)
         pdtest.assert_frame_equal(obs_norm * sd + tgt, obs_scale,check_exact=False)
 
+    def test_check_duplicate_obs(self):
+        """
+        Test that check_duplicates works.
+        :return:
+        """
+        # first case -- no duplicates
+        self.study.check_duplicate_obs() # should not raise an error.
 
+        # next case -- add a duplicate model
+        m = self.study.processed_models()[0]
+        params = m.parameters.copy()
+        first_param = next(iter(params.keys()))
+        params[first_param] = 2.0
+
+        m2 = Model(name='duplicate',reference=m.reference,parameters=params,model_dir=self.direct/'duplicate',status='PROCESSED')
+        m2.simulated_obs = m.simulated_obs.copy()
+        key = self.study.key_for_model(m2)
+        self.study.model_index[key] = m2
+        with self.assertRaises(ValueError):
+            self.study.check_duplicate_obs(error='error')
 
 
 if __name__ == '__main__':
