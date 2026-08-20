@@ -607,6 +607,10 @@ class runSubmit(SubmitStudy):
             sim_obs = self._logical_info.obs(name)
             if sim_obs is not None:
                 my_logger.debug("Used cache to return simulated observations")
+                # but first need to update model_status for the models associated with this logical name.
+                models = self._logical_info.models[name]
+                for model in models:
+                    self.set_model_status(model, 'called')
                 return sim_obs
 
         # otherwise we need to compute it.
@@ -930,6 +934,9 @@ class runSubmit(SubmitStudy):
         """
         # iterate over a static list of keys to avoid runtime mutation issues
         for key in list(self.model_status.keys()):
+            if key  in self.model_index and self.model_index[key].status in ['INSTANTIATED']:
+                continue # leave status alone as model will need running. Just not got round to it yet.
+                # Odd that can have model_status but not model_index..
             if self.model_status.get(key) in ['unknown', 'called']:
                 self.model_status[key] = 'not_called'
         # reset logical info to empty.

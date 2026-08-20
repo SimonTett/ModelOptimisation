@@ -683,28 +683,33 @@ class testRunSubmit(unittest.TestCase):
         with unittest.mock.patch('pathlib.Path.is_file', return_value=True), unittest.mock.patch('os.access',
                                                                                                  return_value=True):  # make sure always return True when testing for path existence.
             m = r.create_model(params, dump=False)
+            if m is None:
+                raise ValueError("Model creation failed")
             key_m = r.key_for_model(m)
             # after create_model the status should be 'called'
             self.assertEqual(r.model_status[key_m], 'called')
 
             # simulate reading a model config (add another model)
             params2 = params.copy();
-            params2['SOME'] = 1.0
+            params2['AAAA'] = 1.0
             m2 = r.create_model(params2, dump=False)
             key_m2 = r.key_for_model(m2)
             # mark one as read (simulate read_model_configs behaviour)
             r.model_status[key_m2] = 'read'
 
             # simulate legacy from_dict behaviour: add a legacy key with 'unknown'
-            legacy_key = 'legacy_model_key'
-            r.model_index[legacy_key] = 'LEGACY_MODEL_PLACEHOLDER'
-            r.model_status[legacy_key] = 'unknown'
+            params3 = params.copy()
+            params3['AAAA'] = 2.0
+            m3 = r.create_model(params3, dump=False)
+            key_m3 = r.key_for_model(m3)
+
+            r.model_status[key_m3] = 'unknown'
 
         # now check reset_logical_info: unknown and called -> not_called; read/initial remain
         r.reset_logical_info()
         self.assertEqual(r.model_status[key_m], 'not_called')
         self.assertEqual(r.model_status[key_m2], 'read')
-        self.assertEqual(r.model_status[legacy_key], 'not_called')
+        self.assertEqual(r.model_status[key_m3], 'not_called')
 
         # check_deterministic should now find not_called entries and trigger error handling (return False)
         ok = r.check_deterministic(error='ignore')
@@ -712,18 +717,18 @@ class testRunSubmit(unittest.TestCase):
 
         # mark them as called (simulate they were used)
         r.model_status[key_m] = 'called'
-        r.model_status[legacy_key] = 'called'
+        r.model_status[key_m3] = 'called'
         ok = r.check_deterministic(error='ignore')
-        self.assertTrue(ok)
+        self.assertTrue(ok) # FAILING HERE
         # reset logical again to set called -> not_called (simulate new iteration), then set them to called again
         r.reset_logical_info()
         r.model_status[key_m] = 'called'
-        r.model_status[legacy_key] = 'called'
+        r.model_status[key_m3] = 'called'
 
         # now ensure model_index and model_status keys match
         # remove any placeholder that is not a model object
-        r.model_index.pop(legacy_key, None)
-        r.model_status.pop(legacy_key, None)
+        r.model_index.pop(key_m3, None)
+        r.model_status.pop(key_m3, None)
 
         # now check deterministic should pass (no not_called)
         ok2 = r.check_deterministic(error='ignore')
