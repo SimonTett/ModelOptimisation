@@ -2,12 +2,16 @@
 Test cases for SubmitStudy classes
 """
 import datetime
+import itertools
+import json
 
 import pathlib
 
 import tempfile
+import typing
 import unittest.mock  # need to mock the run case.
 import unittest
+
 
 import Study
 import StudyConfig
@@ -17,6 +21,7 @@ from Model import Model
 import copy
 import pandas as pd
 import genericLib
+import pandas.testing as pdtest
 genericLib.setup_env()
 
 def gen_time():
@@ -37,11 +42,33 @@ times = gen_time()
 pth = myModel.expand("$OPTCLIMTOP/OptClimVn3/Models/parameter_config/example_Parameters.csv")
 myModel.update_from_file(pth)
 
-
 class MyTestCase(unittest.TestCase):
 
-    @unittest.mock.patch.object(SubmitStudy.SubmitStudy, 'now', side_effect=times)  # regen times every time!
-    @unittest.mock.patch.object(myModel, 'now', side_effect=times)
+
+    # fake function used when need to fake things
+    @staticmethod
+    def fake_function(parameters:dict[str,float|int|str],obs_names:typing.Optional[list[str]]=None):
+        """
+        Simple fake function that returns a series of simulated obs.
+        :param parameters: parameters dict with name,value pairs
+        :param obs_names: Optional obs_names. If provided will be used to generate obs names.
+        :return:
+        """
+        sim_obs = dict()
+        obs_count = 0
+        if obs_names is None:
+            obs_names = [f'obs{obs_count}' for obs_count in range(len(parameters))]
+        for oname,k in zip(obs_names,itertools.cycle(parameters.keys())):
+            try:
+                sim_obs[oname] = parameters[k] ** 2
+            except TypeError:
+                sim_obs[oname] = 0.0
+
+        return pd.Series(sim_obs)
+
+
+    @unittest.mock.patch.object(SubmitStudy.SubmitStudy, 'now', side_effect=times)  # type: ignore  # noqa: F821  # regen times every time!
+    @unittest.mock.patch.object(myModel, 'now', side_effect=times)  # type: ignore  # noqa: F821
     def setUp(self, mck_now, mck_model):
         self.tmpDir = tempfile.TemporaryDirectory()
         testDir = pathlib.Path(self.tmpDir.name)
@@ -98,7 +125,6 @@ class MyTestCase(unittest.TestCase):
         model3 = sub.create_model(paramD)
         self.assertIsNone(model3)
 
-
     def test_copyConfig(self):
         # test that we can copy a SubmitStudy object
         submit = self.submit
@@ -141,16 +167,7 @@ class MyTestCase(unittest.TestCase):
 
 
 
-
-
-
-
-
-
-
-
-
-    @unittest.mock.patch.object(SubmitStudy.SubmitStudy, 'now', side_effect=times)
+    @unittest.mock.patch.object(SubmitStudy.SubmitStudy, 'now', side_effect=times) # type: ignore  # noqa: F821
     def test_delete(self, mck_now):
         # can we delete things.
         pth = self.submit.config_path
@@ -188,15 +205,15 @@ class MyTestCase(unittest.TestCase):
             self.assertEqual(m1['object'], str(m2.config_path))
             self.assertEqual(k1, k2)
 
-    def test_load_config(self):
+    def test_load(self):
         # test some functionality in load_config works.
         pth = self.submit.config_path
         self.submit.dump_config()
-        newSub = self.submit.load_SubmitStudy(pth)
+        newSub = self.submit.load(pth)
         self.assertEqual(self.submit, newSub)
         # explicitly check
 
-        study = self.submit.load_SubmitStudy(pth, Study=True)
+        study = self.submit.load(pth, Study=True)
         # return as a study
         self.assertIsInstance(study, Study.Study)
 
@@ -245,8 +262,8 @@ class MyTestCase(unittest.TestCase):
         self.assertEqual(set(pths_got), set(pths_expect))
 
     # need to mock both SubmitStudy and myModel now.
-    @unittest.mock.patch.object(SubmitStudy.SubmitStudy, 'now', side_effect=times)
-    @unittest.mock.patch.object(myModel, 'now', side_effect=times)
+    @unittest.mock.patch.object(SubmitStudy.SubmitStudy, 'now', side_effect=times)# type: ignore  # noqa: F821
+    @unittest.mock.patch.object(myModel, 'now', side_effect=times)# type: ignore  # noqa: F821
     def test_submit_all_models(self, mck_now, mck_model_now):
 
         # set up the fake rtn output
@@ -317,36 +334,26 @@ class MyTestCase(unittest.TestCase):
         self.assertEqual(len(submit._history), 8)
         self.assertEqual(len(submit._output), 1)  # Next iter.
 
-        # now fake it. subprocess.check_output should not run anything.
 
-        def fake_function(param):
-            sim_obs = dict()
-            obs_count = 0
-            for k, v in param.items():
-                oname = f"obs{obs_count}"
-                try:
-                    sim_obs[oname] = v ** 2
-                    obs_count += 1
-                except TypeError: # multiplication not defined
-                    pass
-            return pd.Series(sim_obs)
 
         with unittest.mock.patch("subprocess.check_output",
                                  autospec=True, return_value="some value 345678") as mck_output:
             submit = copy.deepcopy(self.submit)
             submit.instantiate()  # instantiate all models.
-            submit.submit_all_models(fake_fn=fake_function)
+            # now fake it. subprocess.check_output should not run anything.
+            submit.submit_all_models(fake_fn=self.fake_function)
             mck_output.assert_not_called()
 
     dt = datetime.datetime(2022, 1, 1, 0, 0, 0)
 
-    @unittest.mock.patch.object(SubmitStudy.SubmitStudy, 'now', return_value=dt)
+    @unittest.mock.patch.object(SubmitStudy.SubmitStudy, 'now', return_value=dt)# type: ignore  # noqa: F821
     def test_repr(self, mck_now):
 
         self.submit.update_history('DOne!')
         got_repr = repr(self.submit)
         expect_repr = "Name: dfols_r Nmodels:3 Status: CREATED: 3 Model_Types:myModel: 3 Last changed at 2022-01-01 00:00:00"
         self.assertEqual(got_repr, expect_repr)
+
 
     def test_models_to_submit(self):
         # test models_to_submit works. Should get models
@@ -441,6 +448,226 @@ class MyTestCase(unittest.TestCase):
         # Test that lock works. No real testing done as method uses genericLib.
         with self.submit.lock() as lock:
             self.assertTrue(lock.is_locked)
+
+    def test_compute_simulated_observations(self):
+        """
+        Run tests for compute_simulated_observations. AI generated
+
+        1) Existing model path: confirm that when a matching model is already known, compute_simulated_observations reuses it and returns its observations.
+
+        2) Missing model path: confirm that when no matching model is known, the method creates/registers a new model rather than failing or duplicating unrelated state.
+
+        3) Cache-control delegation: confirm that the use_cache choice is passed down to the model-level observation computation and affects the returned observations as expected.
+
+        4) State stability: confirm that observation recomputation changes only observation results, not the model_index, unless a genuinely new parameter set is requested.
+
+        :return:
+        """
+
+        # test 1.
+        # Case 1: existing model path.
+        #
+        # Pick an existing model and give it cached observations.  We call through
+        # SubmitStudy.compute_simulated_observations using the model's key attributes,
+        # which avoids accidental creation of a near-duplicate model due to missing
+        # key fields such as reference.
+        model = next(iter(self.submit.model_index.values())) # get a model
+        model.status = 'PROCESSED'
+        expected_obs = pd.Series({'obs0': 1.0, 'obs1': 2.0}, name=model.name)
+        model.simulated_obs = expected_obs
+
+        params = model.attrs_for_key()
+        model_index_before = self.submit.model_index.copy()
+
+        with unittest.mock.patch.object(
+                self.submit, 'create_model',
+                side_effect=AssertionError("Existing model should have been reused")):
+            got_obs = self.submit.compute_simulated_observations(params, use_cache=True)
+
+        pdtest.assert_series_equal(got_obs, expected_obs)
+        self.assertEqual(self.submit.model_index, model_index_before)
+
+        # test case 2
+
+        # Case 2: missing model path.
+        #
+        # Use a parameter set that is not already in model_index.  The expected
+        # SubmitStudy-level behaviour is simple: create/register one new model
+        # and then ask that model for observations.  Because the new model has
+        # only just been created, it has no processed observations yet, so the
+        # returned value should be None.
+        #
+        # This test deliberately avoids checking detailed model file contents;
+        # that belongs in create_model / Model tests.  Here we only care that
+        # compute_simulated_observations uses model_index as its model cache.
+        params = dict(VF1=9.9, CT=9.9e-4, reference=self.submit.refDir)
+        model_index_before = self.submit.model_index.copy()
+        keys_before = set(model_index_before.keys())
+
+        self.assertNotIn(
+            self.submit.key(params),
+            keys_before,
+            msg="Test setup error: params unexpectedly already match an existing model"
+        )
+
+        got_obs = self.submit.compute_simulated_observations(params, use_cache=True)
+
+        self.assertIsNone(got_obs) # obs is None
+        self.assertEqual(len(self.submit.model_index), len(model_index_before) + 1) # a new model added
+        self.assertTrue(keys_before.issubset(set(self.submit.model_index.keys()))) # old keys subset of keys
+
+        new_keys = set(self.submit.model_index.keys()) - keys_before
+        self.assertEqual(len(new_keys), 1)
+
+        new_model = self.submit.model_index[new_keys.pop()]
+        self.assertIsInstance(new_model, Model)
+        self.assertEqual(new_model.parameters, {'VF1': 9.9, 'CT': 9.9e-4})
+
+        # test case 3
+        #
+        # Case 3: cache-control delegation.
+        # Check that model.compute_simulated_observations is called with use_cache=Flase
+        #
+        # The study is responsible for locating the correct model and passing the
+        # cache policy through to that model. The model_index itself is a cache of
+        # model objects, and this method should not create or replace entries while
+        # it is delegating the observation lookup.
+        model = next(iter(self.submit.model_index.values()))
+        model_index_before = self.submit.model_index.copy()
+        expected_obs = pd.Series({'obs0': 3.5, 'obs1': 4.5}, name=model.name)
+        params = model.attrs_for_key()
+
+        # mock model.compute_simulated_observations
+        with unittest.mock.patch.object(
+                model,
+                'compute_simulated_observations',
+                autospec=True,
+                return_value=expected_obs) as mck:
+            got_obs = self.submit.compute_simulated_observations(params, use_cache=False)
+
+        pdtest.assert_series_equal(got_obs, expected_obs)
+        self.assertEqual(self.submit.model_index, model_index_before)
+        mck.assert_called_once_with(use_cache=False) # check that use_cache with value False passed in.
+
+        # test case 4
+        #
+        # Case 4: no model available for a genuinely new parameter set.
+        #
+        # This is the branch where the model lookup fails without creating a new
+        # model. It should behave as a no-op for the study: return None and leave
+        # the model registry unchanged. We do not care why no model was returned;
+        # the contract is simply that no model is created or inserted.
+        params = dict(VF1=8.8, CT=8.8e-4, reference=self.submit.refDir)
+        model_index_before = self.submit.model_index.copy()
+
+        with self.assertLogs('OPTCLIM.SubmitStudy', level='WARNING') as log_cm:
+            with unittest.mock.patch.object(self.submit, 'get_model', return_value=None):
+                got_obs = self.submit.compute_simulated_observations(params, use_cache=True)
+
+        self.assertIsNone(got_obs)
+        self.assertEqual(self.submit.model_index, model_index_before)
+        self.assertTrue(log_cm.output)
+
+    def test_get_model(self):
+        """
+            Contract test for SubmitStudy.get_model. AI generated.  Prompted and reviewed by SFBT.
+
+            The subclass override has three  behaviours:
+            1. If the parameter set already exists, return the cached model instance and
+               do not create a duplicate entry.
+            2. If the parameter set is new, create a model, add it to model_index, and
+               return the newly created model.
+            3. If next_command is set to 'stop', do not create anything; return None and
+               leave the model registry unchanged.
+
+            This is narrower than the superclass Study.get_model test because it checks
+            the lazy-create wrapper added by SubmitStudy rather than the base lookup logic.
+        :return: Nada
+        """
+        # Case 1: model exists already. The lookup should hit the in-memory cache and
+        # return the exact object without creating a second entry.
+        existing = next(iter(self.submit.model_index.values()))
+        params = copy.deepcopy(existing.parameters)
+        params['reference'] = existing.reference
+
+        got = self.submit.get_model(params)
+        self.assertIs(got, existing)
+        self.assertEqual(len(self.submit.model_index), 3)
+
+        # Case 2: no matching model exists. SubmitStudy should lazily create one,
+        # store it by the generated key, and return the new object.
+        missing = dict(VF1=9.8, CT=1e-5)
+        model = self.submit.get_model(missing)
+        self.assertIsInstance(model, Model)
+        self.assertEqual(model.parameters, missing)
+        self.assertIn(self.submit.key_for_model(model), self.submit.model_index)
+        self.assertEqual(len(self.submit.model_index), 4)
+
+        # Case 3: a stop signal disables model creation. The method should fail fast,
+        # return None, and leave the registry unchanged.
+        sub = copy.deepcopy(self.submit)
+        sub.next_command = 'stop'
+        none_model = sub.get_model(dict(VF1=9.9, CT=1e-6))
+        self.assertIsNone(none_model)
+        self.assertEqual(len(sub.model_index), len(self.submit.model_index))
+
+    def test_reload_processed_obs(self):
+        """
+        Reload only processed-model observations from disk. AI generated and reviewed by SFBT.
+
+        The method should refresh the cached observation data for processed models,
+        ignore non-processed models, and preserve the model registry exactly. It
+        should also behave as a no-op when no model is in the processed state.
+        """
+        submit = copy.deepcopy(self.submit)
+
+        # Make two models look like processed results and seed each with a stale
+        # in-memory observation so we can prove the reload updates both of them.
+        processed_models = list(submit.model_index.values())[:2]
+        expected = {}
+        for indx, model in enumerate(processed_models):
+            model.status = 'PROCESSED'
+            model.simulated_obs = pd.Series({f'old_obs_{indx}': float(indx)}, name=model.name)
+
+            # Overwrite the observation file on disk; reload_processed_obs should pick
+            # up this new value rather than reusing the stale cached series above.
+            new_obs = pd.Series({f'new_obs_{indx}': 42.0 + indx}, name=model.name)
+            obs_path = model.model_dir / model._post_process_output
+            with obs_path.open('w') as fp:
+                json.dump(new_obs.to_dict(), fp)
+            expected[model.name] = new_obs
+
+        # Keep one non-processed model around to prove the method leaves it alone.
+        other = list(submit.model_index.values())[2]
+        other.status = 'CREATED'
+        other.simulated_obs = pd.Series({'unchanged': 7.0}, name=other.name)
+
+        # The registry should stay structurally identical; only observation content
+        # is supposed to change.
+        model_index_before = list(submit.model_index.keys())
+        submit.reload_processed_obs()
+
+        self.assertEqual(list(submit.model_index.keys()), model_index_before)
+        self.assertEqual(len(submit.model_index), len(self.submit.model_index))
+        for model in submit.processed_models():
+            pdtest.assert_series_equal(
+                model.compute_simulated_observations(use_cache=False), # this will load obs from disk.
+                expected[model.name]
+            )
+        pdtest.assert_series_equal(other.simulated_obs, pd.Series({'unchanged': 7.0}, name=other.name))
+
+        # Edge case: if nothing is processed, the method should still be a no-op.
+        empty_submit = copy.deepcopy(self.submit)
+        empty_index_before = list(empty_submit.model_index.keys())
+        for model in empty_submit.model_index.values():
+            model.status = 'CREATED'
+            model.simulated_obs = pd.Series({'sentinel': -1.0}, name=model.name)
+
+        empty_submit.reload_processed_obs()
+
+        self.assertEqual(list(empty_submit.model_index.keys()), empty_index_before)
+        for model in empty_submit.model_index.values():
+            pdtest.assert_series_equal(model.simulated_obs, pd.Series({'sentinel': -1.0}, name=model.name))
 
 
 
@@ -641,7 +868,7 @@ def resub_status_side_effect(self, *args, **kwargs):
     status = getattr(self, 'resub_job_status', 'notFound')
     return status
 
-@unittest.mock.patch.object(SubmitStudy.SubmitStudy, 'run_cmd', autospec=True, return_value='nonsense')
+@unittest.mock.patch.object(SubmitStudy.SubmitStudy, 'run_cmd', autospec=True, return_value='nonsense')# type: ignore  # noqa: F821
 @unittest.mock.patch.object(SubmitStudy.SubmitStudy, 'resub_status', autospec=True,side_effect=resub_status_side_effect)
 @unittest.mock.patch.object(Model, 'kill', autospec=True,side_effect=model_kill)
 class test_KILL(unittest.TestCase):

@@ -138,6 +138,7 @@ def expand_filelike_keys(dct: dict, mkdir: bool = False) -> dict:
 
 ## Code to support logging
 
+
 def setup_logging(level: typing.Optional[typing.Union[int, str]] = None,
                   rootname: typing.Optional[str] = None,
                   log_config: typing.Optional[dict] = None):
@@ -278,44 +279,57 @@ def get_fn(mod_fn_str: str) -> typing.Callable:
     return fn
 
 
-def fake_fn(config: "OptClimConfigVn3", params: dict) -> pd.Series:
+
+def fake_fn(config: "OptClimConfigVn3", params: dict,obs_names:typing.Optional[list[str]]=None) -> pd.Series:
     """
     Wee test fn for trying out things.
     :param config -- configuration. Provides, parameter min, max & ranges and targets.
     :param params -- dict of parameter values
+    :param obs_names -- optional list of obs_names. If not provided will use config.obsNames()
     returns  "fake" data as a pandas Series
     """
+    import itertools
     params = copy.deepcopy(params)
     my_logger.debug("faking with params: " + str(params))
     # remove ensembleMember param.
     params.pop('ensembleMember', None)  # remove ensembleMember as a key.
     pranges = config.paramRanges()
-    tgt = config.targets()
+    param_series = pd.Series(params).combine_first(config.standardParam())  # merge in the std params
     min_p = pranges.loc['minParam', :]
     max_p = pranges.loc['maxParam', :]
     scale_params = max_p - min_p
-    keys = list(params.keys())
-    for k in keys:  # remove parameters that do not have a range.
-        if k not in pranges.columns:
-            params.pop(k)
-    param_series = pd.Series(params).combine_first(config.standardParam())  # merge in the std params
-    #TODO fix FutureWarning: The behavior of array concatenation with empty entries is deprecated.
-    pscale = (param_series - min_p) / scale_params
-    pscale -= 0.5  # tgt is at params = 0.5
-    result = 100 * (pscale + pscale ** 2)
-    if np.any(result.isnull()):
-        raise ValueError("Got null in result")
-    # this fn has one minimum and  no maxima between the boundaries and the minima. So should be easy to optimise.
-    result = result.to_numpy()
-    while (len(tgt) > result.shape[-1]):
-        result = np.append(result, result, axis=-1)
-    result = result[0:len(tgt)]  # truncate it to len of tgt.
-    result = pd.Series(result, index=tgt.index)  # brutal conversion to obs space.
-    var_scales = 10.0 ** np.round(np.log10(config.scales()))
-    result /= var_scales  # make sure changes are roughly right scales.
+    tgt = config.targets()
+    scales = config.scales()
+    if obs_names is None:
+        obs_names = config.obsNames()
 
-    result += tgt
-    return result
+    else: # fix tgt as we need it with different obs
+        new_names = {k:v for k,v in zip(config.obsNames(),obs_names)}
+        tgt = tgt.rename(index=new_names) # rename
+        tgt = tgt.reindex(obs_names).fillna(0.0) # any new names missing we fill with 0.
+        scales = scales.rename(index=new_names)
+        scales = scales.reindex(obs_names).fillna(1.0) # scales are whaterever + 1 for undefined ones
+
+    var_scales = 10.0 ** np.round(np.log10(scales))
+    pscale = (param_series.reindex(min_p.index) - min_p) / scale_params
+    pscale = pscale.fillna(0.0) # fill any values that are nan with 0.0.
+    pscale -= 0.5  # tgt is at params = 0.5
+    sim_obs=dict()
+
+    for oname, k in zip(obs_names, itertools.cycle(pscale.index)):
+        try:
+            sim_obs[oname] = 100 * (pscale[k] + pscale[k] ** 2)
+        except TypeError:
+            sim_obs[oname] = 0.0
+    sim_obs = pd.Series(sim_obs)/var_scales# make sure changes are roughly right scales.
+
+
+
+    #TODO fix FutureWarning: The behavior of array concatenation with empty entries is deprecated.
+
+
+    sim_obs += tgt
+    return sim_obs
 
 
 def seconds_to_isoduration(seconds: int | float) -> str:
@@ -479,7 +493,8 @@ def delDirContents(dir):
                 shutil.rmtree(entry.path, onerror=errorRemoveReadonly)  # remove all directories
 
 
-def delete_dir_contents(direct: pathlib.Path):
+def delete_dir_contents(direct: pathlib.Path,
+                        keep_list: typing.Optional[typing.List[pathlib.Path]] = None):
     """
     Recursively Delete the contents of a directory
     :param direct: path to directory to have all contents removed.
@@ -487,14 +502,15 @@ def delete_dir_contents(direct: pathlib.Path):
     """
     # from stack exchange
     # https://stackoverflow.com/questions/185936/how-to-delete-the-contents-of-a-folder-in-python
-
+    if keep_list is None:
+        keep_list = []
     if not direct.exists():  # doesn't exist so return
         return
     if not direct.is_dir():
         raise ValueError(f"{direct} is not a directory")
 
     for entry in direct.iterdir():
-        if entry.is_file() or entry.is_symlink():
+        if (entry not in keep_list) and (entry.is_file() or entry.is_symlink()) :
             try:
                 entry.chmod(stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)
             except WindowsError:  # dam windows.
@@ -730,7 +746,8 @@ try_symlinks = True  # try to use symlinks
 def copy_files(in_direct: pathlib.Path,
                out_direct: pathlib.Path,
                files: list[pathlib.Path],
-               symlinks: bool = False
+               symlinks: bool = False,
+               keep_list: typing.Optional[list[pathlib.Path]] = None,
                ) -> list[pathlib.Path]:
     """
 
@@ -738,6 +755,7 @@ def copy_files(in_direct: pathlib.Path,
     :param in_direct: directory where study is currently located
     :param out_direct: directory where study is to be copied. Will be created if it does not exist and emptied if it does.
     :param files: list of  files (paths provided relative to in_direct) to be copied to new directory.
+    :param keep_list: list of files to keep in out_direct. If not provided then all files will be deleted.
     :param symlinks: if True then rather than copying files, symlinks will be created.
       This should be faster but is less reliable
 
@@ -750,7 +768,7 @@ def copy_files(in_direct: pathlib.Path,
         raise FileExistsError(f"Cannot copy to same directory {out_direct}")
 
     # remove all existing files in out_direct
-    delete_dir_contents(out_direct)  # remove all existing files in direct
+    delete_dir_contents(out_direct, keep_list=keep_list)  # remove all existing files in direct
     my_logger.debug(f"Created and cleaned {out_direct}")
 
     files_to_copy = set(files)  # just the unique files.
@@ -791,6 +809,31 @@ def copy_files(in_direct: pathlib.Path,
             my_logger.debug(f"Copied  {in_file} to {tgt_path} ")
 
     return files_copied
+
+def setup_config_env(rootDir: pathlib.Path,log_dir: pathlib.Path):
+    """
+    Setup std env vars for use in configs and elsewhere.
+    :param: rootDir -- path to root directory of Config
+    :param: log_dir -- path to directory where log files are written
+    The ones provided are:
+    OPTCLIM_ROOT_DIR -- path to root directory of OptClim (as posix path)
+    OPTCLIM_LOG_DIR -- path to directory where log files are written (as posix path)
+    OPTCLIM_JOB_ID -- the job id of the job. If not set then will be set to the process id.
+    :return:
+    """
+    import engine
+    JOB_ID = os.getpid() # use getpid as default.
+    eng = engine.abstractEngine.guess_engine()  # do a guess at the engine so can set env var for that.
+
+    if eng is not None:
+        try:
+            JOB_ID = eng.my_job_id()
+        except ValueError:
+            pass
+
+    os.environ['OPTCLIM_ROOT_DIR'] = rootDir.as_posix()
+    os.environ['OPTCLIM_LOG_DIR'] = log_dir.as_posix()
+    os.environ['OPTCLIM_JOB_ID'] = str(JOB_ID)  # have JOB ID
 
 
 # AI generated code for locking and then modified.

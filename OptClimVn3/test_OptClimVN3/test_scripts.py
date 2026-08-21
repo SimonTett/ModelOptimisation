@@ -184,7 +184,7 @@ class testScripts(unittest.TestCase):
         self.assertIsNone(sconfig.config.run_info().get('local_root_dir'))
         # now use dryrun
         cmd = make_cmd()
-        cmd += ['--dryrun','-v']
+        cmd += ['--dryrun']
         shutil.rmtree(self.tempDir)
         res = subprocess.run(cmd, capture_output=True, text=True)
         if res.returncode != 0:
@@ -214,7 +214,7 @@ class testScripts(unittest.TestCase):
         sconfig = runSubmit.load(config_pth)
         models = sconfig.processed_models()
         self.assertEqual(len(models),5)
-        self.assertEqual(len(sconfig.logical_obs()),5)
+        self.assertEqual(len(sconfig.simulated_observations()),5)
         self.assertEqual(len(sconfig.logical_cost()),5)
 
 
@@ -237,6 +237,12 @@ class testScripts(unittest.TestCase):
         config.setv("song_type_comment",'this is not a love song')
         config.save() # save the config which should be changed
         self.assertIsNone(cfg.config.getv('song_type_comment'))
+        # First check we can write to a different output file with everythigng working
+        new_cfg_path = self.tempDir / 'dfols4p_new/dfols4p_new.scfg'
+        run_cmd(str(script_path),str(cfg_path),'update',str(config.fileName()),'--output',str(new_cfg_path))
+        cfg2 = runSubmit.load(new_cfg_path) # load it.
+        self.assertEqual(cfg2.config.getv('song_type_comment'),'this is not a love song')
+
         run_cmd(str(script_path),str(cfg_path),'update')
         cfg2 = runSubmit.load(cfg_path) # load it.
         self.assertEqual(cfg2.config.getv('song_type_comment'),'this is not a love song')
@@ -259,6 +265,8 @@ class testScripts(unittest.TestCase):
             run_cmd(str(script_path),'update')
             cfg3 = runSubmit.load(cfg.config_path) # load it.
             self.assertIsNone(cfg3.config.getv('song_type_comment'))
+
+
 
         # now for plot
         monitor_file = self.tempDir / 'monitor.png'

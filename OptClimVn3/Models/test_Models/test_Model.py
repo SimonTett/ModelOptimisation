@@ -12,12 +12,15 @@ import unittest.mock
 import tarfile
 import shlex
 
+import warnings
+
 import Model
 import StudyConfig  # so can read in a config for fake_fn.
 import numpy as np
 import numpy.testing as nptest
 import pandas as pd
 import pandas.testing as pdtest
+import xarray
 import engine
 import genericLib
 import generic_json
@@ -25,7 +28,6 @@ from namelist_var import NamelistVar
 from test_Models.myModel import myModel # needed when testing in linux..
 
 genericLib.setup_env()
-
 def gen_time():
     # used to mock Model.now()
     time = datetime.datetime(2000, 1, 11, 0, 0, 0)
@@ -666,8 +668,9 @@ class ModelTestCase(unittest.TestCase):
 
         with unittest.mock.patch('subprocess.check_output',
                                  autospec=True, return_value="Submitted something"):
-            model.process()  # run the post-processing. Nothing should be ran because of the mock
-        pdtest.assert_series_equal(pd.Series(fake_obs).rename(model.name), model.simulated_obs)
+            model.process()  # run the post-processing. Nothing should actually be ran because of the mock though it shoudl read in the data.
+        model_obs = model.compute_simulated_observations()
+        pdtest.assert_series_equal(pd.Series(fake_obs).rename(model.name), model_obs)
         self.assertEqual(model.status, 'PROCESSED')
 
     # patching end_to_end so time always ticks in controlled way. gen_time does 1 seconds increments.
@@ -705,7 +708,7 @@ class ModelTestCase(unittest.TestCase):
                 model.process()  # and do the post-processing
                 # need to run a bunch of tests here.
                 # having got to here should have simulated_obs be post_process['fake_obs']
-                pdtest.assert_series_equal(model.simulated_obs, pd.Series(post_process['fake_obs']).rename(model.name))
+                pdtest.assert_series_equal(model.compute_simulated_observations(), pd.Series(post_process['fake_obs']).rename(model.name))
                 # should have 8 history entries.
                 self.assertEqual(len(model._history), 8)
                 # four    outputs -- from  model submission, post_process submission, post-process release_job and
@@ -1233,6 +1236,133 @@ class ModelTestCase(unittest.TestCase):
             self.assertEqual(len(model._history), old_history_len + 1)
 
         tmpdir.cleanup()
+
+
+    def test_compute_simulated_observations(self):
+        """
+        AI-generated contract-based tests for compute_simulated_observations.
+
+        This method has a narrow set of public contracts, so the suite is intentionally
+        small and explicit rather than broad. The test method currently contains nine
+        subtests because a few of the original categories are naturally split into separate
+        checks for the file layer, cache behaviour, and format-specific parsing:
+
+        1) invalid status short-circuits without reading any file;
+        2) JSON success path returns the expected pandas Series;
+        3) null-valued observations raise ValueError;
+        4) an existing cache is reused when use_cache=True;
+        5) stale cache on a non-PROCESSED status raises ValueError;
+        6) missing output file raises FileNotFoundError;
+        7) unsupported output types raise NotImplementedError;
+        8) netCDF parsing returns the expected Series; and
+        9) CSV parsing returns the expected Series.
+
+        This keeps the tests anchored to externally visible behaviour without trying to
+        exhaustively mirror the implementation details of every branch.
+
+        :return:
+        """
+        model = self.model
+
+        def run_without_reading(model_to_check, use_cache=True):
+            """Helper for assertions that the method must short-circuit before any file I/O."""
+            with unittest.mock.patch.object(
+                    pathlib.Path, 'is_file',
+                    side_effect=AssertionError('is_file should not be called')), \
+                 unittest.mock.patch(
+                    'builtins.open',
+                    side_effect=AssertionError('open should not be called')), \
+                 unittest.mock.patch(
+                    'json.load',
+                    side_effect=AssertionError('json.load should not be called')):
+                return model_to_check.compute_simulated_observations(use_cache=use_cache)
+
+        def set_case(status, output_file, simulated_obs=None):
+            model.status = status
+            model._post_process_output = output_file
+            model.simulated_obs = simulated_obs
+
+        # Core contract: invalid state must short-circuit before any file or JSON parsing occurs.
+        with self.subTest("invalid status returns None without reading"):
+            set_case('CREATED', 'sim_obs.json')
+            result = run_without_reading(model)
+            self.assertIsNone(result)
+
+        # JSON read path: valid post-processed payloads should become a named Series with the expected values.
+        with self.subTest("json success path"):
+            set_case('PROCESSED', 'sim_obs.json')
+            expected = pd.Series({'alpha': 1.0, 'beta': 2.0}, name=model.name)
+            with unittest.mock.patch.object(pathlib.Path, 'is_file', return_value=True), \
+                 unittest.mock.patch('builtins.open', unittest.mock.mock_open(read_data='{}')) as open_mock, \
+                 unittest.mock.patch('json.load', return_value={'alpha': 1.0, 'beta': 2.0}) as json_load:
+                result = model.compute_simulated_observations(use_cache=False)
+            pdtest.assert_series_equal(result, expected)
+            pdtest.assert_series_equal(model.simulated_obs, expected)
+            open_mock.assert_called_once()
+            json_load.assert_called_once()
+
+        # Defensive validation: null-valued observations are invalid and must raise a hard failure.
+        with self.subTest("null rejection"):
+            set_case('PROCESSED', 'sim_obs.json')
+            with unittest.mock.patch.object(pathlib.Path, 'is_file', return_value=True), \
+                 unittest.mock.patch('builtins.open', unittest.mock.mock_open(read_data='{}')), \
+                 unittest.mock.patch('json.load', return_value={'alpha': 1.0, 'beta': None}):
+                with self.assertRaisesRegex(ValueError, 'Obs contains null values'):
+                    model.compute_simulated_observations(use_cache=False)
+            self.assertIsNone(model.simulated_obs)
+
+        # Cache semantics: a valid cached Series should bypass the file-read path completely.
+        with self.subTest("cache is used when available"):
+            cached = pd.Series({'alpha': 3.0}, name=model.name)
+            set_case('PROCESSED', 'sim_obs.json', cached)
+            result = run_without_reading(model)
+            pdtest.assert_series_equal(result, cached)
+
+        # Guardrail: stale cached values must not be accepted when the model is not PROCESSED.
+        with self.subTest("stale cache raises for non-processed status"):
+            set_case('SUCCEEDED', 'sim_obs.json', pd.Series({'alpha': 3.0}, name=model.name))
+            with self.assertRaisesRegex(ValueError, 'Should not have simulated observations when status is SUCCEEDED'):
+                model.compute_simulated_observations(use_cache=True)
+
+        # Error handling: a missing post-processed output is not recoverable and should raise immediately.
+        with self.subTest("missing output file raises"):
+            set_case('PROCESSED', 'missing.json')
+            with unittest.mock.patch.object(pathlib.Path, 'is_file', return_value=False):
+                with self.assertRaisesRegex(FileNotFoundError, 'Could not find post-processed file'):
+                    model.compute_simulated_observations(use_cache=False)
+
+        # Unsupported-type handling: an unrecognised suffix should fail explicitly rather than returning garbage.
+        with self.subTest("unsupported extension raises"):
+            set_case('PROCESSED', 'sim_obs.txt')
+            with unittest.mock.patch.object(pathlib.Path, 'is_file', return_value=True):
+                with self.assertRaisesRegex(NotImplementedError, 'Do not recognize'):
+                    model.compute_simulated_observations(use_cache=False)
+
+        # Format support: keep one representative netCDF case to lock down the supported scalar-dataset behaviour.
+        with self.subTest("netcdf success path"):
+            set_case('PROCESSED', 'sim_obs.nc')
+            expected = pd.Series({'alpha': 1.0, 'beta': 2.0}, name=model.name)
+            ds = xarray.Dataset({
+                'alpha': xarray.DataArray(np.array(1.0)),
+                'beta': xarray.DataArray(np.array(2.0)),
+            })
+            with unittest.mock.patch.object(pathlib.Path, 'is_file', return_value=True), \
+                 unittest.mock.patch('xarray.load_dataset', return_value=ds) as load_dataset:
+                result = model.compute_simulated_observations(use_cache=False)
+            pdtest.assert_series_equal(result, expected)
+            load_dataset.assert_called_once()
+
+        # Format support: keep one representative CSV case to lock down the expected pandas conversion semantics.
+        with self.subTest("csv success path"):
+            set_case('PROCESSED', 'sim_obs.csv')
+            expected = pd.Series({'alpha': 1.0, 'beta': 2.0}, name=model.name)
+            mock_df = unittest.mock.Mock()
+            mock_df.to_dict.return_value = {'alpha': 1.0, 'beta': 2.0}
+            with unittest.mock.patch.object(pathlib.Path, 'is_file', return_value=True), \
+                 unittest.mock.patch('pandas.read_csv', return_value=mock_df) as read_csv:
+                result = model.compute_simulated_observations(use_cache=False)
+            pdtest.assert_series_equal(result, expected)
+            read_csv.assert_called_once()
 
 
 

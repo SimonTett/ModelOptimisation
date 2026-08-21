@@ -24,6 +24,7 @@ do runAlgorithm -h to see what the remaining  command line arguments are.
 """
 import os
 
+
 # often this script runs on a headless display.
 # so need to set up maplotlib (if we plot) for that case.
 # this bit of code needs to run before any other matplotlib code.
@@ -113,20 +114,12 @@ if args.dir is not None:
 else:  # set rootDir to cwd/name
     rootDir = pathlib.Path.cwd() / configData.name()  # default path
 
-# setup env vars for use in logging etc
-eng = engine.abstractEngine.guess_engine() # do a guess at the engine so can set env var for that.
-if eng is not None:
-    try:
-        JOB_ID = eng.my_job_id()
-    except ValueError:
-        JOB_ID = os.getpid()
-else:
-    JOB_ID = os.getpid()
-os.environ['OPTCLIM_ROOT_DIR'] = rootDir.as_posix()
 output_dir = rootDir / 'jobOutput'
-os.environ['OPTCLIM_LOG_DIR'] = output_dir.as_posix()
-os.environ['OPTCLIM_JOB_ID'] = str(JOB_ID) # have JOB ID
 output_dir.mkdir(parents=True, exist_ok=True)  # make sure output dir (and in current implementation rootDir exists.)
+# setup env vars for use in logging etc
+genericLib.setup_config_env(rootDir,output_dir)
+
+
 
 # check we have what is expected
 for var in expected_env_vars:
@@ -210,7 +203,7 @@ monitor_file = rootDir / (jsonFile.stem + "_monitor.png")
 rSUBMIT = None  # set it to None
 if config_path.exists():  # config file exists. Read it in.
     my_logger.info(f"Reading status from {config_path}")
-    rSUBMIT = runSubmit.runSubmit.load_SubmitStudy(config_path)
+    rSUBMIT = runSubmit.runSubmit.load(config_path)
 
     if not isinstance(rSUBMIT, runSubmit.runSubmit):
         raise ValueError(f"Something wrong")
@@ -226,10 +219,8 @@ if config_path.exists():  # config file exists. Read it in.
 
     if args.process:
         my_logger.info(f"Processing all models in {rSUBMIT} that are SUCCEEDED and have no jobs.")
-        rSUBMIT.process()
-        cmd = rSUBMIT.engine.kill_job(rSUBMIT.next_iter_jids[1]) # kill the next iter job.
-        rSUBMIT.run_cmd(cmd)
-        my_logger.info(f"Killing next iteration job with cmd: {cmd}")
+        rSUBMIT.process() # note if next iter run
+
 
     if delete:  # delete the config
         result = input(f">>>Going to delete existing configs in {rootDir}<<<. OK ? (yes if so): ") 
@@ -243,14 +234,18 @@ if config_path.exists():  # config file exists. Read it in.
             sys.exit(1) # exit.
 
 
-
+args_not_for_restart = ['--delete','--purge','--update','--update_config','--kill','--process'] # logical flags
+# Arguments to be removed from the restart cmd
+restartCMD = [arg for arg in sys.argv if arg not in args_not_for_restart]  # generate restart cmd.
+# Remove --model_pattern's value if it's in the list
+if '--model_pattern' in restartCMD:
+    idx = restartCMD.index('--model_pattern')
+    del restartCMD[idx:idx + 2]  # remove the flag and its value
+my_logger.info(f"restartCMD is {restartCMD}")
 
 if rSUBMIT is None:  # no configuration exists. So create it.
     # We can get here either because config_path does not exist or we deleted the config.
-    args_not_for_restart = ['--delete','--purge','--update','--update_config','--kill','--process','--model_pattern']
-    # Arguments to be removed from the restart cmd
-    restartCMD = [arg for arg in sys.argv if arg not in args_not_for_restart]  # generate restart cmd.
-    my_logger.info(f"restartCMD is {restartCMD}")
+
     rSUBMIT = runSubmit.runSubmit(configData, rootDir=rootDir, config_path=config_path,next_iter_cmd=restartCMD)
     if args.model_pattern is not None: # we have a model pattern to load models from.
         my_logger.warning(f"Loading models from {args.model_pattern} in {config_path.parent}. Not yet tested")
@@ -297,8 +292,8 @@ if any(s not in ['PROCESSED','INSTANTIATED'] for s in status):
     raise ValueError(f"Have unexpected status rSUBMIT:{rSUBMIT}")
 
 algorithmName = configData.optimise()['algorithm'].upper()
-non_determinisitic = configData.optimise().get('nondeterministic', 'fail')
-my_logger.debug(f"Algorithm is {algorithmName} and non_deterministic is {non_determinisitic}")
+check_status = configData.study_checks()
+my_logger.debug(f"Algorithm is {algorithmName}")
 if algorithmName in ['RUNOPTIMISED', 'JACOBIAN']:
     wantCost = False
 else:
@@ -332,10 +327,12 @@ with rSUBMIT.lock(timeout=30) as lock: # 30 second timeout.
                 finalConfig = rSUBMIT.run_params(scale=True,stop=args.stop)
             else:
                 raise ValueError(f"Don't know what to do with Algorithm: {algorithmName}")
-            rSUBMIT.check_deterministic(error=non_determinisitic)
-            break  # we have finished running algorithm so can exit and go to final clear up.
+            rSUBMIT.check_deterministic(error=check_status['check_nondeterministic'])
+            rSUBMIT.check_duplicate_obs(error=check_status['check_duplicate_obs']) # check for duplicate obs. This is a check on the algorithm.
+            break  # we have finished running the algorithm so can exit and go to final clear up.
         except optclim_exceptions.submitModel:  # error which triggers need to instantiate and run more models.
-            rSUBMIT.check_deterministic(error=non_determinisitic) # check are still deterministic.
+            rSUBMIT.check_deterministic(error=check_status['check_nondeterministic']) # check are still deterministic.
+            rSUBMIT.check_duplicate_obs(error=check_status['check_duplicate_obs']) # check for duplicate obs. This is a check on the algorithm.
             if read_only:
                 my_logger.info(f"read_only -- exiting")
                 break  # exit the loop -- we are done as in read_only mode.
@@ -363,7 +360,7 @@ with rSUBMIT.lock(timeout=30) as lock: # 30 second timeout.
             else:  # reload the configuration (and all models).
                 # This necessary as writing out/reading in changes (slightly) the floating point value of some values
                 # which in turn changes the way the algorithms behave.
-                rSUBMIT = runSubmit.runSubmit.load_SubmitStudy(config_path)
+                rSUBMIT = runSubmit.runSubmit.load(config_path)
 
         # end of try/except.
 

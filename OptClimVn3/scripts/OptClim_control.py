@@ -40,12 +40,16 @@ def main(argv=None):
                         help='Path to SubmitStudy file. Will search for .scfg files in current dir if not specified. ',
                         nargs='?')
 
+
+
     subparsers = parser.add_subparsers(dest='command', help='sub-command help')
 
     # update
     p_update = subparsers.add_parser('update', help='Update study configuration from a JSON file')
     p_update.add_argument('NEWCONFIG', type=genericLib.expand, nargs='?',
                           help='Alternate config file to read for update. If not provided will use filename originally used')
+    p_update.add_argument('--output', type=genericLib.expand,
+                          help='Output path for modified configuration. If not provided will use same path as original config file')
 
     # plot
     p_plot = subparsers.add_parser('plot', help='Plot study')
@@ -55,13 +59,18 @@ def main(argv=None):
     p_kill = subparsers.add_parser('kill', help='Kill and Stop study')
     p_stop = subparsers.add_parser('stop',
                                    help='Stop study. Will run any instantiated cases but generate no new runs')
-    p_continue = subparsers.add_parser('continue', help='Continue study (after stopping)')
+    p_continue = subparsers.add_parser('continue', help='Continue study (after previously stopping )')
 
+    cmds_to_dump = ['continue','stop','kill','update'] # list of commands where config gets dumped.
     args = parser.parse_args(argv)
+    # see if have output. If not set it to None.
+    if not hasattr(args, 'output'):
+        args.output = None
 
     # configure logging
-    my_logger = genericLib.setup_logging(level=args.log_level, rootname='OPTCLIM.control')
+    my_logger = genericLib.setup_logging(level=args.log_level, rootname='OPTCLIM')
 
+    # noinspection PyUnreachableCode
     if args.CONFIG is None:  # try and find a config file to read in.
         sconfig_files = list(pathlib.Path.cwd().glob("*.scfg"))
         if len(sconfig_files) != 1:
@@ -74,8 +83,13 @@ def main(argv=None):
     if args.command is None:
         parser.print_help()
         raise ValueError("No command specified. ")
-
-    with genericLib.ContextFileLock(args.CONFIG,timeout=args.timeout) as lock:     # acquire lock with requested timeout
+    dump_models = False # default is not to dump models.
+    # work out what we want to lock.
+    if args.output:
+        file_to_lock = args.output
+    else:
+        file_to_lock = args.CONFIG
+    with genericLib.ContextFileLock(file_to_lock,timeout=args.timeout) as lock:     # acquire lock with requested timeout
         study = runSubmit.load(args.CONFIG)  # load config file.
         if args.command == 'stop':
             study.next_command = "stop"
@@ -94,13 +108,31 @@ def main(argv=None):
             # if this running at same time as runAlgorithm is running but runAlgorithm is waiting on file lock
             # making next_command 'stop' will stop any more runs being made. Though will run an instantated cases.
         elif args.command == 'update':
+            # TODO -- move this to a new create study script.
+            # Which has a way of using existing model simulations
             cfg_file = args.NEWCONFIG or study.config.fileName()
             cfg_file = genericLib.expand(cfg_file)
             if not cfg_file.exists():
                 raise FileNotFoundError(f"NEWCONFIG {cfg_file} not found")
             my_logger.info(f"Updating study configuration from {cfg_file}")
+            # Setp 1 set ALL model_status to "read" as don't know if we watn them.
+            for model in study.model_index.values():
+                study.set_model_status(model,'read')
             cfg = readConfig(cfg_file)
-            study.update_config(cfg)
+            # see if we need to update the params.
+            new_params = cfg.paramNames()
+            old_params = study.config.paramNames()
+            if new_params != old_params:
+                my_logger.warning(f"Parameter names have changed from {old_params} to {new_params}. This may cause problems with existing runs.")
+                params_to_update = set(new_params) - set(old_params)
+                if not set(old_params).issubset(set(new_params)):
+                    raise ValueError(f"Some parameters in {old_params} are not in {new_params}. This is not allowed. Please check your configuration.")
+                study.update_params(list(params_to_update)) # update params to match new config.
+            study.update_config(cfg) # update config.
+            if args.output:
+                study = study.copyConfig(pathlib.Path(args.output.parent),keep_list=[lock.lockfile_path.absolute()],new_config_name=args.output.name)
+                dump_models = True
+                # 
         elif args.command == 'plot':
 
             plot_file = args.MONITORFILE or pathlib.Path(f"monitor_{study.name}.png")
@@ -108,8 +140,10 @@ def main(argv=None):
             study.plot(fname=plot_file)
         else:
             raise ValueError(f"Unknown command {args.command}")
-
-        study.dump_config()
+        if args.command in cmds_to_dump:
+            study.dump_config(dump_models=dump_models)
+            if not study.config_path.exists():
+                raise FileNotFoundError(f"Config file {study.config_path} does not exist.")
     return 0
 
 

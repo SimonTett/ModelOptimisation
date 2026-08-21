@@ -1092,6 +1092,42 @@ class testStudyConfig(unittest.TestCase):
         got = self.config.strip_comment(test_dict)
         self.assertEqual(got,expect_dict,msg='strip_comment failed for dict')
 
+    def test_study_checks(self):
+        """
+        Test the study_checks method works
+        Tests -- nothing specified. Should get 'fail' for both values
+        Modify config to include a null. Still get fails.  Then set to 'warn' and should get that back
+        Modify config to set to 'ignore_me' and should get valueError.
+        Test legacy path.
+        :return:
+        """
+        config = copy.deepcopy(self.config)
+        chk_block = config.getv('study_checks',{})
+        expected = dict(check_nondeterministic='fail', check_duplicate_obs='fail')
+        got = config.study_checks()
+        self.assertEqual(got, expected)
+
+        # empty block should give same result
+        chk_block = {}
+        got = config.study_checks(chk_block)
+        self.assertEqual(got, expected)
+
+        # modify opt block to include a null. Still get fails.  Then set to 'warn' and should get that back
+        chk_block['check_nondeterministic'] = None
+        got = config.study_checks(chk_block)
+        self.assertEqual(got, expected)
+
+        chk_block['check_nondeterministic'] = 'warn'
+        expected['check_nondeterministic'] = 'warn'
+        got = config.study_checks(chk_block)
+        self.assertEqual(got, expected)
+
+        chk_block['check_nondeterministic'] = 'ignore_me'
+        with self.assertRaises(ValueError):
+            got = config.study_checks(chk_block)
+
+
+
 class testFileDict(unittest.TestCase):
     """
     Test the dictFile static method
@@ -1128,13 +1164,19 @@ class testFileDict(unittest.TestCase):
             self.assertEqual(result, expect)
 
             # test recursive read fails.
+
             with file1.open('wt') as fp:
-                fp.write(f'{{"a":1,"b":2,"file2":"INCLUDE {file2}"}}')
+                dct = {"a":1,"b":2,"file2":f"INCLUDE {str(file2)}"}
+                json.dump(dct,fp)
             with file2.open('wt') as fp:
-                fp.write(f'{{"c":3,"d":4,"file1":"INCLUDE {file1}"}}')
+                dct = {"c":3,"d":4,"file1":f"INCLUDE {str(file1)}"}
+                json.dump(dct,fp)
             # no change to dct so expect an error
             with self.assertRaises(RecursionError):
                 result = StudyConfig.process_include(dct)
+
+
+
 
 
 

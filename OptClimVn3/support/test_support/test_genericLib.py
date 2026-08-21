@@ -349,21 +349,22 @@ class genericLib_test(unittest.TestCase):
         """
         file = self.tmp_path / 'timeout_subproc.txt'
         lock_file = self.tmp_path / 'timeout_subproc.txt.lock'
-
+        import textwrap
         # Build an inline Python script that the child process will run.
         # It receives two extra args: <path> <hold_seconds>.
-        child_script = (
-            "import sys, time, genericLib\n"
-            "from pathlib import Path\n"
-            "p = Path(sys.argv[1])\n"
-            "hold = float(sys.argv[2])\n"
-            "with genericLib.ContextFileLock(p):\n"
-            "    time.sleep(hold)\n"
-        )
-
-        # Start the child: hold lock for 1 second.
-        p = subprocess.Popen([sys.executable, "-c", child_script, str(file), "1.0"],
-                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        child_script = textwrap.dedent("""
+            import sys, time, genericLib
+            from pathlib import Path
+            p = Path(sys.argv[1])
+            hold = float(sys.argv[2])
+            with genericLib.ContextFileLock(p):
+                time.sleep(hold)
+            print("all done")
+            """)
+    
+        # Start the child: hold lock for 4 seconds.
+        p = subprocess.Popen([sys.executable,"-c", (child_script), str(file), "2.0"],
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE,text=True)
 
         try:
             # Wait until lock file appears (give child a short window)
@@ -384,13 +385,33 @@ class genericLib_test(unittest.TestCase):
             # now with 4 second time out
             with genericLib.ContextFileLock(file,timeout=4.0):
                 self.assertTrue(lock_file.exists())
+            txt_stdout,txt_stderr = p.communicate()
 
+            # remove annoying resource messages
+            p.stdout.close()
+            p.stderr.close()
 
+                
 
         finally:
             if p.poll() is None:
                 p.kill()
             p.wait(timeout=2.0)
+
+    def test_setup_config_env(self):
+        # Test that setup_config_env sets the environment variable correctly
+        import os
+        log_dir = self.tmp_path / 'logging'
+        log_dir.mkdir(parents=True, exist_ok=True)
+        root_dir = self.tmp_path / 'root'
+        root_dir.mkdir(parents=True, exist_ok=True)
+
+
+        genericLib.setup_config_env(root_dir, log_dir)
+        self.assertEqual(os.environ.get('OPTCLIM_ROOT_DIR'), root_dir.as_posix())
+        self.assertEqual(os.environ.get('OPTCLIM_LOG_DIR'), log_dir.as_posix())
+        self.assertIsNotNone(os.environ.get('OPTCLIM_JOB_ID'))  # Check that JOB_ID is set
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -1,4 +1,5 @@
 # test code for Study class.
+import json
 import unittest
 from pathlib import Path
 
@@ -26,6 +27,8 @@ class TestStudy(unittest.TestCase):
         self.test_dir = tempfile.TemporaryDirectory()
         direct = pathlib.Path(self.test_dir.name)
         self.direct = direct
+        post_process=dict(input_file='input.json', output_file='output.json',script='$OPTCLIMTOP/OptClimVn3/scripts/comp_sim_obs.py')
+
         # Define simulated observations and parameters
         params = {f'param{pcnt}': float(pcnt) for pcnt in range(1, 100)}
         optclim_root = genericLib.expand("$OPTCLIMTOP/OptClimVn3")
@@ -43,10 +46,17 @@ class TestStudy(unittest.TestCase):
             if status == 'PROCESSED':
                 sim_obs = self.fake_fn(params).rename(name)
 
-            model = Model(name, reference=reference_dir,  parameters=params,
-                          config_path=direct / (name + '.mcfg'), status=status)
+            model_dir = direct / name
+            model = Model(name, reference=reference_dir,  parameters=params,model_dir=model_dir,
+                           status=status,post_process=post_process)
             model.simulated_obs = sim_obs # actually set the simulated obs.
             model.dump_model()
+            if status == 'PROCESSED':
+                path = model.model_dir / model._post_process_output
+                if path.suffix != '.json':
+                    raise ValueError(f"Expected {path} to be a .json file")
+                with path.open("wt") as fp:
+                    json.dump(model.simulated_obs.to_dict(), fp)
             self.models.append(model)
 
         # create a study instance
@@ -107,24 +117,7 @@ class TestStudy(unittest.TestCase):
         expected_norm = (params - rng.loc['minParam', :]) / rng.loc['rangeParam', :]
         pdtest.assert_frame_equal(expected_norm, params_norm)
 
-    def test_obs(self):
-        # test that the obs method returns a pandas DataFrame object
-        obs_scale = self.study.obs()
-        self.assertIsInstance(obs_scale, pd.DataFrame)
 
-        # ensure that the DataFrame has the correct number of rows and columns
-        self.assertEqual(obs_scale.shape, (2, len(self.config.obsNames())))
-
-        # test that the scale and normalize options work correctly
-        obs = self.study.obs(scale=False)
-        scale = self.config.scales()
-        pdtest.assert_frame_equal(obs * scale, obs_scale)
-
-        obs_norm = self.study.obs(scale=True, normalize=True)
-        cov = self.config.Covariances(scale=True)['CovTotal']
-        sd = pd.Series(np.sqrt(np.diag(cov)), index=cov.columns)
-        tgt = self.config.targets(scale=True)
-        pdtest.assert_frame_equal(obs_norm * sd + tgt, obs_scale,check_exact=False)
 
     def test_cost(self):
         # test that the cost method does as expected
@@ -132,14 +125,12 @@ class TestStudy(unittest.TestCase):
         for scale in [False, True]:
             cost = self.study.cost(scale=scale)
             self.assertIsInstance(cost, pd.Series)
-            obs = self.study.obs(scale=scale)
+            obs = self.study.simulated_observations(scale=scale)
             tMat = self.config.transform_matrix(scale=scale)  # which puts us into space where totalError is Identity matrix.
-            nObs = len(obs.columns)
             tgt = self.config.targets(scale=scale)
             resid = (obs - tgt) @ tMat.T
-            nobs = resid.shape[1]
-            cost_expected = np.sqrt((resid ** 2).sum(1).astype(
-                float) / nobs)
+            cost_expected = np.sqrt((resid ** 2).mean(1).astype(
+                float) )
             cost_expected.index = [m.name for m in self.study.model_index.values() if m.status == 'PROCESSED']
             cost_expected = cost_expected.rename(f"cost {self.study.name}")
             pdtest.assert_series_equal(cost_expected, cost)
@@ -210,6 +201,60 @@ class TestStudy(unittest.TestCase):
         self.study.plot(fname=file)
         self.assertTrue(file.exists())
 
+
+    def test_simulated_observations(self):
+        """
+        Test that simulated_observations works.
+        :return:
+        """
+        # work out what we expect to get back.
+        # all models have ran.
+        expect_df = pd.DataFrame([m.compute_simulated_observations() for m in self.study.model_index.values() if m.is_processed()])
+        df = self.study.simulated_observations(scale=False)
+        pdtest.assert_frame_equal(expect_df,df)
+        # next test -- don't use the cache which forces reload.
+        df = self.study.simulated_observations(use_cache=False,scale=False)
+        pdtest.assert_frame_equal(expect_df,df) # no change
+
+        ## cases from old obs method
+        # test that the obs method returns a pandas DataFrame object
+        obs_scale = self.study.simulated_observations(scale=True)
+        self.assertIsInstance(obs_scale, pd.DataFrame)
+
+        # ensure that the DataFrame has the correct number of rows and columns
+        self.assertEqual(obs_scale.shape, (2, len(self.config.obsNames())))
+
+        # test that the scale and normalize options work correctly
+        obs = self.study.simulated_observations(scale=False)
+        scale = self.config.scales()
+        pdtest.assert_frame_equal(obs * scale, obs_scale)
+
+        obs_norm = self.study.simulated_observations(scale=True, normalize=True)
+        cov = self.config.Covariances(scale=True)['CovTotal']
+        sd = pd.Series(np.sqrt(np.diag(cov)), index=cov.columns)
+        tgt = self.config.targets(scale=True)
+        pdtest.assert_frame_equal(obs_norm * sd + tgt, obs_scale,check_exact=False)
+
+    def test_check_duplicate_obs(self):
+        """
+        Test that check_duplicates works.
+        :return:
+        """
+        # first case -- no duplicates
+        self.study.check_duplicate_obs() # should not raise an error.
+
+        # next case -- add a duplicate model
+        m = self.study.processed_models()[0]
+        params = m.parameters.copy()
+        first_param = next(iter(params.keys()))
+        params[first_param] = 2.0
+
+        m2 = Model(name='duplicate',reference=m.reference,parameters=params,model_dir=self.direct/'duplicate',status='PROCESSED')
+        m2.simulated_obs = m.simulated_obs.copy()
+        key = self.study.key_for_model(m2)
+        self.study.model_index[key] = m2
+        with self.assertRaises(ValueError):
+            self.study.check_duplicate_obs(error='error')
 
 
 if __name__ == '__main__':

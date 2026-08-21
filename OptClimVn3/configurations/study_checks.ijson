@@ -1,0 +1,7 @@
+{
+"_comment":"Contains options for checking study runs. Options are 'fail', 'warn', 'ignore'. Default is 'fail'.",
+"check_nondeterministic":null,
+"check_nondeterministic_comment":"What to do if the study is nondeterministic.",
+"check_duplicate_obs":null,
+"check_duplicate_obs_comment":"What to do if the study has duplicate observations."
+}
