@@ -644,6 +644,10 @@ class runSubmit(SubmitStudy):
         # make average
         sim_obs = pd.concat(all_sim_obs, axis=1).mean(axis=1).rename(name)  # average over ensemble members.
         # and update the cache.
+        # verify models are models and not Nones.
+        for model in all_models:
+            if not isinstance(model, Model):
+                raise ValueError(f"Model {model} is not a Model")
 
         self._logical_info.obs(name,sim_obs)
         self._logical_info.models[name] = all_models # store all the models.

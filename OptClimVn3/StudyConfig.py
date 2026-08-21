@@ -2715,8 +2715,8 @@ class OptClimConfigVn3(OptClimConfigVn2):
             msgs.append(f"Function {fn_name} from {path} wrong for get_model. Should be POSITIONAL_OR_KEYWORD")
         if params.kind != inspect.Parameter.POSITIONAL_OR_KEYWORD:
             msgs.append(f"Function {fn_name} from {path} wrong for params. Should be POSITIONAL_OR_KEYWORD")
-        if use_cache.kind != inspect.Parameter.POSITIONAL_OR_KEYWORD or use_cache.name != 'use_cache':
-            msgs.append(f"Function {fn_name} from {path} wrong for use_cache. Should be POSITIONAL_OR_KEYWORD and named use_cache")
+        if use_cache.kind not in [inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY] or use_cache.name != 'use_cache':
+            msgs.append(f"Function {fn_name} from {path} wrong for use_cache. Should be POSITIONAL_OR_KEYWORD or KEYWORD_ONLY and named use_cache")
         # check types are OK.
         expected_types = {
             get_model.name: typing.Callable[[dict[str, type_basic]], typing.Optional[Model]],
