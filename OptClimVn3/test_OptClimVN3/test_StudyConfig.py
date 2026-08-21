@@ -1119,7 +1119,7 @@ class testStudyConfig(unittest.TestCase):
 
         chk_block['check_nondeterministic'] = 'warn'
         expected['check_nondeterministic'] = 'warn'
-        got = config.study_checks()
+        got = config.study_checks(chk_block)
         self.assertEqual(got, expected)
 
         chk_block['check_nondeterministic'] = 'ignore_me'

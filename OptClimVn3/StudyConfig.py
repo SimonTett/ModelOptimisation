@@ -3592,7 +3592,7 @@ class OptClimConfigVn4(OptClimConfigVn3):
         :return: dict with keywords and values
         """
         if check_blk is not None: # got a value so use to set it.
-            self.setv('study_checks',check_blk)
+            self.setv('study_checks',copy.deepcopy(check_blk))
         check_blk = self.getv('study_checks', {})
         allowed_values = typing.get_args(genericLib.error_handle_types)
         default_value = 'fail'
