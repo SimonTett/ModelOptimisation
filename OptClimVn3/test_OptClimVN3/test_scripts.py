@@ -196,6 +196,7 @@ class testScripts(unittest.TestCase):
         config_pth = self.tempDir / (config.name() + ".scfg")
         sconfig = runSubmit.load(config_pth)
         print(len(sconfig.model_index))
+
         models = [m for m in sconfig.model_index.values() if m.status == 'INSTANTIATED']
         # fake run the first 5 models.
         for m in models[:5]:
@@ -205,6 +206,8 @@ class testScripts(unittest.TestCase):
 
 
         res = subprocess.run(cmd, capture_output=True, text=True)
+        # This will run more models I think. So number increases to 15 as fake set. REDO test.
+
         print("stdout", res.stdout)
         print("stderr", res.stderr)
         if res.returncode != 0:
@@ -212,10 +215,12 @@ class testScripts(unittest.TestCase):
             print("cmd is ", ' '.join(cmd))
             res.check_returncode()
         sconfig = runSubmit.load(config_pth)
+
         models = sconfig.processed_models()
         self.assertEqual(len(models),5)
         self.assertEqual(len(sconfig.simulated_observations()),5)
         self.assertEqual(len(sconfig.logical_cost()),5)
+        # without running the algorithm. Costs can't be updated. Make logical_cost compute and then cache.
 
 
     def test_OptClim_control(self):

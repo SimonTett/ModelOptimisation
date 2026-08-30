@@ -234,6 +234,8 @@ if config_path.exists():  # config file exists. Read it in.
             sys.exit(1) # exit.
 
 
+
+
 args_not_for_restart = ['--delete','--purge','--update','--update_config','--kill','--process'] # logical flags
 # Arguments to be removed from the restart cmd
 restartCMD = [arg for arg in sys.argv if arg not in args_not_for_restart]  # generate restart cmd.
@@ -291,6 +293,15 @@ status = rSUBMIT.status()
 if any(s not in ['PROCESSED','INSTANTIATED'] for s in status):
     raise ValueError(f"Have unexpected status rSUBMIT:{rSUBMIT}")
 
+#  Submit any runs we can now.
+nModels = rSUBMIT.submit_all_models(fake_fn=fakeFn,dryrun=args.dryrun)  # this also saves the config.
+if nModels > 0:
+    msg = f"On iteration {rSUBMIT.iterations()} submitted {nModels} existing models"
+    rSUBMIT.update_history(msg)
+    my_logger.info(msg)
+    print(f"On iteration {rSUBMIT.iterations()} submitted {nModels} models")
+    exit(0) # exit as we have submitted all models we can.
+
 algorithmName = configData.optimise()['algorithm'].upper()
 check_status = configData.study_checks()
 my_logger.debug(f"Algorithm is {algorithmName}")
@@ -305,12 +316,12 @@ if algorithmName in ['DFOLS']:
 
 finalConfig = None  # so we have something!
 with rSUBMIT.lock(timeout=30) as lock: # 30 second timeout.
-    # TODO Risk of stale file but really want to refactor runAlgorithm to seperate out create and run.
+    # TODO Risk of stale file but really want to refactor runAlgorithm to separate out create and run.
     while True:  # loop indefinitely so can have fake_fn. This really to test code/algorithm.
         try:  # run an algorithm iteration.
             np.random.seed(123456)  # init RNG though probably should go to the runXXX methods.
-            # reset logical information
-            rSUBMIT.reset_logical_info()
+            # reset models used info. (called -> not_called)
+            rSUBMIT.reset_models_used()
             if algorithmName == 'DFOLS':
                 finalConfig = rSUBMIT.runDFOLS(scale=True,stop=args.stop)
             elif algorithmName == 'PYSOT':
@@ -329,6 +340,9 @@ with rSUBMIT.lock(timeout=30) as lock: # 30 second timeout.
                 raise ValueError(f"Don't know what to do with Algorithm: {algorithmName}")
             rSUBMIT.check_deterministic(error=check_status['check_nondeterministic'])
             rSUBMIT.check_duplicate_obs(error=check_status['check_duplicate_obs']) # check for duplicate obs. This is a check on the algorithm.
+            msg = f'Finished running algorithm {algorithmName} on iteration {rSUBMIT.iterations()}'
+            rSUBMIT.update_history(msg)
+            my_logger.info(msg)
             break  # we have finished running the algorithm so can exit and go to final clear up.
         except optclim_exceptions.submitModel:  # error which triggers need to instantiate and run more models.
             rSUBMIT.check_deterministic(error=check_status['check_nondeterministic']) # check are still deterministic.
@@ -347,7 +361,7 @@ with rSUBMIT.lock(timeout=30) as lock: # 30 second timeout.
                     raise ValueError(f"Stopping but Instantiating  {iter_count} cases")
                 my_logger.info('Stopping')
                 break # exit loop
-            nModels = rSUBMIT.submit_all_models(fake_fn=fakeFn)  # this also saves the config.
+            nModels = rSUBMIT.submit_all_models(fake_fn=fakeFn,dryrun=args.dryrun)  # this also saves the config.
             finalConfig = rSUBMIT.runConfig(scale=True, add_cost=wantCost)  # generate final configuration
             my_logger.info(f"On iteration {iter_count} submitted {nModels} models")
             try:

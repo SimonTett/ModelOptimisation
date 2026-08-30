@@ -286,6 +286,7 @@ class SubmitStudy(Study, model_base, journal):
         key = self.key_for_model(model)
         if key in self.model_index:
             raise ValueError(f"Already got key for {key} and parameters {model.parameters}")
+
         self.model_index[key] = model
         self.update_history(f"Created Model {model}")
         if dump:
@@ -484,6 +485,8 @@ class SubmitStudy(Study, model_base, journal):
                         raise ValueError(f"Key has changed from (after fixing): \n{fixed_key} to: \n{got_key} \n for model {model}")
                     else:
                         my_logger.info(f"Key for model {model} has been fixed")
+                # set status if not set.
+
                 model_index[got_key] = model
             else:
 
@@ -747,15 +750,16 @@ class SubmitStudy(Study, model_base, journal):
         """
         return [model for model in self.model_index.values() if model.is_succeeded()]
 
-    def submit_all_models(self, fake_fn: Optional[Callable] = None):
+    def submit_all_models(self, fake_fn: Optional[Callable] = None,dryrun:bool=False):
         """
         Submit models, the post-processing, and the next iteration in the algorithm to job control system.
         :param fake_fn:Function to fake model runs -- will skip most stages, including post-processing.
           fake and anything to be continued will generate an error.  No pp or next submission will be done if provided,
+        :param dryrun: If True then will not actually submit anything. Will just print out what would be done.
         :return: number of models submitted
 
         Does the following:
-            1) Submits the models & post processing jobs
+            1) Submits the models & post-processing jobs
             2) If any post-processing jobs were submitted then submits  self.next_iter_cmd
                so once the  post-processing jobs has completed the next bit of the algorithm gets ran.
             3) When all the post-processing jobs are done the resubmission will be ran.
@@ -775,11 +779,11 @@ class SubmitStudy(Study, model_base, journal):
         configName = config.name()
 
         maxRuns = self.config.maxRuns()
-
-        output_dir = self.rootDir / 'jobOutput'  # directory where output goes for post-processing and next stage.
-        # try and create the outputDir
-        output_dir.mkdir(parents=True, exist_ok=True)
-        my_logger.debug(f"Created {output_dir}") 
+        if not dryrun:
+            output_dir = self.rootDir / 'jobOutput'  # directory where output goes for post-processing and next stage.
+            # try and create the outputDir
+            output_dir.mkdir(parents=True, exist_ok=True)
+            my_logger.debug(f"Created {output_dir}")
 
         if len(models_to_continue) > 0:  # (re)submit  models that need continuing and exit
             if fake_fn is not None:
@@ -787,60 +791,66 @@ class SubmitStudy(Study, model_base, journal):
             if (maxRuns is not None) and (maxRuns < len(models_to_continue)):
                 models_to_continue = models_to_continue[0:maxRuns]
                 my_logger.debug(f"Truncating models_to_continue to {maxRuns}")
+            msg = f"Continuing {len(models_to_continue)} models"
+            if dryrun: # dryrun just update the history
+                self.update_history("dryrun: " + msg)
+            else: # submit the models to be continued
+                for model in models_to_continue:
+                    pp_jid = model.submit_model()
+                    my_logger.debug(f"Continuing {model.name}  ")
 
-            for model in models_to_continue:
-                pp_jid = model.submit_model()
-                my_logger.debug(f"Continuing {model.name}  ")
-
-            my_logger.info(f"Continued {len(models_to_continue)} models")
-            self.update_history(f"Continued {len(models_to_continue)} models")
+                my_logger.info(msg)
+                self.update_history(msg)
             self.dump_config()  # and write out the Study
             return len(models_to_continue)
             # nothing else to do -- next stage is still sitting  in the Q waiting to be released.
             # Will be submitted once all the post-processing jobs have been run.
+
 
         # No runs to continue, so let's submit new runs
         # Deal with maxRuns.
         if (maxRuns is not None) and (maxRuns < len(model_list)):  # need to truncate no of runs?
             my_logger.debug(f"Reducing to {maxRuns} models.")
             model_list = model_list[0:maxRuns]
-
-        # submit models! Faking if necessary.
-        pp_jids = []  # list of job ids from post-processing
-        for model in model_list:  # submit model and post-processing
-            pp_jids.append(model.submit_model(fake_function=fake_fn))
-
-        if fake_fn:
-            my_logger.info(f"Faked {len(model_list)} jobs")
-            self.update_history(f"Faked {len(model_list)} jobs")
-            # if faking will have Nones so remove them from pp_jids. This allows the possibility of mixing them
-            pp_jids = [pp_jid for pp_jid in pp_jids if pp_jid is not None]
-            # note that engine.submit handles an empty hold list.
+        if dryrun:
+            self.update_history(f"dryrun: would submit {len(model_list)} models")
         else:
-            my_logger.info(f"Submitted {len(model_list)} jobs")
-            self.update_history(f"Submitted {len(model_list)} models")
+            # submit models! Faking if necessary.
+            pp_jids = []  # list of job ids from post-processing
+            for model in model_list:  # submit model and post-processing
+                pp_jids.append(model.submit_model(fake_function=fake_fn))
 
-        # now (re)submit this entire script so that the next iteration in the algorithm can be ran
-        # pp_jids are the jobs ids from the post-processing. We remove the None when if Faking it.
+            if fake_fn:
+                my_logger.info(f"Faked {len(model_list)} jobs")
+                self.update_history(f"Faked {len(model_list)} jobs")
+                # if faking will have Nones so remove them from pp_jids. This allows the possibility of mixing them
+                pp_jids = [pp_jid for pp_jid in pp_jids if pp_jid is not None]
+                # note that engine.submit handles an empty hold list.
+            else:
+                my_logger.info(f"Submitted {len(model_list)} jobs")
+                self.update_history(f"Submitted {len(model_list)} models")
 
-        if (self.next_iter_cmd is not None) and (len(pp_jids) > 0):
-            # submit the next job in the iteration if have one and submitted post-processing.
-            run_info = config.run_info() # get out the run_info
-            submit_params = self.engine.extract_job_submission_params(run_info) # and extract the submission parameters
-            iter_count = np.max(list(self.iter_keys.values()))  # iteration we are at.
-            next_job_name = f"{configName}_{iter_count}"
-            run_next_submit = self.engine.submit_cmd(self.next_iter_cmd, next_job_name,
-                                                     outdir=output_dir,
-                                                     hold=pp_jids,
-                                                     **submit_params)
-            output = self.run_cmd(run_next_submit)
-            my_logger.info(f"Next iteration cmd is {run_next_submit} with output:{output}")
-            jid = self.engine.job_id(output)  # extract the actual job id.
-            my_logger.info(f"Job ID for next iteration is {jid}")
-            self.next_iter_jids.append(
-                jid)  # append jid to list of jobs. That way if have problems in previous jobs can get info back.
-            self.update_history(f"Submitted next job with ID {jid}")
+            # now (re)submit this entire script so that the next iteration in the algorithm can be ran
+            # pp_jids are the jobs ids from the post-processing. We remove the None when if Faking it.
 
+            if (self.next_iter_cmd is not None) and (len(pp_jids) > 0):
+                # submit the next job in the iteration if have one and submitted post-processing.
+                run_info = config.run_info() # get out the run_info
+                submit_params = self.engine.extract_job_submission_params(run_info) # and extract the submission parameters
+                iter_count = np.max(list(self.iter_keys.values()))  # iteration we are at.
+                next_job_name = f"{configName}_{iter_count}"
+                run_next_submit = self.engine.submit_cmd(self.next_iter_cmd, next_job_name,
+                                                         outdir=output_dir,
+                                                         hold=pp_jids,
+                                                         **submit_params)
+                output = self.run_cmd(run_next_submit)
+                my_logger.info(f"Next iteration cmd is {run_next_submit} with output:{output}")
+                jid = self.engine.job_id(output)  # extract the actual job id.
+                my_logger.info(f"Job ID for next iteration is {jid}")
+                self.next_iter_jids.append(  jid)
+                # append jid to list of jobs. That way if have problems in previous jobs can get info back.
+                self.update_history(f"Submitted next job with ID {jid}")
+        # done with submitting (if not dryrun)
         self.dump_config()  # and write ourselves out
         return len(model_list)  # all done now
 
@@ -937,6 +947,8 @@ class SubmitStudy(Study, model_base, journal):
         my_logger.info(f"Killed {len(killed)} jobs")
         self.update_history(f"Killed {len(killed)} jobs")
         return killed
+
+
 
 
 

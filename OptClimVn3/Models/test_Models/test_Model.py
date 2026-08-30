@@ -240,6 +240,7 @@ class ModelTestCase(unittest.TestCase):
                             post_process_cmd_script=cmd, fake=False, simulated_obs=None,
                             perturb_count=0, parameters_no_key={}, config_path=pathlib.PurePath(self.testDir / "test_model.mcfg"),
                             status='CREATED', _history=model._history, engine=model.engine, pp_jid=None, run_info={},
+                            study_properties={},
                             model_jids=[],
                             submission_count=0, continue_script=pathlib.PurePath('continue.sh'),
                             submit_script=pathlib.PurePath('submit.sh'), submitted_jid=None,
