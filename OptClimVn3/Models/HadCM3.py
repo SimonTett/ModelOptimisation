@@ -84,7 +84,7 @@ class HadCM3(Model):
       Which, by definition, are specific to HadCM3.
     """
 
-    def __init__(self, name: str, reference: pathlib.Path, **kwargs):
+    def __init__(self, config_path: pathlib.Path,reference: pathlib.Path, **kwargs):
         """"
         HadCM3 Init -- calls super().__init__(*args,**kwargs)
         then sets submit_script to "SUBMIT" and continue script to SUBMIT.cont
@@ -92,21 +92,23 @@ class HadCM3(Model):
         :param name -- name of the model. Should be 5 characters or less
         :param reference -- where reference config lives.
         """
-        if len(name) > 5:
-            raise ValueError("HadXM3 limited to 5 character names")
-        super().__init__(name, reference,**kwargs)  # call super class init and then override
+
+        super().__init__(config_path,reference,**kwargs)  # call super class init and then override
         # modify submit_script & continue_script
         self.submit_script = 'SUBMIT'
         self.continue_script = 'SUBMIT.cont'
         self.post_process_file = 'post_process.sh' # extra attributed needed.
-        # self.runInfo=dict()
 
-    def Name(self):
+
+    @property
+    def name(self):
         """
 
         :return: The name checking length is 5
         """
-        name = self.name
+        name = super().name
+        if name is 'Unknown':
+            raise ValueError("HadCM3 name is unknown")
         if len(name) != 5:
             raise ValueError(f"For HadCM3 Name must be 5 characters and is {name} ")
         return name
@@ -237,7 +239,7 @@ class HadCM3(Model):
          :return:
         """
 
-        runid = self.Name()
+        runid = self.name
         experID = runid[0:4]
         jobID = runid[4]
         modifystr = '## modified'
@@ -343,7 +345,7 @@ class HadCM3(Model):
         """
         # TODO Check that step is 4. Decide if fix (i.e. set STEP=4) or fail with a sensible error message.
         # first work out runID
-        runid = self.Name()
+        runid = self.name
         # modify submit
         maxLineNo = 75  # maximum lines to modify
         # modify SUBMIT

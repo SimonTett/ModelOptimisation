@@ -272,11 +272,9 @@ class SubmitStudy(Study, model_base, journal):
         reference_name = param_dir.pop('reference_name', None)
         post_process = self.config.getv('postProcess')
         run_info = self.config.run_info()
-        model = Model.model_init(model_name, name=name,
+        model = Model.model_init(model_name, config_path=config_path, name=name,
                                  reference=reference,
                                  reference_name=reference_name,
-                                 model_dir=model_dir,
-                                 config_path=config_path,
                                  parameters=param_dir,
                                  post_process=post_process,
                                  study_config_path=self.config.fileName(),
@@ -441,7 +439,7 @@ class SubmitStudy(Study, model_base, journal):
         # TODO Very messy code. Good to sort out StudyConfig but that needs a big re-engineering job..
 
         # deal with translation and conversion to paths (if possible)
-        dct = cls.convert_pure_paths(dct)
+        dct = cls.convert_pure_paths(dct) # FIXME failing here as paths look messed up for translation.
 
         # create the SubmitStudy object
         obj = cls(config)

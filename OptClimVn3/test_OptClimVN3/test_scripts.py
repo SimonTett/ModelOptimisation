@@ -89,11 +89,10 @@ class testScripts(unittest.TestCase):
     def setup_model(self):
         cpath = Model.expand("$OPTCLIMTOP/OptClimVn3/configurations/example_simple_model")
         eng = engine.abstractEngine.guess_engine()
-
-        model = Model('test_model',
+        config_path = self.tempDir /'testmodel/testmodel.mcfg'
+        model = Model(name = 'test_model',
                       reference=cpath, engine=eng,
-                      config_path=self.tempDir / 'testmodel.mcfg',
-                      model_dir=self.tempDir / 'testmodel',fake=True,
+                      config_path=config_path,fake=True,
                       parameters=dict(pone=2, pthree=3), status='SUBMITTED')
         model.model_dir.mkdir(exist_ok=True, parents=True)
         model.dump_model()

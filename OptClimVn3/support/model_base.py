@@ -1,13 +1,13 @@
 import logging
 import os
 import pathlib
-import typing
 import pandas as pd
 import numpy as np
 import subprocess
 import typing
 import datetime
 import shlex
+import packaging.version
 
 import generic_json
 
@@ -189,12 +189,12 @@ class model_base:
         Convert an object to a dict.
 
     load(cls, class_json: pathlib.Path) -> Any:
-        Load an object configuration from specified file. The correct type of object will be returned.
+        Load an object configuration from a specified file. The correct type of object will be returned.
 
     dump(self, config_path: pathlib.Path) -> Any:
         Write object (as json) to config_path.
     """
-
+    serialisation_data_version = packaging.version.Version("0.0.0") # default serialisation_data_version
     def __init_subclass__(cls, *args, **kwargs):
         # obscure python. See https://peps.python.org/pep-0487/#new-ways-of-using-classes
         """
@@ -281,6 +281,10 @@ class model_base:
         """
         if convert_pure_paths:
             dct = self.convert_pure_paths(dct)
+        version = packaging.version.Version(dct.pop('serialisation_data_version', '0.0.0'))
+        # get the serialisation_data_version with default value
+        if version < self.serialisation_data_version:
+            my_logger.warning(f"Deserialising {self.class_name()} from version {version} to {self.serialisation_data_version}")
         for name, value in dct.items():
             if hasattr(self, name):
                 setattr(self, name, value)
@@ -299,7 +303,8 @@ class model_base:
                 dct[key] = pathlib.PurePath(value)
             else:
                 dct[key] = value
-
+        # add in the serialisation_data_version
+        dct['serialisation_data_version'] = str(self.serialisation_data_version)
         return dct
 
     # class methods.

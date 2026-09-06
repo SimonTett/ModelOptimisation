@@ -54,7 +54,8 @@ class archive_study(model_base, journal):
         :return: archive_path
         """
         with tempfile.TemporaryDirectory() as tmpdir:
-            submit.dump(pathlib.Path(tmpdir)/submit.config_path.name) # dump it to tmpdir. Note no changes made.
+            tmp_path = pathlib.Path(tmpdir)
+            submit.dump(tmp_path/submit.config_path.name) # dump it to tmpdir. Note no changes made.
             if archive_path is None:
                 if compress:
                     archive_path = submit.rootDir/ f'archive_{submit.name}.tar.gz'
@@ -66,7 +67,7 @@ class archive_study(model_base, journal):
             self.config_file = pathlib.PurePath(submit.config_path.name)
             self.rootDir = submit.rootDir
             # dump the archive to somewhere temp.
-            apath = pathlib.Path(tmpdir)/'archive.acfg'
+            apath = tmp_path/'archive.acfg'
             self.dump(apath)
 
             mode='w'
@@ -87,7 +88,7 @@ class archive_study(model_base, journal):
         """
         Extract an archive.
         :param archive_path: Path to the archive.
-        :param direct: Directory where data will be extracted to. If None will be current working directory.
+        :param direct: Directory where data will be extracted to. If None will be the current working directory.
         :return: Archive_study (useful for querying archive info) & SubmitStudy -- ready to analyse/continue SubmitStudy.
         """
         if direct is None:

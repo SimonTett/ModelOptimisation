@@ -46,8 +46,8 @@ class TestStudy(unittest.TestCase):
             if status == 'PROCESSED':
                 sim_obs = self.fake_fn(params).rename(name)
 
-            model_dir = direct / name
-            model = Model(name, reference=reference_dir,  parameters=params,model_dir=model_dir,
+            config_path = direct / name/f'{name}.mcfg'
+            model = Model(config_path=config_path,name=name, reference=reference_dir,  parameters=params,
                            status=status,post_process=post_process)
             model.simulated_obs = sim_obs # actually set the simulated obs.
             model.dump_model()
@@ -143,7 +143,8 @@ class TestStudy(unittest.TestCase):
     def test_key_for_model(self):
         p_dict = {'zz': 1.02, 'aa': 1, 'nn': [0, 1]}
         expect = str(('aa', '1', 'nn', '[0, 1]','reference',self.reference.as_posix(), 'zz', '1.02'))
-        model = Model(name='test_model',reference=self.reference,parameters=p_dict)
+        config_path = self.direct/'test_model/test_model.mcfg'
+        model = Model(name='test_model',reference=self.reference,parameters=p_dict,config_path=config_path)
         mkey = self.study.key_for_model(model)
         self.assertEqual(expect,mkey)
 
@@ -248,8 +249,8 @@ class TestStudy(unittest.TestCase):
         params = m.parameters.copy()
         first_param = next(iter(params.keys()))
         params[first_param] = 2.0
-
-        m2 = Model(name='duplicate',reference=m.reference,parameters=params,model_dir=self.direct/'duplicate',status='PROCESSED')
+        config_path = self.direct / 'duplicate' / f'duplicate.mcfg'
+        m2 = Model(config_path=config_path,name='duplicate',reference=m.reference,parameters=params,status='PROCESSED')
         m2.simulated_obs = m.simulated_obs.copy()
         key = self.study.key_for_model(m2)
         self.study.model_index[key] = m2

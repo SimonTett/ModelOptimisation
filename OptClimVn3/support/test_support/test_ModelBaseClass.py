@@ -108,10 +108,14 @@ class TestModelBaseClass(unittest.TestCase):
         from Model import Model # FIXME. Ths is not generating a fresh import  as python caches modules.
         # sigh what to do!  Wil test by using the module.class import.
         root_dir = genericLib.expand('$OPTCLIMTOP/OptClimVn3/configurations')
-        model = ModelBaseClass.model_init('Model.Model','fred',
+        import tempfile
+        tmpDir = tempfile.TemporaryDirectory()
+        config_path = pathlib.Path(tmpDir.name) / 'fred/fred.cfg'
+        model = ModelBaseClass.model_init('Model.Model',config_path,
                                           reference=root_dir/"example_Model/reference")
         self.assertIsInstance(model, Model)
-        model2 = ModelBaseClass.model_init('HadCM3.HadCM3','dd001',
+        config_path = pathlib.Path(tmpDir.name) / 'dd001/dd001.cfg'
+        model2 = ModelBaseClass.model_init('HadCM3.HadCM3',config_path,
                                            reference=root_dir/"example_HadAM3/reference")
         from HadCM3 import HadCM3
         self.assertIsInstance(model2, HadCM3)

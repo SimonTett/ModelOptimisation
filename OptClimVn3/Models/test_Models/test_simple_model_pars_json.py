@@ -49,8 +49,8 @@ class Test_simple_model_pars_json(unittest.TestCase):
         # set up another model properly
         eng = engine.abstractEngine.create_engine('SGE')
         params = dict(VF1=2.3,RHCRIT=0.5)
-        model = simple_model('model002',reference=self.refDir,engine=eng,
-                                          model_dir=self.submit.rootDir/'model002',
+        model = simple_model(config_path=self.submit.rootDir/'model002/model002.mcfg',reference=self.refDir,engine=eng,
+
                                           study_config_path=self.submit.config.fileName(),parameters=params)
         self.model = model
 
@@ -67,20 +67,19 @@ class Test_simple_model_pars_json(unittest.TestCase):
         Test init by creating a model and verify that StudyConfig_path attribute is as expected.
         :return:
         """
-        model = simple_model('model001',reference=self.refDir,
-                                          model_dir=self.submit.rootDir/'model001',
+        model = simple_model(config_path=self.submit.rootDir/'model001'/'model001.mcfg',reference=self.refDir,
                                           study_config_path=self.submit.config.fileName())
         self.assertEqual(model.StudyConfig_path,self.submit.config.fileName())
-        model = simple_model('model002',reference=self.refDir,
-                                          model_dir=self.submit.rootDir/'model002')
+        model = simple_model(config_path=self.submit.rootDir/'model002'/'model002.mcfg',reference=self.refDir,
+                                          )
         self.assertIsNone(model.StudyConfig_path)
 
 
     def test_modify_model(self):
         # test that if we modify the model that script is as expected. Just counts the modify lines -- expect 3.
         modifyStr = '## modified *$'
-        model = simple_model('model002',reference=self.refDir,
-                                          model_dir=self.submit.rootDir/'model002') # create a model.
+        model = simple_model(self.submit.rootDir/'model002'/'model002.mcfg',reference=self.refDir,
+                                          ) # create a model.
         # copy the model info across.
         shutil.copytree(self.refDir,model.model_dir)
         # now modify it and test script
@@ -97,9 +96,8 @@ class Test_simple_model_pars_json(unittest.TestCase):
 
     def test_set_params(self):
         params = self.model.parameters
-        model = simple_model('model001',reference=self.refDir,
+        model = simple_model(self.submit.rootDir/'model001'/'model001.mcfg',reference=self.refDir,
                                         run_info=dict(submit_engine='SGE'),
-                                        model_dir=self.submit.rootDir/'model001',
                                         study_config_path=self.submit.config.fileName(),parameters=params)
 
         shutil.copytree(self.refDir,model.model_dir)

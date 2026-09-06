@@ -42,7 +42,7 @@ class test_umRose(unittest.TestCase):
         post_process = dict(script='$OPTCLIMTOP/OptClimVn3/scripts/comp_obs.py', output_file='obs.nc')
         self.post_process = post_process
         self.model = UKESM1_1(name='testM', reference=ref_dir,
-                            model_dir=test_dir/'model1', config_dir='suite',post_process=post_process,
+                            config_path=test_dir/'model1/testM.mcfg', config_dir='suite',post_process=post_process,
                             parameters=parameters)
 
 
@@ -68,7 +68,13 @@ class test_umRose(unittest.TestCase):
 
         dct = self.model.to_dict()
         dct_comp = vars(self.model)
-        dct_comp['configs'] = dct_comp['configs'].to_dict() # convert configs to dict for comparison
+        # convert any paths to purepaths (as that is what to_dict does).
+        for k,v in dct_comp.items():
+            if isinstance(v,pathlib.Path):
+                dct_comp[k] = pathlib.PurePath(v)
+        # add in serialisation data
+        dct_comp['serialisation_data_version'] = str(self.model.serialisation_data_version)
+        #dct_comp['configs'] = dct_comp['configs'].to_dict() # convert configs to dict for comparison
         self.assertEqual(dct_comp,dct)
 
 
@@ -107,6 +113,11 @@ class test_umRose(unittest.TestCase):
 
         load_mdct = model.to_dict()
         my_mdct = self.model.to_dict()
+        # remove configs and engine.
+        for var in ['configs','engine']:
+            del load_mdct[var]
+            del my_mdct[var]
+
         self.assertEqual(load_mdct,my_mdct)
 
 
@@ -318,7 +329,7 @@ and even more text
                             samefile=MagicMock(return_value=False),):
 
             model = UM_rose(name='001test', reference=reference,
-                            model_dir=self.testDir/'fred/001test', post_process=post_process,
+                            config_path=self.testDir/'fred/001test/0001test.mcfg', post_process=post_process,
                             parameters=parameters,
                             run_info=run_info)
             self.assertEqual(expected_prebuild,model.parameters_no_key['prebuild'], )
@@ -329,13 +340,13 @@ and even more text
             run_info["local_root_dir"] = '/james/harry'
             with self.assertRaises(ValueError) as cm:
                 model = UM_rose(name='001test', reference=reference,
-                                model_dir=self.testDir/'fred/001test', post_process=post_process,
+                                config_path=self.testDir/'fred/001test/001test.mcfg', post_process=post_process,
                                 parameters=parameters,
                                 run_info=run_info) # should fail
             # null local_root_dir and suite_name should be james/X001test
             run_info["local_root_dir"] = None
             model = UM_rose(name='001test', reference=reference,
-                            model_dir=self.testDir/'james/001test', post_process=post_process,
+                            config_path=self.testDir/'james/001test/001test.mcfg', post_process=post_process,
                             parameters=parameters,
                             run_info=run_info) # should fail
             self.assertEqual('james/X001test', model.suite_name)
@@ -398,10 +409,12 @@ class TestUKESM1ParamFunctions(unittest.TestCase):
 
         testDir1= testDir / 'test1'
         testDir2 = testDir / 'test2'
-        self.models = [UKESM1_1(name='test_c7', reference=refDir1,
-                              model_dir=testDir1, config_dir='suite', post_process=post_process),
-                    UKESM1_1_c8(name='test_c8', reference=refDir2,
-                              model_dir=testDir2, config_dir='suite', post_process=post_process)]
+        config_path1 = testDir1 / 'test_c7'
+        config_path2 = testDir2 / 'test_c8'
+        self.models = [UKESM1_1(config_path=config_path1, reference=refDir1,
+                               config_dir='suite', post_process=post_process),
+                    UKESM1_1_c8(config_path=config_path2,  reference=refDir2,
+                               config_dir='suite', post_process=post_process)]
         for model in self.models:
             model.instantiate()
 

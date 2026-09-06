@@ -15,5 +15,6 @@ metomi-rose==2.2.0 # avoid most recent version.
 f90nml~=1.4.3
 matplotlib # needed for plotting
 filelock # used for file locking
+packaging
 #PqQt5 # needed for interactive plotting
 

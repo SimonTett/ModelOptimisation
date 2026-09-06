@@ -84,8 +84,9 @@ class testHadCM3(unittest.TestCase):
 
         post_process = dict(script='$OPTCLIMTOP/OptClimVn3/scripts/comp_obs.py', output_file='obs.json')
         self.post_process = post_process
-        self.model = HadCM3(name='testM', reference=refDir,
-                            model_dir=testDir, post_process=post_process,
+        cfg_path = testDir/'testM.mcfg'
+        self.model = HadCM3(config_path=cfg_path, reference=refDir,
+                             post_process=post_process,
                             parameters=parameters)
 
         self.config_path = self.model.config_path
@@ -123,8 +124,13 @@ class testHadCM3(unittest.TestCase):
 
         self.assertEqual(self.model.status,'INSTANTIATED')
         model = self.model.load_model(self.model.config_path)
+        mdct = model.to_dict()
+        omdct = self.model.to_dict()
+        for var in ['configs','engine']:
+            mdct.pop(var)
+            omdct.pop(var)
 
-        self.assertEqual(model.to_dict(),self.model.to_dict())
+        self.assertEqual(mdct, omdct)
 
 
     def test_hadcm3_params(self):
@@ -493,7 +499,8 @@ class testHadCM3(unittest.TestCase):
         Tests startTime to see if it works
         :return:
         """
-        model = HadCM3('aa001',self.refDir)
+        config_path = pathlib.Path('study/aa001.mcfg')
+        model = HadCM3(config_path=config_path, reference=self.refDir)
         tests = [ '2020-01-01', '1990-01-01', '1999-09-09 01:01:01']
         expect = [[2020, 1, 1, 0, 0, 0], [1990, 1, 1, 0, 0, 0], [1999, 9, 9, 1, 1, 1]]
 
@@ -508,7 +515,8 @@ class testHadCM3(unittest.TestCase):
 
         :return: nada
         """
-        model = HadCM3('aa001',self.refDir)
+        config_path = pathlib.Path('study/aa001.mcfg')
+        model = HadCM3(config_path=config_path, reference=self.refDir)
         tests = [  'P7Y', 'P7Y1M', 'P7Y1M1D', 'P7Y1M1DT1H1M1S']
         expect = [[7, 0, 0, 0, 0, 0], [7, 1, 0, 0, 0, 0], [7, 1, 1, 0, 0, 0], [7, 1, 1, 1, 1, 1]]
 

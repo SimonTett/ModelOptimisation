@@ -66,6 +66,7 @@ import shutil
 import tarfile
 import typing
 import tempfile
+import packaging.version
 
 import numpy as np
 import pandas as pd
@@ -95,7 +96,6 @@ class Model(ModelBaseClass, journal):
     config_path: typing.Union[pathlib.Path, pathlib.PurePath]
     reference: typing.Union[pathlib.Path, pathlib.PurePath]
     reference_name: typing.Optional[str]
-    model_dir: typing.Union[pathlib.Path, pathlib.PurePath]
     post_process: dict
     post_process_cmd_script: typing.Optional[list[str]]
     fake: bool
@@ -127,7 +127,6 @@ class Model(ModelBaseClass, journal):
     class inherits from Model.
     As it inherits from journal  it has methods to update history,output and run commands.
     public attributes: (Be careful if you  change them)
-        model_dir -- directory where model information is stored
         reference --  where the reference configuration came from.
         reference_name -- name of the reference model config. If None then reference.name is used.
         config_path -- where the configuration is to be written to (or was read from).
@@ -153,6 +152,7 @@ class Model(ModelBaseClass, journal):
           _post_process_output -- name of output file for post-processing
         Note that update_history and store_output (see Journal for doc for those) set up private attributes.
     """
+    serialisation_data_version = packaging.version.Version("1.0.0")
     post_proccess_json = "post_process.json"  # where post-process info gets written
     status_info = dict(CREATED=None,
                        INSTANTIATED=["CREATED"],  # Instantiate a model requires it to have been created
@@ -178,7 +178,7 @@ class Model(ModelBaseClass, journal):
         :param model_path:  where the configuration is stored
 
 
-        :return: loaded model
+        :return: loaded model/
         """
         model = super().load(model_path)  # Using json "magic". See generic_json for what actually happens.
 
@@ -186,20 +186,16 @@ class Model(ModelBaseClass, journal):
             my_logger.warning(f"Model {model} model_path changed to {model_path}")
             model.config_path = model_path  # Replace config_path with where we actually loaded it from.
 
-        if not (isinstance(model.model_dir,pathlib.Path) and model.model_dir.samefile(model_path.parent)):
-            my_logger.warning(f"Model {model} model_dir changed to {model_path.parent} ")
-            model.model_dir = model_path.parent  # update directory with where we actually loaded it from.
 
         return model
 
     # methods now.
     def __init__(self,
-                 name: str,
+                 config_path: pathlib.Path,
                  reference: pathlib.Path,
                  reference_name: typing.Optional[str] = None,
                  post_process: typing.Optional[dict] = None,
-                 model_dir: pathlib.Path = pathlib.Path.cwd(),
-                 config_path: typing.Optional[pathlib.Path] = None,
+                 name: typing.Optional[str] = None,
                  status: type_status = "CREATED",
                  parameters: typing.Optional[dict] = None,
                  engine: typing.Optional[abstractEngine] = None,
@@ -209,18 +205,14 @@ class Model(ModelBaseClass, journal):
                  study_config_path:typing.Optional[pathlib.Path] = None,):
         """
         Initialize the Model class.
-
-        :param name -- name of model
+        :param config_path: Where configuration will be created.
         :param reference -- reference directory. Should be a pathlib.Path
                 keyword arguments
+
+        :param name -- name of model. If None then config_path.stem is used.
         :param reference_name -- name of reference model. If None then reference.name is used.
-        :param model_dir --- where model will be created and any files written.
-             Should be a pathlib.Path. Will, if needed, be created. If none cwd will be used.
-             Must be different from reference
         :param config_dir -- where configuration files are written. This should be relative to model_dir.
-          If None then config files stored in model_dir
-        :param config_path: Where configuration will be created.
-               If not defined (or None) will be model_dir/(self.name+".mcfg")
+          If None then config files stored in model_dir. see Model.model_dir for details.
         :param status -- model status. Default = "CREATED"
         :param parameters -- dict of parameters names and values.
         :param post_process -- dict for post-processing. If None no post-processing will be done.
@@ -248,37 +240,28 @@ class Model(ModelBaseClass, journal):
         # set up default values.
 
         # General attributes
-
-        self.name = name
-
-        if config_path is None:
-            config_path = model_dir / (self.name + '.mcfg')
-
         self.config_path = config_path
-        # TODO -- when bringing in from another system. reference may not exist
-        # It probably should be a PurePath so there is a problem with convert_
-        # Check model_dir is not a reference.
-        if (
-                isinstance(reference, pathlib.Path) and
-                ((model_dir == reference) or
-                 (model_dir.exists() and reference.samefile(model_dir)))
-        ):
-            raise ValueError(f"Model_dir {model_dir} is the same as reference {reference}")
+        if not ((config_path is  None) or self.config_path.is_absolute()):  # not absolute so make it so
+            self.config_path = pathlib.Path.cwd() / self.config_path
+
+        if name is None and self.config_path is not None:
+            self._name = self.config_path.stem
+        else:
+            self._name = name
+
 
         self.reference = reference
         if reference_name is None:
             reference_name = reference.name
         self.reference_name = reference_name
-        self.model_dir = model_dir
-        if config_dir is None:
-            self.config_dir = model_dir
-        elif model_dir is not None:
-            self.config_dir = model_dir / config_dir  # config_dir **relative** to model_dir
-        else:
-            raise ValueError("config_dir must be specified if model_dir is None")
+
+        self._config_dir = config_dir # config_dir **relative** to model_dir
+
+
         if status not in self.allowed_status:
             raise ValueError(f"Status {status} not in " + " ".join(self.allowed_status))
-
+        ## TODO remove this.  Mixes models and Studies. Can pass config in for model classeses that want it
+        # via alternative.
         self.StudyConfig_path = None  # setup StudyConfig_path attribute.
         if study_config_path is not None:
             self.StudyConfig_path = study_config_path # store the path to the config.
@@ -349,6 +332,43 @@ class Model(ModelBaseClass, journal):
         self.status = status
         if self.status == 'CREATED':  # creating model for the first time
             self.update_history("CREATING model")
+    @property
+    def model_dir(self) -> typing.Optional[pathlib.Path]:
+        """
+        Return model_dir as config_path.parent. This is where the model configuration is stored.
+        If config_path is None return None.
+        """
+        if self.config_path is None:
+            return None
+        mdir = self.config_path.parent
+        if (self.reference is not None) and isinstance(mdir,pathlib.Path) and mdir.exists()  and \
+                isinstance(self.reference,pathlib.Path) and self.reference.exists() and \
+                mdir.samefile(self.reference):
+            # only test for same if mdir exists meaning that the model will be being instantiated
+            raise ValueError(f"Model dir {mdir} is same as reference {self.reference}. This is not allowed")
+        return mdir
+
+    @property
+    def config_dir(self) -> typing.Optional[pathlib.Path]:
+        """
+        Return config_dir as model_dir/config_dir. This is where the model configuration is stored.
+        If model_dir is None return None.
+        """
+
+        config_dir = self.model_dir # could be None
+        if self._config_dir is not None and self.model_dir is not None:
+            config_dir = config_dir / self._config_dir
+        return config_dir
+
+    @property
+    def name(self) -> str:
+        """
+        Return the name of the mode which comes from config_path stem. If config_path is None return Unknown
+        """
+        name = self._name
+        if self._name is None:
+            name='Unknown'
+        return name
 
     @classmethod
     def get_param_info(cls, parameter: str) -> list[NamelistVar | typing.Callable]:
@@ -523,7 +543,7 @@ class Model(ModelBaseClass, journal):
 
     def dump_model(self):
         """
-        dump a model configuration to self.model_dir/model_config_name
+        dump a model configuration to self.config_path
         :return: whatever dump does
         """
 
@@ -582,7 +602,7 @@ class Model(ModelBaseClass, journal):
         """
         Create a new model by copying reference. If self.fake is True then no copy is done.
          Overwrite (and call superclass) for your own model.
-         :param direct: path to directory to create. If None then self.model_dir will be used.
+         :param direct: path to directory to create. If None then self.model_dir/self.config_dir will be used.
          :param copy_ref: If True copy reference directory to dir
         For example if you want to modify your reference model.
         :return:nothing.
@@ -1166,7 +1186,10 @@ class Model(ModelBaseClass, journal):
            If False and update_parameters is Truety then ValueError will be raised.
         :return: Copied Model. Will copy only Model config & post process unless extra_files provided.
 
+
+
         """
+
 
         # check tgt direct path is abs and if not make it abs.
         if not direct.is_absolute():
@@ -1174,7 +1197,7 @@ class Model(ModelBaseClass, journal):
             my_logger.info("Made direct absolute to " + str(direct))
         direct.mkdir(parents=True, exist_ok=True)  # create the directory if needed.
 
-        files_to_copy = [self.config_path.relative_to(self.model_dir), self._post_process_output]
+        files_to_copy = [self.config_path.name, self._post_process_output]
 
         if extra_files is not None:
             files_to_copy = files_to_copy + extra_files
@@ -1183,14 +1206,12 @@ class Model(ModelBaseClass, journal):
         cp_model = copy.deepcopy(self)  # make a copy of self
         miss_files = set(files_to_copy) - set(files_copied)
         if len(miss_files) > 0:
-            my_logger.warning(f"{miss_files} missing and not copied")
+            my_logger.warning(f"{' '.join(miss_files)} missing and not copied")
 
-        cp_config_path = direct / (self.config_path.relative_to(self.model_dir))
-        if update_paths:
-            cp_model.update_history(f'Copied {len(files_copied)} from {self.model_dir} to {direct}')
-            cp_model.model_dir = direct
-            cp_model.config_path = cp_config_path
-            cp_model.update_history(f"Updated model_dir and config_path")
+        cp_config_path = direct / (self.config_path.name)
+        cp_model.update_history(f'Copied {len(files_copied)} from {self.model_dir} to {direct}')
+        cp_model.config_path = cp_config_path
+        cp_model.update_history(f"Updated model_dir and config_path")
 
         cp_model.dump(cp_config_path)  # dump it out! (needed as have changed things so orig copy will have old values)
         return cp_model
@@ -1222,7 +1243,7 @@ class Model(ModelBaseClass, journal):
             # dump the model (but no change to internal values)
             # handle models that were read in and so, potentially, outside rootDir
             tmpdir_pth = pathlib.Path(tmpdir) / self.config_path.name
-            self.copyConfig(direct=tmpdir_pth, extra_files=extra_files, update_paths=False)
+            self.copyConfig(direct=tmpdir_pth, extra_files=extra_files)
 
             for path in tmpdir_pth.rglob("*"):  # get all files in the copied  model dir.
                 if path.is_dir():
@@ -1246,18 +1267,19 @@ class Model(ModelBaseClass, journal):
         sim_obs = self.process(update=True)
         return sim_obs
 
-    def to_dict(self) -> dict:
+    def notneeded_to_dict(self) -> dict:
         """
-        Convert a Model to a dict  converting paths to PurePaths.
+        Convert a Model to a dict converting paths to PurePaths.
         Most of the work is done by calling the super class to_dict method.
+        This code probably not needed. Left in for now in case do actually need it.
         :return:
         """
         dct = super().to_dict()
 
-        for key in ['config_path', 'model_dir', 'reference']:  # vars to make into purePaths
-            dct[key] = pathlib.PurePath(dct[key])
-        # deal with configs. Might need similar for Engine
-        dct['configs'] = self.configs.to_dict()  # convert configs to a
+        for key in ['config_path',  'reference']:  # vars to make into purePaths
+            dct[key] = pathlib.PurePath(dct[key]) # TODO remove this? and just use to_posix to make it a string
+        # deal with configs. But not sure why need to explicitly call to_dict
+        #dct['configs'] = self.configs.to_dict()  # convert configs to a dict.
         return dct
 
     @classmethod
@@ -1268,12 +1290,21 @@ class Model(ModelBaseClass, journal):
         :return:a tempModel instance.
         """
         dct2 = cls.convert_pure_paths(dct)
-        try:
-            dct2['configs'] = namelist_var.GroupConfig.from_dict(
-                dct2['configs'])  # convert configs back to a configs object.
-        except KeyError:  # old style configs so just let __init__ deal with it.
-            pass
-        obj = cls(name=dct2.pop('name'), reference=dct2.pop('reference'))  # create a default instance
+        # remove model_dir as no longer needed.
+        serialisation_data_version = packaging.version.Version(dct2.get('serialisation_data_version', '0.0.0'))
+        if serialisation_data_version < packaging.version.Version('1.0.0'):
+            # legacy support for old serialisation data.
+            dct2.pop('model_dir',None)
+            # rename name to _name
+            if 'name' in dct2:
+                dct2['_name'] = dct2.pop('name')
+            try:
+                dct2['configs'] = namelist_var.GroupConfig.from_dict(
+                    dct2['configs'])  # convert configs back to a configs object.
+            except KeyError:  # old style configs so just let __init__ deal with it.
+                pass
+
+        obj = cls( config_path=dct2.pop('config_path'), reference=dct2.pop('reference'),config_dir=dct2.pop('config_dir',None))  # create a default instance
         obj.fill_attrs(dct2)
         return obj
 

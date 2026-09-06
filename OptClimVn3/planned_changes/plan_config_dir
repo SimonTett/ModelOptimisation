@@ -1,0 +1,22 @@
+#  model_dir & rootDir come from config_path
+
+## Problem
+Current code uses model_dir and rootDir to set the root directory of the model and study directories.
+This leads to inconsistencies especially when model or study are loaded from specified path.
+
+## Solution
+Use @property decorator to define model_dir and rootDir as properties that return the correct paths based on the current configuration. This ensures that the paths are always consistent and correctly reflect the current state of the model and study directories.
+Change rootDir to study_dir
+Will make config_path in both Model and Study an absolute path.
+If input path is relative then make it absolute through prepending pathlinb.Path.cwd().
+All other paths are relative paths from the study_dir/model_dir.
+This should be fine for the current code base.
+Can probably drop all the pure path stuff too..
+Will need to change __init__ and CopyConfig to use new approach. CopyConfig should allow a change of name/location.
+ Can also rewrite archive as just can tar up.
+
+## More general solution
+Use _path to store the underlying relative path and then have a property that returns the absolute path.
+That might be tricky for inherited classes which if they want to add another path need to implement this.
+Could do with more magic -- just use setattr and getattr.
+Feels too tricky for now. Stick with idea that everything should be relative to  study_dir/model_dir.

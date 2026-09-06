@@ -157,6 +157,8 @@ class MyTestCase(unittest.TestCase):
             pth = copy_dir/(model.config_path.relative_to(submit.rootDir))
             mcopy = Model.load(pth) # using load so no path changes.
             for key in vars(model).keys():
+                if key in ['config_path','_history']: # attrs to skip
+                    continue
                 val1 = getattr(model,key)
                 val2 = getattr(mcopy,key)
                 if val1 != val2:
@@ -375,6 +377,7 @@ class MyTestCase(unittest.TestCase):
 
     def test_to_dict(self):
         # test to_dict method.
+        self.maxDiff=None
         study_dict = self.submit.to_dict()
         expected_dict = vars(self.submit)
         # now replace models!
@@ -383,6 +386,7 @@ class MyTestCase(unittest.TestCase):
         expected_dict['config'] = vars(expected_dict['config'])
         # and engine
         expected_dict['engine'] = engine.sge_engine()
+        expected_dict['serialisation_data_version'] = str(self.submit.serialisation_data_version)
         self.assertEqual(study_dict, expected_dict)
 
     def test_iterations(self):

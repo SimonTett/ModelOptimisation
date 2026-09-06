@@ -75,8 +75,9 @@ class ModelTestCase(unittest.TestCase):
         self.post_process = post_process
         eng = engine.abstractEngine.create_engine('SGE')
         self.engine = eng
-        self.model = myModel(name='test_model', reference=refDir,
-                             model_dir=testDir / 'study', post_process=post_process,
+        cfg_path = testDir / 'study/test_model.mcfg'
+        self.model = myModel(config_path=cfg_path, reference=refDir,
+                             post_process=post_process,
                              parameters=dict(RHCRIT=2, VF1=2.5, CT=2,G0=10,ANVIL_FACTOR=0.5,multi_var=2.0),
                              engine=eng)
 
@@ -115,13 +116,14 @@ class ModelTestCase(unittest.TestCase):
         :return:
         """
         pardict = dict(fred=2, james=3)
-        model = Model.Model('name=test_model', reference=self.refDir, model_dir=self.testDir / 'study', post_process=self.post_process,
+        config_path = self.testDir / 'study/test_model.mcfg'
+        model = Model.Model( config_path=config_path,reference=self.refDir,  post_process=self.post_process,
                              parameters=dict(RHCRIT=2, VF1=2.5, CT=2,G0=10,ANVIL_FACTOR=0.5,multi_var=2.0),
                              engine=self.engine)
-        self.assertEqual(model.name, 'name=test_model')
+        self.assertEqual(model.name, 'test_model')
         self.assertEqual(model.reference_name,self.refDir.name)
 
-        model = Model.Model('name=test_model', reference=self.refDir, reference_name='control',model_dir=self.testDir / 'study', post_process=self.post_process,
+        model = Model.Model( config_path=config_path,reference=self.refDir, reference_name='control', post_process=self.post_process,
                              parameters=dict(RHCRIT=2, VF1=2.5, CT=2,G0=10,ANVIL_FACTOR=0.5,multi_var=2.0),
                              engine=self.engine)
 
@@ -196,13 +198,16 @@ class ModelTestCase(unittest.TestCase):
         init2['post_process']['high'] = 'four'
         init2['parameters'] = dict(harry=2, fredSmith=2, fred=oh)
         for name in ['myModel', 'model1', 'model2', 'model3', 'model2mod', 'model4']:
-            t = myModel.model_init(name, name, self.refDir, model_dir=self.testDir / name, **init1)
-            t2 = myModel.model_init(name, name, self.refDir, model_dir=self.testDir / name, **init2)
+            config_path = self.testDir / f"{name}_1.mcfg"
+            t = myModel.model_init(name, config_path=config_path,reference=self.refDir, **init1)
+            config_path = self.testDir / f"{name}_2.mcfg"
+            t2 = myModel.model_init(name,  reference=self.refDir, config_path=config_path, **init2)
             self.assertTrue(type(t) == type(t2), 'Types differ')
             self.assertEqual(t.class_name(), type(t).__name__)
         for name in ['unknown', 'model3aa']:  # unknown models should raise exceptions
+            config_path = self.testDir / f"{name}.mcfg"
             with self.assertRaises(ValueError):
-                t = myModel.model_init(name, name, self.refDir, model_dir=self.testDir / name, **init1)
+                t = myModel.model_init(name, reference=self.refDir, config_path=config_path, **init1)
 
     def test_add_param_info(self):
 
@@ -211,8 +216,9 @@ class ModelTestCase(unittest.TestCase):
 
         expect_param_info = [nl1, nl2]
         pardict = dict(fred=2, james=3)
-        model = myModel.model_init('myModel', 'test_model', self.refDir, post_process=self.post_process,
-                                 model_dir=self.testDir, parameters=pardict, )
+        config_path = self.testDir / 'test_model.mcfg'
+        model = myModel.model_init('myModel', config_path=config_path, reference=self.refDir, post_process=self.post_process,
+                                  parameters=pardict, )
         model.add_param_info(dict(vf1=nl1))
         model.add_param_info(dict(vf1=nl2), duplicate=True)
         self.assertEqual(model.param_info.to_dict()['vf1'], expect_param_info)
@@ -226,17 +232,19 @@ class ModelTestCase(unittest.TestCase):
         :return:
         """
         pardict = dict(fred=2, james=3)
-        model = myModel('test_model', self.refDir, post_process=self.post_process,
-                      model_dir=self.testDir, parameters=pardict)
+        config_path = self.testDir / 'test_model.mcfg'
+        model = myModel( reference=self.refDir, post_process=self.post_process,
+                      config_path=config_path, parameters=pardict)
         cmd = [model.expand(self.post_process['script']), 'input.json', self.post_process['output_file']]
         ref=pathlib.PurePath(self.refDir)
-        expected_dct = dict(name='test_model', reference=ref,reference_name=ref.name,
-                            model_dir=pathlib.PurePath(self.testDir), config_dir=pathlib.PurePath(self.testDir),
+        expected_dct = dict(reference=ref,reference_name=ref.name,
+                             _config_dir=None,
+                            _name="test_model",
                             parameters=pardict,
                             post_process={}, _output={},
                             _post_process_input='input.json',
                             _post_process_output='sim_obs.json',
-                            configs=dict(configs={},root_dir=model.model_dir),
+                            configs=model.configs,
                             post_process_cmd_script=cmd, fake=False, simulated_obs=None,
                             perturb_count=0, parameters_no_key={}, config_path=pathlib.PurePath(self.testDir / "test_model.mcfg"),
                             status='CREATED', _history=model._history, engine=model.engine, pp_jid=None, run_info={},
@@ -245,6 +253,7 @@ class ModelTestCase(unittest.TestCase):
                             submit_script=pathlib.PurePath('submit.sh'), submitted_jid=None,
                             set_status_script=pathlib.PurePath(self.model.expand("$OPTCLIMTOP/OptClimVn3/scripts/set_model_status.py")),
                             remote=dict(remote_machine=None,remote_model_dir=None),  StudyConfig_path=None,
+                            serialisation_data_version=str(model.serialisation_data_version)
                             )
 
         dct = model.to_dict()
@@ -269,8 +278,9 @@ class ModelTestCase(unittest.TestCase):
                 self.fredv = 10
 
         for class_name in ['myModel', 'model4', 'model5']:
-            model = myModel.model_init(class_name, f'test_{class_name}01', self.refDir, post_process=self.post_process,
-                                     model_dir=self.testDir, parameters=pardict)
+            config_path = self.testDir / f"{class_name}01.mcfg"
+            model = myModel.model_init(class_name, reference=self.refDir, post_process=self.post_process,
+                                     config_path=config_path, parameters=pardict)
             model.dump_model()
             lmodel = myModel.load_model(model.config_path)
             self.assertEqual(lmodel.class_name(), class_name)
@@ -388,7 +398,11 @@ class ModelTestCase(unittest.TestCase):
         bak_count = 0
         # how many .bak files do we expect?
         nls = self.model.gen_params()  # gt the namelist files that have changed.
-        nl_changed_files = set([self.model.config_dir/d.filepath for d in nls.keys()]) # files that are changed and so should have .bak files.
+        if self.model.config_dir is None:
+            root = self.model.model_dir
+        else:
+            root = self.model.model_dir/self.model.config_dir
+        nl_changed_files = set([root/d.filepath for d in nls.keys()]) # files that are changed and so should have .bak files.
 
         expected_bak_count = len(nl_changed_files)
 
@@ -418,8 +432,9 @@ class ModelTestCase(unittest.TestCase):
         # test. Need to set up remote_machine and remote_dir in model.run_info
         # If remote_dir is not set then just copy to remote model_dir?
         # expect that call run_cmd once and it has the rsync command in it.
-        model = myModel(name='test_model', reference=self.refDir,
-                             model_dir=self.testDir / 'study2', post_process=self.post_process,
+        config_path = self.testDir / "study2/test_model.mcfg"
+        model = myModel( reference=self.refDir,
+                             config_path=config_path, post_process=self.post_process,
                              run_info=dict(remote_machine='user@my.remote.machine.ac.uk', remote_model_dir=pathlib.PurePath('/home/user/remote_model_dir')),
                              parameters=dict(RHCRIT=2, VF1=2.5, CT=2,G0=10,ANVIL_FACTOR=0.5,multi_var=2.0),
                              engine=self.eng)
@@ -651,7 +666,8 @@ class ModelTestCase(unittest.TestCase):
         Will do first by faking things!
         :return:
         """
-        model = myModel('test001', self.refDir, post_process=self.post_process, model_dir=self.testDir)
+        config_path = self.testDir / 'test001.mcfg'
+        model = myModel(reference=self.refDir, post_process=self.post_process, config_path=config_path)
         model.fake = True
         model.status = 'SUCCEEDED'  # we have succeeded
         model.process()  # with fake
@@ -684,12 +700,12 @@ class ModelTestCase(unittest.TestCase):
         post_process = dict(script='$OPTCLIMTOP/OptClimVn3/Models/scripts/pp_script_test.py',
                             outputPath='obs.json',
                             fake_obs=self.fake_fn().to_dict())
-        cfg = self.testDir / 'model0001.mcfg'
+        cfg = self.testDir / 'test_model0001.mcfg'
         with unittest.mock.patch('subprocess.check_output', autospec=True,
                                  return_value="Submitted something 56467"):
             with unittest.mock.patch('engine.sge_engine.my_job_id', autospec=True,
                                      return_value="123456"):
-                model = myModel('test_model001', self.refDir, model_dir=self.testDir,
+                model = myModel(reference=self.refDir,
                                 config_path=cfg,
                                 parameters=dict(VF1=1, CT=2.2, G0=11),
                                 engine=self.eng,
@@ -717,7 +733,7 @@ class ModelTestCase(unittest.TestCase):
 
                 # now do but where model fails, get perturbed, gets continued and then works.
                 cfg = self.testDir / 'model0002.mcfg'
-                model = myModel('test_model01', self.refDir, model_dir=self.testDir,
+                model = myModel(reference=self.refDir,
                                 config_path=cfg,
                                 engine=self.eng,
                                 parameters=dict(VF1=1, CT=2.2, G0=11),
@@ -749,7 +765,7 @@ class ModelTestCase(unittest.TestCase):
 
     def test_set_post_process(self):
         # tests for set_post_process
-        model = myModel('fred', self.refDir, post_process=self.post_process)
+        model = myModel(config_path=self.testDir / 'fred.mcfg', reference=self.refDir, post_process=self.post_process)
         pp = copy.deepcopy(self.post_process)
         script = model.expand(pp.pop('script'))
         output = pp.pop('output_file', 'sim_obs.json')
@@ -765,13 +781,13 @@ class ModelTestCase(unittest.TestCase):
         model.set_post_process(pp)
         self.assertEqual(model.post_process_cmd_script, ['python', script, input, output])
         # No PP
-        model = myModel('fred', self.refDir)
+        model = myModel(config_path=self.testDir / 'fred.mcfg', reference=self.refDir)
         self.assertEqual(model.post_process_cmd_script, None)
         # set del pp['script']. Should give an error
         pp = copy.deepcopy(self.post_process)
         pp.pop('script')
         with self.assertRaises(ValueError):
-            model = myModel('fred', self.refDir, post_process=pp)
+            model = myModel(config_path=self.testDir / 'fred.mcfg', reference=self.refDir, post_process=pp)
 
         # test per reference_name works
         script2 = model.expand('$OPTCLIMTOP/OptClimVn3/Models/scripts/pp_script_test2.py')
@@ -779,7 +795,8 @@ class ModelTestCase(unittest.TestCase):
         pp['interp'] = 'python'
         pp['post_process_for_reference'] = {'control': dict(script=script2,process_options='some process options')}
         expect_pp  = dict(process_options = 'some process options')
-        model = myModel('fred', self.refDir, post_process=pp,reference_name='control')
+        cofig_path = self.testDir / 'model0001.mcfg'
+        model = myModel(reference=self.refDir, post_process=pp,reference_name='control',config_path=cofig_path)
         self.assertEqual(model.post_process_cmd_script, ['python',script2, input, output])
         self.assertEqual(model._post_process_output, output)
         self.assertEqual(model._post_process_input, input)
@@ -853,7 +870,7 @@ class ModelTestCase(unittest.TestCase):
         model.copyConfig(dest_dir)
         # now load in the copied model
         cmodel = myModel.load_model(dest_dir / f"{self.model.name}.mcfg")
-        attrs_not_same = ['model_dir','config_path','_history']
+        attrs_not_same = ['config_path','_history']
         for attr in vars(model).keys():
             if attr in attrs_not_same:
                 continue
@@ -944,8 +961,9 @@ class ModelTestCase(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             p = pathlib.Path(tmpdir)
-            model = myModel('fred', myModel.expand("$OPTCLIMTOP/OptClimVn3/configurations/example_Model/reference")
-                            , self.post_process, model_dir=p)  # depends on myModel
+            config_path = p / 'fred.mcfg'
+            model = myModel(config_path=config_path,reference= myModel.expand("$OPTCLIMTOP/OptClimVn3/configurations/example_Model/reference")
+                            , post_process=self.post_process)  # depends on myModel
             model.instantiate()
             self.assertEqual(model.read_param( 'VF1'), 1) # simple param text
             self.assertEqual(model.read_param( 'RHCRIT'), 0.7) # function test
@@ -1194,7 +1212,8 @@ class ModelTestCase(unittest.TestCase):
         config_path.write_text('{}')
 
         # Create model
-        model = Model.Model(name='test_model', reference=ref_dir, reference_name='control', model_dir=model_dir, config_path=config_path)
+        config_path = model_dir / 'model_config.json'
+        model = Model.Model(reference=ref_dir, reference_name='control',  config_path=config_path)
         old_history_len = len(getattr(model, 'history', []))
         old_ref = model.reference_name
 

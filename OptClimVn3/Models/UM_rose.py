@@ -335,13 +335,17 @@ class UM_rose(Model):
         :param args: any arguments to pass to the script.
         :return: nothing.
         """
-        raise ValueError('Do not call this version. Call the cylc specific version not this one ')
+        raise ValueError('Do not call this version. Call the cylc specific version.')
 
     def update_suite_rc(self):
         """
         Update the cylc/rose suite.rc to include OptClim tasks.
         """
-        suite_file = self.config_dir / self.suite_file_name
+
+
+
+
+        suite_file =self.config_dir/self.suite_file_name
         genericLib.backup_file(suite_file, ext='.bak', create='copy')  # make a backup of the suite file.
         with suite_file.open('a') as suite_rc:
             if self.include_file_name is None:
@@ -492,8 +496,7 @@ class UM_rose(Model):
         """
         # mixture of absaloute and relative paths in model_dir is a right pain. Esp when multiple copies happen
         # FOR NOW WILL HACK THIS... EVENTUALLY everythign is stored relative to model_dir.
-        if self.config_dir.is_absolute(): # absolute path so fix.
-            self.config_dir = self.model_dir/self.config_dir.name # really bad hack...
+
         
         files_to_add = [self.script_dir, self.config_dir.relative_to(self.model_dir)]
         # TODO_relative_paths -- eventually make all paths relative to model_dir.
@@ -560,9 +563,11 @@ class UM_rose_cylc7(UM_rose):
                 cmd.append(args)
             remote_dir = self.remote.get('remote_directory')
             if remote_dir is not None:
-                config_dir = remote_dir/self.config_dir # path on remote machine to config dir.
+                config_dir = remote_dir/self.config_dir.relative_to(self.model_dir) # path on remote machine to config dir.
             else:
-                config_dir = self.model_dir/self.config_dir # path on local machine to config dir.
+                config_dir = self.config_dir # path on local machine to config dir.
+                if not config_dir.is_absolute(): # need abs path
+                    raise ValueError("Expected absolute path for config directory")
 
             cmd.append(f'-C {config_dir.as_posix()}')  # path to the config dir. rose needs posix path.
             f.write(' '.join(cmd) + '\n')
@@ -612,6 +617,7 @@ class UM_rose_cylc8(UM_rose):
             # this code unlikely to be well tested as on archer2 run cylc from puma!
             config_directory = self.config_dir
             if not config_directory.is_absolute(): # need abs path
+                raise ValueError("Expected absolute path for config directory")
                 config_directory = pathlib.Path.cwd()/config_directory
 
         with script.open('wt') as f:
