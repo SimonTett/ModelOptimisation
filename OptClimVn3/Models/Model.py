@@ -47,15 +47,7 @@ Do write tests for your new Model testing your new and modified methods.
 
 """
 
-"""
-Failure modes and solutions:
-1) Post-processing times out. Model state is SUCCEEDED but no post-processing done.
-    PP job id will not exist.
-    Solution: re-run post-processing only. 
-    runAlgorithm --process 
-    
-    Complain to archer2 help desk -- job has 30 mins time limit and runs in about 3 mins interactively. 
-"""
+
 
 import copy
 import functools
@@ -118,7 +110,8 @@ class Model(ModelBaseClass, journal):
     _post_process_output: typing.Optional[str]
     configs: GroupConfig
     remote: dict[str, str | pathlib.PurePath]
-    StudyConfig_path:typing.Optional[pathlib.Path]
+    study_info: dict[str, str]
+    StudyConfig_path:typing.Optional[pathlib.Path] # Try and remove this. Used in simple model.
 
     """
     Abstract model class. Any class that inherits from this will have name lookup.
@@ -145,6 +138,7 @@ class Model(ModelBaseClass, journal):
         pertub_count -- no of times model has been perturbed.
         submission_count -- no of times model has been submitted.
         remote -- dict containing info on remote machine and directory if needed. Keys are machine and directory respectively.
+        study_info -- dict containing information from the study (and up). Model should never use this. 
         StudyConfig_path -- path to StudyConfig.
         
         Private attributes:
@@ -328,6 +322,7 @@ class Model(ModelBaseClass, journal):
             remote_model_dir = self.new_path(self.model_dir, remote_model_dir, root_dir=local_root_dir)
 
         self.remote = dict(remote_machine=remote_machine, remote_model_dir=remote_model_dir)  # remote info
+        self.study_properties=dict()
         # Set status
         self.status = status
         if self.status == 'CREATED':  # creating model for the first time
@@ -838,6 +833,13 @@ class Model(ModelBaseClass, journal):
             remote_dir = pathlib.PurePath(remote_dir)  # remote_dir should be a string
         cmd = self.ssh_command(cmd, remote_machine=remote_machine, remote_model_dir=remote_dir)
         output = self.run_cmd(cmd)  # and run the command
+        ## There is a potential race condition here. In that model could start running
+        ## before status gets updated (and model state saved).
+        ## One option is to move the set_status before the run_cmd, but then what to do if the run_cmd fails?
+        ## Catch and set status to FAILED? generating a warning message.
+        ## ALt reset status to INSTANTIATED
+        ## Then allow update status for running to have a failed status?
+        ## which assumes some intervention outside system.
         jid = self.engine.job_id(output)  # and work out the job id.
         self.submitted_jid = jid  # model will
         my_logger.debug(f"Model submission: ran {cmd} and got {output}")
