@@ -34,7 +34,8 @@ class Test_simple_model(unittest.TestCase):
         cpth = optclim3/"configurations/dfols14param_opt3.json"
         config = StudyConfig.readConfig(cpth)
         config.baseRunID('ZZ')
-        submit = SubmitStudy.SubmitStudy(config, model_name='simple_model', rootDir=testDir)
+        study_path = testDir / 'study/study.scfg'
+        submit = SubmitStudy.SubmitStudy(config, model_name='simple_model', config_path=study_path)
         self.submit = submit
         self.testDir = testDir
         self.testDir2 = testDir2
@@ -42,9 +43,9 @@ class Test_simple_model(unittest.TestCase):
         # set up another model properly
         eng = engine.abstractEngine.create_engine('SGE')
         params = dict(vf1=2.3,rhcrit=0.5)
-        model = simple_model(config_path = self.submit.rootDir/'model002/model002.mcfg',reference=self.refDir,engine=eng,
+        model = simple_model(config_path =self.submit.study_dir / 'model002/model002.mcfg', reference=self.refDir, engine=eng,
 
-                                          study_config_path=self.submit.config.fileName(),
+                             study_config_path=self.submit.config.fileName(),
                              parameters=params)
         self.model = model
 
@@ -61,20 +62,20 @@ class Test_simple_model(unittest.TestCase):
         Test init by creating a model and verify that StudyConfig_path attribute is as expected.
         :return:
         """
-        model = simple_model(config_path = self.submit.rootDir/'model001'/'model001.mcfg',reference=self.refDir,
-                                        study_config_path = self.submit.config.fileName(),
-                                         )
+        model = simple_model(config_path =self.submit.study_dir / 'model001' / 'model001.mcfg', reference=self.refDir,
+                             study_config_path = self.submit.config.fileName(),
+                             )
         self.assertEqual(model.StudyConfig_path,self.submit.config.fileName())
-        model = simple_model(config_path = self.submit.rootDir/'model002'/'model002.mcfg',reference=self.refDir,
-                                          )
+        model = simple_model(config_path =self.submit.study_dir / 'model002' / 'model002.mcfg', reference=self.refDir,
+                             )
         self.assertIsNone(model.StudyConfig_path)
 
 
     def test_modify_model(self):
         # test that if we modify the model that script is as expected. Just counts the modify lines -- expect 3.
         modifyStr = '## modified *$'
-        model = simple_model(config_path = self.submit.rootDir/'model002'/'model002.mcfg',reference=self.refDir,
-                                         ) # create a model.
+        model = simple_model(config_path =self.submit.study_dir / 'model002' / 'model002.mcfg', reference=self.refDir,
+                             ) # create a model.
         # copy the model info across.
         shutil.copytree(self.refDir,model.model_dir)
         # now modify it and test script
@@ -91,9 +92,9 @@ class Test_simple_model(unittest.TestCase):
 
     def test_set_params(self):
         params = self.model.parameters
-        model = simple_model(config_path = self.submit.rootDir/'model001'/'model001.mcfg',reference=self.refDir,
-                                        run_info=dict(submit_engine='SGE'),
-                                        parameters=params)
+        model = simple_model(config_path =self.submit.study_dir / 'model001' / 'model001.mcfg', reference=self.refDir,
+                             run_info=dict(submit_engine='SGE'),
+                             parameters=params)
         model.model_dir.mkdir(exist_ok=True,parents=True)
         model.set_params(params)
         with open(model.model_dir/'params.json','r') as fp:
@@ -116,7 +117,8 @@ class Test_simple_model(unittest.TestCase):
         self.assertIsInstance(cmd,list)
         model = self.model
         outdir = model.model_dir / 'model_output'
-        expected_cmd = eng.submit_cmd([model.model_dir/model.submit_script,str(model.StudyConfig_path)],
+        submit_script = model.script_dir/model.scripts['submit_script']
+        expected_cmd = eng.submit_cmd([submit_script,str(model.StudyConfig_path)],
                                       f"{model.name}{len(model.model_jids):05d}", outdir, rundir=model.model_dir,time=30)
         self.assertEqual(cmd,expected_cmd)
 
@@ -135,7 +137,8 @@ class Test_simple_model(unittest.TestCase):
         model.parameters.update(sleep_time=1)
         model.instantiate()
         model.set_status("SUBMITTED") # make state submittable.
-        cmd = ["./"+str(model.submit_script),str(model.StudyConfig_path)]
+        submit_script = model.script_dir / model.scripts['submit_script']
+        cmd = [str(submit_script),str(model.StudyConfig_path)]
         if platform.system() == 'Windows':
             #cmd = [sys.executable,f'{model.submit_script}',f'{model.StudyConfig_path}']
             cmd.insert(0,sys.executable)

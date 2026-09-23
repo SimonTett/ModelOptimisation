@@ -342,8 +342,8 @@ class testHadCM3(unittest.TestCase):
         shutil.copy2(self.refDir / "SUBMIT", self.model.model_dir)
         self.model.genContSUBMIT()  # create the file.
         # should be different from std file.
-        f1 = self.model.model_dir / self.model.submit_script
-        f2 = self.model.model_dir / self.model.continue_script
+        f1 = self.model.script_dir / self.model.scripts['submit_script']
+        f2 = self.model.script_dir / self.model.scripts['continue_script']
         self.assertFalse(filecmp.cmp(f2, f1, shallow=False))
         # and count the number of modfy marks.
         modifyStrCont = '## modifiedContinue$'
@@ -391,16 +391,16 @@ class testHadCM3(unittest.TestCase):
         # two checks. If nothing requests then nothing changes.
         # runTime -- two changes (With runTime value as expected
         # runCode -- one change (with runCode as expected)
-        file = model.submit_script
-        pth = model.model_dir/file
-        bak_path = model.model_dir/'SUBMIT_backup'
+        file = model.scripts['submit_script']
+        pth = model.script_dir/file
+        bak_path = model.config_dir/'SUBMIT_backup'
         shutil.copy2(pth,bak_path)
         time = pth.stat().st_mtime
-        model.set_time_code(model.model_dir/"SUBMIT", None, None)
+        model.set_time_code(model.config_dir/"SUBMIT", None, None)
         time2 = pth.stat().st_mtime
         self.assertEqual(time,time2)
         # now change runTime
-        model.set_time_code(model.model_dir/"SUBMIT",runTime=3000)
+        model.set_time_code(model.config_dir/"SUBMIT",runTime=3000)
         time2 = pth.stat().st_mtime
         self.assertNotEqual(time, time2) # times should be different.
         modifyStr = r'## modified time/code\s*$'
@@ -471,25 +471,24 @@ class testHadCM3(unittest.TestCase):
 
         :return:
         """
-        release_cmd = 'set_model_state SUCCEEDED'
-        file = self.model.createPostProcessFile(release_cmd)
+        set_status = f'{self.model.set_status_script}'
+        file = self.model.createPostProcessFile(self.model.set_status_script)
         # expect file to exist
         self.assertTrue(file.exists())
         # and that it is as expected.
         self.assertEqual(file, self.model.model_dir / self.model.post_process_file)
         # need to check its contents...
-        # will check two things. 1) that SUBCONT is as expected 2) that the qrls cmd is in the file
-        submit_script = self.model.continue_script
+        # will check two things. 1) that SUBCONT is as expected 2) that the post-process cmd is in the file
         cntSUBCONT = 0
-        cntqrls = 0
+        cnt_set_status = 0
         with open(file, 'r') as f:
             for line in f:
-                if line.find(release_cmd) != -1:
-                    cntqrls += 1
-                elif line.find(f'SUBCONT={submit_script}') != -1:
+                if line.find(set_status) != -1:
+                    cnt_set_status += 1
+                elif line.find(f'SUBCONT=') != -1:
                     cntSUBCONT += 1
 
-        self.assertEqual(cntqrls, 1, 'Expected only 1 qrls cmd')
+        self.assertEqual(cnt_set_status, 1, 'Expected only 1 qrls cmd')
         self.assertEqual(cntSUBCONT, 1, 'expected only 1 SUBMITCMD')
 
 

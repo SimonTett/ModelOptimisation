@@ -241,9 +241,13 @@ class testScripts(unittest.TestCase):
         config.setv("song_type_comment",'this is not a love song')
         config.save() # save the config which should be changed
         self.assertIsNone(cfg.config.getv('song_type_comment'))
-        # First check we can write to a different output file with everythigng working
+        # First check we can write to a different output file with everything working
         new_cfg_path = self.tempDir / 'dfols4p_new/dfols4p_new.scfg'
-        run_cmd(str(script_path),str(cfg_path),'update',str(config.fileName()),'--output',str(new_cfg_path))
+        cmd = [str(script_path),  #'--log_level','DEBUG',
+          str(cfg_path),
+         'update',str(config.fileName()),'--output',str(new_cfg_path)]
+        print(" ".join(cmd))
+        run_cmd(*cmd)
         cfg2 = runSubmit.load(new_cfg_path) # load it.
         self.assertEqual(cfg2.config.getv('song_type_comment'),'this is not a love song')
 

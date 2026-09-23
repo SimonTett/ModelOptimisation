@@ -46,37 +46,35 @@ class archive_study(model_base, journal):
                 compress:bool=True):
         """
         Archive a SubmitStudy (or anything that has an archive method)
-        :param submit: SubmitStudy to be archived
-        :param archive_path: name of the archive file. 
-                   If None then submit.roodDir/archive.tar.gz is used.
+        :param submit: SubmitStudy to be archived.
+        :param archive_path: path to archive path
+                   If None then submit.study_dir/archive_{submit.name}.tar (or archive.{submit.name}.tar.gz if compress is True) will be used.
         :param extra_paths: Extra files to be archived. Passed to SubmitStudy.archive.
-        File will be compressed using gzip if file name ends in .gz
+        :param compress: If True then archive is compressed. If False then not compressed.
         :return: archive_path
         """
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tmp_path = pathlib.Path(tmpdir)
-            submit.dump(tmp_path/submit.config_path.name) # dump it to tmpdir. Note no changes made.
-            if archive_path is None:
-                if compress:
-                    archive_path = submit.rootDir/ f'archive_{submit.name}.tar.gz'
-                else:
-                    archive_path = submit.rootDir/ f'archive_{submit.name}.tar'
+        tmp_dir = pathlib.Path(tempfile.mkdtemp())
+        if archive_path is None:
+            if compress:
+                archive_path = submit.study_dir / f'archive_{submit.name}.tar.gz'
+            else:
+                archive_path = submit.study_dir / f'archive_{submit.name}.tar'
 
-            self.update_history(f"Archiving data for {submit.config_path}")
-            self.archive_path = archive_path
-            self.config_file = pathlib.PurePath(submit.config_path.name)
-            self.rootDir = submit.rootDir
-            # dump the archive to somewhere temp.
-            apath = tmp_path/'archive.acfg'
-            self.dump(apath)
+        self.update_history(f"Archiving data for {submit.config_path}")
+        self.archive_path = archive_path.resolve().relative_to(submit.study_dir)
+        self.config_file = pathlib.PurePath(submit.config_path.name)
+        self.rootDir = submit.study_dir
+        # dump the archive to somewhere temp.
+        apath = tmp_dir/'archive.acfg'
+        self.dump(apath)
 
-            mode='w'
-            if archive_path.suffix == '.gz':
-                mode+=':gz'
-            my_logger.debug(f'Write data to {archive_path} using mode {mode}')
-            with tarfile.open(archive_path,mode=mode) as archive:
-                archive.add(apath,apath.name)  # archive the archive info.
-                submit.archive(archive,extra_paths=extra_paths)  # now archive the SubmitStudy.
+        mode='w'
+        if archive_path.suffix == '.gz':
+            mode+=':gz'
+        my_logger.debug(f'Write data to {archive_path} using mode {mode}')
+        with tarfile.open(archive_path,mode=mode) as archive:
+            archive.add(apath,apath.name)  # archive the archive info.
+            submit.archive(archive,extra_paths=extra_paths)  # now archive the SubmitStudy.
 
         return archive_path
 

@@ -27,18 +27,12 @@ class simple_model_pars_json(Model):
     # simple model.. Need to have its own  version of submit_cmd, modify_model, perturb
     # all other methods are as Model.
 
-    def __init__(self, *args, **kwargs): # study should be a study but study imports model.
-        """
-        simple_model init -- calls super class -- see Model.__init__ for documentation on these.
-        :param args:  arguments
-        :param kwargs: keyword arguments
+    scripts = dict(
+        submit_script = 'run_simple_model_pars_json.py'
+    )
+    scripts['continue_script'] = scripts['submit_script']  # continue is just submit
 
-        """
 
-        super().__init__(*args,  **kwargs)  # call the super class init.
-
-        self.submit_script = pathlib.PurePath('run_simple_model_pars_json.py')
-        self.continue_script = self.submit_script # continue is just submit
 
 
     # model generation fns.
@@ -146,15 +140,15 @@ class simple_model_pars_json(Model):
 
 
         if self.status in ['INSTANTIATED', 'PERTURBED']:
-            script = self.submit_script
+            script = self.scripts['submit_script']
         elif self.status == 'CONTINUE':
-            script = self.continue_script
+            script = self.scripts['continue_script']
         else:
             raise ValueError(f"Status {self.status} not expected ")
         outdir = self.model_dir / 'model_output'
         outdir.mkdir(parents=True, exist_ok=True)
         my_logger.debug(f"Created {outdir}")
-        cmd = self.engine.submit_cmd([self.model_dir/script, str(self.StudyConfig_path)],
+        cmd = self.engine.submit_cmd([self.script_dir/script, str(self.StudyConfig_path)],
                                      f"{self.name}{len(self.model_jids):05d}",
                                      outdir,
                                      rundir=self.model_dir,

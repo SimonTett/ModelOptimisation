@@ -100,8 +100,6 @@ class Model(ModelBaseClass, journal):
     pp_jid: typing.Optional[str]
     model_jids: list[str]
     submitted_jid: typing.Optional[str]
-    submit_script: typing.Union[pathlib.Path, pathlib.PurePath]
-    continue_script: typing.Union[pathlib.Path, pathlib.PurePath]
     set_status_script: typing.Union[pathlib.Path, pathlib.PurePath]
     status: type_status
     simulated_obs: typing.Optional[pd.Series]
@@ -144,8 +142,11 @@ class Model(ModelBaseClass, journal):
         Private attributes:
           _post_process_input -- name of input file for post-procesing
           _post_process_output -- name of output file for post-processing
+
         Note that update_history and store_output (see Journal for doc for those) set up private attributes.
     """
+    ## class variables.
+
     serialisation_data_version = packaging.version.Version("1.0.0")
     post_proccess_json = "post_process.json"  # where post-process info gets written
     status_info = dict(CREATED=None,
@@ -164,6 +165,17 @@ class Model(ModelBaseClass, journal):
     # Q Perturbed comes in two flavours. Perturb and continue or perturb and restart. How to handle that?
     allowed_status = set(status_info.keys())
     _known_parameters_cache: typing.Optional[set[str]] = None  # cache for known parameters.
+    _script_dir:typing.Optional[pathlib.Path] = None # *relative* path from model_dir to directory where scripts are stored.
+    _config_dir:typing.Optional[pathlib.Path] = None # *relative* path from model_dir to where model configuration is stored.
+
+    scripts = dict( # list of scripts that are used by the model. These are relative to script_dir
+        # setup default submit and continue script.
+        submit_script = "submit.sh",
+        continue_script = "continue.sh"
+
+    )
+    # location of script that updates status
+    set_status_script = genericLib.expand("$OPTCLIMTOP/OptClimVn3/scripts/set_model_status.py")
 
     @classmethod
     def load_model(cls, model_path: pathlib.Path):
@@ -176,7 +188,7 @@ class Model(ModelBaseClass, journal):
         """
         model = super().load(model_path)  # Using json "magic". See generic_json for what actually happens.
 
-        if not (isinstance(model.config_path,pathlib.Path) and model.config_path.samefile(model_path)):
+        if not (isinstance(model.config_path,pathlib.Path) and model.config_path.exists() and model.config_path.samefile(model_path)):
             my_logger.warning(f"Model {model} model_path changed to {model_path}")
             model.config_path = model_path  # Replace config_path with where we actually loaded it from.
 
@@ -195,7 +207,6 @@ class Model(ModelBaseClass, journal):
                  engine: typing.Optional[abstractEngine] = None,
                  run_info: typing.Optional[dict] = None,
                  fake: bool = False,
-                 config_dir: typing.Optional[pathlib.Path] = None,
                  study_config_path:typing.Optional[pathlib.Path] = None,):
         """
         Initialize the Model class.
@@ -205,8 +216,6 @@ class Model(ModelBaseClass, journal):
 
         :param name -- name of model. If None then config_path.stem is used.
         :param reference_name -- name of reference model. If None then reference.name is used.
-        :param config_dir -- where configuration files are written. This should be relative to model_dir.
-          If None then config files stored in model_dir. see Model.model_dir for details.
         :param status -- model status. Default = "CREATED"
         :param parameters -- dict of parameters names and values.
         :param post_process -- dict for post-processing. If None no post-processing will be done.
@@ -249,7 +258,7 @@ class Model(ModelBaseClass, journal):
             reference_name = reference.name
         self.reference_name = reference_name
 
-        self._config_dir = config_dir # config_dir **relative** to model_dir
+
 
 
         if status not in self.allowed_status:
@@ -302,14 +311,8 @@ class Model(ModelBaseClass, journal):
         self.model_jids = []  # list of all model job ids running came across.
         self.pp_jid = None  # post-processing job id
         self.submitted_jid = None  # job id of last submitted model submitted.
-        # setup submit and continue script. Create them as pure paths (here) as we do not expect
-        # to actually create this class of Model for real use.
-        self.submit_script = pathlib.PurePath("submit.sh")
-        self.continue_script = pathlib.PurePath("continue.sh")
-        # setup path to where script that sets status is.
-        root = self.expand("$OPTCLIMTOP/OptClimVn3")
-        script_pth = root / "scripts/set_model_status.py"
-        self.set_status_script = script_pth
+
+
 
         # and simulated obs.
         self.simulated_obs = None
@@ -327,6 +330,8 @@ class Model(ModelBaseClass, journal):
         self.status = status
         if self.status == 'CREATED':  # creating model for the first time
             self.update_history("CREATING model")
+
+    # property methods. All return a path to a directory (or None)
     @property
     def model_dir(self) -> typing.Optional[pathlib.Path]:
         """
@@ -354,6 +359,27 @@ class Model(ModelBaseClass, journal):
         if self._config_dir is not None and self.model_dir is not None:
             config_dir = config_dir / self._config_dir
         return config_dir
+
+    @property
+    def script_dir(self) -> typing.Optional[pathlib.Path]:
+        """
+        Return script_dir as model_dir/_script_dir. This is where the model scripts are stored.
+        If model_dir is None return None.
+        """
+        script_dir = self.model_dir # could be None
+        if self._script_dir is not None and self.model_dir is not None:
+            script_dir = script_dir / self._script_dir
+        return script_dir
+
+    @property
+    def model_run_dir(self) -> typing.Optional[pathlib.Path]:
+        """
+        Return the directory where the model is run which by default is model_dir. Override in your model class
+        if different.
+        :return: path to the model run directory or None if not set.
+        """
+        return self.model_dir
+
 
     @property
     def name(self) -> str:
@@ -597,7 +623,7 @@ class Model(ModelBaseClass, journal):
         """
         Create a new model by copying reference. If self.fake is True then no copy is done.
          Overwrite (and call superclass) for your own model.
-         :param direct: path to directory to create. If None then self.model_dir/self.config_dir will be used.
+         :param direct: path to directory to create. If None then self.config_dir will be used.
          :param copy_ref: If True copy reference directory to dir
         For example if you want to modify your reference model.
         :return:nothing.
@@ -688,9 +714,9 @@ class Model(ModelBaseClass, journal):
         self.modify_model()  # do any modifications to model needed before setting params.
         self.set_params()  # set the params
         self.check()  # check the model is ok. Very model dependent.
-        # set permissions to rxw,rx,rx for submit and continue script.
+        # set permissions to rxw,rx,rx for all scripts
         if not fake:
-            for file in [self.submit_script, self.continue_script]:
+            for file in [self.script_dir/s for s in self.scripts.values()]:
                 if file is not None:
                     (self.model_dir / file).chmod(0o755)  # set permission
             # install remote if needed.
@@ -726,7 +752,7 @@ class Model(ModelBaseClass, journal):
         """
         Check the model is ok. You should call this and then do your own stuff in your class method
         This method checks:
-           set_status_script, submit_script and continue_script is a file
+           set_status_script, and all scripts are files
 
         Will raise ValueError if the model is not ok.
         :return: True if model is ok.
@@ -734,8 +760,12 @@ class Model(ModelBaseClass, journal):
         self.update_history("Checking model")
         if not self.fake:
             if not self.set_status_script.is_file():
-                raise ValueError(f"Need {self.set_status_script} is not a file")
+                raise ValueError(f"{self.set_status_script} is not a file")
+            if self.status != 'CREATED': # have to instantiate the model before checking scripts. Otherwise they might not exist yet.
 
+                for script in [self.script_dir/s for s in self.scripts.values()]:
+                    if not script.is_file():
+                        raise ValueError(f"{script} is not a file")
         return True
 
     def submit_post_process(self) -> str:
@@ -851,17 +881,17 @@ class Model(ModelBaseClass, journal):
     def submit_cmd(self) -> typing.List[str]:
         """"
         Generate the submission command. Over-ride this for your own model.
-        If status is INSTANTIATED or PERTURBED then this runs self.engine.submit_cmd on  [self.submit_script] and
-        if CONTINUE runs on  [self.continue_script]
+        If status is INSTANTIATED or PERTURBED then this runs self.engine.submit_cmd on  [self.scripts['submit_script']] and
+        if CONTINUE runs on  [self.scripts['continue_script']]
         output should go to model_dir/'model_output' which will be created if it does not exist.
         """
         # TODO -- As Model should never be directly instantiated then
         #  consider moving this into simple_model and just having very generic version for Model case.
         # Then individual model classes can run the generic code first and then do their own thing.
         if self.status in ['INSTANTIATED', 'PERTURBED']:
-            script = self.submit_script
+            script = self.scripts['submit_script']
         elif self.status == 'CONTINUE':
-            script = self.continue_script
+            script = self.scripts['continue_script']
         else:
             raise ValueError(f"Status {self.status} not expected ")
         runCode = self.run_info.get('runCode')
@@ -967,7 +997,7 @@ class Model(ModelBaseClass, journal):
     def process(self, update: bool = False,
                 ) -> typing.Optional[str]:
         """
-        Run the post-processing, store output and set status to PROCESSED.
+        Run the post-processing, store output, and set status to PROCESSED.
         "Contract" for a post-processing script
         1) takes a json file as input (arg#1) and puts output in file (arg#2).
         2) It is being ran in the model_directory.
@@ -1174,85 +1204,105 @@ class Model(ModelBaseClass, journal):
         my_logger.warning(f"Nothing set for {ens_member}. Override in your own model")
         return None
 
-    def copyConfig(self, direct: pathlib.Path,
-                   extra_files: typing.Optional[list[pathlib.Path]] = None,
-                   update_paths: bool = True) -> "Model":
+    def copy_config(self, config_path: pathlib.Path,
+                    extra_files: typing.Optional[list[pathlib.Path]] = None,
+                    update_paths: bool = True) -> "Model":
         """
         Copy Model to a new directory. Different Model classes may well want to override this by adding their own extra_files
         This basic version will only copy the model config file and the post-processing output file.
            All files must in self.model_dir
-        :param direct: directory where Model  is to be copied. Will be created if it does not exist
+        :param config_path new config_path where  Model  is to be copied.
         :param extra_files: list of extra files (paths provided relative to self.model_dir) to be copied to new directory.
-
-        :param update_paths -- If True then any path parameters will be updated to reflect new directory structure.
-           If False and update_parameters is Truety then ValueError will be raised.
         :return: Copied Model. Will copy only Model config & post process unless extra_files provided.
 
-
-
+        This could share functionlity with the archive method by sharing file names/paths to copy
         """
 
 
-        # check tgt direct path is abs and if not make it abs.
-        if not direct.is_absolute():
-            direct = pathlib.Path.cwd() / direct
-            my_logger.info("Made direct absolute to " + str(direct))
-        direct.mkdir(parents=True, exist_ok=True)  # create the directory if needed.
+        # check tgt  path is abs and if not make it abs.
+        config_path = config_path.resolve()
 
-        files_to_copy = [self.config_path.name, self._post_process_output]
+        if config_path.exists() and self.config_path.samefile(config_path):
+            raise FileExistsError(f"Can not copy model to itself {self.config_path}")
+
+        cp_model = copy.deepcopy(self)  # make a copy of self
+        cp_model.config_path = config_path
+        files_to_copy = [ self._post_process_output,self._post_process_input]
+        files_to_copy += [d for d in [self._script_dir, self._config_dir] if d is not None]
 
         if extra_files is not None:
             files_to_copy = files_to_copy + extra_files
 
-        files_copied = genericLib.copy_files(self.model_dir, direct, files_to_copy)
-        cp_model = copy.deepcopy(self)  # make a copy of self
+        files_copied = genericLib.copy_files(self.model_dir, cp_model.model_dir, files_to_copy)
+
         miss_files = set(files_to_copy) - set(files_copied)
         if len(miss_files) > 0:
-            my_logger.warning(f"{' '.join(miss_files)} missing and not copied")
+            my_logger.warning(f"{' '.join([str(f) for f in miss_files])} missing and not copied")
 
-        cp_config_path = direct / (self.config_path.name)
-        cp_model.update_history(f'Copied {len(files_copied)} from {self.model_dir} to {direct}')
-        cp_model.config_path = cp_config_path
+
+        cp_model.update_history(f'Copied {len(files_copied)} from {self.model_dir} to {cp_model.model_dir}')
         cp_model.update_history(f"Updated model_dir and config_path")
 
-        cp_model.dump(cp_config_path)  # dump it out! (needed as have changed things so orig copy will have old values)
+        cp_model.dump_model()  # dump it out! (needed as have changed things so orig copy will have old values)
         return cp_model
 
     def archive(self,
                 archive: tarfile.TarFile,
-                root_dir: pathlib.Path,
-                extra_files: typing.Optional[typing.List[pathlib.Path | str]] = None):
+                root_dir: typing.Optional[pathlib.Path|str] = None,
+                extra_files: typing.Optional[typing.List[pathlib.Path | str]] = None) -> list[pathlib.Path]:
         """
+       self will be dumped to make sure config_path & config are up to date
+        The default behaviour is to add to the archive:
+            config file, the post-processing output and input  files, all script files, PP_output directory
+        If config_dir differs from model_dir then config_dir is added to archive.
+        Otherwise, all files in model_dir will be archived with archive names relative to root_dir.
+        Note no recursion. If your model needs more, pass in extra_files.
+        This behaviour may be changed in future to make model overloading easier.
 
-        :param archive: archive to be added to
+        Only unique set of files, not directories, are archived -- see genericLib.filter_files for filtering code.
+        :param archive: archive to be added to.
         :param root_dir: root to which all files (in archive file) are stored relative to.
-           If not None, then the name in the archive will be relative to this path.
+           If not None, then will be set to self.model_dir.parent()
         :param extra_files -- extra model things to archive. Should be relative to self.model_dir
-        :return: None
-
-        Dump models to tempdir  and only archives files that exist.
-        Adds self.config_path and self.model_dir / self._post_process_output to archive.
-          If your model wants to include more things in the archive, then overload this method.
-          If you call it first using the super method then you just need to add you own stuff to archive!
+        :return: list of files that were archived.
 
         Example:
         with tarfile.open(archive_file, "w") as archive:
-            model.archive(archive, rootDir=pathlib.Path("my_root_dir")
+            files_archived = model.archive(archive, rootDir=pathlib.Path("my_root_dir"))
         """
+        if root_dir is None:
+            root_dir =  self.model_dir.resolve().parent
+        if extra_files is None:
+            extra_files = []
 
-        # dump the model. TODO: Make dump take a fp or a path. If it has a fileptr then just write to it.
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # dump the model (but no change to internal values)
-            # handle models that were read in and so, potentially, outside rootDir
-            tmpdir_pth = pathlib.Path(tmpdir) / self.config_path.name
-            self.copyConfig(direct=tmpdir_pth, extra_files=extra_files)
+        self.dump_model()
+        files_to_archive = [self.config_path]
+        # add in post_process input/output and logs and extra files -- all are relative to model_dir
+        file_lst =  [self._post_process_output, self._post_process_input,'PP_output']+extra_files
+        files_to_archive += [self.model_dir/f for f in file_lst]
+        # add in the scripts.
+        files_to_archive += list([self.script_dir/s for s in self.scripts.values() if s is not None])
+        if not self.config_dir.samefile(self.model_dir):
+            # config dir differs from model_dir so add in config_dir
+            files_to_archive += [self.config_dir] # everything in  config_dir
+        else: # add all *files* in model_dir. (Not ideal as could end up with a bunch of files we don't care about)
+            files_to_archive += [f for f in self.model_dir.glob("*") if f.is_file()]
 
-            for path in tmpdir_pth.rglob("*"):  # get all files in the copied  model dir.
-                if path.is_dir():
-                    continue  # skip dirs
-                arc_path = path.relative_to(tmpdir_pth)
-                archive.add(path, arc_path)
-                my_logger.debug(f"Added {path} to archive as {arc_path}")
+
+        files_to_archive = genericLib.files_to_archive(files_to_archive)
+
+
+        # Will archive files with a name relative to root_dir
+        for path in files_to_archive:
+            arc_path = path.relative_to(root_dir)
+            archive.add(path, arcname=arc_path)
+            my_logger.debug(f"Added {path} to archive as {arc_path}")
+
+
+
+        return files_to_archive
+
+
 
     def reprocess(self, post_process: typing.Optional[dict] = None) -> pd.Series:
         """
@@ -1291,12 +1341,17 @@ class Model(ModelBaseClass, journal):
         :param dct: dict to be converted to a model
         :return:a tempModel instance.
         """
+
         dct2 = cls.convert_pure_paths(dct)
-        # remove model_dir as no longer needed.
-        serialisation_data_version = packaging.version.Version(dct2.get('serialisation_data_version', '0.0.0'))
+        config_dir = dct2.pop('config_dir',None) # overwritten by class info
+        serialisation_data_version = packaging.version.Version(dct.get('serialisation_data_version', '0.0.0'))
         if serialisation_data_version < packaging.version.Version('1.0.0'):
             # legacy support for old serialisation data.
-            dct2.pop('model_dir',None)
+            # remove model_dir, and anything called '_script' as no longer needed.
+            keys_to_remove = [k for k,v in dct2.items() if k.endswith('_script') and isinstance(v,pathlib.PurePath) ]
+            keys_to_remove += ['model_dir']
+            for key in keys_to_remove:
+                dct2.pop(key,None)
             # rename name to _name
             if 'name' in dct2:
                 dct2['_name'] = dct2.pop('name')
@@ -1306,8 +1361,11 @@ class Model(ModelBaseClass, journal):
             except KeyError:  # old style configs so just let __init__ deal with it.
                 pass
 
-        obj = cls( config_path=dct2.pop('config_path'), reference=dct2.pop('reference'),config_dir=dct2.pop('config_dir',None))  # create a default instance
+        config_path = pathlib.Path(dct2.pop('config_path'))
+        obj = cls( config_path=config_path, reference=dct2.pop('reference'))  # create a default instance
         obj.fill_attrs(dct2)
+        if config_dir is not None and config_dir != obj.config_dir:
+            raise  ValueError(f"config_dir in dict {config_dir} does not match config_dir {obj.config_dir}")
         return obj
 
     def read_nl_value(self, nl_var: NamelistVar,

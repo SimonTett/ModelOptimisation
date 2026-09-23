@@ -60,7 +60,8 @@ class TestStudy(unittest.TestCase):
             self.models.append(model)
 
         # create a study instance
-        self.study = Study(config, name="test_study", models=self.models, rootDir=pathlib.Path(direct))
+        config_path = direct / 'test_study' / 'test_study.mcfg'
+        self.study = Study(config, name="test_study", models=self.models, config_path=config_path)
 
     def fake_fn(self, params):
         import itertools

@@ -42,7 +42,7 @@ class test_umRose(unittest.TestCase):
         post_process = dict(script='$OPTCLIMTOP/OptClimVn3/scripts/comp_obs.py', output_file='obs.nc')
         self.post_process = post_process
         self.model = UKESM1_1(name='testM', reference=ref_dir,
-                            config_path=test_dir/'model1/testM.mcfg', config_dir='suite',post_process=post_process,
+                            config_path=test_dir/'model1/testM.mcfg', post_process=post_process,
                             parameters=parameters)
 
 
@@ -249,10 +249,10 @@ and even more text
         shutil.rmtree(self.model.config_dir, onerror=genericLib.errorRemoveReadonly)
         shutil.copytree(self.refDir,self.model.config_dir,dirs_exist_ok=True)
         # create the submit and continue scripts
-        for file in [self.model.submit_script, self.model.continue_script,self.model.clean_script]:
+        for file in [self.model.script_dir/f for f in self.model.scripts.values()]:
             file.parent.mkdir(parents=True, exist_ok=True)
-            with file.open('wt') as f:
-                f.write('A script')
+            with file.open('wt') as fp:
+                fp.write('A script')
 
     def test_check(self):
         """
@@ -282,7 +282,8 @@ and even more text
 
         self.reinit()
         self.model.set_params(dict(RUN_TARGET='P1Y3M'))  # Ok time!
-        self.model.submit_script.unlink() # remove the submit script
+        submit_script = self.model.script_dir / self.model.scripts['submit_script']
+        submit_script.unlink() # remove the submit script
         with self.assertRaises(FileNotFoundError) as cm:
             self.model.check()
 
@@ -355,12 +356,13 @@ and even more text
     def test_copy(self):
         # test that copy method works
         # Only need to check that have workflow and scripts copied over.
+        self.maxDiff  = None
         model = self.model
-        model.instantiate()
-        cp_dir = self.testDir / 'copy_model'
-        model_copy = model.copyConfig(cp_dir)
+        model.instantiate() # instantiate it writes everything out.
+        cp_config = self.testDir / 'copy_model'/model.config_path.name
+        model_copy = model.copy_config(cp_config)
         # check that the workflow and scripts are copied over.
-        for dct in [model_copy.model_dir,model_copy.model_dir/model_copy.script_dir,model_copy.config_dir]:
+        for dct in [model_copy.model_dir,model_copy.script_dir,model_copy.config_dir]:
             self.assertTrue(dct.is_dir(),msg=f'Directory {dct} not copied correctly')
 
 
@@ -412,9 +414,9 @@ class TestUKESM1ParamFunctions(unittest.TestCase):
         config_path1 = testDir1 / 'test_c7'
         config_path2 = testDir2 / 'test_c8'
         self.models = [UKESM1_1(config_path=config_path1, reference=refDir1,
-                               config_dir='suite', post_process=post_process),
+                               post_process=post_process),
                     UKESM1_1_c8(config_path=config_path2,  reference=refDir2,
-                               config_dir='suite', post_process=post_process)]
+                                post_process=post_process)]
         for model in self.models:
             model.instantiate()
 

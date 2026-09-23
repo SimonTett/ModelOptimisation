@@ -106,8 +106,8 @@ class testRunSubmit(unittest.TestCase):
         config.Covariances(CovTotal=covTotal)  # set total covar.
         rootDir = pathlib.Path(tmpDir.name)
         refDir = runSubmit.runSubmit.expand("$OPTCLIMTOP/Configurations/xnmea")
-        self.rSubmit = runSubmit.runSubmit(config, 'test',
-                                           rootDir=rootDir, refDir=refDir)
+        config_path = rootDir/'test/test.scfg'
+        self.rSubmit = runSubmit.runSubmit(config, 'test', refDir=refDir, config_path=config_path)
 
         self.refDir = refDir  # where the default reference configuration lives.
         self.rootDir = rootDir  # where the config info will go.
@@ -133,7 +133,8 @@ class testRunSubmit(unittest.TestCase):
 
         rootDir = self.rootDir.with_stem(self.rootDir.stem + '_test_init')
         models = list(self.extract_runSubmit.model_index.values())
-        r = runSubmit.runSubmit(copy.deepcopy(self.config), 'test_status', rootDir, refDir=self.refDir,
+        config_path = rootDir/'test/test.scfg'
+        r = runSubmit.runSubmit(copy.deepcopy(self.config), name='test_status', config_path=config_path, refDir=self.refDir,
                                 models=models)  # clean rSubmit
 
         for m in r.model_index.values():
@@ -173,7 +174,8 @@ class testRunSubmit(unittest.TestCase):
 
         config = copy.deepcopy(self.config)
         config.paramNames(['VF1','CT'])
-        rsubmit = runSubmit.runSubmit(config,name='test',model_name='HadCM3',rootDir=self.rootDir, next_iter_cmd=['run myself'])
+        config_path = self.rootDir/'test/test.scfg'
+        rsubmit = runSubmit.runSubmit(config,name='test',model_name='HadCM3',config_path=config_path, next_iter_cmd=['run myself'])
         # create some models
 
         for param in [dict(VF1=3, CT=1e-4), dict(VF1=2.4, CT=1e-4), dict(VF1=2.6, CT=1e-4)]:
@@ -396,8 +398,9 @@ class testRunSubmit(unittest.TestCase):
         # lets run  it
         configData = self.config
         configData.ensembleSize(2)
+        config_path = self.rootDir / 'test_genOptFunction.scfg'
         rSubmit = runSubmit.runSubmit(copy.deepcopy(configData), 'optFn',
-                                      rootDir=self.rootDir, refDir=self.refDir)
+                                      refDir=self.refDir, config_path=config_path)
         params = rSubmit.config.beginParam()
         params = params.values
         nobs = len(rSubmit.config.obsNames())
@@ -434,8 +437,9 @@ class testRunSubmit(unittest.TestCase):
         # colliding with the multi-config case below.
         ens_root = self.rootDir / 'ensemble_case'
         ens_root.mkdir(parents=True, exist_ok=True)
+        config_path = ens_root / 'ensemble_case.scfg'
         ens_submit = runSubmit.runSubmit(copy.deepcopy(ens_config), 'ensemble',
-                                         rootDir=ens_root, refDir=self.refDir)
+                                         refDir=self.refDir, config_path=config_path)
         ens_base = ens_config.beginParam().to_dict()
         # gen_param_dict expands one logical parameter set into the concrete ensemble
         # members that must each be run and then averaged.
@@ -486,8 +490,9 @@ class testRunSubmit(unittest.TestCase):
         multi_config.fixedParams(fixed_params=fixed_params)
         multi_root = self.rootDir / 'multi_case'
         multi_root.mkdir(parents=True, exist_ok=True)
+        config_path = multi_root / 'multi.scfg'
         multi_submit = runSubmit.runSubmit(copy.deepcopy(multi_config), 'multi',
-                                           rootDir=multi_root, refDir=self.refDir)
+                                           config_path=config_path,  refDir=self.refDir)
         multi_base = multi_config.beginParam().to_dict()
         multi_params = multi_submit.gen_param_dict(multi_base)[0]
         multi_member_obs = {}
@@ -540,8 +545,9 @@ class testRunSubmit(unittest.TestCase):
         """
 
         def run_all(config, name='run_test'):
+            config_path = self.rootDir / f'name/{name}.scfg'
             rSubmit = runSubmit.runSubmit(copy.deepcopy(config), name,
-                                          rootDir=self.rootDir, refDir=self.refDir)
+                                          config_path=config_path, refDir=self.refDir)
             try:
                 rSubmit.runOptimized()
             except optclim_exceptions.submitModel:
@@ -657,7 +663,8 @@ class testRunSubmit(unittest.TestCase):
         # test read_model_config reads in models and status is 'read'
 
         rootDir = self.rootDir.with_stem(self.rootDir.stem + '_test_read')
-        r = runSubmit.runSubmit(copy.deepcopy(self.config), 'test_status', rootDir, refDir=self.refDir)  # clean rSubmit
+        config_path = rootDir/' test_read.scfg'
+        r = runSubmit.runSubmit(copy.deepcopy(self.config), 'test_status', rootDir, config_path=config_path)  # clean rSubmit
 
         model_paths = [m.config_path for m in self.extract_runSubmit.model_index.values()]
         models = r.read_model_configs(model_paths)
@@ -684,7 +691,8 @@ class testRunSubmit(unittest.TestCase):
 
 
         # create a fresh runSubmit with no preloaded models
-        r = runSubmit.runSubmit(copy.deepcopy(self.config), 'test_status', rootDir=self.rootDir, refDir=self.refDir)
+        config_path = self.rootDir/'test_status/test_status.scfg    '
+        r = runSubmit.runSubmit(copy.deepcopy(self.config), 'test_status',  refDir=self.refDir,config_path=config_path)
 
         # simulate a model present at init by creating a model and adding to model_index and model_status
         params = dict(CT=1e-4, EACF=0.5, ENTCOEF=3, ICE_SIZE=3e-5, RHCRIT=0.7, VF1=0.5, CW=2e-4)
@@ -838,8 +846,9 @@ class testRunSubmit(unittest.TestCase):
 
         # Run runDFOLS. WIll use fake_function to optimise directly.
         iterCount = 0
+        config_path = self.rootDir / 'test_DFOLS/test_DFOLS.scfg'
         rSubmit = runSubmit.runSubmit(configData, 'test_DFOLS',
-                                      rootDir=self.rootDir, refDir=self.refDir)
+                                     refDir=self.refDir, config_path=config_path)
         # setup Submit object.
         while True:
             try:
@@ -1092,8 +1101,9 @@ class testRunSubmit(unittest.TestCase):
         config = copy.deepcopy(configData)
         config.DFOLS_config()['evaluation_database'] = eval_db_dict
         config.DFOLS_config()['rhobeg'] = 0.01  # smaller rhobeg.
+        config_path = self.rootDir / 'test_DFOLS2/test_DFOLS2.scfg'
         rSubmit = runSubmit.runSubmit(config, 'test_DFOLS2',
-                                      rootDir=self.rootDir, refDir=self.refDir)
+                                      config_path=config_path, refDir=self.refDir)
         with self.assertRaises(optclim_exceptions.submitModel) as context:
             finalConfig = rSubmit.runDFOLS(scale=scale)  # run it
         # should be trying to run a single new case.
@@ -1159,8 +1169,9 @@ class testRunSubmit(unittest.TestCase):
         # compute what we expect --
         refParam = configData.beginParam()
         expect_jac, expect_trans_jac = raw_jac(refParam, steps, scale=scale)
+        config_path = self.rootDir / 'test_runJacobian/test_runJacobian.scfg'
         rSubmit = runSubmit.runSubmit(configData, 'test_jac',
-                                      rootDir=self.rootDir, refDir=self.refDir)
+                                      config_path=config_path, refDir=self.refDir)
         # setup Submit object.
         while True:
             try:
@@ -1192,8 +1203,9 @@ class testRunSubmit(unittest.TestCase):
         optConfig.optimumParams(optimum=opt)
         expect_jac, expect_jac_trans = raw_jac(opt, steps, scale=scale)
         rSubmit.delete()  # clean up rSubmit -- no automatic deletion as want to keep disk stuff persistent.
+        config_path = self.rootDir / 'test_opt_jac.scfg'
         rSubmit = runSubmit.runSubmit(optConfig, 'test_opt_jac',
-                                      rootDir=self.rootDir, refDir=self.refDir)
+                                     config_path=config_path, refDir=self.refDir)
         while True:
             try:
                 finalConfig = rSubmit.runJacobian(scale=scale)  # run Jacobian
@@ -1287,8 +1299,9 @@ class testRunSubmit(unittest.TestCase):
 
         iterCount = 0
         nalpha = len(optimise['alphas'])
+        config_path = self.rootDir / 'test_runGaussNewton/test_runGaussNewton.scfg'
         rSubmit = runSubmit.runSubmit(configData, 'test_GN',
-                                      rootDir=self.rootDir, refDir=self.refDir)
+                                      refDir=self.refDir, config_path=config_path)
         # setup Submit object.
         while True:
             try:
@@ -1318,8 +1331,9 @@ class testRunSubmit(unittest.TestCase):
         # check that setting maxIterations to 1 only has 1 iteration.
         shutil.rmtree(self.rootDir)
         configData.optimise(maxIterations=1)  # limit to 1 iteration
+        config_path = self.rootDir / 'test_runGaussNewton/test_runGaussNewton2.scfg'
         rSubmit = runSubmit.runSubmit(configData, 'test_GN2',
-                                      rootDir=self.rootDir, refDir=self.refDir)
+                                     config_path=config_path, refDir=self.refDir)
         iterCount = 0
         while True:
             try:
@@ -1611,7 +1625,7 @@ class testRunSubmit(unittest.TestCase):
         tmp_dir = pathlib.Path(tmpDir.name)
         run_submit = copy.deepcopy(self.extract_runSubmit)
         copy_dir = tmp_dir / 'copy_test'
-        run_submit_copy = run_submit.copyConfig(copy_dir)
+        run_submit_copy = run_submit.copy_config(copy_dir)
         self.assertIsInstance(run_submit_copy, runSubmit.runSubmit)
         self.assertEqual(run_submit.config, run_submit_copy.config)
         # check logical info models consistent with model_info
@@ -1661,8 +1675,8 @@ class TestRunParams(unittest.TestCase):
         config.Covariances(CovTotal=covTotal)  # set total covar.
         rootDir = pathlib.Path(tmpDir.name)
         refDir = runSubmit.runSubmit.expand("$OPTCLIMTOP/Configurations/xnmea")
-        self.rSubmit = runSubmit.runSubmit(config, 'test',
-                                           rootDir=rootDir, refDir=refDir)
+        config_path = rootDir/'test/test.scfg'
+        self.rSubmit = runSubmit.runSubmit(config, 'test', refDir=refDir, config_path=config_path)
 
         run_params_file = expand("$OPTCLIMTOP/OptClimVn3/configurations/run_params.ijson")
         with run_params_file.open('rt') as f:

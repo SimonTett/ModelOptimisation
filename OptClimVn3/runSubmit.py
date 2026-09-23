@@ -293,13 +293,12 @@ class runSubmit(SubmitStudy):
     def __init__(self,
                  config: typing.Optional[OptClimConfigVn3],
                  name: typing.Optional[str] = None,
-                 rootDir: typing.Optional[pathlib.Path] = None,
                  refDir: typing.Optional[pathlib.Path] = None,
                  models: typing.Optional[typing.List["Model"]] = None,
                  model_name: typing.Optional[str] = None,
                  config_path: typing.Optional[pathlib.Path] = None,
                  next_iter_cmd: typing.Optional[typing.List[str]] = None):
-        super().__init__(config, name, rootDir, refDir, models, model_name, config_path, next_iter_cmd)
+        super().__init__(config, name=name, refDir=refDir, models=models, model_name=model_name, config_path=config_path, next_iter_cmd=next_iter_cmd)
 
         # _logical_info holds information for per optimisation parameter info.
         # Currently, largely a bag of attributes which this class reaches into as it needs to.
@@ -765,7 +764,7 @@ class runSubmit(SubmitStudy):
         # if extra_files is None:
         #    extra_files = []
         # extra_files += [self.config.config_path.relate_to(self.rootDir)]  # always copy config file.
-        new_run_submit = super().copyConfig(direct, extra_files, keep_list=keep_list, update_paths=update_paths,new_config_name=new_config_name)
+        new_run_submit = super().copy_config(direct, extra_files, keep_list=keep_list, update_paths=update_paths, new_config_name=new_config_name)
 
         return new_run_submit
 
@@ -1254,7 +1253,7 @@ class runSubmit(SubmitStudy):
         """
         tMat = self.config.transform_matrix(scale=scale)
         var_param_names = self.config.paramNames()
-        filename = self.rootDir / (self.config.fileName().stem + "_final.json")  # final config
+        filename = self.study_dir / (self.config.fileName().stem + "_final.json")  # final config
         best = pd.Series(solution.x, index=var_param_names)  # best soln from DFOLS
         # now compute jacobian and wrap it up as a dataframe.
         jacobian = solution.jacobian
@@ -1447,7 +1446,7 @@ class runSubmit(SubmitStudy):
                                                   configData.steps(paramNames=paramNames).values,
                                                   np.zeros(nObs), optimise,
                                                   cov=np.identity(nObs), cov_iv=intCov, trace=verbose)
-        filename = self.rootDir / (self.config.fileName().stem + "_final.json")  # final config file name
+        filename = self.study_dir / (self.config.fileName().stem + "_final.json")  # final config file name
         jacobian = pd.DataFrame(info['jacobian'][-1, :, :].T, columns=paramNames, index=tMat.index)
         best = pd.Series(best, index=paramNames, name=self.config.name())  # wrap best result as pandas series
         finalConfig = self.runConfig(scale=scale, add_cost=True, filename=filename,
@@ -1485,7 +1484,7 @@ class runSubmit(SubmitStudy):
         observations = self.stdFunction(params.values, df=True, raiseError=True, ensemble_average=ensemble_average,
                                scale=scale)
 
-        filename = self.rootDir / (self.config.fileName().stem + "_final.json")  # final config file name
+        filename = self.study_dir / (self.config.fileName().stem + "_final.json")  # final config file name
         final_config = self.runConfig(add_cost=False, filename=filename)  # get final runInfo
 
         return final_config
@@ -1618,7 +1617,7 @@ class runSubmit(SubmitStudy):
 
         # need to wrap best soln xmin.
         best = pd.Series(xmin, index=paramNames)
-        filename = self.rootDir / (self.config.fileName().stem + "_final.json")  # final config file name
+        filename = self.study_dir / (self.config.fileName().stem + "_final.json")  # final config file name
         finalConfig = self.runConfig(scale=scale, add_cost=True, filename=filename,
                                      best=best)  # get final runInfo
 

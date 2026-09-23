@@ -238,7 +238,6 @@ class ModelTestCase(unittest.TestCase):
         cmd = [model.expand(self.post_process['script']), 'input.json', self.post_process['output_file']]
         ref=pathlib.PurePath(self.refDir)
         expected_dct = dict(reference=ref,reference_name=ref.name,
-                             _config_dir=None,
                             _name="test_model",
                             parameters=pardict,
                             post_process={}, _output={},
@@ -250,15 +249,13 @@ class ModelTestCase(unittest.TestCase):
                             status='CREATED', _history=model._history, engine=model.engine, pp_jid=None, run_info={},
                             study_properties={},
                             model_jids=[],
-                            submission_count=0, continue_script=pathlib.PurePath('continue.sh'),
-                            submit_script=pathlib.PurePath('submit.sh'), submitted_jid=None,
-                            set_status_script=pathlib.PurePath(self.model.expand("$OPTCLIMTOP/OptClimVn3/scripts/set_model_status.py")),
+                            submission_count=0,  submitted_jid=None,
                             remote=dict(remote_machine=None,remote_model_dir=None),  StudyConfig_path=None,
                             serialisation_data_version=str(model.serialisation_data_version)
                             )
 
         dct = model.to_dict()
-
+        self.maxDiff=None
         self.assertEqual(expected_dct, dct)
 
     def test_load_dump(self):
@@ -821,16 +818,17 @@ class ModelTestCase(unittest.TestCase):
         # test archiving works
         #  test config file works
 
-        # create archive file.
-        archive_file = self.testDir / 'test_archive.tar'
+        # create an archive file.
+        archive_file = self.testDir / 'test_archive.tar.gz'
         pp_file = self.model.model_dir / self.model._post_process_output
         self.model.dump_model()
+        root_dir = pathlib.Path(self.model.model_dir.parent.resolve())
         with tarfile.open(archive_file, "w", dereference=True) as archive:
-            self.model.archive(archive, self.testDir,
-                               extra_files=[self.model._post_process_output])  # archive the model
+            files_archived = self.model.archive(archive, root_dir=root_dir)  # archive the model
 
         # now can try and read it.
-        expected_names = [p.relative_to(self.model.model_dir) for p in [self.model.config_path]]  # ,]]
+        expected_names = [self.model.config_path]  # just expect model_dir to be in archive
+        expected_names = [n.resolve().relative_to(root_dir) for n in expected_names]
         with tarfile.open(archive_file, "r") as archive:
             names = [pathlib.Path(n) for n in archive.getnames()]  # list of names
             self.assertEqual(expected_names, names)
@@ -841,10 +839,11 @@ class ModelTestCase(unittest.TestCase):
         with open(pp_file, 'wt') as fp:
             json.dump(test_obs, fp)
         with tarfile.open(archive_file, "w") as archive:
-            self.model.archive(archive, self.testDir)  # archive the model
-        expected_names = sorted([p.relative_to(self.model.model_dir) for p in [self.model.config_path, pp_file]])
+            self.model.archive(archive, root_dir=root_dir)  # archive the model
+        expected_names = [self.model.config_path, pp_file]
+        expected_names = set([n.resolve().relative_to(root_dir) for n in expected_names])
         with tarfile.open(archive_file, "r") as archive:
-            names = sorted([pathlib.Path(n) for n in archive.getnames()])  # list of names
+            names = set([pathlib.Path(n) for n in archive.getnames()])  # list of names
             self.assertEqual(expected_names, names)
 
         # check extra works.
@@ -854,23 +853,24 @@ class ModelTestCase(unittest.TestCase):
             print("Line 1", file=fp)
             print("Line 2", file=fp)
 
-        expected_names = sorted([p.relative_to(self.model.model_dir) for p in [self.model.config_path, pp_file, test_file]])
+        expected_names = [ self.model.config_path, pp_file,test_file   ]
+        expected_names = set([n.resolve().relative_to(root_dir) for n in expected_names])
         with tarfile.open(archive_file, "w") as archive:
-            self.model.archive(archive, self.testDir, extra_files=['test.txt'])  # archive the model
+            arc_files = self.model.archive(archive, root_dir=root_dir, extra_files=['test.txt'])  # archive the model
         with tarfile.open(archive_file, "r") as archive:
-            names = sorted([pathlib.Path(n) for n in archive.getnames()])  # list of names
+            names = set([pathlib.Path(n) for n in archive.getnames()])  # list of names
             self.assertEqual(expected_names, names)
 
-    def test_copyConfig(self):
+    def test_copy_config(self):
         # test copy works
 
         # easy test. Copy model somewhere else and check they are the same.
         dest_dir = self.testDir / 'copy_model'
         model = self.model
         model.instantiate()
-        model.copyConfig(dest_dir)
+        new_model = model.copy_config(dest_dir / 'model.mcfg')
         # now load in the copied model
-        cmodel = myModel.load_model(dest_dir / f"{self.model.name}.mcfg")
+        cmodel = myModel.load_model(dest_dir / 'model.mcfg')
         attrs_not_same = ['config_path','_history']
         for attr in vars(model).keys():
             if attr in attrs_not_same:
@@ -879,7 +879,7 @@ class ModelTestCase(unittest.TestCase):
 
 
         with self.assertRaises(FileExistsError):
-            model.copyConfig(model.model_dir)
+            model.copy_config(model.config_path)
 
 
 
@@ -1016,10 +1016,9 @@ class ModelTestCase(unittest.TestCase):
 
     def test_check(self):
         # test check method works.
-
-        time.sleep(0.001)   # sleep for a millisecond so that get two history entries. (and not on at the same time)
-        self.model.check()
-        self.assertEqual(len(self.model._history), 2) # create + check
+        self.model.instantiate() # instantiate the model so scripts are there (and run check)
+        history = self.model.flaten_history()
+        self.assertEqual(len(history), 4) # create + check + modify, &  instantiate
         # set up model.set_status_script to something wrong.
         self.model.set_status_script=pathlib.Path('not_a_script.py')
         with self.assertRaises(ValueError) as cm:

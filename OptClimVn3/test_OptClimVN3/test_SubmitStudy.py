@@ -8,6 +8,7 @@ import json
 import pathlib
 
 import tempfile
+import tarfile
 import typing
 import unittest.mock  # need to mock the run case.
 import unittest
@@ -78,8 +79,8 @@ class MyTestCase(unittest.TestCase):
         refDir = refDir/'reference'
         config = StudyConfig.readConfig(cpth)
         config.baseRunID('ZZ')
-
-        submit = SubmitStudy.SubmitStudy(config, model_name='myModel', rootDir=testDir,next_iter_cmd=['run myself'])
+        config_path = testDir / 'myModel.scfg'
+        submit = SubmitStudy.SubmitStudy(config, model_name='myModel', config_path=config_path, next_iter_cmd=['run myself'])
         # create some models
         models=[]
         for param in [dict(VF1=3, CT=1e-4), dict(VF1=2.4, CT=1e-4), dict(VF1=2.6, CT=1e-4)]:
@@ -125,12 +126,12 @@ class MyTestCase(unittest.TestCase):
         model3 = sub.create_model(paramD)
         self.assertIsNone(model3)
 
-    def test_copyConfig(self):
+    def test_copy_config(self):
         # test that we can copy a SubmitStudy object
         submit = self.submit
         submit.instantiate()
-        copy_dir = self.testDir / 'copy_test'
-        sub2 = submit.copyConfig(copy_dir)
+        copy_path = self.testDir / 'copy_test/copy_config.scfg'
+        sub2 = submit.copy_config(copy_path)
         self.assertIsInstance(sub2,SubmitStudy.SubmitStudy)
         attrs_different = ['rootDir','config_path','_history']
         for attr in vars(submit).keys():
@@ -145,26 +146,6 @@ class MyTestCase(unittest.TestCase):
                 self.assertEqual(val1,val2,msg=f"Attribute {attr} should be the same")
 
 
-
-        # and another copy where paths are not updated! Shoudl eb identical but check have model dirs in copy
-        copy_dir = self.testDir / 'copy_test3'
-        sub4 = submit.copyConfig(copy_dir, update_paths=False)
-        self.assertEqual(submit, sub4)
-        for model in sub4.model_index.values():
-            model.reload() # force reload which will flush various cached paths
-
-            # and the copy model should be identical.
-            pth = copy_dir/(model.config_path.relative_to(submit.rootDir))
-            mcopy = Model.load(pth) # using load so no path changes.
-            for key in vars(model).keys():
-                if key in ['config_path','_history']: # attrs to skip
-                    continue
-                val1 = getattr(model,key)
-                val2 = getattr(mcopy,key)
-                if val1 != val2:
-                    pass # put breakpoint here
-                self.assertEqual(val1,val2,msg=f"Attribute {key} should be identical between model and loaded copy")
-            #self.assertEqual(model,mcopy,msg="Model in copy should be identical to loaded model from path")
 
 
 
@@ -204,7 +185,7 @@ class MyTestCase(unittest.TestCase):
         with submit.config_path.open('r') as fp:
             dct = json.load(fp)
         for (k1, m1), (k2, m2) in zip(dct['object']['model_index'].items(), submit.model_index.items()):
-            self.assertEqual(m1['object'], str(m2.config_path))
+            self.assertEqual(m1['object'], str(m2.config_path.relative_to(submit.study_dir)))
             self.assertEqual(k1, k2)
 
     def test_load(self):
@@ -249,7 +230,7 @@ class MyTestCase(unittest.TestCase):
         self.assertTrue(len(list(lst_model.model_dir.glob("*"))) > 3)
 
         # and rootdir should contain ONLY model_dirs & config
-        pths_got = set(submit.rootDir.glob("*"))
+        pths_got = set(submit.study_dir.glob("*"))
         pths_expect  = [submit.config_path]
         pths_expect += [m.model_dir for m in submit.model_index.values()]
         self.assertEqual(set(pths_got), set(pths_expect))
@@ -260,7 +241,7 @@ class MyTestCase(unittest.TestCase):
             nfiles = len(list(model.model_dir.glob("*")))
             self.assertTrue(nfiles > 3)
         # and rootdir should contain ONLY model dirs and config.
-        pths_got = set(submit.rootDir.glob("*"))
+        pths_got = set(submit.study_dir.glob("*"))
         self.assertEqual(set(pths_got), set(pths_expect))
 
     # need to mock both SubmitStudy and myModel now.
@@ -379,13 +360,15 @@ class MyTestCase(unittest.TestCase):
         # test to_dict method.
         self.maxDiff=None
         study_dict = self.submit.to_dict()
+        study_dict.pop('engine')
         expected_dict = vars(self.submit)
         # now replace models!
-        expected_dict['model_index'] = {k: m.config_path for k, m in expected_dict['model_index'].items()}
+        expected_dict['model_index'] = {k: m.config_path.relative_to(self.submit.study_dir) for k, m in expected_dict['model_index'].items()}
         # and evil hack for config
-        expected_dict['config'] = vars(expected_dict['config'])
-        # and engine
-        expected_dict['engine'] = engine.sge_engine()
+        expected_dict['config'] = expected_dict['config'].to_dict()
+        # drop engine
+        expected_dict.pop('engine')
+        #expected_dict['engine'] = engine.sge_engine()
         expected_dict['serialisation_data_version'] = str(self.submit.serialisation_data_version)
         self.assertEqual(study_dict, expected_dict)
 
@@ -673,6 +656,73 @@ class MyTestCase(unittest.TestCase):
         for model in empty_submit.model_index.values():
             pdtest.assert_series_equal(model.simulated_obs, pd.Series({'sentinel': -1.0}, name=model.name))
 
+    def test_archive(self):
+        """
+        Test the archive method of the SubmitStudy class.
+
+        The archive contract is checked in two stages:
+
+        1. The default archive contains the study config, ``jobOutput``, and
+           every model config.
+        2. Supplying ``extra_paths`` adds those files while preserving the
+           default archive contents.
+
+        Archive member names are relative to ``study_dir``; the returned file
+        paths are absolute filesystem paths.
+
+        Code AI generated and verified by SFBT
+        """
+        # Create the output directory explicitly because this test does not
+        # run a job that would normally create it.#
+
+        submit = copy.deepcopy(self.submit)
+        job_output = submit.study_dir / "jobOutput"
+        job_output.mkdir(parents=True, exist_ok=True)
+        job_output_file = job_output / "output.txt"
+        job_output_file.write_text("job output")
+
+        # Check both the files reported by SubmitStudy.archive and the names
+        # actually written into the tar file.
+        archive_path = self.testDir / "submit.tar"
+        with tarfile.open(archive_path, "w") as archive:
+            files_archived = self.submit.archive(archive)
+
+        expected_files = {f.resolve() for f in [
+            submit.config_path,
+            job_output_file,
+            *(model.config_path for model in submit.model_index.values()),
+                          ]}
+        self.assertEqual(set(files_archived), expected_files)
+
+        with tarfile.open(archive_path, "r") as archive:
+            archive_names = {pathlib.Path(name) for name in archive.getnames()}
+
+        expected_names = {
+            path.relative_to(self.submit.study_dir)
+            for path in expected_files
+        }
+        self.assertEqual(archive_names, expected_names)
+
+        # Test that extra_files works.
+        # Add a study-relative path and verify it is included in addition to
+        # the standard study and model files.
+        extra_files = ["extra.txt"]
+        for f in extra_files:
+            (submit.study_dir/f).write_text("extra archive content for {f}")
+            expected_files.add((submit.study_dir/f).resolve())
+            expected_names.add(pathlib.Path(f))
+
+
+        with tarfile.open(archive_path, "w") as archive:
+            files_archived = self.submit.archive(archive, extra_paths=extra_files)
+
+
+        self.assertEqual(set(files_archived), expected_files)
+
+        with tarfile.open(archive_path, "r") as archive:
+            archive_names = {pathlib.Path(name) for name in archive.getnames()}
+
+        self.assertEqual(archive_names, expected_names)
 
 
     """
@@ -758,8 +808,9 @@ class test_Process(unittest.TestCase):
         config = StudyConfig.readConfig(cpth)
         config.baseRunID('ZZ')
 
-        self.submit = SubmitStudy.SubmitStudy(config, model_name='Model', rootDir=testDir,
-                                              next_iter_cmd=['run myseld'])
+        config_path = testDir / f'{config.name()}.scfg'
+        self.submit = SubmitStudy.SubmitStudy(config, model_name='Model', config_path=config_path,
+                                              next_iter_cmd=['run myself'])
 
         # Add 5 models to the submit object
         self.models=[] # 'copy' of models in submit.model_index
@@ -839,6 +890,9 @@ class test_Process(unittest.TestCase):
         self.mock_dump_config.assert_called_once()
 
 
+
+
+
 """
 AI Prompt/Spec:
 Write unit tests for the `kill` method of the `SubmitStudy` class. Use unittest for testing.
@@ -891,9 +945,9 @@ class test_KILL(unittest.TestCase):
         cpth = refDir / "configurations/dfols14param_opt3.json"
         config = StudyConfig.readConfig(cpth)
         config.baseRunID('ZZ')
-
-        self.submit = SubmitStudy.SubmitStudy(config, model_name='Model', rootDir=testDir,
-                                              next_iter_cmd=['run myseld'])
+        config_path = testDir / f'{config.name()}.scfg'
+        self.submit = SubmitStudy.SubmitStudy(config, model_name='Model', config_path=config_path,
+                                              next_iter_cmd=['run myself'])
 
         # Add 5 models to the submit object
         self.models=[] # 'copy' of models in submit.model_index

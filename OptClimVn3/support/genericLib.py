@@ -763,6 +763,8 @@ def copy_files(in_direct: pathlib.Path,
     :return: Copied object and list of files copied. (which should be inheriting from model_base)
     """
     global try_symlinks  # have to be global vars
+    if symlinks:
+        my_logger.warning("Copying files with symlinks. Probably a bad idea.... ")
 
     out_direct.mkdir(parents=True, exist_ok=True)  # make it so we check it is not same as config dir
     if in_direct.samefile(out_direct):
@@ -835,6 +837,39 @@ def setup_config_env(rootDir: pathlib.Path,log_dir: pathlib.Path):
     os.environ['OPTCLIM_ROOT_DIR'] = rootDir.as_posix()
     os.environ['OPTCLIM_LOG_DIR'] = log_dir.as_posix()
     os.environ['OPTCLIM_JOB_ID'] = str(JOB_ID)  # have JOB ID
+
+
+def files_to_archive(files: list[pathlib.Path]) -> list[pathlib.Path]:
+    """
+    Given a list of files and directories, return a list of resolved files to be archived.
+    This resolves relative paths, expands directories to include all files within, and keeps only files (not directories).
+    :param files: list of files and directories to be archived. Directories will be recursively  expanded to include all files within.
+    :return: list of files to be archived.
+
+    Warnings will be given for missing files.
+    """
+
+# Check for missing files and give warning if any found.
+    missing_files = [f for f in files if not f.exists()]
+    if missing_files:
+        my_logger.warning(f"Missing files: {missing_files}")
+    #  removing non-existing files and directories. Make everything a resolved path so we don't have duplicates.
+    files_to_archive = [f.resolve() for f in files if f.exists()]
+    files_wanted = set() # list of files we want to archive. Set means we have unique files.
+    for file in files_to_archive:
+        if file.is_file():
+            files_wanted.add(file)
+        elif file.is_dir():
+            files_wanted.update([f for f in file.rglob("*") if f.is_file()]) # expand all entries, keeping only paths
+        else:
+            my_logger.warning(f"Ignoring {file} as it is not a file or directory")
+    # check all of files_wanted is a file. This should always work.
+    # If it becomes "real" then use error_handle to deal with errors.
+    ok = all([f.is_file() for f in files_wanted])
+    if not ok:
+        raise ValueError(f"Not all files in files_wanted are files: {[f for f in files_wanted if not f.is_file()]}")
+
+    return list(files_wanted)
 
 
 # AI generated code for locking and then modified.

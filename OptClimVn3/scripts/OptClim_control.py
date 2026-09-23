@@ -130,7 +130,8 @@ def main(argv=None):
                 study.update_params(list(params_to_update)) # update params to match new config.
             study.update_config(cfg) # update config.
             if args.output:
-                study = study.copyConfig(pathlib.Path(args.output.parent),keep_list=[lock.lockfile_path.absolute()],new_config_name=args.output.name)
+                study = study.copy_config(pathlib.Path(args.output), new_config_name=args.output.name)
+                study.config_path = args.output
                 dump_models = True
                 # 
         elif args.command == 'plot':

@@ -21,6 +21,7 @@ import typing
 import shutil
 import importlib
 import tarfile
+import packaging.version
 
 
 from typing import Optional, List, Callable, Mapping
@@ -75,16 +76,13 @@ class SubmitStudy(Study, model_base, journal):
         next_iter_jids -- the jobs ids of all submitted next_iter_cmd jobs
     """
 
-    """
-    Issues: 1) loading should change the config path or make it an absolute paths.
-    """
+    serialisation_data_version = packaging.version.Version("1.0.0")  # default serialisation_data_version
 
     fn_type = Callable[[Mapping], pd.Series]  # type hint for fakeFn
     from StudyConfig import  OptClimConfigVn3
     def __init__(self,
                  config: Optional[OptClimConfigVn3],
                  name: Optional[str] = None,
-                 rootDir: Optional[pathlib.Path] = None,
                  refDir: Optional[pathlib.Path] = None,
                  models: Optional[List[Model]] = None,
                  model_name: Optional[str] = None,
@@ -95,8 +93,6 @@ class SubmitStudy(Study, model_base, journal):
         Create ModelSubmit instance
         :param config: configuration information
         :param name: name of the study. If None name of config is used.
-        :param rootDir : root dir where new directories and configuration files are to be created.
-          If None will be current dir/config.name().
         :param refDir: Directory where a reference model is. If None, then config.referenceConfig() will be used.
         :param model_name: Name of a model type to create. If None value in config is used
         :param models -- list of models.
@@ -104,8 +100,8 @@ class SubmitStudy(Study, model_base, journal):
         :param next_iter_cmd -- command to run next iteration.
         :return: instance SubmitStudy with the following public attributes :
         """
-        super().__init__(config, name=name, models=models, rootDir=rootDir)
-        #self.rootDir.mkdir(parents=True, exist_ok=True)  # create it if need be.
+        super().__init__(config, name=name, models=models, config_path=config_path)
+
         # no need to create rootDir as could be updated and when files are created mkdir happens then    
         if refDir is None:
             refDir = self.expand(str(config.referenceConfig()))
@@ -139,9 +135,6 @@ class SubmitStudy(Study, model_base, journal):
 
         # engine & submit for this computer.
 
-        if config_path is None:
-            config_path = self.rootDir / (self.name + '.scfg')
-        self.config_path = config_path
 
         self.name_values = None  # init the counters for names.
         self.update_history(None)  # init history.
@@ -260,7 +253,7 @@ class SubmitStudy(Study, model_base, journal):
                 break
             else:
                 my_logger.debug(f"Name {name} already exists. Generating new name")
-        model_dir = self.rootDir / name
+        model_dir = self.study_dir / name
         if model_dir.exists():
             raise ValueError(f"model_dir {model_dir} already exists")
         config_path = model_dir / (name + '.mcfg')  # create model config in model dir
@@ -369,11 +362,11 @@ class SubmitStudy(Study, model_base, journal):
 
         obj.config_path=config_path # modify config path
 
-        if not (isinstance(obj.rootDir,pathlib.Path) and obj.rootDir.exists() and config_path.parent.samefile(obj.rootDir)):
-            msg = f"Modified config rootDir from  {obj.rootDir} to {config_path.parent}"
+        if not (isinstance(obj.study_dir, pathlib.Path) and obj.study_dir.exists() and config_path.parent.samefile(obj.study_dir)):
+            msg = f"Modified config rootDir from  {obj.study_dir} to {config_path.parent}"
 
             obj.config_path = config_path
-            obj.rootDir= config_path.parent
+            obj.study_dir= config_path.parent
             my_logger.info(msg)
             obj.update_history(msg)
 
@@ -406,15 +399,11 @@ class SubmitStudy(Study, model_base, journal):
         """
 
         dct = super().to_dict()
-        # REPLACE all paths with PurePaths
-        for var in dct.keys():
-            if isinstance(dct[var], pathlib.PurePath):
-                dct[var] = pathlib.PurePath(dct[var])
 
         my_logger.debug(f"Replacing models in model_index with config_path")
         m2 = dict()
         for key, model in dct['model_index'].items():
-            m2[key] = pathlib.PurePath(model.config_path)
+            m2[key] = model.config_path.relative_to(self.study_dir)  # convert to  path relative to study_dir.
         dct['model_index'] = m2
         dct['config'] = self.config.to_dict()  # convert Config to a dict.
         return dct
@@ -430,9 +419,13 @@ class SubmitStudy(Study, model_base, journal):
            Loads up models from paths that are saved.
         :param dct: dict containing attributes to be converted
         :return: a SubmitStudy object
+
+        TODO: have a Study version which handles some of this.
         """
-        # TODO: (if needed) have some way of loading up model info if the whole lot been moved.
+
         # deal with config
+        version = packaging.version.Version(dct.get('serialisation_data_version', "0.0.0"))
+
         config_dct = dct.pop('config')  # extract the config info.
         config = dictFile(Config_dct=config_dct[
             'Config']).to_StudyConfig()  # convert the config entry to a dictFile then convert to a StudyConfig.
@@ -444,51 +437,76 @@ class SubmitStudy(Study, model_base, journal):
 
         # create the SubmitStudy object
         obj = cls(config)
-        obj.fill_attrs(dct, convert_pure_paths=True)  # fill in the rest of the objects attributes. Converting pure path
+        loaded_model_index = dct.pop('model_index')
+        # remove various (pobably old) attributes
+        objs_to_remove=['rootDir', 'trace', 'prev_trace',]
+        if version < packaging.version.Version("1.0.0"):
+            for obj_name in objs_to_remove:
+                dct.pop(obj_name, None)
+            if 'name' in dct:
+                dct['_name'] = dct.pop('name')
 
+        obj.fill_attrs(dct, convert_pure_paths=True)  # fill in the rest of the objects attributes. Converting pure path
         # load up models.
         model_index = dict()
-        right_pure_path_type = type(pathlib.PurePath())  # (will give Windows/Posix as appropriate)
-        for key, ppath in obj.model_index.items():  # iterate over the paths (which is how we represent the models)
-            path = cls.translate_path(ppath)  # this will be a path
-            if not (isinstance(path, pathlib.Path) or type(
-                    path) == right_pure_path_type):  # not the right kind of pure path ?
-                my_logger.warning(f"Path {ppath} not of correct type={type(path)} not {right_pure_path_type}. Skipping")
-                continue
+        if version < packaging.version.Version("1.0.0"): # legacy code
+            my_logger.warning(f"Loading legacy SubmitStudy. This may not work as expected. Please upgrade to the latest version.")
 
-            path = pathlib.Path(path)  # make path version which we can then load.
-            if not path.is_absolute(): # A relative path. Append rootdir
-                
-                new_path = obj.rootDir/path
-                if not new_path.exists(): # path does not exist. Try with slightly different path
-                    new_path = obj.rootDir.parent/path
-                path  = pathlib.Path(new_path)
-                
-            if path.exists():
-                my_logger.debug(f"Loading model from {path}")
+
+
+            right_pure_path_type = type(pathlib.PurePath())  # (will give Windows/Posix as appropriate)
+            for key, ppath in loaded_model_index.items():  # iterate over the paths (which is how we represent the models)
+                path = cls.translate_path(ppath)  # this will be a path
+                if not (isinstance(path, pathlib.Path) or type(
+                        path) == right_pure_path_type):  # not the right kind of pure path ?
+                    my_logger.warning(f"Path {ppath} not of correct type={type(path)} not {right_pure_path_type}. Skipping")
+                    continue
+
+                path = pathlib.Path(path)  # make path version which we can then load.
+                if not path.is_absolute(): # A relative path. Append study_dir
+
+                    new_path = obj.study_dir/path
+                    if not new_path.exists(): # path does not exist. Try with slightly different path
+                        new_path = obj.study_dir.parent/path
+                    path  = pathlib.Path(new_path)
+
+                if path.exists():
+                    my_logger.debug(f"Loading model from {path}")
+                    # verify key is as expected.
+                    model = Model.load_model(path)  # load the model.
+                    got_key = obj.key_for_model(model)
+                    if key != got_key:  # key changed.
+                        dct = cls.key_to_dict(key)
+                        dct['reference'] = dct.get('reference',model.reference)
+                        dct['reference_name'] = dct.get('reference_name', model.reference_name)
+                        try:
+                            dct['reference']= pathlib.PurePath(dct['reference'])
+                        except KeyError:
+                            pass
+
+                        fixed_key = cls.key(dct)
+                        if fixed_key != got_key:
+                            raise ValueError(f"Key has changed from (after fixing): \n{fixed_key} to: \n{got_key} \n for model {model}")
+                        else:
+                            my_logger.info(f"Key for model {model} has been fixed")
+                    # set status if not set.
+
+                    model_index[got_key] = model
+                else:
+                    my_logger.warning(f"Failed to find {path} so ignoring.")
+        else:
+            for key,rpath in loaded_model_index.items(): # path is relative to obj.study_dir.
+                path = obj.study_dir/rpath # should be full path to model.
+                if not path.exists():
+                    my_logger.warning(f"Failed to find {path} so ignoring.")
+                    continue
                 # verify key is as expected.
                 model = Model.load_model(path)  # load the model.
                 got_key = obj.key_for_model(model)
-                if key != got_key:  # key changed.
-                    dct = cls.key_to_dict(key)
-                    dct['reference'] = dct.get('reference',model.reference)
-                    dct['reference_name'] = dct.get('reference_name', model.reference_name)
-                    try:
-                        dct['reference']= pathlib.PurePath(dct['reference'])
-                    except KeyError:
-                        pass
-
-                    fixed_key = cls.key(dct)
-                    if fixed_key != got_key:
-                        raise ValueError(f"Key has changed from (after fixing): \n{fixed_key} to: \n{got_key} \n for model {model}")
-                    else:
-                        my_logger.info(f"Key for model {model} has been fixed")
-                # set status if not set.
-
+                if key != got_key:
+                    raise ValueError(f"Key has changed from {key} to: \n{got_key} \n for model {model}")
                 model_index[got_key] = model
-            else:
 
-                my_logger.warning(f"Failed to find {path} so ignoring.")
 
         obj.model_index = model_index  # overwrite the index
         return obj
@@ -508,79 +526,69 @@ class SubmitStudy(Study, model_base, journal):
         # remove the config_path.
         self.config_path.unlink(missing_ok=True)  # remove the config path.
         # remove the directory.
-        shutil.rmtree(self.rootDir, ignore_errors=True)
+        shutil.rmtree(self.study_dir, ignore_errors=True)
         # reset values count (used to generate name) to 0.
         self.name_values = None  # start again!
         self.update_history("Deleted")
 
-    def copyConfig(self,direct:pathlib.Path,
-
-             extra_files:typing.Optional[list[pathlib.Path]]=None,
-             keep_list:typing.Optional[list[pathlib.Path]]=None,
-             new_config_name: typing.Optional[str] = None,
-             update_paths:bool = True) -> SubmitStudy:
+    def copy_config(self, config_path:pathlib.Path,
+                    extra_files:typing.Optional[list[pathlib.Path]]=None,
+                    keep_list:typing.Optional[list[pathlib.Path]]=None,
+                    new_config_name: typing.Optional[str] = None,
+                    update_paths:bool = True) -> SubmitStudy:
         """
         Copy SubmitStudy to a new directory. By default, only the config file & models are copied.
-        :param direct: directory where study is to be copied. Will be created if it does not exist
-        :param extra_files: list of extra files (paths provided relative to rootDir) to be copied to new directory.
+        :param config_path: path to the new config file.
+        :param extra_files: list of extra files (paths provided relative to rootDir) to be copied to the new directory.
         :param keep_list: list of files to keep in the new directory.
-        :param update_paths -- If True then any path parameters will be updated to reflect new directory structure.
-        :param new_config_name: If not None then the config file will be renamed to new_config_name and name updated.
+        :param new_config_name: Updated to config name. If None then the name is unchanged.
         :return: Copied SubmitStudy.
 
         This functionality may disappear in future versions as it is not clear how useful it is. It is also a bit messy and hard to maintain.
         """
 
-        ## NOTES
-        # config_path is absolute path as load will convert it to absolute.
-        # rootDir is an absolute path. So when we copy the config file we need to make sure it is copied to the new directory and that the rootDir is updated to reflect this.
+        if extra_files is None:
+            extra_files = []
 
-        # check that direct is an abs path. If not make it abs.
-        if not direct.is_absolute():
-            direct = pathlib.Path.cwd() / direct
-            my_logger.info(f"Converting direct to absolute path {direct}")
-        direct.mkdir(parents=True, exist_ok=True)  # create directory if need be.
+        config_path = config_path.resolve()
+        cp_submit_study = copy.deepcopy(self)  # copy the submit study
+        cp_submit_study.config_path = config_path
+        if new_config_name is not None:
+            cp_submit_study._name = new_config_name
 
-        files_to_copy = []
-        if extra_files is not None:
-            files_to_copy += extra_files
+        cp_study_dir = cp_submit_study.study_dir
+        cp_study_dir.mkdir(parents=True, exist_ok=True)  # create a directory if need be.
+        if cp_study_dir.samefile(self.study_dir):
+            raise FileExistsError(f"Studies should be in their own directory cp_study_dir = {self.study_dir}. Change config_path from {config_path} ")
 
-        files_to_copy = list(set(files_to_copy))  # make unique
+
+
+        files_to_copy = list(set(extra_files))  # make unique
         if len(files_to_copy) > 0:
-            my_logger.info(f"Copying {len(files_to_copy)}  to {direct}")
-            files_copied = genericLib.copy_files(self.rootDir, direct, files_to_copy, keep_list=keep_list)
+            my_logger.info(f"Copying {len(files_to_copy)}  to {cp_study_dir}")
+            files_copied = genericLib.copy_files(self.study_dir, cp_study_dir, files_to_copy)
             missing = set(files_to_copy) - set(files_copied)
             if len(missing) > 0:
-                my_logger.warning(f"Failed to copy  {missing} from {self.rootDir} to {direct}")
+                my_logger.warning(f"Failed to copy  {missing} from {self.study_dir} to {cp_study_dir}")
         else:
             files_copied = [] # no files copied
-
-        cp_submit_study = copy.deepcopy(self)  # copy the submit study
-
-        config_path = self.config_path.resolve().relative_to(self.rootDir) # path relative to rootDir
-        if new_config_name is not None:
-            config_path = config_path.parent / new_config_name
-            my_logger.info(f"Renaming config file to {config_path}")
-            cp_submit_study.name = config_path.stem
-        cp_config_path = direct /config_path # new config path
-
 
         # now copy the model(s) to the new directory
         model_index = dict()  # empty  model index
         for key,model in self.model_index.items():
-            new_dir = direct/(model.model_dir.relative_to(self.rootDir) )# new directory for model.
-            m =  model.copyConfig(new_dir, update_paths=update_paths) # model path(s) changed so need to change model.
+            new_path = cp_study_dir/(model.config_path.relative_to(self.study_dir))# new path for model config
+            m =  model.copy_config(new_path, update_paths=update_paths) # model path(s) changed so need to change model.
             model_index[key] = m
 
 
-        if update_paths:
-            cp_submit_study.rootDir = direct
-            cp_submit_study.config_path = cp_config_path
-            cp_submit_study.update_history(f"Copied {len(files_copied)} from {self.rootDir} to {direct}")
-            cp_submit_study.model_index = model_index
-            cp_submit_study.update_history(f"Copied {len(self.model_index)} models to {direct} ")
 
-        cp_submit_study.dump(cp_config_path)  # dump the new config
+        cp_submit_study.update_history(f"Copied {len(files_copied)} from {self.study_dir} to {cp_study_dir}")
+        cp_submit_study.model_index = model_index
+        cp_submit_study.update_history(f"Copied {len(self.model_index)} models to {cp_study_dir} ")
+
+        cp_submit_study.dump_config()  # dump the new config
+        if not config_path.exists():
+            raise ValueError(f"Failed to create {config_path}")
         # and we are done!
         return cp_submit_study
 
@@ -604,30 +612,34 @@ class SubmitStudy(Study, model_base, journal):
 
     def archive(self,
                 archive: tarfile.TarFile,
-                extra_paths: typing.Optional[List[pathlib.Path]] = None) -> list[pathlib.Path]:
+                extra_paths: typing.Optional[List[pathlib.Path|str]] = None) -> list[pathlib.Path]:
         """
-        Archive SubmitStudy and all its model configurations to archive.
+        Archive SubmitStudy config, jobOutput, and all model configurations to archive.
         :param archive: archive to be written into.
         :param extra_paths -- a list of extra paths to be archived. For example, final_json and monitor paths.
-          Should be specified relative to rootDir.
+          Should be specified relative to self.study_dir. See genericLib.files_to_archive for details of filtering/expansion
         :return files that got archived.
 
         """
-
+        self.dump_config() # dump the config so we have the latest version.
+        # No models dumped but model.archive will handle that.
+        files = [self.config_path,self.study_dir/'jobOutput'] # the configuration file and output are  always archived.
+        #TODO fix hardwired name: jobOutput should form part of SubmitStudy configuration.
+        if extra_paths is not None: # add in the extra paths/
+           files += [self.study_dir/f for f in extra_paths]
+        files = genericLib.files_to_archive(files)
         # archive ourselves!
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # need to copy ourselves to a temporary directory first.
-            tpth = pathlib.Path(tmpdir)
-            self.copyConfig(tpth,extra_files=extra_paths,update_paths=False) # just copy -- no changes.
-            files = list(set(tpth.rglob('*')))  # get all unique files
-            for f in files:
-                if f.is_dir():
-                    continue
-                arcname = f.relative_to(tpth)
-                archive.add(f, arcname)
-            my_logger.info(f"Added {self} to archive")
+        files_archived = []
+        for f in files:
+            arcname = f.relative_to(self.study_dir)
+            archive.add(f, arcname)
+            files_archived.append(f)
+        # now deal with models
+        for model in self.model_index.values():
+            files_archived += model.archive(archive,root_dir=self.study_dir)
+        my_logger.info(f"Added {self} to archive")
 
-        return files
+        return files_archived
 
 
     def delete_model(self, model):
@@ -778,7 +790,7 @@ class SubmitStudy(Study, model_base, journal):
 
         maxRuns = self.config.maxRuns()
         if not dryrun:
-            output_dir = self.rootDir / 'jobOutput'  # directory where output goes for post-processing and next stage.
+            output_dir = self.study_dir / 'jobOutput'  # directory where output goes for post-processing and next stage.
             # try and create the outputDir
             output_dir.mkdir(parents=True, exist_ok=True)
             my_logger.debug(f"Created {output_dir}")
@@ -873,11 +885,10 @@ class SubmitStudy(Study, model_base, journal):
         """
         Convert to a study.
         Study instances only have read access to info. Useful if you don't want to accidentally modify state.
-          config_path will be set to None to further reduce risk.
         :return: Study
         """
-
-        study = Study(self.config, name=self.name, rootDir=self.rootDir)
+        config_path = self.config_path
+        study = Study(self.config, name=self.name, config_path=config_path)
         for key, var in vars(self).items():
             if hasattr(study, key):
                 setattr(study, key, copy.deepcopy(var))  # make a copy of var and add it as an attribute to study

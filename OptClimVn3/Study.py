@@ -27,7 +27,7 @@ class Study:
     # class attribute type information.
     config: "OptClimConfigVn3"
     name: str
-    rootDir: pathlib.Path
+    study_dir: pathlib.Path
     model_index: dict
     """
     Class to support a study.  This class provides support for reading info
@@ -41,39 +41,32 @@ class Study:
     """
 
     def __init__(self, config: "OptClimConfigVn3",
+                 config_path: typing.Optional[pathlib.Path] = None,
                  name: typing.Optional[str] = None,
-                 rootDir: typing.Optional[pathlib.Path] = None,
                  models: typing.Optional[list[Model]] = None):
         """
         Create read-only study instance.
         :param config: Configuration information.
-        :param name: Name of the study. If None name of config is used.
+        :param name: Name of the study. If None name of config is used. ANd if not set in that config_path.stem is used
         :param rootDir : Root dir where, by default, config file will be created and
             where model configurations will be searched for. Will be converted to an absolute path if not already by
             prepending the current working directory.
           If None will be current dir/config.name().
         :param models : Lst of models.
+        :param config_path: Path to the config file.
         """
 
         self.config = copy.deepcopy(config)
+        self.config_path = config_path
 
         if name is None: # NB once object exists its name cannot be changed.
             name = config.name()
-        if name is None:  # still none as not defined in config
-            name = 'Unknown'
-        if name is not None:
-            self.name = name
+        if name is None and config_path is not None:
+            name = config_path.stem
+        elif name is None:
+            name = "Unknown"
 
-        if rootDir is None:  # No rootDir defined. Use cwd.
-            self.rootDir = pathlib.Path.cwd() / self.name  # default path
-        else:
-            self.rootDir = rootDir
-        # make sure rootDir is an absolute path rather than relative.
-        if not self.rootDir.is_absolute():
-            self.rootDir = pathlib.Path.cwd() / self.rootDir
-
-
-
+        self._name = name
 
         self.model_index = dict()
         if models is not None:
@@ -82,6 +75,29 @@ class Study:
                 if key in self.model_index.keys():
                     raise ValueError(f"Got duplicate key {key}")
                 self.model_index[key] = model
+
+    @property
+    def study_dir(self) -> typing.Optional[pathlib.Path]:
+        """
+        Generate the study_dir using config_path. If config_path is None then study_dir is None
+        """
+        config_path = self.config_path
+        if config_path is not None:
+            config_path =config_path.parent
+        return config_path
+
+    @property
+    def name(self) -> str:
+        """
+        Return the name of the study.
+        """
+        if self._name is not None:
+            name = self._name
+        elif self.config_path is not None:
+            name = self.config_path.stem
+        else:
+            name = "Unknown"
+        return name
 
     def update_config(self, config: "OptClimConfigVn3"):
         """
@@ -208,7 +224,7 @@ class Study:
         :return:
         """
         if direct is None:
-            direct = self.rootDir
+            direct = self.study_dir
         if not direct.is_dir():
             raise ValueError(f"Directory {direct} is not a directory")
         files = direct.glob("**/" + pattern)

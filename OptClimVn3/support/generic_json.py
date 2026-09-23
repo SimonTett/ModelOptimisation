@@ -162,6 +162,7 @@ class obj_to_from_dict:
                       int32=lambda x: np.int32(x['data'])
     )
     # functions to convert value to object. These should be "factory"  class methods
+    # TODO Sort out path (and related conversions). Easy approach would be to have purePath and pathlib.PurePath.as_posix
     TO_VALUE = dict(
         ndarray=lambda x: dict(data=x.tolist(), typ=str(x.dtype)),
         DataFrame=lambda x: x.to_dict(),  # liangwj

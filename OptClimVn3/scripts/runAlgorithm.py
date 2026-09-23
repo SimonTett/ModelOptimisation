@@ -248,7 +248,7 @@ my_logger.info(f"restartCMD is {restartCMD}")
 if rSUBMIT is None:  # no configuration exists. So create it.
     # We can get here either because config_path does not exist or we deleted the config.
 
-    rSUBMIT = runSubmit.runSubmit(configData, rootDir=rootDir, config_path=config_path,next_iter_cmd=restartCMD)
+    rSUBMIT = runSubmit.runSubmit(configData, config_path=config_path,next_iter_cmd=restartCMD)
     if args.model_pattern is not None: # we have a model pattern to load models from.
         my_logger.warning(f"Loading models from {args.model_pattern} in {config_path.parent}. Not yet tested")
         files = sorted(list(config_path.parent.glob(args.model_pattern)))

@@ -413,5 +413,62 @@ class genericLib_test(unittest.TestCase):
         self.assertIsNotNone(os.environ.get('OPTCLIM_JOB_ID'))  # Check that JOB_ID is set
 
 
+    def test_files_to_archive(self):
+        """
+        test files_to_archive
+
+        Have the following tests:
+        1) Missing files raise warning and are not in the result
+        2) Directories are recursively expanded to include only files
+        3) Files are just returned.
+        4) Everything is resolved!
+
+        Test code AI generated. Reviewed by SFBT
+
+        The additional overlapping-input check verifies that a file is only
+        returned once when it is supplied directly and through a directory.
+        Results are compared as sets because the implementation builds its
+        result from a set and does not guarantee ordering.
+        """
+        # A valid file is retained while a missing input is warned about and
+        # excluded from the returned paths.
+        direct_file = self.tmp_path / "direct.txt"
+        direct_file.write_text("direct")
+        missing_file = self.tmp_path / "missing.txt"
+        with self.assertLogs(genericLib.my_logger, level="WARNING") as warning:
+            result = genericLib.files_to_archive([direct_file, missing_file])
+
+        self.assertEqual(len(warning.records), 1)
+        self.assertIn(missing_file.name, warning.records[0].message)
+        self.assertEqual(set(result), {direct_file.resolve()})
+
+        # Directory inputs are expanded recursively, but empty directories
+        # themselves are not included in the result.
+        nested_dir = self.tmp_path / "nested"
+        (nested_dir / "level1" / "level2").mkdir(parents=True,exist_ok=True)
+        nested_files = {
+            nested_dir / "root.txt",
+            nested_dir / "level1" / "level1.txt",
+            nested_dir / "level1" / "level2" / "level2.txt",
+        }
+        for path in nested_files:
+            path.write_text(path.name)
+
+        result = genericLib.files_to_archive([nested_dir])
+        self.assertEqual(set(result), {path.resolve() for path in nested_files})
+
+        # Supplying the same file directly and via its parent directory must
+        # still produce one archive candidate for that file.
+        overlap_file = next(iter(nested_files))
+        duplicate_result = genericLib.files_to_archive(
+            [direct_file, direct_file, nested_dir, overlap_file]
+        )
+        expected_files = {direct_file, *nested_files}
+        self.assertEqual(
+            set(duplicate_result),
+            {path.resolve() for path in expected_files},
+        )
+
+
 if __name__ == '__main__':
     unittest.main()

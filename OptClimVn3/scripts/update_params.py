@@ -90,16 +90,16 @@ if args.output: # Want to write out  modified config?
                                          config_path=args.output,name=args.output.name  )
         new_files=[]
         for model in config.model_index.values(): # get the models and copy them into the new directory
-            new_dir = rootDir/(model.model_dir.relative_to(config.rootDir) )# new directory for model.
-            m =  model.copyConfig(new_dir, update_paths=True)
+            new_dir = rootDir/(model.model_dir.relative_to(config.study_dir))# new directory for model.
+            m =  model.copy_config(new_dir, update_paths=True)
             new_files.append(m.config_path)
         my_logger.info(f"Copied {len(new_files)} models")
         new_config.read_model_configs(new_files) # and get the models configs
-        new_config.update_history(f"Copied {len(new_files)} models from {config.rootDir} with params updated.")
+        new_config.update_history(f"Copied {len(new_files)} models from {config.study_dir} with params updated.")
         new_config.dump_config(dump_models=False) # no need to dump the models as already done so.
         
     else:
-        new_config = config.copyConfig(args.output.parent)  # copy modified config.
+        new_config = config.copy_config(args.output.parent)  # copy modified config.
         my_logger.info(f"Updated configuration saved to {args.output.parent}")
         # move the new confile file to the new name
         if config.config_path.name != args.output.name: # only move if different name

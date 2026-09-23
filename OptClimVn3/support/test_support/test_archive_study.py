@@ -22,8 +22,9 @@ class TestArchive(unittest.TestCase):
         refDir = refDir / 'reference'
         config = StudyConfig.readConfig(cpth)
         config.baseRunID('ZZ')
+        config_path = testDir/'test.cfg'
 
-        submit = SubmitStudy(config, model_name='simple_model', rootDir=testDir, next_iter_cmd=['run myself'])
+        submit = SubmitStudy(config, model_name='simple_model', config_path=config_path, next_iter_cmd=['run myself'])
         # create some models
         models=[]
         for param in [dict(VF1=3, CT=1e-4), dict(VF1=2.4, CT=1e-4), dict(VF1=2.6, CT=1e-4)]:
@@ -39,11 +40,11 @@ class TestArchive(unittest.TestCase):
         # and the archive file should be called
         arc = self.arc
         sub = self.submit
-        expected_archive_file = sub.rootDir/(f"archive_{sub.name}.tar.gz") # what the archive_file is called.
+        expected_archive_file = sub.study_dir / (f"archive_{sub.name}.tar.gz") # what the archive_file is called.
         archive_file = arc.archive(sub)
         self.assertEqual(expected_archive_file,archive_file)
         expected_files=[sub.config_path]+[m.config_path for m in sub.model_index.values()]
-        expected_files = sorted([pathlib.Path("archive.acfg")]+[pathlib.Path(file).relative_to(sub.rootDir) for file in expected_files])
+        expected_files = sorted([pathlib.Path("archive.acfg")] + [pathlib.Path(file).relative_to(sub.study_dir) for file in expected_files])
         with tarfile.open(archive_file,'r') as archive:
             got_files = sorted([pathlib.Path(file) for file in archive.getnames()])
             self.assertEqual(expected_files,got_files)
@@ -59,12 +60,11 @@ class TestArchive(unittest.TestCase):
         # and now unarchive it.
         arc,asubmit = self.arc.extract_archive(apth,direct=outdir)
         sub=copy.deepcopy(self.submit)
-        sub.rootDir = outdir
-        sub.config_path = outdir/sub.config_path.name
+        sub.config_path = asubmit.config_path # make sure both studies have the same config path
         # need to fix the models too!
         # means fixing config_patt & history
         for k,m in sub.model_index.items():
-            m.config_path = outdir/m.config_path.relative_to(self.submit.rootDir)
+            m.config_path = outdir/m.config_path.relative_to(self.submit.study_dir)
             m._history = asubmit.model_index[k]._history
             #m.model_dir = outdir/m.model_dir.relative_to(self.submit.rootDir)
             #m.config_dir = outdir/m.config_dir.relative_to(self.submit.rootDir)

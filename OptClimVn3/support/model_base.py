@@ -77,6 +77,18 @@ class journal:
             str_msg = '\n'.join(messages)
             print(f"{time}:", str_msg)
 
+    def flaten_history(self) -> typing.List[typing.Tuple[str, str]]:
+        """
+        Flaten the history into a list of tuples with time and message.
+        :return: list of tuples with time and message.
+        """
+        result = []
+        if hasattr(self, '_history'):
+            for time, messages in self._history.items():
+                for msg in messages:
+                    result.append((time, msg))
+        return result
+
     def store_output(self, cmd: typing.Optional[list], result: typing.Optional[str]):
         """
         Store output and cmd ran in self._output with key the time.
@@ -294,15 +306,17 @@ class model_base:
     def to_dict(self):
         """
         Convert an object to a dict.
-        To support portability across multiple OS. paths are converted to purePath
+        #To support portability across multiple OS. paths are converted to purePath
         :return: dct
         """
+        #dct = vars(self)
         dct = dict()
         for key, value in vars(self).items():
-            if isinstance(value, pathlib.Path):
-                dct[key] = pathlib.PurePath(value)
-            else:
-                dct[key] = value
+            dct[key] = value
+        #     if isinstance(value, pathlib.Path):
+        #         dct[key] = pathlib.PurePath(value)
+        #     else:
+        #         dct[key] = value
         # add in the serialisation_data_version
         dct['serialisation_data_version'] = str(self.serialisation_data_version)
         return dct
