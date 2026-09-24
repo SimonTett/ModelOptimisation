@@ -195,7 +195,7 @@ class model_base:
     --------
     from_dict(cls, dct: dict) -> Any:
         Return class initialised from dct by copying keys to attributes in obj but only that exist after initialisation.
-        This is really a factory method.
+        This is  a factory method.
 
     to_dict(self) -> dict:
         Convert an object to a dict.
@@ -225,6 +225,7 @@ class model_base:
     # class methods
     _translate_path_var: typing.Optional[
         typing.Tuple[pathlib.PurePath, pathlib.PurePath]] = None
+
 
     # class variable to hold information on how to translate paths from one file system to another.
     _convert_path2pure:bool = False # class variable to convert paths to purePaths on readin. Supports "old" structures.
@@ -306,25 +307,19 @@ class model_base:
     def to_dict(self):
         """
         Convert an object to a dict.
-        #To support portability across multiple OS. paths are converted to purePath
         :return: dct
         """
         #dct = vars(self)
         dct = dict()
         for key, value in vars(self).items():
             dct[key] = value
-        #     if isinstance(value, pathlib.Path):
-        #         dct[key] = pathlib.PurePath(value)
-        #     else:
-        #         dct[key] = value
-        # add in the serialisation_data_version
         dct['serialisation_data_version'] = str(self.serialisation_data_version)
         return dct
 
     # class methods.
     @classmethod
     def load(cls, file: typing.Union[pathlib.Path, str],
-             error:generic_json.type_error = 'error',
+             error:generic_json.type_error = 'raise',
              check_types:typing.Optional[typing.List]=None):
         """
         Load an object configuration from specified file.
@@ -339,7 +334,7 @@ class model_base:
         file = cls.expand(file)  # expand user and vars and convert str to path
 
         with open(file, 'rt') as fp:
-            cfg = generic_json.load(fp, error=error)
+            cfg = generic_json.load(fp, error=error,filepath=file)
             # this runs all the magic needed to create objects that we know about.
         if check_types is not None:
             logging.debug("Checking types against %s", check_types)
@@ -375,6 +370,8 @@ class model_base:
                 raise ValueError("Something wrong")
             if k in vars_to_ignore: # ignore this variable
                 continue
+
+
             if isinstance(v, pathlib.PurePath) and isinstance(v2, pathlib.PurePath):
                 if v.as_posix() != v2.as_posix():
                     print(f"Paths for {k} differ")
@@ -386,16 +383,32 @@ class model_base:
                 if (v.__name__ != v2.__name__):
                     print(f" Fn names for {k} differ")
                     return False  # names differ.
+            elif isinstance(v, dict):
+                k1 = list(v.keys())
+                k2 = list(v2.keys())
+                if k1 != k2:
+                    print(f"Keys for {k} differ")
+                    return False  # keys differ
+                for key in v.keys():
+                    if key not in v2:
+                        print(f"Key {key} for {k} not in other")
+                        return False  # key not in other
+                    if v[key] != v2[key]:
+                        print(f"Value for key {key} for {k} differ")
+                        return False  # values differ
+
             elif isinstance(v, (pd.Series, np.ndarray, pd.DataFrame)):
                 if not np.allclose(v, v2):
                     # check for FP consistency  between the values.
-                    print(f"for {k}\n{v}\n differs from\n{v2}")
-                    return False  # pandas series differ
-            elif v != v2:  # test for different
-                print(f"{k} differ")
-                return False
+                    print(f" For {k}\n{v}\n differs from\n{v2}")
+                    return False  # differences
             else:
-                pass  # equal -- keep going
+                result = (v == v2)
+                if not result:
+                    print(f"{k} differ")
+                    return result
+
+
 
         return True  # equal if here!
 

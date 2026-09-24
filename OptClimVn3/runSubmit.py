@@ -164,7 +164,27 @@ class LogicalInfo(model_base):
         # now have param_values and store them.
         return params
 
+    def __eq__(self, other):
+        """
+        Check equality of two LogicalInfo objects. This is used for testing.
+        :param other: other LogicalInfo object to compare with.
+        :return: True if equal, False otherwise.
+        """
 
+        if not isinstance(other, LogicalInfo):
+            return False
+
+        # parameters and observations are dicts of pandas series so need somespeic
+
+        param_eq =  pd.DataFrame(self.parameters).equals(pd.DataFrame(other.parameters))
+        obs_eq = pd.DataFrame(self.observations).equals(pd.DataFrame(other.observations))
+        return (self.iteration_count == other.iteration_count and
+                self.count_within_iteration == other.count_within_iteration and
+                self.names == other.names and
+                param_eq and
+                obs_eq and
+                self.model_keys == other.model_keys and
+                self.cost == other.cost)
 
 
 
@@ -689,7 +709,7 @@ class runSubmit(SubmitStudy):
 
 
     @classmethod
-    def from_dict(cls, dct: dict) -> runSubmit:
+    def from_dict(cls, dct: dic,filepath:typing.Optional[pathlib.Path]=None) -> runSubmit:
         """
         Generate runSubmit object from a dict. Main difference from super class method
           is that it uses the keys in ._logical_info.models to get the model keys and
@@ -703,7 +723,7 @@ class runSubmit(SubmitStudy):
 
         # handle legacy model_status if needed
         model_status = dct.pop('model_status',{}) # use this to set model_status directly.
-        obj: runSubmit = super(runSubmit, cls).from_dict(dct)  # create the runSubmit object
+        obj: runSubmit = super(runSubmit, cls).from_dict(dct,filepath=filepath)  # create the runSubmit object
         # deal with legacy when have no _logical_info.parameter set. In this case we just iterate over the models in model_index and set the parameters to those in the model.
         if '_logical_info' not in dct:
             my_logger.warning('legacy change: adding existing models to _logical_info.parameters')

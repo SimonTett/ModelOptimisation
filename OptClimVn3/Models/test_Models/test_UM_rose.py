@@ -68,6 +68,7 @@ class test_umRose(unittest.TestCase):
 
         dct = self.model.to_dict()
         dct_comp = vars(self.model)
+        dct_comp.pop('configs')
         # convert any paths to purepaths (as that is what to_dict does).
         for k,v in dct_comp.items():
             if isinstance(v,pathlib.Path):
@@ -114,9 +115,9 @@ class test_umRose(unittest.TestCase):
         load_mdct = model.to_dict()
         my_mdct = self.model.to_dict()
         # remove configs and engine.
-        for var in ['configs','engine']:
-            del load_mdct[var]
-            del my_mdct[var]
+        for var in ['engine']:
+            load_mdct.pop(var,None)
+            my_mdct.pop(var,None)
 
         self.assertEqual(load_mdct,my_mdct)
 

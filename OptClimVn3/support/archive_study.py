@@ -61,7 +61,7 @@ class archive_study(model_base, journal):
                 archive_path = submit.study_dir / f'archive_{submit.name}.tar'
 
         self.update_history(f"Archiving data for {submit.config_path}")
-        self.archive_path = archive_path.resolve().relative_to(submit.study_dir)
+        self.archive_path = archive_path.resolve()
         self.config_file = pathlib.PurePath(submit.config_path.name)
         self.rootDir = submit.study_dir
         # dump the archive to somewhere temp.
@@ -106,14 +106,14 @@ class archive_study(model_base, journal):
                 check_types=[archive_study])
             cfg_path = direct / str(archive_config.config_file)
             # we are reading an archive which means paths need rewriting.
-            model_base._translate_path_var = (archive_config.rootDir,direct)  # setup for translation.
-            model_base._convert_path2pure = True  # convert paths to pure paths.
+            #model_base._translate_path_var = (archive_config.rootDir,direct)  # setup for translation.
+            #model_base._convert_path2pure = True  # convert paths to pure paths.
             # QUITE ugly to use class variables to translate. Needed because can't pass args into from_dict
             cfg = SubmitStudy.load(cfg_path)  # read the extracted data
             # Save the configuration in the new space which should be normally readable.
             cfg.dump_config(dump_models=True) # and write it back again
             #turn off translation.
-            model_base._translate_path_var = None
-            model_base._convert_path2pure = False
+            #model_base._translate_path_var = None
+            #model_base._convert_path2pure = False
 
         return archive_config, cfg

@@ -1651,7 +1651,7 @@ class testRunSubmit(unittest.TestCase):
         new_rSubmit = runSubmit.runSubmit.from_dict(dct)
         self.assertIsInstance(new_rSubmit, runSubmit.runSubmit)
         self.assertEqual(rSubmit,
-                         new_rSubmit)  # FIXME. Failing here as model reference types differ. rSubmit -- it is posic path, while new_rSubmit it is pureWindowsPath
+                         new_rSubmit)
 
 
 class TestRunParams(unittest.TestCase):
