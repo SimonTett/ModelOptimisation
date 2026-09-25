@@ -9,6 +9,7 @@ import datetime
 import shlex
 import packaging.version
 
+import genericLib
 import generic_json
 
 
@@ -319,14 +320,15 @@ class model_base:
     # class methods.
     @classmethod
     def load(cls, file: typing.Union[pathlib.Path, str],
-             error:generic_json.type_error = 'raise',
-             check_types:typing.Optional[typing.List]=None):
+             error:genericLib.error_handle_types = 'fail',
+             check_types:typing.Optional[list]=None):
         """
-        Load an object configuration from specified file.
-        The correct type of object will be returned. 
+        Load an object configuration from a specified file.
+        The correct type of object will be returned.
+        :param file  path to file to be read in. Will have been expanded by cls.expand.
+        :param error  error handling strategy. See genericLib.error_handle for details.
         :param check_types: types to be checked using isinstance. If type not as expected error will be triggered
-        :param file path to file to be read in.
-           If str passed then it cls.expand will be ran on it.
+
         :return: Object of an appropriate type.
         """
         # read it in.
@@ -334,15 +336,13 @@ class model_base:
         file = cls.expand(file)  # expand user and vars and convert str to path
 
         with open(file, 'rt') as fp:
-            cfg = generic_json.load(fp, error=error,filepath=file)
+            cfg = generic_json.load(fp, error=error) # from here "down" all information on what the class being loaded is lost.
             # this runs all the magic needed to create objects that we know about.
         if check_types is not None:
             logging.debug("Checking types against %s", check_types)
             if not isinstance(cfg,tuple(check_types)):
                 raise ValueError(f"{type(cfg)} is not one of {check_types}")
 
-        for k, v in vars(cfg).items():  # debug info.
-            my_logger.debug(f"{k}: {v} ")
         my_logger.info(f"Read configuration from {file}")
 
         return cfg

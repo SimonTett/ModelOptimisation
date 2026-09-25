@@ -164,10 +164,11 @@ class simple_model_pars_json(Model):
         return super().perturb(parameters=dict(fail_probability=0.0))
 
 
+
     def archive(self,
                 archive: "tarfile.TarFile",
-                root_dir: pathlib.Path,
-                extra_files: typing.Optional[typing.List[typing.Union[pathlib.Path,str]]] = None):
+                root_dir: typing.Optional[pathlib.Path] = None,
+                extra_files: typing.Optional[list[pathlib.Path | str]] = None) -> list[pathlib.Path]:
         
         if extra_files is None:
             extra_files = []

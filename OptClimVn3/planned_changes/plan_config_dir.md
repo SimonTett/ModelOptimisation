@@ -20,3 +20,4 @@ Use _path to store the underlying relative path and then have a property that re
 That might be tricky for inherited classes which if they want to add another path need to implement this.
 Could do with more magic -- just use setattr and getattr.
 Feels too tricky for now. Stick with idea that everything should be relative to  study_dir/model_dir.
+
