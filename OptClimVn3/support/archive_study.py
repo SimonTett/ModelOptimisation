@@ -1,5 +1,9 @@
 """
-Small class to support archving of studys.
+Small class to support archiving of studies. It has potential security issues on extract.
+When updating to python 3.11+ use the filter='data' option to tarfile.extractall to avoid path traversal attacks.
+One could extract the archive info file and use that to check things are as expected too. But needs more thought and
+is not urgent.
+
  Provides methods to archive and extract.
 __init__ stores info on the platform ran on.
 """
@@ -61,7 +65,7 @@ class archive_study(model_base, journal):
                 archive_path = submit.study_dir / f'archive_{submit.name}.tar'
 
         self.update_history(f"Archiving data for {submit.config_path}")
-        self.archive_path = archive_path.resolve().relative_to(submit.study_dir)
+        self.archive_path = archive_path.resolve()
         self.config_file = pathlib.PurePath(submit.config_path.name)
         self.rootDir = submit.study_dir
         # dump the archive to somewhere temp.
@@ -101,19 +105,20 @@ class archive_study(model_base, journal):
         with tarfile.open(archive_path, mode) as archive:
             ## TODO get permission errors if files exist.
             archive.extractall(path=str(direct))  # extract all data
+            ## TODO. When upgrade to recent version of python then add filter='data'.
             archive_config: archive_study = model_base.load(
                 direct / 'archive.acfg',
                 check_types=[archive_study])
             cfg_path = direct / str(archive_config.config_file)
             # we are reading an archive which means paths need rewriting.
-            model_base._translate_path_var = (archive_config.rootDir,direct)  # setup for translation.
-            model_base._convert_path2pure = True  # convert paths to pure paths.
+            #model_base._translate_path_var = (archive_config.rootDir,direct)  # setup for translation.
+            #model_base._convert_path2pure = True  # convert paths to pure paths.
             # QUITE ugly to use class variables to translate. Needed because can't pass args into from_dict
             cfg = SubmitStudy.load(cfg_path)  # read the extracted data
             # Save the configuration in the new space which should be normally readable.
             cfg.dump_config(dump_models=True) # and write it back again
             #turn off translation.
-            model_base._translate_path_var = None
-            model_base._convert_path2pure = False
+            #model_base._translate_path_var = None
+            #model_base._convert_path2pure = False
 
         return archive_config, cfg

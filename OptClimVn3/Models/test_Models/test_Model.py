@@ -243,7 +243,6 @@ class ModelTestCase(unittest.TestCase):
                             post_process={}, _output={},
                             _post_process_input='input.json',
                             _post_process_output='sim_obs.json',
-                            configs=model.configs,
                             post_process_cmd_script=cmd, fake=False, simulated_obs=None,
                             perturb_count=0, parameters_no_key={}, config_path=pathlib.PurePath(self.testDir / "test_model.mcfg"),
                             status='CREATED', _history=model._history, engine=model.engine, pp_jid=None, run_info={},
@@ -865,13 +864,14 @@ class ModelTestCase(unittest.TestCase):
         # test copy works
 
         # easy test. Copy model somewhere else and check they are the same.
+        # Though some elements will differ.
         dest_dir = self.testDir / 'copy_model'
         model = self.model
         model.instantiate()
         new_model = model.copy_config(dest_dir / 'model.mcfg')
         # now load in the copied model
         cmodel = myModel.load_model(dest_dir / 'model.mcfg')
-        attrs_not_same = ['config_path','_history']
+        attrs_not_same = ['config_path','_history','configs']
         for attr in vars(model).keys():
             if attr in attrs_not_same:
                 continue

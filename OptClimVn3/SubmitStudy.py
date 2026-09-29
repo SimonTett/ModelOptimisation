@@ -75,7 +75,8 @@ class SubmitStudy(Study, model_base, journal):
         next_iter_cmd -- the command to run the next iteration.
         next_iter_jids -- the jobs ids of all submitted next_iter_cmd jobs
     """
-
+    _SubmitStudy_config_path: typing.Optional[pathlib.Path] = None  # If not None then to_dict will use this to set config_path
+    # class attribute to hold config_path when loading. Very messy as too many layers of conversion.
     serialisation_data_version = packaging.version.Version("1.0.0")  # default serialisation_data_version
 
     fn_type = Callable[[Mapping], pd.Series]  # type hint for fakeFn
@@ -96,7 +97,7 @@ class SubmitStudy(Study, model_base, journal):
         :param refDir: Directory where a reference model is. If None, then config.referenceConfig() will be used.
         :param model_name: Name of a model type to create. If None value in config is used
         :param models -- list of models.
-        :param config_path -- where configuration should be stored. If None default is root_dir/name
+        :param config_path -- where configuration should be stored.
         :param next_iter_cmd -- command to run next iteration.
         :return: instance SubmitStudy with the following public attributes :
         """
@@ -356,11 +357,11 @@ class SubmitStudy(Study, model_base, journal):
         :return: object
         """
         config_path = cls.expand(config_path)
-        # convert str to path and or expand user or env vars.
+
 
         obj:SubmitStudy = super().load(config_path,check_types=[cls],error=error) # call the super class load.
-
-        obj.config_path=config_path # modify config path
+        if obj.config_path != config_path:
+            raise ValueError(f"Obj config_path {obj.config_path} does not match {config_path}")
 
         if not (isinstance(obj.study_dir, pathlib.Path) and obj.study_dir.exists() and config_path.parent.samefile(obj.study_dir)):
             msg = f"Modified config rootDir from  {obj.study_dir} to {config_path.parent}"
@@ -371,7 +372,7 @@ class SubmitStudy(Study, model_base, journal):
             obj.update_history(msg)
 
         if Study:  # convert to a study
-            obj = obj.to_study()
+            obj:Study = obj.to_study()
 
         return obj
 
@@ -393,8 +394,10 @@ class SubmitStudy(Study, model_base, journal):
 
     def to_dict(self) -> dict:
         """
-        Convert StudyConfig instance to dict. engine will be saved with the computer name
-       from_dict will replace these.
+        Convert StudyConfig instance to dict.
+        model_index is converted to a dict of model.config_path's relative to study_dir
+        config is converted to a dict.
+
         :return: a dict. Keys are attributes.
         """
 
@@ -409,7 +412,7 @@ class SubmitStudy(Study, model_base, journal):
         return dct
 
     @classmethod
-    def from_dict(cls, dct: dict) -> SubmitStudy:
+    def from_dict(cls, input_dct: dict,filepath:typing.Optional[pathlib.Path]=None) -> SubmitStudy:
         """
         Convert a dct back to a SubmitStudy. Does the following:
            decodes config -- needs special handling. FIXME: re-engineer StudyConfig so it needs less special handling....
@@ -424,6 +427,7 @@ class SubmitStudy(Study, model_base, journal):
         """
 
         # deal with config
+        dct = copy.deepcopy(input_dct)  # make a copy so we don't modify the input
         version = packaging.version.Version(dct.get('serialisation_data_version', "0.0.0"))
 
         config_dct = dct.pop('config')  # extract the config info.
@@ -433,47 +437,48 @@ class SubmitStudy(Study, model_base, journal):
         # TODO Very messy code. Good to sort out StudyConfig but that needs a big re-engineering job..
 
         # deal with translation and conversion to paths (if possible)
-        dct = cls.convert_pure_paths(dct) # FIXME failing here as paths look messed up for translation.
+
 
         # create the SubmitStudy object
-        obj = cls(config)
+        config_path = filepath
+        if filepath is not None:
+            config_path = filepath.resolve()
+        obj = cls(config,config_path=config_path) # just passing in the config & config_path
+        if filepath is not None:
+            dct['config_path'] = filepath.resolve()
+
+
         loaded_model_index = dct.pop('model_index')
-        # remove various (pobably old) attributes
-        objs_to_remove=['rootDir', 'trace', 'prev_trace',]
+        # remove various (probably old) attributes
         if version < packaging.version.Version("1.0.0"):
+            objs_to_remove = ['rootDir', 'trace', 'prev_trace', ]
             for obj_name in objs_to_remove:
                 dct.pop(obj_name, None)
-            if 'name' in dct:
+            if 'name' in dct: # rename name
                 dct['_name'] = dct.pop('name')
 
-        obj.fill_attrs(dct, convert_pure_paths=True)  # fill in the rest of the objects attributes. Converting pure path
+        obj.fill_attrs(dct, convert_pure_paths=True)  # fill in the rest of the object's attributes. Converting pure path
         # load up models.
         model_index = dict()
         if version < packaging.version.Version("1.0.0"): # legacy code
             my_logger.warning(f"Loading legacy SubmitStudy. This may not work as expected. Please upgrade to the latest version.")
-
-
-
             right_pure_path_type = type(pathlib.PurePath())  # (will give Windows/Posix as appropriate)
             for key, ppath in loaded_model_index.items():  # iterate over the paths (which is how we represent the models)
-                path = cls.translate_path(ppath)  # this will be a path
-                if not (isinstance(path, pathlib.Path) or type(
-                        path) == right_pure_path_type):  # not the right kind of pure path ?
-                    my_logger.warning(f"Path {ppath} not of correct type={type(path)} not {right_pure_path_type}. Skipping")
-                    continue
+                #path = cls.translate_path(ppath)  # this will be a path
 
-                path = pathlib.Path(path)  # make path version which we can then load.
-                if not path.is_absolute(): # A relative path. Append study_dir
 
-                    new_path = obj.study_dir/path
+                # make path version which we can then load.
+                if ppath.is_absolute(): # legacy is absolute path so fix.
+                    new_path = obj.study_dir/pathlib.Path(*ppath.parts[-2:])
+                    # extract last two parts of path and stuff study_dir in front.
+                else: # A relative path. Append study_dir
+                    new_path = obj.study_dir/ppath
                     if not new_path.exists(): # path does not exist. Try with slightly different path
-                        new_path = obj.study_dir.parent/path
-                    path  = pathlib.Path(new_path)
-
-                if path.exists():
-                    my_logger.debug(f"Loading model from {path}")
+                        new_path = obj.study_dir.parent/ppath
+                if new_path.exists():
+                    my_logger.debug(f"Loading model from {new_path}")
                     # verify key is as expected.
-                    model = Model.load_model(path)  # load the model.
+                    model = Model.load_model(new_path)  # load the model.
                     got_key = obj.key_for_model(model)
                     if key != got_key:  # key changed.
                         dct = cls.key_to_dict(key)
@@ -493,7 +498,7 @@ class SubmitStudy(Study, model_base, journal):
 
                     model_index[got_key] = model
                 else:
-                    my_logger.warning(f"Failed to find {path} so ignoring.")
+                    my_logger.warning(f"Failed to find {new_path} so ignoring.")
         else:
             for key,rpath in loaded_model_index.items(): # path is relative to obj.study_dir.
                 path = obj.study_dir/rpath # should be full path to model.

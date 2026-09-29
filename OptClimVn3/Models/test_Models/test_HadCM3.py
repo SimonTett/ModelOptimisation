@@ -127,8 +127,8 @@ class testHadCM3(unittest.TestCase):
         mdct = model.to_dict()
         omdct = self.model.to_dict()
         for var in ['configs','engine']:
-            mdct.pop(var)
-            omdct.pop(var)
+            mdct.pop(var,None)
+            omdct.pop(var,None)
 
         self.assertEqual(mdct, omdct)
 

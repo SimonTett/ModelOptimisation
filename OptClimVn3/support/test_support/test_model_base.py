@@ -117,7 +117,7 @@ class TestModelBase(unittest.TestCase):
             else:
                 v *= 2 # modify it.
 
-            setattr(m2,k,v) # set the value in the objust
+            setattr(m2,k,v) # set the value in the object
             self.assertNotEqual(m1,m2) # should be different
             setattr(m2,k,v_orig) # put original value back
         self.assertEqual(m1,m2) # and should be equal

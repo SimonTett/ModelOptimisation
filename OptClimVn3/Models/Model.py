@@ -243,9 +243,8 @@ class Model(ModelBaseClass, journal):
         # set up default values.
 
         # General attributes
-        self.config_path = config_path
-        if not ((config_path is  None) or self.config_path.is_absolute()):  # not absolute so make it so
-            self.config_path = pathlib.Path.cwd() / self.config_path
+        self.config_path = self.expand(config_path).resolve()  # make sure it is a path and expand any vars
+
 
         if name is None and self.config_path is not None:
             self._name = self.config_path.stem
@@ -1319,7 +1318,7 @@ class Model(ModelBaseClass, journal):
         sim_obs = self.process(update=True)
         return sim_obs
 
-    def notneeded_to_dict(self) -> dict:
+    def to_dict(self) -> dict:
         """
         Convert a Model to a dict converting paths to PurePaths.
         Most of the work is done by calling the super class to_dict method.
@@ -1330,42 +1329,35 @@ class Model(ModelBaseClass, journal):
 
         for key in ['config_path',  'reference']:  # vars to make into purePaths
             dct[key] = pathlib.PurePath(dct[key]) # TODO remove this? and just use to_posix to make it a string
-        # deal with configs. But not sure why need to explicitly call to_dict
-        #dct['configs'] = self.configs.to_dict()  # convert configs to a dict.
+        # deal with configs by removing them. No need to keep configs state around as generated on demand.
+        dct.pop('configs', None)  # remove configs from dict. No need to keep configs state around as generated on demand.
         return dct
 
     @classmethod
-    def from_dict(cls, dct: dict) -> "Model":
+    def from_dict(cls, dct: dict,filepath:typing.Optional[pathlib.Path]=None) -> "Model":
         """
         Convert a dict representing the Model to a Model object.
         :param dct: dict to be converted to a model
         :return:a tempModel instance.
         """
 
-        dct2 = cls.convert_pure_paths(dct)
-        config_dir = dct2.pop('config_dir',None) # overwritten by class info
+        dct2 = dct.copy() #cls.convert_pure_paths(dct)
         serialisation_data_version = packaging.version.Version(dct.get('serialisation_data_version', '0.0.0'))
         if serialisation_data_version < packaging.version.Version('1.0.0'):
             # legacy support for old serialisation data.
             # remove model_dir, and anything called '_script' as no longer needed.
             keys_to_remove = [k for k,v in dct2.items() if k.endswith('_script') and isinstance(v,pathlib.PurePath) ]
-            keys_to_remove += ['model_dir']
+            keys_to_remove += ['model_dir','config_dir','script_dir','configs']  # remove these as they are now generated from config_path
             for key in keys_to_remove:
                 dct2.pop(key,None)
             # rename name to _name
             if 'name' in dct2:
                 dct2['_name'] = dct2.pop('name')
-            try:
-                dct2['configs'] = namelist_var.GroupConfig.from_dict(
-                    dct2['configs'])  # convert configs back to a configs object.
-            except KeyError:  # old style configs so just let __init__ deal with it.
-                pass
-
         config_path = pathlib.Path(dct2.pop('config_path'))
+        if filepath is not None:
+            config_path = filepath.resolve()  # override config_path if provided.
         obj = cls( config_path=config_path, reference=dct2.pop('reference'))  # create a default instance
         obj.fill_attrs(dct2)
-        if config_dir is not None and config_dir != obj.config_dir:
-            raise  ValueError(f"config_dir in dict {config_dir} does not match config_dir {obj.config_dir}")
         return obj
 
     def read_nl_value(self, nl_var: NamelistVar,

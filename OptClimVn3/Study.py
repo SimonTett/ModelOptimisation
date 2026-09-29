@@ -57,6 +57,8 @@ class Study:
         """
 
         self.config = copy.deepcopy(config)
+        if config_path is not None:
+            config_path = genericLib.expand(config_path).resolve()
         self.config_path = config_path
 
         if name is None: # NB once object exists its name cannot be changed.
