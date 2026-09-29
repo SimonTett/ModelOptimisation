@@ -403,7 +403,7 @@ class SubmitStudy(Study, model_base, journal):
         my_logger.debug(f"Replacing models in model_index with config_path")
         m2 = dict()
         for key, model in dct['model_index'].items():
-            m2[key] = model.config_path.relative_to(self.study_dir)  # convert to  path relative to study_dir.
+            m2[key] = model.config_path.resolve().relative_to(self.study_dir.resolve())  # convert to  path relative to study_dir.
         dct['model_index'] = m2
         dct['config'] = self.config.to_dict()  # convert Config to a dict.
         return dct
