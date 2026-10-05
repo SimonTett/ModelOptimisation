@@ -28,7 +28,8 @@ import filelock
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 
-
+secure_logger = logging.getLogger(f"OPTCLIM.security") # logger for security-related logging.
+# needs configuration to be set up in setup_logging.
 def _reset_logger(logger_name):
     """
     AI generated function to reset a logger to default state. This is useful for testing purposes to avoid duplicate log messages.
@@ -263,6 +264,302 @@ class DuplicateFilter(logging.Filter):
 
         return True
 
+# SPEC for safe_import (not yet implemented)
+# ---------------------------------------------------------------------------
+# Problem: decode() currently does importlib.import_module(module) where
+# `module` is a string taken verbatim from untrusted JSON (the "__module__"
+# key). That lets a crafted JSON file name an arbitrary importable module and
+# have it imported -- and therefore executed -- purely by being loaded. This
+# is the vulnerability safe_import closes: JSON-content-driven imports of
+# modules the user has not indicated they trust.
+#
+# It is explicitly NOT trying to defend against a compromised sys.path /
+# PYTHONPATH / interpreter environment (e.g. an attacker who can shadow
+# pandas or os itself). That is a different, environment-level trust
+# boundary that no code in this module can close.
+#
+# Trust model
+# -----------
+# * Trust is expressed as a set of directory trees, not individual module
+#   names. Anything importable from underneath a trusted directory is
+#   considered trusted.
+# * Default trusted directories come from the environment variable
+#   OPTCLIM_TRUSTED_DIRS, a list of paths separated by ':' (not
+#   os.pathsep -- deliberately platform-independent so config files/values
+#   are portable across the mixed Windows/Linux/HPC environments this code
+#   runs in). If OPTCLIM_TRUSTED_DIRS is unset, it defaults to a single
+#   entry: the value of OPTCLIMTOP.
+# * The env var is re-read on every call (not cached at import time), partly
+#   because genericLib.setup_env() may set OPTCLIMTOP *after*
+#   generic_json has been imported, and partly to make it easy for tests to
+#   change trust on the fly without reload gymnastics. Cost is a small
+#   amount of string-splitting/path-resolving per decode call -- expected
+#   negligible relative to JSON parsing itself.
+# * Users can widen trust beyond OPTCLIMTOP by setting OPTCLIM_TRUSTED_DIRS
+#   themselves (colon-separated). There is no separate in-process
+#   "register a trusted dir" API for now -- one env var is the single
+#   source of truth, which keeps this simple and keeps trust *outside* of
+#   JSON-loading code paths.
+#
+# Handling dotted module names
+# -----------------------------
+# importlib.util.find_spec("a.b.c") will, per the import system, import the
+# parent packages ("a", then "a.b") as a side effect of resolving the child
+# spec. That means calling find_spec directly on an attacker-supplied
+# dotted name can itself trigger arbitrary code execution -- exactly what
+# we're trying to prevent -- before we ever get to check trust.
+#
+# To avoid that: only ever call find_spec on the top-level component of the
+# dotted name (module_name.split('.', 1)[0]), which never requires
+# importing anything (a bare top-level name has no parent package to
+# import). If that top-level component resolves to a location under a
+# trusted directory, the whole dotted name is treated as trusted and
+# imported via importlib.import_module(module_name) as normal.
+#
+# Consequence (accepted): trust is granted to the entire top-level
+# package/module once any part of it is found under a trusted directory.
+# A submodule cannot be independently distrusted, and if something else
+# manages to plant a file inside an already-trusted directory that is a
+# separate environment-integrity problem, not something this check can
+# catch.
+#
+# Already-imported modules
+# -------------------------
+# If module_name (or its top-level component) is already present in
+# sys.modules, no new top-level code executes on a further
+# importlib.import_module call -- Python returns the cached module object.
+# Since the actual code-execution risk only exists the first time a module
+# is imported, safe_import should short-circuit and trust/return the
+# cached module unconditionally when sys.modules already has it, without
+# consulting OPTCLIM_TRUSTED_DIRS at all.
+#
+# find_spec/ModuleSpec shape (verified empirically, Python 3.10)
+# -----------------------------------------------------------------
+# For a plain module (e.g. top-level "HadCM3.py" sitting directly in a
+# trusted dir): spec.origin is the file path to that .py file;
+# spec.submodule_search_locations is None.
+# For a package (dir with __init__.py, e.g. "numpy"): spec.origin is the
+# path to its __init__.py; spec.submodule_search_locations is a list whose
+# first (only, in practice) entry is the package directory -- which is
+# exactly Path(spec.origin).parent. So Path(spec.origin).parent is a
+# uniform "containing directory" for both plain modules and packages;
+# there is no need to branch on submodule_search_locations.
+# For a builtin module (e.g. "sys"): spec.origin is the *string* "built-in"
+# (not a real filesystem path) and submodule_search_locations is None.
+# Frozen modules similarly use the sentinel "frozen". These sentinels must
+# be checked for explicitly -- taking Path("built-in").parent would
+# silently yield "." rather than raising, which would be wrong.
+# If find_spec(top_level_name) returns None (module cannot be located at
+# all), or spec.origin is None/a non-path sentinel, the module cannot be
+# verified and must be treated as untrusted.
+#
+# Failure handling
+# -----------------
+# If a module is determined untrusted (and not already imported), do not
+# call import_module. Instead route through genericLib.error_handle(msg,
+# error) with a message suggesting the fix: if this module's classes are
+# meant to be (de)serialized routinely, register their to_dict/from_dict
+# methods explicitly via obj_to_from_dict.register_TO_VALUE /
+# register_FROM_VALUE (e.g. at the point the class is defined, as
+# model_base subclasses already do), rather than relying on decode() to
+# auto-import the module from JSON content. On 'warn'/'ignore', safe_import
+# returns None and the caller (decode) proceeds without having imported the
+# module -- falling back to whatever is already present in FROM_VALUE for
+# that class name, which will itself raise/warn/ignore via the existing
+# value_to_obj path if nothing is registered.
+#
+# Proposed signature:
+#   def safe_import(module_name: str,
+#                    error: genericLib.error_handle_types = 'fail'
+#                    ) -> types.ModuleType | None: ...
+# ---------------------------------------------------------------------------
+
+# TRUST MODEL
+# ---------------------------------------------------------------------------
+# This module reconstructs Python objects from JSON metadata. This is
+# inherently powerful and inherently dangerous.
+#
+# Threat Scenario: "Dr Evil sends Prof Trusting a config file"
+# ----------------------------------------------------------
+# Dr Evil crafts a JSON file with malicious __cls__name__ or __module__
+# values. When Prof Trusting loads the file, arbitrary code executes with
+# Prof Trusting's privileges. This could:
+#   - Steal files (student records, credentials, SSH keys)
+#   - Install backdoors
+#   - Pivot to other systems
+#   - Delete or corrupt data
+#   - Anything Prof Trusting's account can do
+#
+# Trust Boundaries (ORGANIZATIONAL, not technical)
+# ----------------------------------------------------------
+# 1. JSON files loaded must come from trusted sources
+#    - Same trust level as "would you pickle.load() this file?"
+#    - Same trust level as "would you run this Python script?"
+# 2. Code in Models/ directory must be trusted
+#    - Any registered converter can execute on load
+#    - If Dr Evil adds a Model file, they have many easier paths to RCE
+# 3. safe_import() prevents RCE from JSON alone
+#    - Only modules under OPTCLIMTOP (or OPTCLIM_TRUSTED_DIRS) can be
+#       auto-imported during deserialization
+#    - System modules (os, subprocess, etc.) are BLOCKED
+#    - Already-cached modules are trusted (no new code execution)
+#
+# What This Module Does NOT Protect Against
+# ----------------------------------------------------------
+# - Dr Evil sending a large JSON file (DoS - session slows/crashes)
+# - Dr Evil adding Python code to the repository
+# - Prof Trusting running Dr Evil's scripts directly
+# - Compromised sys.path or PYTHONPATH
+#
+# Bottom Line
+# ----------------------------------------------------------
+# If Dr Evil can write Python code that Prof Trusting runs, they've already
+# won. The primary protection is organizational: only load JSON from trusted
+# sources, only put trusted code in the Models directory.
+# ---------------------------------------------------------------------------
+
+# CONVERTER REGISTRATION SECURITY
+# ---------------------------------------------------------------------------
+# register_FROM_VALUE() and register_TO_VALUE() are public classmethods.
+# Any code that imports generic_json can register converters.
+#
+# Risk: If Dr Evil can inject Python code (e.g., adds a Model file), they
+# can register a malicious converter:
+#
+#   obj_to_from_dict.register_FROM_VALUE(EvilClass, lambda x: os.system("..."))
+#
+# Then craft JSON with "__cls__name__": "EvilClass" to trigger execution.
+#
+# Mitigation:
+# - Registration is logged (forensic audit trail)
+# - If Dr Evil can add Python code, they have many easier RCE paths
+# - Trust boundary: only trusted code in Models/ directory
+#
+# No technical sandboxing is attempted. Python is not designed for running
+# untrusted code. The protection is organizational, not technical.
+# ---------------------------------------------------------------------------
+
+# REGISTRATION LOGGING
+# ---------------------------------------------------------------------------
+# Current: Logs at INFO level
+# Recommended: Logs at WARNING level for better visibility
+# Rationale: Converter registration is a security-relevant event. It should
+#   be visible in normal operation logs, not hidden at DEBUG level.
+# Log format: "Registered {method.__qualname__} for {class_name} in FROM_VALUE"
+# This provides an audit trail of what converters are available.
+# ---------------------------------------------------------------------------
+
+# SAFE_IMPORT DESIGN (2026-09-30)
+# ---------------------------------------------------------------------------
+# LOCATION: genericLib.py (NOT generic_json.py)
+# Rationale: safe_import is needed in two places:
+#   1. generic_json.py decode() - for __module__ imports during deserialization
+#   2. genericLib.get_fn() - for model loading from config files
+# Centralizing in genericLib.py ensures consistent trust enforcement.
+#
+# LOGGER: OPTCLIM.security (new logger in genericLib.py)
+# Rationale:
+#   - Security events should be auditable separately from operational logging
+#   - Allows security monitoring without noise from other modules
+#   - Future security features have natural home
+# Logging policy:
+#   - WARNING: Untrusted module blocked (ALWAYS log, even if error='ignore')
+#   - INFO: Module imported successfully
+#   - DEBUG: Trust check details
+#
+# INTEGRATION WITH get_fn():
+# genericLib.get_fn() will wrap safe_import() rather than calling
+# importlib.import_module() directly. This protects the model-loading
+# pathway used when configs specify module.class_name for custom models.
+#
+# TRUST CONFIGURATION:
+# - Primary: OPTCLIMTOP env var (set by genericLib.setup_env())
+# - Extended: OPTCLIM_TRUSTED_DIRS env var (colon-separated paths)
+# - Rationale: Env vars can't be changed by config files, providing
+#   stronger security boundary than in-process configuration.
+#
+# DESIGN PRINCIPLES:
+# 1. Trust is directory-based, not module-name-based
+# 2. Already-cached modules are trusted (no new code execution)
+# 3. Builtin/frozen modules are blocked (not under trusted dirs)
+# 4. Top-level package trust grants trust to all submodules
+# 5. Security events are always logged (audit trail)
+# 6. Protection is organizational, not technical (Dr Evil with code
+#    access has easier paths - this stops JSON-only attacks)
+# ---------------------------------------------------------------------------
+
+# IMPLEMENTATION REVIEW COMMENTS (2026-09-30)
+# ---------------------------------------------------------------------------
+# The following implementation details must be verified when safe_import is coded:
+#
+# 1. Path resolution security
+#    - Use pathlib.Path.resolve() on spec.origin before trust checking
+#    - This prevents symlink attacks and .. path traversal tricks
+#    - Example: Dr Evil creates symlink inside OPTCLIMTOP pointing to /etc/passwd
+#
+# 2. Windows case-insensitivity
+#    - Codebase runs on WSL/OneDrive (see user path with "OneDrive - University of Edinburgh")
+#    - Path comparison must handle case-insensitive filesystems
+#    - Use os.path.samefile() or casefold comparison on Windows, not string prefix matching
+#    - String.startswith() alone is insufficient on Windows
+#
+# 3. Already-cached module shortcut
+#    - Check sys.modules[module_name] FIRST, before any trust checking
+#    - If present, return immediately (no new code execution possible)
+#    - This avoids unnecessary filesystem checks for commonly-used modules
+#
+# 4. Builtin/frozen module handling
+#    - spec.origin will be the string "built-in" for modules like sys, builtins
+#    - spec.origin may be None for some namespace packages
+#    - These should be BLOCKED (not under OPTCLIMTOP) unless explicitly trusted
+#    - Check: if spec.origin in ('built-in', 'frozen', None): treat as untrusted
+#
+# 5. Top-level package trust granularity
+#    - Trust check only on module_name.split('.', 1)[0] (top-level component)
+#    - If "numpy" is trusted, all submodules (numpy.ma, numpy.linalg) are trusted
+#    - This is an accepted limitation but should be documented to users
+#
+# 6. OPTCLIMTOP fallback behavior
+#    - genericLib.setup_env() sets OPTCLIMTOP to repo root if unset (line 677)
+#    - OPTCLIM_TRUSTED_DIRS parsing: split on ':' (colon, not os.pathsep)
+#    - Empty OPTCLIM_TRUSTED_DIRS should probably default to [OPTCLIMTOP]
+#
+# 7. Trust check algorithm
+#    - Preferred: module_dir.is_relative_to(trusted_dir)  (Python 3.9+)
+#    - Alternative: str(module_dir).startswith(str(trusted_dir) + os.sep)
+#    - Must handle trailing slashes consistently
+#    - Must check against ALL trusted directories (any match grants trust)
+#
+# 8. Error messaging
+#    - On untrusted module, suggest: "Register to_dict/from_dict methods via
+#      obj_to_from_dict.register_TO_VALUE/FROM_VALUE instead of relying on
+#      decode() auto-import"
+#    - Include the module name and which trusted dirs were checked
+# ---------------------------------------------------------------------------
+
+def logging_import(module_name: str) -> typing.Optional[typing.Any]:
+    """
+    import a module and secure log the path loaded from.
+    :param module_name: The name of the module to import.
+    error if the module cannot be found or origin is None. Logs the origin if found.
+    Info logs where the module is imported from.
+    :return: The imported module.
+    """
+
+    if module_name in sys.modules:
+        # Already imported, return the cached module
+        return sys.modules[module_name]
+    spec = importlib.util.find_spec(module_name)
+    if spec is None or spec.origin is None:
+        secure_logger.error(f"Module {module_name} cannot be found. ")
+    elif spec.origin  in ('built-in', 'frozen'):
+        # Module is built-in or frozen,
+        secure_logger.info(f"Module {module_name} is {spec.origin}")
+    else:
+        secure_logger.info(f"Importing module {module_name} from {pathlib.Path(spec.origin).resolve()}")
+        # get the path to the top-level module and log that.
+    module = importlib.import_module(module_name)  # import the module. Will fail if the module cannot be imported.
+    return module
 
 def get_fn(mod_fn_str: str) -> typing.Callable:
     """
@@ -271,7 +568,7 @@ def get_fn(mod_fn_str: str) -> typing.Callable:
     :return: a callable
     """
     mod, fn_name = mod_fn_str.rsplit('.', maxsplit=1)
-    module = importlib.import_module(mod)  # import the module
+    module = logging_import(mod)
     fn = getattr(module, fn_name)
     if not callable(fn):
         raise AttributeError(f"{fn_name} is not a callable in {mod}")
@@ -870,6 +1167,55 @@ def files_to_archive(files: list[pathlib.Path]) -> list[pathlib.Path]:
         raise ValueError(f"Not all files in files_wanted are files: {[f for f in files_wanted if not f.is_file()]}")
 
     return list(files_wanted)
+
+
+
+def safe_join(base_dir: typing.Optional[pathlib.Path],
+              user_path: typing.Union[pathlib.Path, str]) -> pathlib.Path:
+    """
+    Join base_dir with user_path, ensuring the result stays under base_dir.
+    
+    SECURITY: Prevents path traversal attacks where user_path contains ".." components
+    that would escape the base_dir directory. This is important when loading paths from
+    configuration files that may have been modified or come from untrusted sources.
+    
+    :param base_dir: Base directory (must be a directory, not a file)
+    :param user_path: Relative path to join with base_dir (can contain ".." if they don't escape)
+    :return: Resolved absolute path under base_dir
+    :raises ValueError: If user_path would escape base_dir (path traversal detected)
+    :raises ValueError: If base_dir does not exist or is not a directory
+    
+    Example:
+        >>> safe_join(Path("/study"), Path("model1/config.mcfg"))
+        PosixPath('/study/model1/config.mcfg')
+        
+        >>> safe_join(Path("/study"), Path("../../etc/passwd"))
+        ValueError: Path traversal detected...
+    
+    Note: This function requires filesystem access (calls resolve()) to handle symlinks
+    and other filesystem features correctly. For path-only validation without filesystem
+    access, use a different approach.
+    """
+    if base_dir is None:
+        return None
+    # Resolve base_dir to absolute path (handles symlinks, .., etc.)
+    base_resolved = base_dir.resolve()
+    
+    # Join with user_path and resolve to get canonical absolute path
+    # This handles "..", ".", and symlinks correctly
+    full_path = (base_resolved / user_path).resolve()
+    
+    # Verify the resolved path is still under base_dir
+    # relative_to() raises ValueError if full_path is not relative to base_resolved
+    if not full_path.is_relative_to(base_resolved):
+        # Path traversal detected - the resolved path is outside base_dir
+        msg = f"Path traversal detected: {user_path} escaping {base_dir} resolving to {full_path}"
+        # Log the attempt for security auditing
+        secure_logger.error(msg)
+        raise ValueError(msg )
+    # Path is safe - return the resolved absolute path
+
+    return full_path
 
 
 # AI generated code for locking and then modified.

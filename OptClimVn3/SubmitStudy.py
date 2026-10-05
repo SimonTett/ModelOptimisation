@@ -254,10 +254,10 @@ class SubmitStudy(Study, model_base, journal):
                 break
             else:
                 my_logger.debug(f"Name {name} already exists. Generating new name")
-        model_dir = self.study_dir / name
+        model_dir = genericLib.safe_join(self.study_dir, name)
         if model_dir.exists():
             raise ValueError(f"model_dir {model_dir} already exists")
-        config_path = model_dir / (name + '.mcfg')  # create model config in model dir
+        config_path = genericLib.safe_join(model_dir, name + '.mcfg')  # create model config in model dir
         if config_path.exists():
             raise ValueError(f"config_path {config_path} already exists")
         param_dir = copy.deepcopy(params)
@@ -469,12 +469,12 @@ class SubmitStudy(Study, model_base, journal):
 
                 # make path version which we can then load.
                 if ppath.is_absolute(): # legacy is absolute path so fix.
-                    new_path = obj.study_dir/pathlib.Path(*ppath.parts[-2:])
+                    new_path = genericLib.safe_join(obj.study_dir,pathlib.Path(*ppath.parts[-2:]))
                     # extract last two parts of path and stuff study_dir in front.
                 else: # A relative path. Append study_dir
-                    new_path = obj.study_dir/ppath
+                    new_path = genericLib.safe_join(obj.study_dir, ppath)
                     if not new_path.exists(): # path does not exist. Try with slightly different path
-                        new_path = obj.study_dir.parent/ppath
+                        new_path = genericLib.safe_join(obj.study_dir.parent, ppath)
                 if new_path.exists():
                     my_logger.debug(f"Loading model from {new_path}")
                     # verify key is as expected.
@@ -501,7 +501,7 @@ class SubmitStudy(Study, model_base, journal):
                     my_logger.warning(f"Failed to find {new_path} so ignoring.")
         else:
             for key,rpath in loaded_model_index.items(): # path is relative to obj.study_dir.
-                path = obj.study_dir/rpath # should be full path to model.
+                path = genericLib.safe_join(obj.study_dir, rpath) # should be full path to model.
                 if not path.exists():
                     my_logger.warning(f"Failed to find {path} so ignoring.")
                     continue
@@ -581,7 +581,7 @@ class SubmitStudy(Study, model_base, journal):
         # now copy the model(s) to the new directory
         model_index = dict()  # empty  model index
         for key,model in self.model_index.items():
-            new_path = cp_study_dir/(model.config_path.relative_to(self.study_dir))# new path for model config
+            new_path = genericLib.safe_join(cp_study_dir, model.config_path.relative_to(self.study_dir))# new path for model config
             m =  model.copy_config(new_path, update_paths=update_paths) # model path(s) changed so need to change model.
             model_index[key] = m
 
@@ -628,10 +628,12 @@ class SubmitStudy(Study, model_base, journal):
         """
         self.dump_config() # dump the config so we have the latest version.
         # No models dumped but model.archive will handle that.
-        files = [self.config_path,self.study_dir/'jobOutput'] # the configuration file and output are  always archived.
+        files = [self.config_path,
+                 genericLib.safe_join(self.study_dir, 'jobOutput')] # the configuration file and output are  always archived.
+        files = [genericLib.safe_join(self.study_dir, f) for f in files]  # make sure the paths are safe
         #TODO fix hardwired name: jobOutput should form part of SubmitStudy configuration.
-        if extra_paths is not None: # add in the extra paths/
-           files += [self.study_dir/f for f in extra_paths]
+        if extra_paths is not None: # add in the extra paths
+           files += [genericLib.safe_join(self.study_dir, f) for f in extra_paths]
         files = genericLib.files_to_archive(files)
         # archive ourselves!
         files_archived = []
@@ -795,7 +797,7 @@ class SubmitStudy(Study, model_base, journal):
 
         maxRuns = self.config.maxRuns()
         if not dryrun:
-            output_dir = self.study_dir / 'jobOutput'  # directory where output goes for post-processing and next stage.
+            output_dir = genericLib.safe_join(self.study_dir, 'jobOutput')  # directory where output goes for post-processing and next stage.
             # try and create the outputDir
             output_dir.mkdir(parents=True, exist_ok=True)
             my_logger.debug(f"Created {output_dir}")

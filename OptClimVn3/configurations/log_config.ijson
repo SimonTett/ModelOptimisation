@@ -1,6 +1,6 @@
 {
 	"_comment":"configuration for logging. See https://docs.python.org/3.9/library/logging.config.html#logging-config-dictschema. Use INCLUDE pathname to include in a config.",
-	"history_comment":"This version generated August 2023 by SFBT",
+	"history_comment":"This version generated August 2023 by SFBT. Updated Oct 2026 to add secure logs",
 	    "version": 1,
 	    "formatters": {
 		"std": {
@@ -21,6 +21,21 @@
 		"consoleBrief": {
 		    "class": "logging.StreamHandler",
 		    "formatter": "brief"
+		},
+		"secureFile": {
+		    "class": "logging.FileHandler",
+		    "filename": "$OPTCLIM_LOG_DIR/secure.log",
+		    "formatter": "std"
+		},
+		"dfolsFile": {
+		    "class": "logging.FileHandler",
+		    "filename": "$OPTCLIM_LOG_DIR/dfols.log",
+		    "formatter": "std"
+		},
+		"dfolsConsole": {
+		    "class": "logging.StreamHandler",
+		    "stream": "ext://sys.stderr",
+		    "formatter": "std"
 		}
 	    },
 	    "handlers_comment":"Control handlers",
@@ -33,7 +48,18 @@
 		"OPTCLIM.generic_json": {
 		    "level": "WARNING",
 		    "handlers":["consoleBrief"]
+		},
+		"OPTCLIM.security": {
+		    "level": "INFO",
+		    "propagate": false,
+		    "handlers": ["secureFile", "consoleBrief"]
+		},
+		"dfols": {
+		    "level": "INFO",
+		    "propagate": false,
+		    "handlers": ["dfolsFile", "dfolsConsole"]
 		}
 	    },
-	    "loggers_comment":"Provides two loggers. INFO for all of OPTCLIM. WARNING for generic_json."
+	    "mkdir": true,
+	    "loggers_comment":"Routes security warnings and DFOLS output to dedicated files and stderr."
 	}

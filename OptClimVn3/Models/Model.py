@@ -356,7 +356,7 @@ class Model(ModelBaseClass, journal):
 
         config_dir = self.model_dir # could be None
         if self._config_dir is not None and self.model_dir is not None:
-            config_dir = config_dir / self._config_dir
+            config_dir = genericLib.safe_join(self.model_dir, self._config_dir)
         return config_dir
 
     @property
