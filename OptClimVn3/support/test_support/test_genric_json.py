@@ -95,33 +95,6 @@ class TestJsonEncoder(rootTest):
             got = decode.decode(test)
 
 
-    def notest_rename_paths(self):
-        """
-        Test rewrite_paths method
-        :return:
-        """
-        decode = obj_to_from_dict()
-        test = {"__cls__name__": "Path", "object": '/fred/james/harry.cfg'}
-        expect = pathlib.Path('/norma/andrew/harry.cfg')
-        rewrite = {pathlib.PurePath('/fred/james'): pathlib.PurePath('/norma/andrew')}
-        result = decode.rename_paths(test, rewrite)
-        got = decode.dct_lst_to_obj(result)
-        self.assertEqual(expect, got)
-        # now have a recursive case.
-        test=dict()
-        expect=dict()
-        for key in 'abc':
-            file = f'harry_{key}.cfg'
-            test[key]={"__cls__name__": "Path", "object": '/fred/james/'+file}
-            expect[key] = pathlib.Path('/norma/andrew')/file
-        for key in 'def':
-            file=f'harry_{key}.cfg'
-            test[key]={"__cls__name__": "Path", "object": '/orange/james/'+file}
-            expect[key] = pathlib.Path('/tangerine/andrew') / file
-        rewrite[pathlib.PurePath('/orange/james')]=pathlib.PurePath('/tangerine/andrew')
-        result  = decode.rename_paths(test,rewrite)
-        got = decode.dct_lst_to_obj(result)
-        self.assertEqual(expect, got)
 
     def test_dct_lst_to_obj(self):
         """

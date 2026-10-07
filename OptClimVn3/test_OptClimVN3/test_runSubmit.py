@@ -40,7 +40,6 @@ def fake_run(rSubmit: runSubmit, scale: bool = True) -> typing.Callable:
         with path.open('wt') as fp:
             model.simulated_obs.to_json(fp) # write it out
     rSubmit.update_obs(use_cache=True)
-    #raise NotImplementedError("Not yet implemented -- need to compute the simulated obs from the data")
     return fake_function
 
 

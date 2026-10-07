@@ -225,24 +225,7 @@ class model_base:
 
     _convert_path2pure:bool = False # class variable to convert paths to purePaths on readin. Supports "old" structures.
 
-    @classmethod
-    def translate_path(cls, path: pathlib.PurePath) -> pathlib.PurePath:
-        """
-        Translate PurePath (coz we have moved files or system). Expect to be used in inherited class from_dict
-        Probably will work if Paths too though care needed with absolute paths
-        :param path - path to be translated.
-        """
-        raise NotImplementedError("Do not use this method. It is not needed")
-        result = path
-        if cls._translate_path_var:  # want to translate
-            try:  # if we get value error then can't translate path so just return input
-                result = cls._translate_path_var[1] / path.relative_to(cls._translate_path_var[0])
-                # verify file exists. If not leave it alone
-                if not pathlib.Path(result).exists():
-                    result = path
-            except ValueError:
-                pass
-        return result
+
 
     @classmethod
     def from_dict(cls, dct: dict):

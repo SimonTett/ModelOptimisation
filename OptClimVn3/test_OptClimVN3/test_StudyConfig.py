@@ -683,7 +683,7 @@ class testStudyConfig(unittest.TestCase):
                 # Call the function that should log a warning
                 trans = self.config.transMatrix(scale=True)
             self.assertIn('WARNING:OPTCLIM.StudyConfig:Eigenvalues range is', log.output[1])
-            #raise NotImplementedError("Test cases with min_evalue")
+
 
 
     def test_transform_matrix(self):
