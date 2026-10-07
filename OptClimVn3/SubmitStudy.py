@@ -456,17 +456,21 @@ class SubmitStudy(Study, model_base, journal):
                 dct.pop(obj_name, None)
             if 'name' in dct: # rename name
                 dct['_name'] = dct.pop('name')
+            refdir = dct.pop('refDir', None)
+            if isinstance(refdir, pathlib.PurePath) and str(refdir) == 'None':  # legacy code. refDir was a purepath with value None.
+                refdir=None
+                my_logger.warning(f"Fixing  legacy refDir. This may not work as expected. Please upgrade to the latest version.")
+            dct['refDir'] = refdir
+
 
         obj.fill_attrs(dct, convert_pure_paths=True)  # fill in the rest of the object's attributes. Converting pure path
         # load up models.
         model_index = dict()
         if version < packaging.version.Version("1.0.0"): # legacy code
             my_logger.warning(f"Loading legacy SubmitStudy. This may not work as expected. Please upgrade to the latest version.")
+
             right_pure_path_type = type(pathlib.PurePath())  # (will give Windows/Posix as appropriate)
             for key, ppath in loaded_model_index.items():  # iterate over the paths (which is how we represent the models)
-                #path = cls.translate_path(ppath)  # this will be a path
-
-
                 # make path version which we can then load.
                 if ppath.is_absolute(): # legacy is absolute path so fix.
                     new_path = genericLib.safe_join(obj.study_dir,pathlib.Path(*ppath.parts[-2:]))

@@ -160,9 +160,14 @@ def dict2series(x):
         return pd.read_json(StringIO(x),typ='series')
     else:
         raise TypeError(f"Cannot convert {x} to Series")
+
 def conv_ndarray(x:dict):
     result = np.array(x['data'],dtype=x['typ'])
     return result
+
+
+
+
 
 class obj_to_from_dict:
     """
@@ -360,6 +365,7 @@ class obj_to_from_dict:
         Key is part for existing path to be made relative to and value is the new root.
         :return: renamed dict or list
         """
+        raise NotImplementedError("No longer in use")
         if not isinstance(dct_lst, (dict, list)):
             raise TypeError(f'dct_lst should be a dict or list not {type(dct_lst)}')
         result = copy.copy(dct_lst)  # nb shallow copy

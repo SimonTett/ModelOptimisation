@@ -223,12 +223,6 @@ class model_base:
         generic_json.obj_to_from_dict.register_FROM_VALUE(cls, cls.from_dict)
         generic_json.obj_to_from_dict.register_TO_VALUE(cls, cls.to_dict)
 
-    # class methods
-    _translate_path_var: typing.Optional[
-        typing.Tuple[pathlib.PurePath, pathlib.PurePath]] = None
-
-
-    # class variable to hold information on how to translate paths from one file system to another.
     _convert_path2pure:bool = False # class variable to convert paths to purePaths on readin. Supports "old" structures.
 
     @classmethod
@@ -238,6 +232,7 @@ class model_base:
         Probably will work if Paths too though care needed with absolute paths
         :param path - path to be translated.
         """
+        raise NotImplementedError("Do not use this method. It is not needed")
         result = path
         if cls._translate_path_var:  # want to translate
             try:  # if we get value error then can't translate path so just return input
@@ -266,8 +261,9 @@ class model_base:
     @classmethod
     def convert_pure_paths(cls, dct: dict) -> dict:
         """Convert pure paths (if possible to paths)
-        First apply translate_path to anything thing that is a path
-          then trys to convert a purePath of the right type (Windows on Windows; Posix on anything else) to a path,
+          then trys to convert a purePath of the right type (Windows on Windows; Posix on anything else) to a path.
+          Suspect this can be simplified and maybe even removed with config_path set on load and
+           other paths defined relative to config_path. Kept for now.
         """
 
         result = dict()
@@ -276,10 +272,9 @@ class model_base:
             if isinstance(value, pathlib.PurePath):  # something path like
                 if cls._convert_path2pure and isinstance(value,pathlib.Path): # convert path to (local) purePath
                     value = pathlib.PurePath(value) # purify path.
-                value = cls.translate_path(value)
                 if not pathlib.Path(value).exists():
                     my_logger.warning(f"{value} does not exist. Keeping as purePath")
-                
+
                 # path is of correct type (after conversion) and exists -- make it a path!
                 if (type(value) == right_pure_path_type) and (pathlib.Path(value).exists()):
                     value = pathlib.Path(value)
