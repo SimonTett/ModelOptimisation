@@ -360,10 +360,10 @@ class SubmitStudy(Study, model_base, journal):
 
 
         obj:SubmitStudy = super().load(config_path,check_types=[cls],error=error) # call the super class load.
-        if obj.config_path != config_path:
+        if not obj.config_path.samefile(config_path):
             raise ValueError(f"Obj config_path {obj.config_path} does not match {config_path}")
 
-        if not (isinstance(obj.study_dir, pathlib.Path) and obj.study_dir.exists() and config_path.parent.samefile(obj.study_dir)):
+        if not (isinstance(obj.study_dir, pathlib.Path) and obj.study_dir.exists() and config_path.resolve().parent.samefile(obj.study_dir.resolve())):
             msg = f"Modified config rootDir from  {obj.study_dir} to {config_path.parent}"
 
             obj.config_path = config_path

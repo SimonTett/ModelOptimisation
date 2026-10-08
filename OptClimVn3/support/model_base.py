@@ -277,6 +277,8 @@ class model_base:
                 if cls._convert_path2pure and isinstance(value,pathlib.Path): # convert path to (local) purePath
                     value = pathlib.PurePath(value) # purify path.
                 value = cls.translate_path(value)
+                if value is None:
+                    raise ValueError
                 if not pathlib.Path(value).exists():
                     my_logger.warning(f"{value} does not exist. Keeping as purePath")
                 

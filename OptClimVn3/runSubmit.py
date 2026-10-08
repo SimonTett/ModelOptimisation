@@ -735,8 +735,8 @@ class runSubmit(SubmitStudy):
 
         for key,status in model_status.items(): # if model_status was not found then the dict will be empty so nothing will happen.
             try:
-                model = self.model_index[key]
-                obj.set_model_used_status(model,status) # CONSIDER changing name from status as that could confuse.
+                model = obj.model_index[key]
+                obj.model_used_status(model,status) # CONSIDER changing name from status as that could confuse.
                 my_logger.warning(f"Updating model {model} to status:{status}")
             except KeyError:
                 my_logger.warning(f"Failed to find {key} in model_index. Skipping")
