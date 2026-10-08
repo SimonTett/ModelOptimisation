@@ -8,6 +8,7 @@ from StudyConfig import readConfig
 import datetime
 import sys
 
+raise NotImplementedError("This script no longer works and will be wrapped into a new script to create a new config.")
 # TODO refactor this into code that just supports DFOLS. And review how DFOLS code handles it.
 #  Updating params while running not to be supported. Best approach there is to start a new case and import old model runs.
 parser = argparse.ArgumentParser(description="Update parameters in an existing OptClimVn3 configuration file. "

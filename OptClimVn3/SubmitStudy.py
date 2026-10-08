@@ -586,7 +586,7 @@ class SubmitStudy(Study, model_base, journal):
         model_index = dict()  # empty  model index
         for key,model in self.model_index.items():
             new_path = genericLib.safe_join(cp_study_dir, model.config_path.relative_to(self.study_dir))# new path for model config
-            m =  model.copy_config(new_path, update_paths=update_paths) # model path(s) changed so need to change model.
+            m =  model.copy_config(new_path) # model path(s) changed so need to change model.
             model_index[key] = m
 
 

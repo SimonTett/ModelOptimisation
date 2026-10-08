@@ -1204,31 +1204,26 @@ class Model(ModelBaseClass, journal):
         return None
 
     def copy_config(self, config_path: pathlib.Path,
-                    extra_files: typing.Optional[list[pathlib.Path]] = None,
-                    update_paths: bool = True) -> "Model":
+                    extra_files: typing.Optional[list[pathlib.Path]] = None) -> "Model":
         """
         Copy Model to a new directory. Different Model classes may well want to override this by adding their own extra_files
         This basic version will only copy the model config file and the post-processing output file.
-           All files must in self.model_dir
+           All files must be in self.model_dir
         :param config_path new config_path where  Model  is to be copied.
         :param extra_files: list of extra files (paths provided relative to self.model_dir) to be copied to new directory.
         :return: Copied Model. Will copy only Model config & post process unless extra_files provided.
-
-        This could share functionlity with the archive method by sharing file names/paths to copy
         """
-
-
-        # check tgt  path is abs and if not make it abs.
         config_path = config_path.resolve()
-
-        if config_path.exists() and self.config_path.samefile(config_path):
+        if config_path ==  self.config_path.resolve():
             raise FileExistsError(f"Can not copy model to itself {self.config_path}")
 
         cp_model = copy.deepcopy(self)  # make a copy of self
         # update
         cp_model.config_path = config_path
-        # and update the config. Note will wipe out cached values.  If used these will get loaded back
+        # and update the config. Note will wipe out cached values.
+        # If used these will get loaded back from the config files.
         cp_model.configs= GroupConfig(root_dir=cp_model.config_dir)
+        # actually copy stuff across.
         files_to_copy = [ self._post_process_output,self._post_process_input]
         files_to_copy += [d for d in [self._script_dir, self._config_dir] if d is not None]
 
