@@ -876,6 +876,8 @@ class ModelTestCase(unittest.TestCase):
             if attr in attrs_not_same:
                 continue
             self.assertEqual(getattr(model, attr), getattr(cmodel, attr), f"Attribute {attr} not the same")
+        # verify new configs point to new_model.config_dir
+        self.assertEqual(new_model.configs.root_dir, new_model.config_dir)
 
 
         with self.assertRaises(FileExistsError):

@@ -503,9 +503,9 @@ class UM_rose(Model):
 
         """
         if self.status in ['INSTANTIATED', 'PERTURBED']:  # start again.
-            script = self.scripts['submit']
+            script = self.scripts['submit_script']
         elif self.status == 'CONTINUE':
-            script = self.scripts['continue']
+            script = self.scripts['continue_script']
             raise NotImplementedError('Continue not implemented yet')
         else:
             raise ValueError(f"Status {self.status} not expected ")

@@ -1225,7 +1225,10 @@ class Model(ModelBaseClass, journal):
             raise FileExistsError(f"Can not copy model to itself {self.config_path}")
 
         cp_model = copy.deepcopy(self)  # make a copy of self
+        # update
         cp_model.config_path = config_path
+        # and update the config. Note will wipe out cached values.  If used these will get loaded back
+        cp_model.configs= GroupConfig(root_dir=cp_model.config_dir)
         files_to_copy = [ self._post_process_output,self._post_process_input]
         files_to_copy += [d for d in [self._script_dir, self._config_dir] if d is not None]
 
