@@ -29,3 +29,7 @@
   - Added planned changes to better handle covariances and transform matrix.
   - New structure for covariances in config file which bumps version to 4.
   - Now handles ensemble size for internal variability. 
+
+2026-10-XX [plan_config_dir.md]
+  - The primary reference for where data is stored is now the config_path.  model_dir and study_dir are now properties that return the correct paths based on the current configuration. This ensures that the paths are always consistent and correctly reflect the current state of the model and study directories.
+  - Added some security changes with a new security log. logs when modules are imported via text and have safe_join to make sure that don't go outside base dir.

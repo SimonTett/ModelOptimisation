@@ -160,9 +160,14 @@ def dict2series(x):
         return pd.read_json(StringIO(x),typ='series')
     else:
         raise TypeError(f"Cannot convert {x} to Series")
+
 def conv_ndarray(x:dict):
     result = np.array(x['data'],dtype=x['typ'])
     return result
+
+
+
+
 
 class obj_to_from_dict:
     """
@@ -351,58 +356,7 @@ class obj_to_from_dict:
             return dct
 
 
-    def rename_paths(self,dct_lst: typing.Union[dict, list],
-                   rewrite_paths: dict) -> typing.Union[dict, list]:
-        """
-        Recursively rename the paths elements of a dict or list produced by generic_json.
-        :param dct_lst:dict or list.
-        :param rewrite_paths: paths to rewrite.
-        Key is part for existing path to be made relative to and value is the new root.
-        :return: renamed dict or list
-        """
-        if not isinstance(dct_lst, (dict, list)):
-            raise TypeError(f'dct_lst should be a dict or list not {type(dct_lst)}')
-        result = copy.copy(dct_lst)  # nb shallow copy
-        if isinstance(dct_lst, dict) and (dct_lst.get('object') is not None):  # we are an encoded object
-            obj = dct_lst['object']
-            cls = dct_lst['__cls__name__']
-            if isinstance(obj, (dict, list)):  # keep descending as need to convert
-                rewrite_leaves = self.rename_paths(obj, rewrite_paths)
-                result['object'] = rewrite_leaves
-            elif cls in ['PosixPath', 'WindowsPath', 'PurePosixPath', 'PureWindowsPath','Path','PurePath']:
-                path = pathlib.PurePath(obj)
-                for k, v in rewrite_paths.items():
-                    try:
-                        new_path = v / path.relative_to(k)
-                        result['object'] = str(new_path)
-                        if cls.startswith('Pure'):
-                            result['__cls__name__'] = 'PurePath'
-                        else:
-                            result['__cls__name__'] = 'Path'
-                        my_logger.debug(f'Rewrote {path} to {new_path}')
-                        break  # stop converting once we have been successful.
-                    except ValueError:
-                        pass
-            else:
-                pass  # no change made.
-        elif isinstance(dct_lst, dict):
-            for k, v in dct_lst.items():
-                if isinstance(v, (dict, list)):
-                    result[k] = self.rename_paths(v, rewrite_paths)
-                else:
-                    pass
-        elif isinstance(dct_lst, list):
-            result = list()
-            for v in dct_lst:
-                if isinstance(v, (dict, list)):
-                    result.append(self.rename_paths(v, rewrite_paths))
-                else:
-                    result.append(v)
 
-        else:
-            pass
-        # return the result.
-        return result
     def dct_lst_to_obj(self,dct_lst: typing.Union[dict, list]) -> typing.Any:
         """
       Recursively decode a dict containing appropriate meta-data to an object.

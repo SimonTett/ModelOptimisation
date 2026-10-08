@@ -239,46 +239,7 @@ class LogicalInfo(model_base):
 
         return obj
 
-    def keys_to_models(self, model_index: dict[str, Model],
-                       update_models: bool = False) -> dict[str, Model]:
-        """
-        This is a support function to be called from runSubmit.from_dict after the LogicalInfo object has been created.
-        It converts models stored as keys to Model objects using model_index OR updates the models.
 
-        :param model_index: dict of models indexed by key.
-        :return: Nada as models updated inplace.
-        """
-        raise NotImplementedError("This method no longer supported. Code now uses the keys directly  and then pull from model_index")
-        names_to_remove=[] # list of names to remove if we do not find a model.
-        for name, model_list in self.models.items(): # get logical name and list of models or keys for this logical name
-            final_model_list = []
-            got_model =True
-            for model_or_key in model_list:
-                if update_models:
-                    key = runSubmit.key_for_model(model_or_key)
-                else:
-                    key = model_or_key
-                try:
-                    final_model_list += [model_index[key]]  # this is a model
-                except KeyError:
-                    my_logger.warning(f"Key {key} not found in model_index. Will delete {name}.")
-                    names_to_remove+=[name]
-                    
-                    #raise ValueError(f"Key {key} not found in model_index")
-            # done dealing with models for this logical name.
-            if final_model_list: # got some models for this name?
-                self.models[name] = final_model_list  # update models to be Model objects.
-
-
-        if len(names_to_remove)>0:
-            my_logger.warning(f"Removing {names_to_remove} from cost, observations, params & models.")
-        for name in names_to_remove: # remove things. 
-
-            self.cost.pop(name,None)
-            self.observations.pop(name,None)
-            self.parameters.pop(name,None)
-            self.models.pop(name,None)
-        
 
     # End of LogicalInfo class.
 

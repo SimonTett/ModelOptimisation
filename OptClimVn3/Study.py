@@ -362,22 +362,6 @@ class Study:
             msg = f"Duplicate observations found for {obs.index[duplicates].tolist()}"
             genericLib.error_handle(msg,error=error)
 
-    def obs(self, scale: bool = True,
-            normalize: bool = False,
-            obsNames:typing.Optional[list[str]]=None) -> typing.Optional[pd.DataFrame]:
-        """
-        Extract the Obs used in the *individual* simulations. If simulation has no observations then it is ignored.
-        :param scale If True data will be scaled.
-        :param normalize If True data will be normalized -- distance in SD's from tgt
-        :param obsNames list of names of observations. If not provided will be extracted from model obs and target.
-        :return: pandas dataframe of observations possibly scaled and normalized.
-           None will be returned if there are no obs
-
-           No longer in use -- use self.simulated_observations() instead.
-        """
-
-        raise NotImplementedError("Use self.simulated_observations() instead")
-
 
 
     def cost(self, scale: bool = True,
