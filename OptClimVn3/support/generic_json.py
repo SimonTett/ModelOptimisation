@@ -269,8 +269,10 @@ class obj_to_from_dict:
             p = params['filepath']
             # exclude positional-only, since we'd call with filepath=...
             return p.kind != inspect.Parameter.POSITIONAL_ONLY
-        # also true if fn accepts **kwargs (catch-all)
-        return any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+        # also true if fn accepts **kwargs (catch-all). Don't bother will fail at 3.12 for pathlib.
+        #return any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+        else:
+            return False # return False
 
     def value_to_obj(self, class_name: str, values: dict | list):
         """
@@ -289,7 +291,11 @@ class obj_to_from_dict:
         extra={}
         if self.accepts_filepath(conv_fn):
             extra.update(filepath=self.filepath)
-        obj = conv_fn(values, **extra)
+        try:
+            obj = conv_fn(values, **extra)
+        except Exception as e:
+            my_logger.error(f"Error creating {class_name} object from {values}: {e}")
+            raise
         my_logger.debug(f"Created a {class_name} object from {values}")
         return obj
 
