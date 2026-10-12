@@ -31,7 +31,7 @@
         date +"%Y-%m-%d %H:%M:%S.%3N"
         . {{PY_ENV_SETUP}} # setup the environment. Could be in script-pre?
         date +"%Y-%m-%d %H:%M:%S.%3N"
-        {{OPTCLIM_SET_STATUS_SCRIPT}} {{OPTCLIM_ARGS}} {{MODEL_CONFIG}} RUNNING
+        {{OPTCLIM_SET_STATUS_SCRIPT}} {{OPTCLIM_ARGS}} {{OPTCLIM_MODEL_CONFIG}} RUNNING
         """
     [[optclim_post]]
         inherit = OPTCLIM_HPC
@@ -39,7 +39,7 @@
         date +"%Y-%m-%d %H:%M:%S.%3N"
         . {{PY_ENV_SETUP}} # setup the environment
         date +"%Y-%m-%d %H:%M:%S.%3N"
-        {{OPTCLIM_SET_STATUS_SCRIPT}} {{OPTCLIM_ARGS}} {{MODEL_CONFIG}} SUCCEEDED
+        {{OPTCLIM_SET_STATUS_SCRIPT}} {{OPTCLIM_ARGS}} {{OPTCLIM_MODEL_CONFIG}} SUCCEEDED
         """
         ## need more time for optclim_post as could be copying lots of files
         execution time limit = PT15M
@@ -47,7 +47,7 @@
         inherit = OPTCLIM_HPC
         script = """
         . {{PY_ENV_SETUP}} # setup the environment
-        {{OPTCLIM_SET_STATUS_SCRIPT}} {{OPTCLIM_ARGS}} {{MODEL_CONFIG}} FAILED
+        {{OPTCLIM_SET_STATUS_SCRIPT}} {{OPTCLIM_ARGS}} {{OPTCLIM_MODEL_CONFIG}} FAILED
         """
 
 

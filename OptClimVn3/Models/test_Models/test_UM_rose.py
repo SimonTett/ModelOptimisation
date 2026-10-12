@@ -41,7 +41,8 @@ class test_umRose(unittest.TestCase):
         filepath =os.environ['OPTCLIMTOP']+'/OptClimVn3/configurations/example_UM_rose/references/u-db898/OptClimVn3/configurations/example_UM_rose/references/u-db898'
         post_process = dict(script='$OPTCLIMTOP/OptClimVn3/scripts/comp_obs.py', output_file='obs.nc')
         self.post_process = post_process
-        self.model = UKESM1_1(name='testM', reference=ref_dir,
+        run_info = dict(runEnvSetup="$OPTCLIMTOP/OptClimVn3/setup", runTime=30, runCode='test', runQueue='testQ')
+        self.model = UKESM1_1(name='testM', reference=ref_dir, run_info=run_info,
                             config_path=test_dir/'model1/testM.mcfg', post_process=post_process,
                             parameters=parameters)
 
@@ -324,8 +325,9 @@ and even more text
         run_info = dict(
             prebuild='~tetts/prebuilds/u-dr496/fcm_make_um',  #
             transfer_dir='some_test_dir',# transfer directory
-            local_root_dir=self.testDir,
-        )
+            local_root_dir=self.testDir, runEnvSetup="$OPTCLIMTOP/OptClimVn3/setup")
+
+
         with patch.multiple(pathlib.Path, is_dir=MagicMock(return_value=True),
                             is_absolute=MagicMock(return_value=True),
                             samefile=MagicMock(return_value=False),):
@@ -354,8 +356,8 @@ and even more text
             self.assertEqual('james/X001test', model.suite_name)
 
 
-    def test_copy(self):
-        # test that copy method works
+    def notest_copy_config(self):
+        # test that copy method works. Turned off as UM_rose.copy_config commented out.
         # Only need to check that have workflow and scripts copied over.
         self.maxDiff  = None
         model = self.model
@@ -374,6 +376,67 @@ and even more text
         orig_rel_paths = sorted([f.relative_to(model.model_dir) for f in orig_files])
         copy_rel_paths = sorted([f.relative_to(model_copy.model_dir) for f in copy_files])
         self.assertEqual(orig_rel_paths, copy_rel_paths, msg=f"Files in {model.model_dir} not copied correctly")
+        # verify copy model has sensible value for OPTCLIM_MODEL_CONFIG
+        config_var = model_copy.read_param('OPTCLIM_MODEL_CONFIG')
+        self.assertEqual(config_var,model_copy.parameters_no_key['OPTCLIM_MODEL_CONFIG'])
+        self.assertEqual(model_copy.config_path.as_posix(),config_var)
+
+        raise NotImplementedError("Add tests (and decide on behaviour) to deal with suite_name")
+
+    def test_set_suite_name(self):
+        """
+        Testst that set_sute_name works.
+        """
+    def test_set_run_info_vars(self):
+        # test that set_run_info_vars works correctly.
+        # This is a bit of a hacky test but will do for now.
+        model = self.model
+        run_info = dict(runEnvSetup="$OPTCLIMTOP/OptClimVn3/setup",
+                        runModelTime=1200,
+                        runTime=30, runCode='test', runQueue='testQ')
+        model.run_info = run_info
+        model.set_run_info_vars()
+        model.instantiate()
+        vars = ['runModelTime', 'runUser', 'runCode','OPTCLIM_ARGS']
+        vars_paths = ['prebuild', 'runEnvSetup','transfer_dir','local_root_dir']
+        # check that the variables are set in the rose config files.
+        #key_to_param = dict(runTime= 'run_time' )
+        key_to_param = dict()
+        for key in vars+vars_paths: # str vars
+            if key not in run_info:
+                continue # skip if not in run_info
+            param = key_to_param.get(key,key)
+            config_var = model.read_param(param)
+
+            expect = run_info[key]
+            if key in vars_paths:
+                expect = self.model.expand(expect,local=False).as_posix() # expand the path
+            elif key == 'runModelTime':
+                expect = model.run_time(expect)[0][1] # get the string value from the namelist var
+            self.assertEqual(config_var,expect,msg=f"Variable {key} not set correctly. Got {config_var} expected {expect}")
+
+
+    def test_set_config_path_vars(self):
+        """
+        test that set_config_path_vars works
+        Mimimal test -- verify that with write = False then
+          parameters_no_key['OPTCLIM_MODEL_CONFIG'] is self.model.config_path &  read of OPTCLIM_MODEL_CONFIG fails
+          with write = True have no backup file and the reading the var OPTCLIM_MODEL_CONFIG is self.model.config_path.to_posix
+        """
+        m_path = self.testDir/"temp2/test_model.cfg"
+        self.model.config_path= m_path
+        self.model.set_config_path_vars()
+        self.assertEqual(m_path.as_posix(),self.model.parameters_no_key['OPTCLIM_MODEL_CONFIG'])
+        with self.assertRaises(KeyError) as e:
+            config_var = self.model.read_param('OPTCLIM_MODEL_CONFIG') # should fail as file does not exist.
+        # being lazy and using knowledge of where OPTCLIM_MODEL_CONFIG written to..
+        file_path = self.model.config_dir/'rose-suite.conf.bak'
+        self.assertFalse(file_path.is_file())
+        # now force a write.
+        self.model.set_config_path_vars(write=True)
+        config_var = self.model.read_param('OPTCLIM_MODEL_CONFIG')
+        self.assertEqual(config_var,self.model.parameters_no_key['OPTCLIM_MODEL_CONFIG'])
+        self.assertFalse(file_path.is_file()) # still no backup
 
 
 
@@ -398,6 +461,8 @@ and even more text
 #  'unload_rate_u',
 
 
+run_info = dict(runEnvSetup="$OPTCLIMTOP/OptClimVn3/scripts/setup", runTime=30, runCode='test', runQueue='testQ')
+
 class TestUKESM1ParamFunctions(unittest.TestCase):
     def setUp(self):
 
@@ -409,15 +474,15 @@ class TestUKESM1ParamFunctions(unittest.TestCase):
         post_process = dict(script='$OPTCLIMTOP/OptClimVn3/scripts/comp_obs.py', output_file='obs.json')
         self.tmpDir = tmpDir
         self.testDir = testDir
-
+        run_info = dict(runEnvSetup="$OPTCLIMTOP/OptClimVn3/setup", runTime=30, runCode='test', runQueue='testQ')
         testDir1= testDir / 'test1'
         testDir2 = testDir / 'test2'
         config_path1 = testDir1 / 'test_c7'
         config_path2 = testDir2 / 'test_c8'
         self.models = [UKESM1_1(config_path=config_path1, reference=refDir1,
-                               post_process=post_process),
+                               post_process=post_process,run_info=run_info),
                     UKESM1_1_c8(config_path=config_path2,  reference=refDir2,
-                                post_process=post_process)]
+                                post_process=post_process,run_info=run_info)]
         for model in self.models:
             model.instantiate()
 

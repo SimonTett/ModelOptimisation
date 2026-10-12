@@ -57,7 +57,6 @@ import pathlib
 import shutil
 import tarfile
 import typing
-import tempfile
 import packaging.version
 
 import numpy as np
@@ -67,7 +66,6 @@ import xarray
 import json
 
 import genericLib
-import namelist_var
 from model_base import journal
 from ModelBaseClass import ModelBaseClass, register_param
 from namelist_var import NamelistVar, GroupConfig, type_allowed_fortran
@@ -1216,7 +1214,8 @@ class Model(ModelBaseClass, journal):
         config_path = config_path.resolve()
         if config_path ==  self.config_path.resolve():
             raise FileExistsError(f"Can not copy model to itself {self.config_path}")
-
+        if not self.is_processed():
+            my_logger.warning("Copying model with status {model.status}. Copy may not be runnable")
         cp_model = copy.deepcopy(self)  # make a copy of self
         # update
         cp_model.config_path = config_path

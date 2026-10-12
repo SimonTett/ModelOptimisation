@@ -87,21 +87,7 @@ class UM_rose(Model):
          See set_suite_name for how it is set.
 
 
-    Initialisation uses the following values from run_info which become variables -- see files in UM_rose_params :
-    For the following variables values of None mean the suite is not modified.
-        - runModelTime:str -- time as iso duration for model to run for.
-        - runUser:str -- username to run the suite as.
-        - runCode:str -- job code/account to run suite with.
-        - prebuild:str -- path (on remote machine if remote_machine used) to prebuild. Means much faster compilation
 
-
-        - transfer_dir :str -- path to archive directory on jasmin.
-
-
-    - OPTCLIM_ARGS :str -- arguments to pass to optclim scripts which get passed to set_status_script. Default ''
-    - OPTCLIM_SET_STATUS_SCRIPT -- path to script which sets the status. (Uses self.set_status_script)
-    - runEnvSetup:str -- path to the environment setup script.
-    - MODEL_CONFIG will be set to self.cache_path
 
 
     """
@@ -124,7 +110,7 @@ class UM_rose(Model):
     # Get the user ID
     user_id = os.environ.get('USER') or os.environ.get('USERNAME') # Needed?
     # some default values
-    model_data_dir = pathlib.Path('output') # where model data gets put
+
     _script_dir = pathlib.Path('scripts') # where scripts are stored.
     _config_dir = pathlib.Path('workflow') # where the suite configuration is stored.
     # scripts
@@ -143,91 +129,34 @@ class UM_rose(Model):
     def __init__(self, *args, **kwargs):
         """
         Init the UM_rose instance. Calls the super-class init method.
-         Then set ups suite_name
+        Sets up the several no_key variables:
+
+          Variables that depend on run_info are set using set_run_info_vars. See that method for details.
+          Variables that depend on config_path are set using set_config_path_vars. See that method for details
         :param args: positional args. Passed through to super-class
         :param kwargs: kwargs -- passed through to super-class.
-           if kwargs contains suite_name that value will be used to set suite_name.
-
-           If suite_name is not None then the configurations will point to that directory
-           if kwargs contains model_data_dir that will be used to set model_data_dir
-        Sets up the following no_key variables:
-        runModelTime, runUser, runCode,OPTCLIM_ARGS,runEnvSetup,prebuild from run_info
-        Sets up MODEL_CONFIG (path to the model config), OPTCLIM_SET_STATUS_SCRIPT (path to script that updates model status),
-         and OPTCLIM_SIMULATED_OBS_PATH (path to where simulated obs are expected to be)
-
+        if kwargs contains suite_name that value will be used to set the suite name.
+          See set_suite_name which is called from set_config_path_vars
         """
-
-
         suite_name = kwargs.pop('suite_name', None) # name of the suite. Popped as not used by super class.
         super().__init__(*args, **kwargs)  # call the super-class init method.
-        self.set_suite_name(suite_name)
+        self.set_config_path_vars(suite_name=suite_name,write=False)  # setup any vars that depend on config_path. Do not write out the config as we are still initialising.
         self.CYLC_env_vars = {}  # dict to hold cylc env vars. These are set by running.
 
-        # Set archer_archive_dir to be model_dir/model_data_dir as that is where we copy data to.
-        archive_dir = (self.model_dir / self.model_data_dir).as_posix() # posix string for the UM
-        self.parameters_no_key['archer_archive_dir'] = archive_dir # add to parameters_no_key
-        my_logger.debug(f'Set archer_archive_dir to {archive_dir}')
-        # modify parameters_no_key to include runModelTime, runUser, runCode, OPTCLIM_ARGS, runEnvSetup,prebuild,transfer_dir if set.
-        # Those parameters do not contribute towards the unique key used to identify the model so go in parameters_no_key
-        if self.run_info is not None:  # need to test for None as reloading of config gives us None.
-            for key in ['runModelTime', 'runUser', 'runCode','prebuild',
-                        'OPTCLIM_ARGS', 'runEnvSetup','transfer_dir']:
-                if self.run_info.get(key) is not None:
-                    # Get None if either null in the original  json config or not present
-                    self.parameters_no_key[key] = self.run_info[key]
-            local_root_dir = self.expand(self.run_info.get('local_root_dir'))
-            # deal with transfer_dir -- for jasmin archiving
-            if 'transfer_dir' in self.parameters_no_key:
-                transfer_dir = self.expand(self.parameters_no_key['transfer_dir'],local=False) # remote path
-                #transfer_dir = self.new_path(self.model_dir.parent,transfer_dir,root_dir=local_root_dir)
-                # transfer_dir ends with model_dir.name and when the transfer to jasmin happens the model name is used so drop it.
-                self.parameters_no_key['transfer_dir'] = transfer_dir.as_posix() # posix string for the UM
-                my_logger.debug(f'Transfer dir: {self.parameters_no_key["transfer_dir"]}')
-
-            # deal with prebuild
-            if 'prebuild' in self.parameters_no_key:
-                prebuild = self.parameters_no_key['prebuild']
-                self.parameters_no_key['prebuild'] = self.expand(prebuild,local=False).as_posix()
-                # expand any vars, make sure it looks like a purePath and convert to a posix format string.
-                my_logger.debug(f'Prebuild dir: {self.parameters_no_key["prebuild"]}')
-
-
-            # set RUNID to False and RUN_NAME to first 5 characters of the name.
-            if self.name is not None:
-                self.parameters_no_key['RUNID'] = False
-                self.parameters_no_key['RUN_NAME'] = self.name[:5]  # first 5 characters of the name.
-
-            # Deal with runEnvSetup
-            run_env_setup = self.expand(self.parameters_no_key.get('runEnvSetup'))
-            if run_env_setup is not None:
-                # check run_env_setup actually exists.
-                if not run_env_setup.is_file():
-                    raise ValueError(f'run_env_setup {run_env_setup} does not exist.')
-                self.parameters_no_key['runEnvSetup'] = run_env_setup.as_posix()  # need to convert to string.
-
-
-            # deal with OPTCLIM_ARGS -- giving it a default value of ''
-            self.parameters_no_key['OPTCLIM_ARGS'] = self.parameters_no_key.get('OPTCLIM_ARGS', '')
-            # setup OPTCLIMTOP
-            self.parameters_no_key['OPTCLIMTOP'] = str(self.expand('$OPTCLIMTOP'))  # setup OPTCLIMTOP
-
-        # set up MODEL_CONFIG to point to the configuration. TODO -- change to OPTCLIM_MODEL_CONFIG
-        if self.config_path is not None:
-            self.parameters_no_key['MODEL_CONFIG'] = self.config_path.as_posix()
-            my_logger.debug(f"Set MODEL_CONFIG to {self.parameters_no_key['MODEL_CONFIG']}")
-
-        if (self.model_dir is not None) and (self._post_process_output is not None): # where the simulated obs are expected to be.
-            # some apps want this as the workflow makes the simulated obs and want to copy it into this directory.
-            # this means a "null" post-processing code.
-            self.parameters_no_key['OPTCLIM_SIMULATED_OBS_PATH'] = (self.model_dir/self._post_process_output).as_posix()
-            my_logger.debug(f"Set OPTCLIM_SIMULATED_OBS_PATH to {self.parameters_no_key['OPTCLIM_SIMULATED_OBS_PATH']}")
-
+        # setup OPTCLIMTOP
+        self.parameters_no_key['OPTCLIMTOP'] = str(self.expand('$OPTCLIMTOP'))  # setup OPTCLIMTOP
         # set up OPTCLIM_SET_STATUS_SCRIPT
-        if self.set_status_script is not None:
+        if self.set_status_script and self.set_status_script.is_file():
             self.parameters_no_key['OPTCLIM_SET_STATUS_SCRIPT'] = self.set_status_script.as_posix()
             my_logger.debug(f'Set OPTCLIM_SET_STATUS_SCRIPT to {str(self.set_status_script)}')
-        # set up paths to the various scripts we want
+        else:
+            raise ValueError(f'set_status_script = {self.set_status_script} None or not found ')
+        # set RUNID to False and RUN_NAME to first 5 characters of the name.
+        if self.name is not None:
+            self.parameters_no_key['RUNID'] = False
+            self.parameters_no_key['RUN_NAME'] = self.name[:5]  # first 5 characters of the name.
 
+        self.set_run_info_vars() # set the run_info variables in parameters_no_key.
 
     @property
     def model_run_dir(self) -> typing.Optional[pathlib.Path]:
@@ -244,6 +173,18 @@ class UM_rose(Model):
         if model_run_dir is not None:
             model_run_dir=pathlib.Path(model_run_dir)
         return model_run_dir
+
+    @property
+    def model_data_dir(self) -> typing.Optional[pathlib.Path]:
+        """
+        Return the directory where the model data is stored. Hardwired to be self.model_dir/'output'
+        :return: path to the model data directory or None if not set.
+        """
+        result = self.model_dir
+        if result is None:
+            return None
+        result = self.model_dir/'output'
+        return result
 
     def set_suite_name(self, suite_name: typing.Optional[str]=None) -> None:
         """
@@ -273,6 +214,105 @@ class UM_rose(Model):
                 suite_name = self.model_dir.parent.name + '/' + suite_name
 
         self.suite_name = suite_name
+
+    def set_run_info_vars(self):
+        """
+        Set various parameters from self.run_info.
+        These are set in parameters_no_key as they do not contribute to the unique key used to identify the model.
+        if self.run_info is empty then will just return.
+        Otherwise will set the following parameters in parameters_no_key taken directly from run_info:
+         see files in UM_rose_params :
+        For the following variables values of None mean the suite is not modified.
+        - runModelTime -- time as iso duration or seconds for model to run for.
+        - runUser -- username to run the suite as.
+        - runCodes -- job code/account to run suite with.
+        - OPTCLIM_ARGS :str -- arguments to pass to optclim scripts which get passed to set_status_script. Default ''
+        - prebuild  -- path (on remote machine if remote_machine used) to prebuild. Means much faster compilation
+        - transfer_dir --  root path to archive directory on jasmin.
+        - local_root_dir -- root path to local archive directory
+        - runEnvSetup -- path to script to source to setup env. MUST be set.
+        """
+        if not self.run_info:
+            return  # nothing to do if run_info is empty.
+
+        path_vars = ['runEnvSetup', 'prebuild',  'local_root_dir','transfer_dir']
+        non_path_vars = ['runModelTime', 'runUser', 'runCode','OPTCLIM_ARGS']
+        #  path variables that need to be expanded.
+        for key in path_vars+non_path_vars:
+            value = self.run_info.get(key)
+            if value is  None:
+                # Get None if either null in the original  json config or not present
+                continue  # nothing to set so onto next key
+
+            self.parameters_no_key[key] = value
+            if key in path_vars: # variable is a path. expand and convert to posix file.
+                self.parameters_no_key[key] = self.expand(value,local=False).as_posix()  # expand any vars, make sure it looks like a purePath and convert to a posix format string.
+
+            my_logger.debug(f'Set {key} to {self.parameters_no_key[key]}')
+
+        if 'runEnvSetup' not in self.parameters_no_key:
+            raise ValueError('runEnvSetup is not defined -- needed to set up the environment on archer2. Set in run_info block of config.')
+
+        # deal with OPTCLIM_ARGS -- giving it a default value of ''
+        self.parameters_no_key['OPTCLIM_ARGS'] = self.parameters_no_key.get('OPTCLIM_ARGS', '')
+
+    def set_config_path_vars(self,
+                             suite_name: typing.Optional[str] = None,
+                             write:bool = False):
+        """
+        Setup all variables that depend on self.config_path. If self.config_path is None then do nothing.
+        :param suite_name: name of the suite. Passed to set_suite_name.
+        :param write: if True then write out the parameters to the config file. If False then just set the variables.
+
+        Sets the following variables in parameters_no_key:
+        - MODEL_CONFIG --
+        - archer_archive_dir
+        - OPTCLIM_SIMULATED_OBS_PATH
+        """
+        if self.config_path is None:
+            return # nothing to do if config_path is None
+
+        param_names=[]
+        # set up OPTCLIM_MODEL_CONFIG to point to the configuration
+        self.parameters_no_key['OPTCLIM_MODEL_CONFIG'] = self.config_path.as_posix()
+        my_logger.debug(f"Set OPTCLIM_MODEL_CONFIG to {self.parameters_no_key['OPTCLIM_MODEL_CONFIG']}")
+        param_names.append('OPTCLIM_MODEL_CONFIG')
+
+        # Set archer_archive_dir to be model_data_dir as that is where we copy data to.
+        self.parameters_no_key['archer_archive_dir'] = self.model_data_dir.as_posix() # add to parameters_no_key
+        my_logger.debug(f'Set archer_archive_dir to {self.parameters_no_key["archer_archive_dir"]}')
+        param_names.append('archer_archive_dir')
+
+        if self._post_process_output is not None:  # where the simulated obs are expected to be.
+            # some apps want this as the workflow makes the simulated obs and want to copy it into this directory.
+            # this means a "null" post-processing code.
+            pp_out = genericLib.safe_join(self.model_dir, self._post_process_output)
+            self.parameters_no_key['OPTCLIM_SIMULATED_OBS_PATH'] = pp_out.as_posix()
+            my_logger.debug(
+                f"Set OPTCLIM_SIMULATED_OBS_PATH to {self.parameters_no_key['OPTCLIM_SIMULATED_OBS_PATH']}")
+            param_names.append('OPTCLIM_SIMULATED_OBS_PATH')
+
+        self.set_suite_name(suite_name=suite_name) # set the suite name based on the current config_path and model_dir.
+
+        if write:
+            params ={param: self.parameters_no_key[param] for param in param_names if param in self.parameters_no_key}
+            self.set_params(params, backup=False)  # write out the params. No backup.
+
+
+
+    # Commented out. Use case is if need to modify model when copying.
+    # The tension is -- allow copy to run vs copy provides information on what was originally run.
+    # As do not have obvious case to run a copy won't bother.
+    # def copy_config(self, config_path: pathlib.Path,
+    #                 extra_files: typing.Optional[list[pathlib.Path]] = None) -> "UM_rose":
+    #     """
+    #     Copy the model config to a new location and return a new model object.
+    #     Calls  super-class version and then runs set_config_path_vars to update any variables that depend on config_path.
+    #     """
+    #     new_model = super().copy_config(config_path, extra_files=extra_files)
+    #     new_model.set_config_path_vars(write=True)
+    #     return new_model
+
 
     @staticmethod
     def replace_file(file: pathlib.Path,
@@ -325,7 +365,7 @@ class UM_rose(Model):
         UM rose specific version of modify model,
         Does the following (after calling the superclass method
         Copies the optclim suite apps into the suite_dir and modifies the suite_file_name
-        Also generates  any necessary scripts and sets archer_archive_dir to model_dir/model_data_dir
+        Also generates  any necessary scripts
 
         """
         super().modify_model()  # call the base class method.
