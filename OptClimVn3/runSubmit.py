@@ -506,11 +506,13 @@ class runSubmit(SubmitStudy):
         models = [self.model_index[key] for key in keys]  # will also fail if model key not present.
         return models
 
+    #POTENTIAL TYPE DEF
     type_multi_model_fn = typing.Callable[
         ["runSubmit", dict[str, dict]], tuple[list[Model|None], typing.Optional[pd.Series]]]
 
     # multi model fn takes as args a runSubmit obj and a dict and returns
     #    a list of Models (or Nones)  and pandas series (of observations)/None (if sims do not exist)
+    #POTENTIAL TYPE DEF
     type_param = typing.Union[float,int,str,bool] # allowed types for parameters
 
     def _set_ref_path(self, param: dict[str, type_param]):
@@ -800,6 +802,7 @@ class runSubmit(SubmitStudy):
 
         return models_called
 
+    #POTENTIAL TYPE DEF
     type_model_used_status = typing.Literal[
         'initial', 'unknown', 'called', 'read', 'not_called']  # allowed status for model_status
     def model_used_status(self, model: Model,
@@ -828,7 +831,7 @@ class runSubmit(SubmitStudy):
         return model.study_properties.get('model_status')
 
 
-    def check_deterministic(self, error: genericLib.error_handle_types = 'fail') -> bool:
+    def check_deterministic(self, error: genericLib.type_error_handle_types = 'fail') -> bool:
         """
         Check that the model runs are deterministic. Done by using model_used_status to see if any are  not_called
         :param error: Used to in call to genericLib.error_handle to determine whether to raise an error, warn or ignore.

@@ -75,6 +75,7 @@ import shlex
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 
+#POTENTIAL TYPE DEF
 type_status = typing.Literal['CREATED', 'INSTANTIATED', 'SUBMITTED',
 'RUNNING', 'FAILED', 'PERTURBED', 'CONTINUE',
 'SUCCEEDED', 'PROCESSED']  # allowed strings for status

@@ -33,6 +33,7 @@ def register_param(name: str) -> typing.Callable:
 
 
 # type defn for functions ran to produce parameters
+#POTENTIAL TYPE DEF
 type_param_fn = typing.Union[list[tuple['NamelistVar', typing.Union[list[float],float]]], typing.Union[float,dict[str,float]]]
 
 class ModelBaseClass(model_base):

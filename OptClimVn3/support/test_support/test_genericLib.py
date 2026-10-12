@@ -226,7 +226,7 @@ class genericLib_test(unittest.TestCase):
 
         # Test error_handle with invalid mode (should raise ValueError)
         with self.assertRaises(ValueError):
-            genericLib.error_handle('invalid_mode', 'Invalid mode message')
+            genericLib.error_handle('Invalid mode message','invalid_mode')
 
     def notest_setup_logging(self):
         """

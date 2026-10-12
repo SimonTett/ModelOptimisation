@@ -75,6 +75,7 @@ from namelist_var import NamelistVar
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")  # have this anywhere you want logging
 
+#POTENTIAL TYPE DEF
 type_create_script = typing.Literal["submit_script", "continue_script", "clean_script"] # type def for various flavours of _create_script.
 class UM_rose(Model):
     """
@@ -229,13 +230,12 @@ class UM_rose(Model):
         - OPTCLIM_ARGS :str -- arguments to pass to optclim scripts which get passed to set_status_script. Default ''
         - prebuild  -- path (on remote machine if remote_machine used) to prebuild. Means much faster compilation
         - transfer_dir --  root path to archive directory on jasmin.
-        - local_root_dir -- root path to local archive directory
         - runEnvSetup -- path to script to source to setup env. MUST be set.
         """
         if not self.run_info:
             return  # nothing to do if run_info is empty.
 
-        path_vars = ['runEnvSetup', 'prebuild',  'local_root_dir','transfer_dir']
+        path_vars = ['runEnvSetup', 'prebuild',  'transfer_dir']
         non_path_vars = ['runModelTime', 'runUser', 'runCode','OPTCLIM_ARGS']
         #  path variables that need to be expanded.
         for key in path_vars+non_path_vars:

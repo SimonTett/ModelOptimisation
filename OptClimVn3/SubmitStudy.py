@@ -79,6 +79,7 @@ class SubmitStudy(Study, model_base, journal):
     # class attribute to hold config_path when loading. Very messy as too many layers of conversion.
     serialisation_data_version = packaging.version.Version("1.0.0")  # default serialisation_data_version
 
+    #POTENTIAL TYPE DEF
     fn_type = Callable[[Mapping], pd.Series]  # type hint for fakeFn
     from StudyConfig import  OptClimConfigVn3
     def __init__(self,

@@ -55,13 +55,12 @@ import logging
 import numpy as np
 import pandas as pd
 import pathlib
-import importlib # so we can do imports
 import typing
 from io import StringIO
 import inspect # so can inspect function signatures to see if they accept a filepath parameter.
 import genericLib
 my_logger = logging.getLogger("OPTCLIM."+__name__) # logging for generic_json
-type_error = typing.Literal['raise','warn','ignore']
+
 
 
 def dump(obj,fp,*args,**kwargs):
@@ -85,20 +84,22 @@ def dumps(obj, *args, **kwargs):
     """
     return json.dumps(obj, *args, cls=JSON_Encoder, **kwargs)
 
-def load(fp, *args,error:genericLib.error_handle_types='fail', **kwargs):
+def load(fp, *args, error:genericLib.type_error_handle_types= 'fail', **kwargs):
     """
     Load object from file-like object fp. Uses json.load() with object_hook set to decode_obj.decode
-    :param fp: file pointer to read.
+    :param fp: file pointer to read. decoders that accept a filepath parameter will be passed the path of the file being loaded.
+      If the fp has no name attribute, then the error_handle method will be called with the error parameter.
+         If a decode function accepts a filepath parameter but no filepath is provided, then a ValueError will be raised.
     :param args:args to be passed to json.load
     :param error: what to do if an error occurs. Used in the decode method.
     :param kwargs:keywords to be passed to json.load
     :return: result of json.load with decoding done.
     """
-    filepath = getattr(fp, 'name', None)  # get the name attribute if it exists
+    filepath:str|None = getattr(fp, 'name', None)  # get the name attribute if it exists
     if filepath is None: # if filepath is None then call error_handle
         genericLib.error_handle("fp does not have a name attribute",error)
     else:
-        filepath = pathlib.Path(filepath)
+        filepath:pathlib.Path = pathlib.Path(filepath)
     decode_obj = obj_to_from_dict(error=error,filepath=filepath) # create decode object.
     # filepath passed so can be used. Up to the decode method to use it or not.
     # If the decode method is a class method that accepts a filepath parameter, then it will be passed in.
@@ -107,7 +108,7 @@ def load(fp, *args,error:genericLib.error_handle_types='fail', **kwargs):
 
 
 
-def loads(s, *args, error:genericLib.error_handle_types='fail',filepath:typing.Optional[pathlib.Path]=None, **kwargs):
+def loads(s, *args, error:genericLib.type_error_handle_types= 'fail', filepath:typing.Optional[pathlib.Path]=None, **kwargs):
     """
     Decode object from s. Uses json.loads() with object_hook set to JSON_Encoder.decode.
     See json.loads for documentation
@@ -121,7 +122,7 @@ def loads(s, *args, error:genericLib.error_handle_types='fail',filepath:typing.O
     decode_obj = obj_to_from_dict(error=error,filepath=filepath)
     return json.loads(s, *args, object_hook=decode_obj.decode, **kwargs)
 
-def dict2df(x:dict):
+def dict2df(x:dict|str):
     """
     Convert a dict or str to a pandas DataFrame
     :param x: dict to convert
@@ -211,7 +212,7 @@ class obj_to_from_dict:
 
 
     def __init__(self,
-                 error:genericLib.error_handle_types='fail',
+                 error:genericLib.type_error_handle_types= 'fail',
                  filepath: pathlib.Path | None = None):
         """
         Type to hold information to support decoding.
@@ -219,8 +220,8 @@ class obj_to_from_dict:
         :param filepath: Optional path of the file being loaded.
           This is passed to  methods that accept a filepath parameter. If not provided, it will be None.
         """
-        self.error = error
-        self.filepath = filepath
+        self.error: genericLib.type_error_handle_types = error
+        self.filepath: pathlib.Path | None = filepath
 
 
     @classmethod
@@ -279,23 +280,28 @@ class obj_to_from_dict:
         Factory method to create object of type class_name using a dict
         :param class_name: Name of the class to create
         :param values: values to use to initialise object with
+
+        self contains an extra information needed. Only filepath and error are currently supported.
+          If the decode  method accepts a filepath parameter then the filepath provided to the obj_to_from_dict constructor will be passed to it.
+            If filepath is not provided, then a ValueError will be raised if the decode method accepts a filepath parameter.
         :return: object
         """
         conv_fn = self.FROM_VALUE.get(class_name)
 
         if conv_fn is None: # failed to find the conversion function.
             err_msg = f"Did not find {class_name}. Allowed classes are " + " ".join(self.FROM_VALUE.keys())
-            genericLib.error_handle(err_msg,self.error)
+            raise ValueError(err_msg) # no safe way to continue. Raise an error.
 
         # deal with possible extra kwargs. Only works with filepath but could be extended to other kwargs if needed.
         extra={}
         if self.accepts_filepath(conv_fn):
-            extra.update(filepath=self.filepath)
-        try:
-            obj = conv_fn(values, **extra)
-        except Exception as e:
-            my_logger.error(f"Error creating {class_name} object from {values}: {e}")
-            raise
+            if self.filepath is not None:
+                extra.update(filepath=self.filepath)
+            else:
+                raise ValueError(f"Function {conv_fn.__qualname__} accepts a filepath parameter but no filepath was provided.")
+
+        obj = conv_fn(values, **extra)
+
         my_logger.debug(f"Created a {class_name} object from {values}")
         return obj
 
@@ -336,6 +342,8 @@ class obj_to_from_dict:
         }
         ValueError will be raised if the dct is not of this form.
         __module__ is optional and is used to import the module where the class is defined.
+
+        decoding is done "on demand" through calling the appropriate class method that has been registered in FROM_VALUE. If the class method accepts a filepath parameter then the filepath provided to the obj_to_from_dict constructor will be passed to it.
         :return: input dct (if no decoding needed) or a decoded object.
         """
 

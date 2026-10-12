@@ -348,7 +348,7 @@ class Study:
 
         return observations
 
-    def check_duplicate_obs(self,error:genericLib.error_handle_types = "raise") -> None:
+    def check_duplicate_obs(self, error:genericLib.type_error_handle_types = "fail") -> None:
         """
         Check for duplicates in simulated observations. If any are found then raise an error or warning
         :return:

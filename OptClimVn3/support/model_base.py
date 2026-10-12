@@ -298,7 +298,7 @@ class model_base:
     # class methods.
     @classmethod
     def load(cls, file: typing.Union[pathlib.Path, str],
-             error:genericLib.error_handle_types = 'fail',
+             error:genericLib.type_error_handle_types = 'fail',
              check_types:typing.Optional[list]=None):
         """
         Load an object configuration from a specified file.
