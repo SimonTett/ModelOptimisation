@@ -73,6 +73,12 @@ class TestJsonEncoder(rootTest):
         self.assertIsInstance(obj, Dummy)
         self.assertEqual(obj.values, values)
 
+    def test_value_to_obj_unregistered(self):
+        """An unregistered class name must raise rather than continue."""
+        decode = obj_to_from_dict()
+        with self.assertRaises(ValueError):
+            decode.value_to_obj('NotRegisteredAnywhere', [1, 2])
+
     def test_decode(self):
         """
         Test decode method

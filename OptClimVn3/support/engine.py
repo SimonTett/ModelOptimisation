@@ -28,8 +28,7 @@ class abstractEngine(model_base, journal):
     Abstract class for Engines. Inherit and implement for your own class.
     """
 
-    #POTENTIAL TYPE DEF
-    allowed_eng = typing.Literal['SGE', 'SLURM','SLURM_SYSU']  # allowed engines
+    allowed_eng: typing.TypeAlias = typing.Literal['SGE', 'SLURM','SLURM_SYSU']  # allowed engines
 
     # AI generated code to guess which engine we can use.
     @staticmethod

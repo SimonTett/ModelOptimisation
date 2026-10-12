@@ -506,14 +506,12 @@ class runSubmit(SubmitStudy):
         models = [self.model_index[key] for key in keys]  # will also fail if model key not present.
         return models
 
-    #POTENTIAL TYPE DEF
-    type_multi_model_fn = typing.Callable[
-        ["runSubmit", dict[str, dict]], tuple[list[Model|None], typing.Optional[pd.Series]]]
+    type_multi_model_fn: typing.TypeAlias = typing.Callable[
+        ["runSubmit", dict[str, dict]], tuple[list[typing.Optional[Model]], typing.Optional[pd.Series]]]
 
     # multi model fn takes as args a runSubmit obj and a dict and returns
     #    a list of Models (or Nones)  and pandas series (of observations)/None (if sims do not exist)
-    #POTENTIAL TYPE DEF
-    type_param = typing.Union[float,int,str,bool] # allowed types for parameters
+    type_param: typing.TypeAlias = float | int | str | bool # allowed types for parameters
 
     def _set_ref_path(self, param: dict[str, type_param]):
         """
@@ -802,8 +800,7 @@ class runSubmit(SubmitStudy):
 
         return models_called
 
-    #POTENTIAL TYPE DEF
-    type_model_used_status = typing.Literal[
+    type_model_used_status: typing.TypeAlias = typing.Literal[
         'initial', 'unknown', 'called', 'read', 'not_called']  # allowed status for model_status
     def model_used_status(self, model: Model,
                           status: typing.Optional[type_model_used_status] = None,

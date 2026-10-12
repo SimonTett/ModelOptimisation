@@ -75,8 +75,7 @@ from namelist_var import NamelistVar
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")  # have this anywhere you want logging
 
-#POTENTIAL TYPE DEF
-type_create_script = typing.Literal["submit_script", "continue_script", "clean_script"] # type def for various flavours of _create_script.
+type_create_script: typing.TypeAlias = typing.Literal["submit_script", "continue_script", "clean_script"] # type def for various flavours of _create_script.
 class UM_rose(Model):
     """
     Class to support the Unified model running in ROSE. See specialized classes for cylc7 & cylc8 support.

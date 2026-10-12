@@ -3124,7 +3124,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
             check_duplicate_obs -- optimise.check_duplicate_obs
         If value is not set or is None (null) will be set to 'fail'.
         :param check_blk: if not None then set optimise  nondeterministic and check_duplicate_obs to values in check_blk
-         Values will be checked for consistency with genericLib.error_handle_types
+         Values will be checked for consistency with genericLib.type_error_handle_types
 
         Note version 4 does this differently.
         :return: dict with keywords and values
@@ -3586,7 +3586,7 @@ class OptClimConfigVn4(OptClimConfigVn3):
             check_nondeterministic - check_study.check_nondeterministic
             check_duplicate_obs - check_study.check_duplicate_obs
         If value is not set or is None (null) will be set to "fail".
-         Values will be checked for consistency with genericLib.error_handle_types
+         Values will be checked for consistency with genericLib.type_error_handle_types
 
          Use of legacy values will trigger an error.
 

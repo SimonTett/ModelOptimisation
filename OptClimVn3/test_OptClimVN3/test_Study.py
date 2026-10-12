@@ -256,7 +256,7 @@ class TestStudy(unittest.TestCase):
         key = self.study.key_for_model(m2)
         self.study.model_index[key] = m2
         with self.assertRaises(ValueError):
-            self.study.check_duplicate_obs(error='error')
+            self.study.check_duplicate_obs(error='fail')
 
 
 if __name__ == '__main__':

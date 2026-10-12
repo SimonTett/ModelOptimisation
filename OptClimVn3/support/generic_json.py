@@ -91,16 +91,17 @@ def load(fp, *args, error:genericLib.type_error_handle_types= 'fail', **kwargs):
       If the fp has no name attribute, then the error_handle method will be called with the error parameter.
          If a decode function accepts a filepath parameter but no filepath is provided, then a ValueError will be raised.
     :param args:args to be passed to json.load
-    :param error: what to do if an error occurs. Used in the decode method.
+    :param error: what to do if fp has no name attribute. See genericLib.error_handle.
+      Also passed to obj_to_from_dict, where it is not currently used (conversion failures always raise).
     :param kwargs:keywords to be passed to json.load
     :return: result of json.load with decoding done.
     """
-    filepath:str|None = getattr(fp, 'name', None)  # get the name attribute if it exists
+    filepath:typing.Optional[str] = getattr(fp, 'name', None)  # get the name attribute if it exists
     if filepath is None: # if filepath is None then call error_handle
         genericLib.error_handle("fp does not have a name attribute",error)
     else:
         filepath:pathlib.Path = pathlib.Path(filepath)
-    decode_obj = obj_to_from_dict(error=error,filepath=filepath) # create decode object.
+    decode_obj = obj_to_from_dict(error=error, filepath=filepath) # create decode object.
     # filepath passed so can be used. Up to the decode method to use it or not.
     # If the decode method is a class method that accepts a filepath parameter, then it will be passed in.
     # Otherwise, it will be ignored.
@@ -108,18 +109,18 @@ def load(fp, *args, error:genericLib.type_error_handle_types= 'fail', **kwargs):
 
 
 
-def loads(s, *args, error:genericLib.type_error_handle_types= 'fail', filepath:typing.Optional[pathlib.Path]=None, **kwargs):
+def loads(s, *args, error:genericLib.type_error_handle_types='fail', filepath:typing.Optional[pathlib.Path]=None, **kwargs):
     """
     Decode object from s. Uses json.loads() with object_hook set to JSON_Encoder.decode.
     See json.loads for documentation
     :param s: thing to be decoded
-    :param error: what to do if an error occurs. Used in the decode method.
+    :param error: error handling strategy. Passed to obj_to_from_dict where it is not currently used.
     :param filepath: Optional path of the file being loaded.
     :param args: args to be passed to json.loads
     :param kwargs: kwargs to be passed to json.loads
     :return: result of json.loads
     """
-    decode_obj = obj_to_from_dict(error=error,filepath=filepath)
+    decode_obj = obj_to_from_dict(error=error, filepath=filepath)
     return json.loads(s, *args, object_hook=decode_obj.decode, **kwargs)
 
 def dict2df(x:dict|str):
@@ -174,10 +175,9 @@ class obj_to_from_dict:
     """
     Provides JSON encoding and decoding for subsequent use.
     The __init_+ method  takes extra parameters that can be passed through to conversion methods.
-    At the time of writing this only supports:
-
-    1) a filepath parameter that is passed to conversion methods that accept a filepath parameter.
-    2) An error parameter that controls what happens if a conversion fails. Options are 'fail', 'warn' and 'ignore'.
+    At the time of writing this supports a filepath parameter that is passed to conversion methods
+    that accept a filepath parameter. Conversion failures (e.g. unregistered class) always raise.
+    An error parameter is accepted and stored but is not currently used.
     Because the conversion methods get recursively run on the incoming data the pathway between loading a file and
      getting the object back is rather opaque and involves going through the python json module.
 
@@ -212,16 +212,17 @@ class obj_to_from_dict:
 
 
     def __init__(self,
-                 error:genericLib.type_error_handle_types= 'fail',
-                 filepath: pathlib.Path | None = None):
+                 error: genericLib.type_error_handle_types = 'fail',
+                 filepath: typing.Optional[pathlib.Path] = None):
         """
         Type to hold information to support decoding.
-        :param error: what to do if an error occurs. Used in the decode method.
+        :param error: error handling strategy. NOT currently used -- conversion failures always raise.
+          Kept so callers can pass it and so it is available if a non-raising mode is wanted again.
         :param filepath: Optional path of the file being loaded.
           This is passed to  methods that accept a filepath parameter. If not provided, it will be None.
         """
-        self.error: genericLib.type_error_handle_types = error
-        self.filepath: pathlib.Path | None = filepath
+        self.error: genericLib.type_error_handle_types = error  # not currently used. See above.
+        self.filepath: typing.Optional[pathlib.Path] = filepath
 
 
     @classmethod
@@ -281,7 +282,8 @@ class obj_to_from_dict:
         :param class_name: Name of the class to create
         :param values: values to use to initialise object with
 
-        self contains an extra information needed. Only filepath and error are currently supported.
+        self contains any extra information needed. Only filepath is currently supported.
+          A class_name with no registered conversion function raises ValueError.
           If the decode  method accepts a filepath parameter then the filepath provided to the obj_to_from_dict constructor will be passed to it.
             If filepath is not provided, then a ValueError will be raised if the decode method accepts a filepath parameter.
         :return: object

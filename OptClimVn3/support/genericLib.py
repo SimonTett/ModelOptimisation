@@ -90,7 +90,6 @@ def _reset_all_loggers():
             logger.propagate = True
 
 
-#POTENTIAL TYPE DEF
 type_error_handle_types: typing.TypeAlias = typing.Literal['fail', 'warn', 'ignore']
 
 
@@ -371,7 +370,7 @@ class DuplicateFilter(logging.Filter):
 #
 # Proposed signature:
 #   def safe_import(module_name: str,
-#                    error: genericLib.error_handle_types = 'fail'
+#                    error: genericLib.type_error_handle_types = 'fail'
 #                    ) -> types.ModuleType | None: ...
 # ---------------------------------------------------------------------------
 

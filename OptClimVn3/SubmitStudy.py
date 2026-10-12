@@ -79,8 +79,7 @@ class SubmitStudy(Study, model_base, journal):
     # class attribute to hold config_path when loading. Very messy as too many layers of conversion.
     serialisation_data_version = packaging.version.Version("1.0.0")  # default serialisation_data_version
 
-    #POTENTIAL TYPE DEF
-    fn_type = Callable[[Mapping], pd.Series]  # type hint for fakeFn
+    fn_type: typing.TypeAlias = Callable[[Mapping], pd.Series]  # type hint for fakeFn
     from StudyConfig import  OptClimConfigVn3
     def __init__(self,
                  config: Optional[OptClimConfigVn3],
@@ -347,7 +346,7 @@ class SubmitStudy(Study, model_base, journal):
 
     @classmethod
     def load(cls, config_path: typing.Union[pathlib.Path, str],
-                         error:generic_json.type_error='error',
+                         error:genericLib.type_error_handle_types='fail',
                          Study: bool = False) -> typing.Union[Study, SubmitStudy]:
         """
         Load a SubmitStudy (or anything that inherits from it) from a file.
