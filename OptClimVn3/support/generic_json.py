@@ -89,7 +89,8 @@ def load(fp, *args, error:genericLib.type_error_handle_types= 'fail', **kwargs):
     Load object from file-like object fp. Uses json.load() with object_hook set to decode_obj.decode
     :param fp: file pointer to read. decoders that accept a filepath parameter will be passed the path of the file being loaded.
       If the fp has no name attribute, then the error_handle method will be called with the error parameter.
-         If a decode function accepts a filepath parameter but no filepath is provided, then a ValueError will be raised.
+      If a decode function accepts a filepath parameter but no filepath is provided, then a ValueError will be raised.
+      This is to support cases where loading does not require a filepath (e.g. loading from a string) for any of the objects in the file.
     :param args:args to be passed to json.load
     :param error: what to do if fp has no name attribute. See genericLib.error_handle.
       Also passed to obj_to_from_dict, where it is not currently used (conversion failures always raise).
@@ -278,14 +279,14 @@ class obj_to_from_dict:
 
     def value_to_obj(self, class_name: str, values: dict | list):
         """
-        Factory method to create object of type class_name using a dict
+        Factory method to create object of type class_name using a dict or list.
         :param class_name: Name of the class to create
         :param values: values to use to initialise object with
 
         self contains any extra information needed. Only filepath is currently supported.
           A class_name with no registered conversion function raises ValueError.
-          If the decode  method accepts a filepath parameter then the filepath provided to the obj_to_from_dict constructor will be passed to it.
-            If filepath is not provided, then a ValueError will be raised if the decode method accepts a filepath parameter.
+          If the decode  method accepts a filepath parameter, then the filepath provided to the obj_to_from_dict constructor will be passed to it.
+            If filepath is None, then a ValueError will be raised if the decode method accepts a filepath parameter.
         :return: object
         """
         conv_fn = self.FROM_VALUE.get(class_name)
