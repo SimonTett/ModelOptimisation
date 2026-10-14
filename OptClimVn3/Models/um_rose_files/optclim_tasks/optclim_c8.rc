@@ -29,7 +29,7 @@
         inherit = OPTCLIM_HPC
         script = """
         date +"%Y-%m-%d %H:%M:%S.%3N"
-        . {{PY_ENV_SETUP}} # setup the environment. Could be in script-pre?
+        . {{OPTCLIM_ENV_SETUP}} # setup the environment. Could be in script-pre?
         date +"%Y-%m-%d %H:%M:%S.%3N"
         {{OPTCLIM_SET_STATUS_SCRIPT}} {{OPTCLIM_ARGS}} {{OPTCLIM_MODEL_CONFIG}} RUNNING
         """
@@ -37,7 +37,7 @@
         inherit = OPTCLIM_HPC
         script = """
         date +"%Y-%m-%d %H:%M:%S.%3N"
-        . {{PY_ENV_SETUP}} # setup the environment
+        . {{OPTCLIM_ENV_SETUP}} # setup the environment
         date +"%Y-%m-%d %H:%M:%S.%3N"
         {{OPTCLIM_SET_STATUS_SCRIPT}} {{OPTCLIM_ARGS}} {{OPTCLIM_MODEL_CONFIG}} SUCCEEDED
         """
@@ -46,7 +46,7 @@
     [[optclim_um_fail]]
         inherit = OPTCLIM_HPC
         script = """
-        . {{PY_ENV_SETUP}} # setup the environment
+        . {{OPTCLIM_ENV_SETUP}} # setup the environment
         {{OPTCLIM_SET_STATUS_SCRIPT}} {{OPTCLIM_ARGS}} {{OPTCLIM_MODEL_CONFIG}} FAILED
         """
 

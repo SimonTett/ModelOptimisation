@@ -46,13 +46,13 @@
     [[optclim_pre]]
         inherit = OPTCLIM_HPC
         script = """
-        . {{PY_ENV_SETUP}} # setup the environment. Could be in script-pre?
+        . {{OPTCLIM_ENV_SETUP}} # setup the environment. Could be in script-pre?
         {{OPTCLIM_SET_STATUS_SCRIPT}} {{OPTCLIM_ARGS}} {{OPTCLIM_MODEL_CONFIG}} RUNNING
         """
     [[optclim_post]]
         inherit = OPTCLIM_HPC
         script = """
-        . {{PY_ENV_SETUP}} # setup the environment
+        . {{OPTCLIM_ENV_SETUP}} # setup the environment
         {{OPTCLIM_SET_STATUS_SCRIPT}} {{OPTCLIM_ARGS}} {{OPTCLIM_MODEL_CONFIG}} SUCCEEDED
         """
         [[[job]]]
@@ -61,7 +61,7 @@
     [[optclim_um_fail]]
         inherit = OPTCLIM_HPC
         script = """
-        . {{PY_ENV_SETUP}} # setup the environment
+        . {{OPTCLIM_ENV_SETUP}} # setup the environment
         {{OPTCLIM_SET_STATUS_SCRIPT}} {{OPTCLIM_ARGS}} {{OPTCLIM_MODEL_CONFIG}} FAILED
         """
 
