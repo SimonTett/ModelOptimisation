@@ -518,7 +518,10 @@ class Study:
         if params is None:
             params = self.params(normalize=True,numeric=True)
         if obs is None:
-            obs = self.simulated_observations(scale=True,normalize=True,obs_names=obsNames).dropna()
+            obs = self.simulated_observations(scale=True,normalize=True,obs_names=obsNames)
+            if obs is None: # nothign to plot so just return
+                return None
+            obs=obs.dropna() # drop all missing
             obsNames = obs.columns #
         if cost is None:
             cost = self.cost(obsNames=obsNames)
