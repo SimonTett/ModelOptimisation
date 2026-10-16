@@ -83,30 +83,24 @@ class HadCM3(Model):
       Not much different from Model except defines  a bunch of parameters and functions used to modify namelists.
       Which, by definition, are specific to HadCM3.
     """
+    # class definitions
+    scripts = dict(
+        submit_script='SUBMIT',
+        continue_script='SUBMIT.cont'
+    )
 
-    def __init__(self, name: str, reference: pathlib.Path, **kwargs):
-        """"
-        HadCM3 Init -- calls super().__init__(*args,**kwargs)
-        then sets submit_script to "SUBMIT" and continue script to SUBMIT.cont
-        See Model for documentation on key word parameters
-        :param name -- name of the model. Should be 5 characters or less
-        :param reference -- where reference config lives.
-        """
-        if len(name) > 5:
-            raise ValueError("HadXM3 limited to 5 character names")
-        super().__init__(name, reference,**kwargs)  # call super class init and then override
-        # modify submit_script & continue_script
-        self.submit_script = 'SUBMIT'
-        self.continue_script = 'SUBMIT.cont'
-        self.post_process_file = 'post_process.sh' # extra attributed needed.
-        # self.runInfo=dict()
+    post_process_file = 'post_process.sh'  # extra attributed needed.
 
-    def Name(self):
+
+    @property
+    def name(self):
         """
 
         :return: The name checking length is 5
         """
-        name = self.name
+        name = super().name
+        if name == 'Unknown':
+            raise ValueError("HadCM3 name is unknown")
         if len(name) != 5:
             raise ValueError(f"For HadCM3 Name must be 5 characters and is {name} ")
         return name
@@ -185,7 +179,7 @@ class HadCM3(Model):
     fi
 
     # test for NRUN but not finished.
-    SUBCONT={self.continue_script}
+    SUBCONT={self.scripts['continue_script']}
     if [[ ( $FLAG -eq 'Y' ) -a ( $TYPE -eq 'NRUN' ) ]
       then
       if [[ -n "$TESTING"  [] # for testing.
@@ -237,7 +231,7 @@ class HadCM3(Model):
          :return:
         """
 
-        runid = self.Name()
+        runid = self.name
         experID = runid[0:4]
         jobID = runid[4]
         modifystr = '## modified'
@@ -343,7 +337,7 @@ class HadCM3(Model):
         """
         # TODO Check that step is 4. Decide if fix (i.e. set STEP=4) or fail with a sensible error message.
         # first work out runID
-        runid = self.Name()
+        runid = self.name
         # modify submit
         maxLineNo = 75  # maximum lines to modify
         # modify SUBMIT
@@ -394,8 +388,8 @@ class HadCM3(Model):
         """
         # Copy self.submit_script to self.continue_script and then change it.
         modifyStr = '## modifiedContinue'
-        submit_script = self.model_dir / self.submit_script
-        contScript = self.model_dir / self.continue_script
+        submit_script = self.script_dir / self.scripts['submit_script']
+        contScript = self.script_dir / self.scripts['continue_script']
         with fileinput.input(submit_script) as f:  # file for input
             with open(contScript, mode='w') as fout:  # and where the output file is.
                 for line in f:

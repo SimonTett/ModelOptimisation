@@ -89,11 +89,10 @@ class testScripts(unittest.TestCase):
     def setup_model(self):
         cpath = Model.expand("$OPTCLIMTOP/OptClimVn3/configurations/example_simple_model")
         eng = engine.abstractEngine.guess_engine()
-
-        model = Model('test_model',
+        config_path = self.tempDir /'testmodel/testmodel.mcfg'
+        model = Model(name = 'test_model',
                       reference=cpath, engine=eng,
-                      config_path=self.tempDir / 'testmodel.mcfg',
-                      model_dir=self.tempDir / 'testmodel',fake=True,
+                      config_path=config_path,fake=True,
                       parameters=dict(pone=2, pthree=3), status='SUBMITTED')
         model.model_dir.mkdir(exist_ok=True, parents=True)
         model.dump_model()
@@ -196,6 +195,7 @@ class testScripts(unittest.TestCase):
         config_pth = self.tempDir / (config.name() + ".scfg")
         sconfig = runSubmit.load(config_pth)
         print(len(sconfig.model_index))
+
         models = [m for m in sconfig.model_index.values() if m.status == 'INSTANTIATED']
         # fake run the first 5 models.
         for m in models[:5]:
@@ -205,6 +205,8 @@ class testScripts(unittest.TestCase):
 
 
         res = subprocess.run(cmd, capture_output=True, text=True)
+        # This will run more models I think. So number increases to 15 as fake set. REDO test.
+
         print("stdout", res.stdout)
         print("stderr", res.stderr)
         if res.returncode != 0:
@@ -212,10 +214,12 @@ class testScripts(unittest.TestCase):
             print("cmd is ", ' '.join(cmd))
             res.check_returncode()
         sconfig = runSubmit.load(config_pth)
+
         models = sconfig.processed_models()
         self.assertEqual(len(models),5)
         self.assertEqual(len(sconfig.simulated_observations()),5)
         self.assertEqual(len(sconfig.logical_cost()),5)
+        # without running the algorithm. Costs can't be updated. Make logical_cost compute and then cache.
 
 
     def test_OptClim_control(self):
@@ -237,9 +241,13 @@ class testScripts(unittest.TestCase):
         config.setv("song_type_comment",'this is not a love song')
         config.save() # save the config which should be changed
         self.assertIsNone(cfg.config.getv('song_type_comment'))
-        # First check we can write to a different output file with everythigng working
+        # First check we can write to a different output file with everything working
         new_cfg_path = self.tempDir / 'dfols4p_new/dfols4p_new.scfg'
-        run_cmd(str(script_path),str(cfg_path),'update',str(config.fileName()),'--output',str(new_cfg_path))
+        cmd = [str(script_path),  #'--log_level','DEBUG',
+          str(cfg_path),
+         'update',str(config.fileName()),'--output',str(new_cfg_path)]
+        print(" ".join(cmd))
+        run_cmd(*cmd)
         cfg2 = runSubmit.load(new_cfg_path) # load it.
         self.assertEqual(cfg2.config.getv('song_type_comment'),'this is not a love song')
 

@@ -1,14 +1,15 @@
 import logging
 import os
 import pathlib
-import typing
 import pandas as pd
 import numpy as np
 import subprocess
 import typing
 import datetime
 import shlex
+import packaging.version
 
+import genericLib
 import generic_json
 
 
@@ -76,6 +77,18 @@ class journal:
         for time, messages in self._history.items():
             str_msg = '\n'.join(messages)
             print(f"{time}:", str_msg)
+
+    def flaten_history(self) -> typing.List[typing.Tuple[str, str]]:
+        """
+        Flaten the history into a list of tuples with time and message.
+        :return: list of tuples with time and message.
+        """
+        result = []
+        if hasattr(self, '_history'):
+            for time, messages in self._history.items():
+                for msg in messages:
+                    result.append((time, msg))
+        return result
 
     def store_output(self, cmd: typing.Optional[list], result: typing.Optional[str]):
         """
@@ -183,18 +196,18 @@ class model_base:
     --------
     from_dict(cls, dct: dict) -> Any:
         Return class initialised from dct by copying keys to attributes in obj but only that exist after initialisation.
-        This is really a factory method.
+        This is  a factory method.
 
     to_dict(self) -> dict:
         Convert an object to a dict.
 
     load(cls, class_json: pathlib.Path) -> Any:
-        Load an object configuration from specified file. The correct type of object will be returned.
+        Load an object configuration from a specified file. The correct type of object will be returned.
 
     dump(self, config_path: pathlib.Path) -> Any:
         Write object (as json) to config_path.
     """
-
+    serialisation_data_version = packaging.version.Version("0.0.0") # default serialisation_data_version
     def __init_subclass__(cls, *args, **kwargs):
         # obscure python. See https://peps.python.org/pep-0487/#new-ways-of-using-classes
         """
@@ -210,30 +223,9 @@ class model_base:
         generic_json.obj_to_from_dict.register_FROM_VALUE(cls, cls.from_dict)
         generic_json.obj_to_from_dict.register_TO_VALUE(cls, cls.to_dict)
 
-    # class methods
-    _translate_path_var: typing.Optional[
-        typing.Tuple[pathlib.PurePath, pathlib.PurePath]] = None
-
-    # class variable to hold information on how to translate paths from one file system to another.
     _convert_path2pure:bool = False # class variable to convert paths to purePaths on readin. Supports "old" structures.
 
-    @classmethod
-    def translate_path(cls, path: pathlib.PurePath) -> pathlib.PurePath:
-        """
-        Translate PurePath (coz we have moved files or system). Expect to be used in inherited class from_dict
-        Probably will work if Paths too though care needed with absolute paths
-        :param path - path to be translated.
-        """
-        result = path
-        if cls._translate_path_var:  # want to translate
-            try:  # if we get value error then can't translate path so just return input
-                result = cls._translate_path_var[1] / path.relative_to(cls._translate_path_var[0])
-                # verify file exists. If not leave it alone
-                if not pathlib.Path(result).exists():
-                    result = path
-            except ValueError:
-                pass
-        return result
+
 
     @classmethod
     def from_dict(cls, dct: dict):
@@ -252,8 +244,9 @@ class model_base:
     @classmethod
     def convert_pure_paths(cls, dct: dict) -> dict:
         """Convert pure paths (if possible to paths)
-        First apply translate_path to anything thing that is a path
-          then trys to convert a purePath of the right type (Windows on Windows; Posix on anything else) to a path,
+          then trys to convert a purePath of the right type (Windows on Windows; Posix on anything else) to a path.
+          Suspect this can be simplified and maybe even removed with config_path set on load and
+           other paths defined relative to config_path. Kept for now.
         """
 
         result = dict()
@@ -262,10 +255,9 @@ class model_base:
             if isinstance(value, pathlib.PurePath):  # something path like
                 if cls._convert_path2pure and isinstance(value,pathlib.Path): # convert path to (local) purePath
                     value = pathlib.PurePath(value) # purify path.
-                value = cls.translate_path(value)
                 if not pathlib.Path(value).exists():
                     my_logger.warning(f"{value} does not exist. Keeping as purePath")
-                
+
                 # path is of correct type (after conversion) and exists -- make it a path!
                 if (type(value) == right_pure_path_type) and (pathlib.Path(value).exists()):
                     value = pathlib.Path(value)
@@ -281,6 +273,10 @@ class model_base:
         """
         if convert_pure_paths:
             dct = self.convert_pure_paths(dct)
+        version = packaging.version.Version(dct.pop('serialisation_data_version', '0.0.0'))
+        # get the serialisation_data_version with default value
+        if version < self.serialisation_data_version:
+            my_logger.warning(f"Deserialising {self.class_name()} from version {version} to {self.serialisation_data_version}")
         for name, value in dct.items():
             if hasattr(self, name):
                 setattr(self, name, value)
@@ -290,29 +286,27 @@ class model_base:
     def to_dict(self):
         """
         Convert an object to a dict.
-        To support portability across multiple OS. paths are converted to purePath
         :return: dct
         """
+        #dct = vars(self)
         dct = dict()
         for key, value in vars(self).items():
-            if isinstance(value, pathlib.Path):
-                dct[key] = pathlib.PurePath(value)
-            else:
-                dct[key] = value
-
+            dct[key] = value
+        dct['serialisation_data_version'] = str(self.serialisation_data_version)
         return dct
 
     # class methods.
     @classmethod
     def load(cls, file: typing.Union[pathlib.Path, str],
-             error:generic_json.type_error = 'error',
-             check_types:typing.Optional[typing.List]=None):
+             error:genericLib.type_error_handle_types = 'fail',
+             check_types:typing.Optional[list]=None):
         """
-        Load an object configuration from specified file.
-        The correct type of object will be returned. 
+        Load an object configuration from a specified file.
+        The correct type of object will be returned.
+        :param file  path to file to be read in. Will have been expanded by cls.expand.
+        :param error  error handling strategy. See genericLib.error_handle for details.
         :param check_types: types to be checked using isinstance. If type not as expected error will be triggered
-        :param file path to file to be read in.
-           If str passed then it cls.expand will be ran on it.
+
         :return: Object of an appropriate type.
         """
         # read it in.
@@ -320,15 +314,13 @@ class model_base:
         file = cls.expand(file)  # expand user and vars and convert str to path
 
         with open(file, 'rt') as fp:
-            cfg = generic_json.load(fp, error=error)
+            cfg = generic_json.load(fp, error=error) # from here "down" all information on what the class being loaded is lost.
             # this runs all the magic needed to create objects that we know about.
         if check_types is not None:
             logging.debug("Checking types against %s", check_types)
             if not isinstance(cfg,tuple(check_types)):
                 raise ValueError(f"{type(cfg)} is not one of {check_types}")
 
-        for k, v in vars(cfg).items():  # debug info.
-            my_logger.debug(f"{k}: {v} ")
         my_logger.info(f"Read configuration from {file}")
 
         return cfg
@@ -356,6 +348,8 @@ class model_base:
                 raise ValueError("Something wrong")
             if k in vars_to_ignore: # ignore this variable
                 continue
+
+
             if isinstance(v, pathlib.PurePath) and isinstance(v2, pathlib.PurePath):
                 if v.as_posix() != v2.as_posix():
                     print(f"Paths for {k} differ")
@@ -367,16 +361,32 @@ class model_base:
                 if (v.__name__ != v2.__name__):
                     print(f" Fn names for {k} differ")
                     return False  # names differ.
+            elif isinstance(v, dict):
+                k1 = list(v.keys())
+                k2 = list(v2.keys())
+                if k1 != k2:
+                    print(f"Keys for {k} differ")
+                    return False  # keys differ
+                for key in v.keys():
+                    if key not in v2:
+                        print(f"Key {key} for {k} not in other")
+                        return False  # key not in other
+                    if v[key] != v2[key]:
+                        print(f"Value for key {key} for {k} differ")
+                        return False  # values differ
+
             elif isinstance(v, (pd.Series, np.ndarray, pd.DataFrame)):
                 if not np.allclose(v, v2):
                     # check for FP consistency  between the values.
-                    print(f"for {k}\n{v}\n differs from\n{v2}")
-                    return False  # pandas series differ
-            elif v != v2:  # test for different
-                print(f"{k} differ")
-                return False
+                    print(f" For {k}\n{v}\n differs from\n{v2}")
+                    return False  # differences
             else:
-                pass  # equal -- keep going
+                result = (v == v2)
+                if not result:
+                    print(f"{k} differ")
+                    return result
+
+
 
         return True  # equal if here!
 

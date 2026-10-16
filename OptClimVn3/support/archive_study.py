@@ -1,5 +1,9 @@
 """
-Small class to support archving of studys.
+Small class to support archiving of studies. It has potential security issues on extract.
+When updating to python 3.11+ use the filter='data' option to tarfile.extractall to avoid path traversal attacks.
+One could extract the archive info file and use that to check things are as expected too. But needs more thought and
+is not urgent.
+
  Provides methods to archive and extract.
 __init__ stores info on the platform ran on.
 """
@@ -46,36 +50,35 @@ class archive_study(model_base, journal):
                 compress:bool=True):
         """
         Archive a SubmitStudy (or anything that has an archive method)
-        :param submit: SubmitStudy to be archived
-        :param archive_path: name of the archive file. 
-                   If None then submit.roodDir/archive.tar.gz is used.
+        :param submit: SubmitStudy to be archived.
+        :param archive_path: path to archive path
+                   If None then submit.study_dir/archive_{submit.name}.tar (or archive.{submit.name}.tar.gz if compress is True) will be used.
         :param extra_paths: Extra files to be archived. Passed to SubmitStudy.archive.
-        File will be compressed using gzip if file name ends in .gz
+        :param compress: If True then archive is compressed. If False then not compressed.
         :return: archive_path
         """
-        with tempfile.TemporaryDirectory() as tmpdir:
-            submit.dump(pathlib.Path(tmpdir)/submit.config_path.name) # dump it to tmpdir. Note no changes made.
-            if archive_path is None:
-                if compress:
-                    archive_path = submit.rootDir/ f'archive_{submit.name}.tar.gz'
-                else:
-                    archive_path = submit.rootDir/ f'archive_{submit.name}.tar'
+        tmp_dir = pathlib.Path(tempfile.mkdtemp())
+        if archive_path is None:
+            if compress:
+                archive_path = submit.study_dir / f'archive_{submit.name}.tar.gz'
+            else:
+                archive_path = submit.study_dir / f'archive_{submit.name}.tar'
 
-            self.update_history(f"Archiving data for {submit.config_path}")
-            self.archive_path = archive_path
-            self.config_file = pathlib.PurePath(submit.config_path.name)
-            self.rootDir = submit.rootDir
-            # dump the archive to somewhere temp.
-            apath = pathlib.Path(tmpdir)/'archive.acfg'
-            self.dump(apath)
+        self.update_history(f"Archiving data for {submit.config_path}")
+        self.archive_path = archive_path.resolve()
+        self.config_file = pathlib.PurePath(submit.config_path.name)
+        self.rootDir = submit.study_dir
+        # dump the archive to somewhere temp.
+        apath = tmp_dir/'archive.acfg'
+        self.dump(apath)
 
-            mode='w'
-            if archive_path.suffix == '.gz':
-                mode+=':gz'
-            my_logger.debug(f'Write data to {archive_path} using mode {mode}')
-            with tarfile.open(archive_path,mode=mode) as archive:
-                archive.add(apath,apath.name)  # archive the archive info.
-                submit.archive(archive,extra_paths=extra_paths)  # now archive the SubmitStudy.
+        mode='w'
+        if archive_path.suffix == '.gz':
+            mode+=':gz'
+        my_logger.debug(f'Write data to {archive_path} using mode {mode}')
+        with tarfile.open(archive_path,mode=mode) as archive:
+            archive.add(apath,apath.name)  # archive the archive info.
+            submit.archive(archive,extra_paths=extra_paths)  # now archive the SubmitStudy.
 
         return archive_path
 
@@ -87,7 +90,7 @@ class archive_study(model_base, journal):
         """
         Extract an archive.
         :param archive_path: Path to the archive.
-        :param direct: Directory where data will be extracted to. If None will be current working directory.
+        :param direct: Directory where data will be extracted to. If None will be the current working directory.
         :return: Archive_study (useful for querying archive info) & SubmitStudy -- ready to analyse/continue SubmitStudy.
         """
         if direct is None:
@@ -102,19 +105,20 @@ class archive_study(model_base, journal):
         with tarfile.open(archive_path, mode) as archive:
             ## TODO get permission errors if files exist.
             archive.extractall(path=str(direct))  # extract all data
+            ## TODO. When upgrade to recent version of python then add filter='data'.
             archive_config: archive_study = model_base.load(
                 direct / 'archive.acfg',
                 check_types=[archive_study])
             cfg_path = direct / str(archive_config.config_file)
             # we are reading an archive which means paths need rewriting.
-            model_base._translate_path_var = (archive_config.rootDir,direct)  # setup for translation.
-            model_base._convert_path2pure = True  # convert paths to pure paths.
+            #model_base._translate_path_var = (archive_config.rootDir,direct)  # setup for translation.
+            #model_base._convert_path2pure = True  # convert paths to pure paths.
             # QUITE ugly to use class variables to translate. Needed because can't pass args into from_dict
             cfg = SubmitStudy.load(cfg_path)  # read the extracted data
             # Save the configuration in the new space which should be normally readable.
             cfg.dump_config(dump_models=True) # and write it back again
             #turn off translation.
-            model_base._translate_path_var = None
-            model_base._convert_path2pure = False
+            #model_base._translate_path_var = None
+            #model_base._convert_path2pure = False
 
         return archive_config, cfg
