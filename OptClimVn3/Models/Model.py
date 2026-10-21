@@ -427,7 +427,7 @@ class Model(ModelBaseClass, journal):
         :param config_path: path to the configuration file.
         :return: None
         """
-        self.config_path = genericLib.expand(config_path) # note using a *private* var as don't want it being reset.
+        self.config_path = genericLib.expand(config_path).resolve()
         self.configs = GroupConfig(root_dir=self.config_dir)  #  reset the group config which handles generic namelists -- note this flushes the cache.
 
     def set_post_process(self, post_process: typing.Optional[dict] = None):
