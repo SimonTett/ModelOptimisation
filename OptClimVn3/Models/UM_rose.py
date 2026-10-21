@@ -25,28 +25,6 @@
 # 5) Have a clean method which runs cylc clean. That could form part of the post_process step -- run after successfully running post process.
 #     Perhaps a SubmitStudy method clean which runs clean on all models in the study. [Clean being model dependent]
 
-"""
-Current problems:
-  transfer to jasmin is giving files something like: /gws/nopw/j04/terrafirma/tetts/optclim/test_run2/test_run2/tc000
-  transfer_dir='/gws/nopw/j04/terrafirma/tetts/optclim/test_run2'
-
-  My guess is that my evil hack of naming the run root_dir/tc000. Will try not changing transfer_dir to see if that helps.
-
-  Data is being copied, for example, to output/test_run2/tc003/YYYYetc -- ideally would like data to go to output/YYYYetc
-  Looks like run name is being used. To much of a faff to change now. Will deal with later if needed.
-
-  jasmin transfer fails (because credentials  expired) then very hard to restart it.
-    Auto restart does not work even when reauthorised..
-
-  And then the post-processing job never gets released for reasons... Looks like housekeeping never got run...
-  Soln: model.succeeded() -- which will release the job.
-
-  Failures from make_ancil -- increase time in reference job.
-
-"""
-
-
-
 import fileinput
 import functools
 import logging
