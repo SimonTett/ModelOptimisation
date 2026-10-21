@@ -1341,7 +1341,7 @@ class Model(ModelBaseClass, journal):
         :return:a tempModel instance.
         """
 
-        dct2 = dct.copy() #cls.convert_pure_paths(dct)
+        dct2 = cls.convert_pure_paths(dct)
         serialisation_data_version = packaging.version.Version(dct.get('serialisation_data_version', '0.0.0'))
         if serialisation_data_version < packaging.version.Version('1.0.0'):
             # legacy support for old serialisation data.
