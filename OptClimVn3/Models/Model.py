@@ -12,7 +12,7 @@ To add a new model you likely need to do, at least, the following:
    You should also modify the configuration so that:
    a) just before model starts running insert:
        self.set_status_script self.config_path RUNNING
-    This could be run every time a model starts running which could be multiple times. This case has not be tested.
+    This could be run every time a model starts running which could be multiple times. This case has not been tested.
    b) Insert  in the configuration after the model has finished all its simulations:
         self.set_status_script self.config_path SUCCEEDED
     c) Optionally insert in the config where errors are detected:
@@ -21,18 +21,18 @@ To add a new model you likely need to do, at least, the following:
 2) Implement your own version of submit_cmd so it returns the command to submit the model to your Q system,
 
 3) Define your parameters.
- Hopefully they can be described by a 'namelist  -- file, group name & variable name.
+ Hopefully, they can be described by a 'namelist  -- file, group name & variable name.
  See support/namelist_var.py.
  See namelist_var.py for guidance on existing types of 'namelists' and guidance for adding new ones.
 
  Easy is parameters whose values directly set one or more 'namelist variables' to that value.
  For this the recommended approach is to create a csv file with the parameter names and namelist values.
- For examples See the csv files  in parameter_config.
+ For examples see the csv files  in parameter_config.
  After the model class has been defined then do :
      ModelClass.update_from_file(path_to_config_file)
  where path_to_config_file is a pathlib.Path of the parameter configuration file.
 
- More tricky you might have a 'hyper' parameter which modifies multiple namelist variable,
+ More tricky is where you have a 'hyper' parameter which modifies multiple namelist variable,
  sets a namelist variable to an error, or modifies the model in some other way.
  To do this you need to write a function and register the function using ModelBaseClass.register_param
  Your methods should take a single value or None. If None the method should return a scaler which is the current value of
@@ -178,17 +178,14 @@ class Model(ModelBaseClass, journal):
     @classmethod
     def load_model(cls, model_path: pathlib.Path):
         """
-        Load a configuration and update paths if needed.
+        Load a configuration. Calls superclass load which *should* update the config_path.
         :param model_path:  where the configuration is stored
+        :return: loaded model
 
-
-        :return: loaded model/
+        Long term this method could be be removed  as the super class method is doing all the work
         """
         model = super().load(model_path)  # Using json "magic". See generic_json for what actually happens.
 
-        if not (isinstance(model.config_path,pathlib.Path) and model.config_path.exists() and model.config_path.samefile(model_path)):
-            my_logger.warning(f"Model {model} model_path changed to {model_path}")
-            model.config_path = model_path  # Replace config_path with where we actually loaded it from.
 
 
         return model
@@ -241,7 +238,8 @@ class Model(ModelBaseClass, journal):
         # set up default values.
 
         # General attributes
-        self.config_path = self.expand(config_path).resolve()  # make sure it is a path and expand any vars
+        self.set_config_path(config_path)  # set the config_path and configs.
+
 
 
         if name is None and self.config_path is not None:
@@ -260,7 +258,7 @@ class Model(ModelBaseClass, journal):
 
         if status not in self.allowed_status:
             raise ValueError(f"Status {status} not in " + " ".join(self.allowed_status))
-        ## TODO remove this.  Mixes models and Studies. Can pass config in for model classeses that want it
+        ## TODO remove this.  Mixes models and Studies. Can pass config in for model classes that want it
         # via alternative.
         self.StudyConfig_path = None  # setup StudyConfig_path attribute.
         if study_config_path is not None:
@@ -313,7 +311,7 @@ class Model(ModelBaseClass, journal):
 
         # and simulated obs.
         self.simulated_obs = None
-        self.configs = GroupConfig(root_dir=self.config_dir)  # grouped configs for writing out generic namelists
+
         # Set up remote stuff.
         remote_machine = self.run_info.get('remote_machine', None)
         remote_model_dir = self.expand(self.run_info.get('remote_model_dir', None), local=False)
@@ -338,11 +336,7 @@ class Model(ModelBaseClass, journal):
         if self.config_path is None:
             return None
         mdir = self.config_path.parent
-        if (self.reference is not None) and isinstance(mdir,pathlib.Path) and mdir.exists()  and \
-                isinstance(self.reference,pathlib.Path) and self.reference.exists() and \
-                mdir.samefile(self.reference):
-            # only test for same if mdir exists meaning that the model will be being instantiated
-            raise ValueError(f"Model dir {mdir} is same as reference {self.reference}. This is not allowed")
+
         return mdir
 
     @property
@@ -381,7 +375,7 @@ class Model(ModelBaseClass, journal):
     @property
     def name(self) -> str:
         """
-        Return the name of the mode which comes from config_path stem. If config_path is None return Unknown
+        Return the name of the model from _name. If  None return Unknown
         """
         name = self._name
         if self._name is None:
@@ -426,6 +420,15 @@ class Model(ModelBaseClass, journal):
                 known_params += list(bcls.param_info.known_parameters())
 
         return set(known_params)
+
+    def set_config_path(self, config_path: pathlib.Path|str):
+        """
+        Set the config_path attribute and configs.
+        :param config_path: path to the configuration file.
+        :return: None
+        """
+        self.config_path = genericLib.expand(config_path) # note using a *private* var as don't want it being reset.
+        self.configs = GroupConfig(root_dir=self.config_dir)  #  reset the group config which handles generic namelists -- note this flushes the cache.
 
     def set_post_process(self, post_process: typing.Optional[dict] = None):
 
@@ -707,6 +710,9 @@ class Model(ModelBaseClass, journal):
         self.check_status(status)
         self.fake = self.fake or fake
         # if fake is True then we are faking it unless we are already faking it!
+        # check model_dir and reference are different to stop accidental wiping out of reference.
+        if self.model_dir.resolve() == self.reference.resolve():
+            raise ValueError(f"Model dir {self.model_dir} is same as reference {self.reference}. This is not allowed")
         self.create_model()  # create model
         self.modify_model()  # do any modifications to model needed before setting params.
         self.set_params()  # set the params
@@ -1211,17 +1217,15 @@ class Model(ModelBaseClass, journal):
         :param extra_files: list of extra files (paths provided relative to self.model_dir) to be copied to new directory.
         :return: Copied Model. Will copy only Model config & post process unless extra_files provided.
         """
-        config_path = config_path.resolve()
-        if config_path ==  self.config_path.resolve():
+
+        if genericLib.expand(config_path).resolve() ==  self.config_path.resolve():
             raise FileExistsError(f"Can not copy model to itself {self.config_path}")
         if not self.is_processed():
             my_logger.warning("Copying model with status {model.status}. Copy may not be runnable")
         cp_model = copy.deepcopy(self)  # make a copy of self
         # update
-        cp_model.config_path = config_path
+        cp_model.set_config_path(config_path)
         # and update the config. Note will wipe out cached values.
-        # If used these will get loaded back from the config files.
-        cp_model.configs= GroupConfig(root_dir=cp_model.config_dir)
         # actually copy stuff across.
         files_to_copy = [ self._post_process_output,self._post_process_input]
         files_to_copy += [d for d in [self._script_dir, self._config_dir] if d is not None]
@@ -1247,7 +1251,7 @@ class Model(ModelBaseClass, journal):
                 root_dir: typing.Optional[pathlib.Path|str] = None,
                 extra_files: typing.Optional[typing.List[pathlib.Path | str]] = None) -> list[pathlib.Path]:
         """
-       self will be dumped to make sure config_path & config are up to date
+       self will be dumped so make sure config_path & config are up to date
         The default behaviour is to add to the archive:
             config file, the post-processing output and input  files, all script files, PP_output directory
         If config_dir differs from model_dir then config_dir is added to archive.
@@ -1278,9 +1282,9 @@ class Model(ModelBaseClass, journal):
         files_to_archive += [self.model_dir/f for f in file_lst]
         # add in the scripts.
         files_to_archive += list([self.script_dir/s for s in self.scripts.values() if s is not None])
-        if not self.config_dir.samefile(self.model_dir):
+        if self.config_dir.resolve() != self.model_dir.resolve():
             # config dir differs from model_dir so add in config_dir
-            files_to_archive += [self.config_dir] # everything in  config_dir
+            files_to_archive += [self.config_dir] # everything in config_dir
         else: # add all *files* in model_dir. (Not ideal as could end up with a bunch of files we don't care about)
             files_to_archive += [f for f in self.model_dir.glob("*") if f.is_file()]
 
@@ -1323,7 +1327,6 @@ class Model(ModelBaseClass, journal):
         :return:
         """
         dct = super().to_dict()
-
         for key in ['config_path',  'reference']:  # vars to make into purePaths
             dct[key] = pathlib.PurePath(dct[key]) # TODO remove this? and just use to_posix to make it a string
         # deal with configs by removing them. No need to keep configs state around as generated on demand.
@@ -1356,6 +1359,7 @@ class Model(ModelBaseClass, journal):
         obj = cls( config_path=config_path, reference=dct2.pop('reference'))  # create a default instance
         obj.fill_attrs(dct2)
         return obj
+
 
     def read_nl_value(self, nl_var: NamelistVar,
                       raise_error: bool = True) -> type_allowed_fortran:
