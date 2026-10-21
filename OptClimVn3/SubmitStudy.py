@@ -575,7 +575,7 @@ class SubmitStudy(Study, model_base, journal):
         files_to_copy = list(set(extra_files))  # make unique
         if len(files_to_copy) > 0:
             my_logger.info(f"Copying {len(files_to_copy)}  to {cp_study_dir}")
-            files_copied = genericLib.copy_files(self.study_dir, cp_study_dir, files_to_copy)
+            files_copied = genericLib.copy_files(self.study_dir, cp_study_dir, files_to_copy,keep_list=keep_list)
             missing = set(files_to_copy) - set(files_copied)
             if len(missing) > 0:
                 my_logger.warning(f"Failed to copy  {missing} from {self.study_dir} to {cp_study_dir}")
