@@ -286,11 +286,14 @@ with rSUBMIT.lock(timeout=30) as lock: # lock up the config.
         raise ValueError(f"{rSUBMIT} has {len(running_models)} running. Try --guess_fail if those have failed. Otherwise wait...")
     failed_models = rSUBMIT.failed_models()
     if len(failed_models):  # Some runs failed. Use fail to decide what to do
+
         my_logger.info(f"{len(failed_models)} models failed. {rSUBMIT}")
         if fail == 'fail':
             raise ValueError(f"{rSUBMIT} has FAILED models. Try --fail option: \n"+fail_help_str)
         if args.dryrun:
             raise ValueError(f"Cannot deal with failed models in dryrun mode")
+        if args.readonly:
+            raise ValueError(f"Cannot deal with failed models in read only mode")
         for model in failed_models:
             my_logger.debug(f"Dealing with fail = {fail} for model {model}")
             if fail in ['perturb', 'perturbc']:
