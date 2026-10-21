@@ -63,7 +63,7 @@ parser.add_argument("--purge", action='store_true',
                     help="purge the configuration by deleting the directory. Will ask if OK. If not OK will exit with status 1")
 parser.add_argument("-v", "--verbose", action='count', default=0,
                     help="level of logging info level= 1 = info, level = 2 = debug ")
-#parser.add_argument("--clean",help="Do not do anything but --delete and and --purge (if set)",action='store_true')
+#parser.add_argument("--clean",help="Do not do anything but --delete and  --purge (if set)",action='store_true')
 parser.add_argument("--dryrun", action='store_true',
                     help="if set do not submit any jobs but do instantiate models. Good for testing")
 parser.add_argument("--readonly", action='store_true', help="read data but do not instantiate or submit jobs.")
@@ -96,6 +96,14 @@ parser.add_argument("--guess_fail", action='store_true',
 parser.add_argument("--stop", action='store_true',
                     help="Stop the algorithm which is algorithm specific and might require more models being ran.")
 args = parser.parse_args()
+# check args are consistent.
+if args.dryrun: # lots of things not compatable with dryrun
+    if args.test:
+        raise ValueError("Cannot set both --dryrun and --test")
+    if args.guess_fail:
+        raise ValueError("Cannot set both --dryrun and --guess_fail")
+    if args.stop:
+        raise ValueError("Cannot set both --dryrun and --stop")
 verbose = args.verbose
 dry_run = args.dryrun
 read_only = args.readonly
@@ -264,9 +272,11 @@ else:
 
 
 
-# We might  have runs to do so check that and run them if so.
-if not (dry_run or read_only):  # not dry running or read only.
-    # so first deal with failed models and then models that are already instantiated and so need running.
+
+with rSUBMIT.lock(timeout=30) as lock: # lock up the config.
+    # We might  have runs to do so check that and run them if so.
+
+    # First deal with failed models and then models that are already instantiated and so need running.
     # This happens if not all models that were instantiated were submitted.
     if guess_fail: # guess if models have failed. See Model.guess_failed to see how that is done.
         models_guess_failed = rSUBMIT.guess_failed()
@@ -279,6 +289,8 @@ if not (dry_run or read_only):  # not dry running or read only.
         my_logger.info(f"{len(failed_models)} models failed. {rSUBMIT}")
         if fail == 'fail':
             raise ValueError(f"{rSUBMIT} has FAILED models. Try --fail option: \n"+fail_help_str)
+        if args.dryrun:
+            raise ValueError(f"Cannot deal with failed models in dryrun mode")
         for model in failed_models:
             my_logger.debug(f"Dealing with fail = {fail} for model {model}")
             if fail in ['perturb', 'perturbc']:
@@ -288,34 +300,37 @@ if not (dry_run or read_only):  # not dry running or read only.
             if fail == 'delete':  # delete model
                 rSUBMIT.delete_model(model)
 
-# check status is only PROCESSED or INSTANTIATED.
-status = rSUBMIT.status()
-if any(s not in ['PROCESSED','INSTANTIATED'] for s in status):
-    raise ValueError(f"Have unexpected status rSUBMIT:{rSUBMIT}")
+    # check status is only PROCESSED or INSTANTIATED.
+    status = rSUBMIT.status()
+    if any(s not in ['PROCESSED','INSTANTIATED'] for s in status):
+        raise ValueError(f"Have unexpected status rSUBMIT:{rSUBMIT}")
 
-#  Submit any runs we can now.
-nModels = rSUBMIT.submit_all_models(fake_fn=fakeFn,dryrun=args.dryrun)  # this also saves the config.
-if nModels > 0:
-    msg = f"On iteration {rSUBMIT.iterations()} submitted {nModels} existing models"
-    rSUBMIT.update_history(msg)
-    my_logger.info(msg)
-    print(f"On iteration {rSUBMIT.iterations()} submitted {nModels} models")
-    exit(0) # exit as we have submitted all models we can.
+    #  Submit any runs we can now.
+    if not read_only:   # In read only mode we don't modify any models.
+        nModels = rSUBMIT.submit_all_models(fake_fn=fakeFn,dryrun=args.dryrun)  # this also saves the config.
+        if nModels > 0:
+            msg = f"On iteration {rSUBMIT.iterations()} submitted {nModels} existing models"
+            rSUBMIT.update_history(msg)
+            my_logger.info(msg)
+            print(f"On iteration {rSUBMIT.iterations()} submitted {nModels} models")
+            exit(0) # exit as we have submitted all models we can.
 
-algorithmName = configData.optimise()['algorithm'].upper()
-check_status = configData.study_checks()
-my_logger.debug(f"Algorithm is {algorithmName}")
-if algorithmName in ['RUNOPTIMISED', 'JACOBIAN']:
-    wantCost = False
-else:
-    wantCost = True
-# want to save_final_config?
-save_final_config = True
-if algorithmName in ['DFOLS']:
-    save_final_config = False # not for DFOLS as it saves it
 
-finalConfig = None  # so we have something!
-with rSUBMIT.lock(timeout=30) as lock: # 30 second timeout.
+
+    algorithmName = configData.optimise()['algorithm'].upper()
+    check_status = configData.study_checks()
+    my_logger.debug(f"Algorithm is {algorithmName}")
+    if algorithmName in ['RUNOPTIMISED', 'JACOBIAN']:
+        wantCost = False
+    else:
+        wantCost = True
+    # want to save_final_config?
+    save_final_config = True
+    if algorithmName in ['DFOLS']:
+        save_final_config = False # not for DFOLS as it saves it
+
+    finalConfig = None  # so we have something!
+
     # TODO Risk of stale file but really want to refactor runAlgorithm to separate out create and run.
     while True:  # loop indefinitely so can have fake_fn. This really to test code/algorithm.
         try:  # run an algorithm iteration.

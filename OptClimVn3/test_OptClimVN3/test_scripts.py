@@ -142,16 +142,17 @@ class testScripts(unittest.TestCase):
         """ Test runAlgorithm by running it in test mode.
         Success means it has worked!
         """
-        def make_cmd(config_path:typing.Optional[pathlib.Path]=None):
+        def make_cmd(config_path:typing.Optional[pathlib.Path]=None,test=True):
+            # make the command to run the algorithm. System independent.
             if platform.system() == 'Windows':
                 cmd = [sys.executable]
-
             else:
                 cmd = []
             if config_path is None:
                 config_path = Model.expand("$OPTCLIMTOP/OptClimVn3/configurations/dfols14param_opt3.json")
-            cmd += [str(self.script_dir / 'runAlgorithm.py'), str(config_path), "-v", "-t",
-                    "-d", str(self.tempDir)]
+            cmd += [str(self.script_dir / 'runAlgorithm.py'), str(config_path), "-v","-d", str(self.tempDir)]
+            if test:
+                cmd += ['--test']
             return cmd
 
         config_path = Model.expand("$OPTCLIMTOP/OptClimVn3/configurations/dfols14param_opt3.json")
@@ -182,7 +183,7 @@ class testScripts(unittest.TestCase):
         sconfig = runSubmit.load(config_pth)
         self.assertIsNone(sconfig.config.run_info().get('local_root_dir'))
         # now use dryrun
-        cmd = make_cmd()
+        cmd = make_cmd(test=False) # will handle faking directly as want to test partial submission working.
         cmd += ['--dryrun']
         shutil.rmtree(self.tempDir)
         res = subprocess.run(cmd, capture_output=True, text=True)
