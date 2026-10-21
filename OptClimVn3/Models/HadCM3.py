@@ -14,9 +14,8 @@ import fileinput
 import shutil
 import re
 import stat
-import engine
 import genericLib
-import copy
+
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}") # have this anywhere you want logging
 
