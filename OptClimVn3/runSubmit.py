@@ -1005,7 +1005,7 @@ class runSubmit(SubmitStudy):
         if obs is None:
             obs = self.simulated_observations(scale=True, normalize=True)
             if obs is not None: 
-                obs = obs.dropna
+                obs = obs.dropna()
         if params is None:
             params = self.logical_params(normalize=True)
         # call the super class plotter to actually plot
