@@ -239,6 +239,7 @@ class ModelTestCase(unittest.TestCase):
         ref=pathlib.PurePath(self.refDir)
         expected_dct = dict(reference=ref,reference_name=ref.name,
                             _name="test_model",
+                            _model_used_status='initial', # nothing been used yet.
                             parameters=pardict,
                             post_process={}, _output={},
                             _post_process_input='input.json',
@@ -246,7 +247,6 @@ class ModelTestCase(unittest.TestCase):
                             post_process_cmd_script=cmd, fake=False, simulated_obs=None,
                             perturb_count=0, parameters_no_key={}, config_path=pathlib.PurePath(self.testDir / "test_model.mcfg"),
                             status='CREATED', _history=model._history, engine=model.engine, pp_jid=None, run_info={},
-                            study_properties={},
                             model_jids=[],
                             submission_count=0,  submitted_jid=None,
                             remote=dict(remote_machine=None,remote_model_dir=None),  StudyConfig_path=None,
@@ -1384,6 +1384,31 @@ class ModelTestCase(unittest.TestCase):
                 result = model.compute_simulated_observations(use_cache=False)
             pdtest.assert_series_equal(result, expected)
             read_csv.assert_called_once()
+
+    def test_model_used_status(self):
+        """
+        Test that model_used_status works.
+
+        Tests:
+        0) The model's status attribute is initialized to 'initial' upon creation
+        1) Setting an incorrect status raises ValueError
+        2) Setting an allowed status updates the model's status attribute correctly
+        3) The model's status attribute reflects the last set value after multiple updates
+        :return:
+        """
+
+        model = self.model
+        self.assertEqual(model.model_used_status, 'initial')
+        with self.assertRaises(ValueError):
+            model.model_used_status = 'invalid_status'
+        model.model_used_status = 'called'
+        self.assertEqual(model.model_used_status, 'called')
+        model.model_used_status = 'not_called'
+        self.assertEqual(model.model_used_status, 'not_called')
+
+
+
+
 
 
 

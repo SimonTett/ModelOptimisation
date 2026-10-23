@@ -342,9 +342,11 @@ class HadCM3(Model):
         # modify SUBMIT
         modifyStr = '## modified'
         # check SUBMIT.bakR does not exist. Error if it does.
-        if (self.model_dir / 'SUBMIT.bakR').exists():
-            raise ValueError(f"Already got backup for SUBMIT = {self.model_dir / 'SUBMIT.bakR'}")
-        with fileinput.input(self.model_dir / 'SUBMIT', inplace=True, backup='.bakR') as f:
+        script_path = genericLib.safe_join(self.model_dir, self.scripts['submit_script'])  # check for path traversal attacks
+        backup = genericLib.safe_join(self.model_dir, self.scripts['submit_script'] + '.bakR')  # check for path traversal attacks
+        if backup.exists():
+            raise ValueError(f"Already got backup for SUBMIT = {backup}")
+        with fileinput.input(script_path, inplace=True, backup='.bakR') as f:
             for line in f:
                 # need to make these changes only once...
                 if re.search(modifyStr, line):

@@ -276,21 +276,6 @@ class UM_rose(Model):
             self.set_params(params, backup=False)  # write out the params. No backup.
 
 
-
-    # Commented out. Use case is if need to modify model when copying.
-    # The tension is -- allow copy to run vs copy provides information on what was originally run.
-    # As do not have obvious case to run a copy won't bother.
-    # def copy_config(self, config_path: pathlib.Path,
-    #                 extra_files: typing.Optional[list[pathlib.Path]] = None) -> "UM_rose":
-    #     """
-    #     Copy the model config to a new location and return a new model object.
-    #     Calls  super-class version and then runs set_config_path_vars to update any variables that depend on config_path.
-    #     """
-    #     new_model = super().copy_config(config_path, extra_files=extra_files)
-    #     new_model.set_config_path_vars(write=True)
-    #     return new_model
-
-
     @staticmethod
     def replace_file(file: pathlib.Path,
                      match: str,

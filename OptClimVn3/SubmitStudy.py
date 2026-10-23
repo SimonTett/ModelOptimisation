@@ -91,7 +91,7 @@ class SubmitStudy(Study, model_base, journal):
                  next_iter_cmd: Optional[list[str|pathlib.Path]] = None
                  ):
         """
-        Create ModelSubmit instance
+        Create SubmitStudy instance
         :param config: configuration information
         :param name: name of the study. If None name of config is used.
         :param refDir: Directory where a reference model is. If None, then config.referenceConfig() will be used.
@@ -103,7 +103,7 @@ class SubmitStudy(Study, model_base, journal):
         """
         super().__init__(config, name=name, models=models, config_path=config_path)
 
-        # no need to create rootDir as could be updated and when files are created mkdir happens then    
+
         if refDir is None:
             refDir = self.expand(str(config.referenceConfig()))
         self.refDir = refDir
@@ -364,7 +364,7 @@ class SubmitStudy(Study, model_base, journal):
             raise ValueError(f"Obj config_path {obj.config_path} does not match {config_path}")
 
         if not (isinstance(obj.study_dir, pathlib.Path) and obj.study_dir.exists() and config_path.resolve().parent.samefile(obj.study_dir.resolve())):
-            msg = f"Modified config rootDir from  {obj.study_dir} to {config_path.parent}"
+            msg = f"Modified config config_path from  {obj.study_dir} to {config_path.parent}"
 
             obj.config_path = config_path
             obj.study_dir= config_path.parent
@@ -452,6 +452,7 @@ class SubmitStudy(Study, model_base, journal):
         # remove various (probably old) attributes
         if version < packaging.version.Version("1.0.0"):
             objs_to_remove = ['rootDir', 'trace', 'prev_trace', ]
+            # rootDir removed and not replaced as study_dir set by load.
             for obj_name in objs_to_remove:
                 dct.pop(obj_name, None)
             if 'name' in dct: # rename name
@@ -476,33 +477,42 @@ class SubmitStudy(Study, model_base, journal):
                     new_path = genericLib.safe_join(obj.study_dir,pathlib.Path(*ppath.parts[-2:]))
                     # extract last two parts of path and stuff study_dir in front.
                 else: # A relative path. Append study_dir
-                    new_path = genericLib.safe_join(obj.study_dir, ppath)
-                    if not new_path.exists(): # path does not exist. Try with slightly different path
-                        new_path = genericLib.safe_join(obj.study_dir.parent, ppath)
-                if new_path.exists():
-                    my_logger.debug(f"Loading model from {new_path}")
-                    # verify key is as expected.
-                    model = Model.load_model(new_path)  # load the model.
-                    got_key = obj.key_for_model(model)
-                    if key != got_key:  # key changed.
-                        dct = cls.key_to_dict(key)
-                        dct['reference'] = dct.get('reference',model.reference)
-                        dct['reference_name'] = dct.get('reference_name', model.reference_name)
-                        try:
-                            dct['reference']= pathlib.PurePath(dct['reference'])
-                        except KeyError:
-                            pass
+                    direct = obj.study_dir
+                    if direct is None:
+                        raise ValueError("study_dir is None. This should not happen.")
+                    count_tries = 0 # count of attempts.
+                    new_path = genericLib.safe_join(direct, ppath)
+                    while count_tries < 4 and not new_path.exists(): # try up to 4 times to find the model. This is a bit of a hack but should work for most cases.
+                        direct = direct.parent
+                        count_tries += 1
+                        new_path = genericLib.safe_join(direct, ppath)
 
-                        fixed_key = cls.key(dct)
-                        if fixed_key != got_key:
-                            raise ValueError(f"Key has changed from (after fixing): \n{fixed_key} to: \n{got_key} \n for model {model}")
-                        else:
-                            my_logger.info(f"Key for model {model} has been fixed")
-                    # set status if not set.
+                if not new_path.exists():
+                    raise FileNotFoundError(f"Failed to find {new_path}. This should not happen. Fix SubmitStudy.from_dict to handle this case.")
 
-                    model_index[got_key] = model
-                else:
-                    my_logger.warning(f"Failed to find {new_path} so ignoring.")
+
+                my_logger.debug(f"Loading model from {new_path}")
+                # verify key is as expected.
+                model = Model.load_model(new_path)  # load the model.
+                got_key = obj.key_for_model(model)
+                if key != got_key:  # key changed.
+                    dct = cls.key_to_dict(key)
+                    dct['reference'] = dct.get('reference',model.reference)
+                    dct['reference_name'] = dct.get('reference_name', model.reference_name)
+                    try:
+                        dct['reference']= pathlib.PurePath(dct['reference'])
+                    except KeyError:
+                        pass
+
+                    fixed_key = cls.key(dct)
+                    if fixed_key != got_key:
+                        raise ValueError(f"Key has changed from (after fixing): \n{fixed_key} to: \n{got_key} \n for model {model}")
+                    else:
+                        my_logger.info(f"Key for model {model} has been fixed")
+                # set status if not set.
+
+                model_index[got_key] = model
+
         else:
             for key,rpath in loaded_model_index.items(): # path is relative to obj.study_dir.
                 path = genericLib.safe_join(obj.study_dir, rpath) # should be full path to model.
@@ -543,12 +553,11 @@ class SubmitStudy(Study, model_base, journal):
     def copy_config(self, config_path:pathlib.Path,
                     extra_files:typing.Optional[list[pathlib.Path]]=None,
                     keep_list:typing.Optional[list[pathlib.Path]]=None,
-                    new_config_name: typing.Optional[str] = None,
-                    update_paths:bool = True) -> SubmitStudy:
+                    new_config_name: typing.Optional[str] = None) -> SubmitStudy:
         """
         Copy SubmitStudy to a new directory. By default, only the config file & models are copied.
         :param config_path: path to the new config file.
-        :param extra_files: list of extra files (paths provided relative to rootDir) to be copied to the new directory.
+        :param extra_files: list of extra files (paths provided relative to study_dir) to be copied to the new directory.
         :param keep_list: list of files to keep in the new directory.
         :param new_config_name: Updated to config name. If None then the name is unchanged.
         :return: Copied SubmitStudy.
@@ -566,12 +575,10 @@ class SubmitStudy(Study, model_base, journal):
             cp_submit_study._name = new_config_name
 
         cp_study_dir = cp_submit_study.study_dir
-        cp_study_dir.mkdir(parents=True, exist_ok=True)  # create a directory if need be.
-        if cp_study_dir.samefile(self.study_dir):
+        if cp_study_dir.resolve() == self.study_dir.resolve():
             raise FileExistsError(f"Studies should be in their own directory cp_study_dir = {self.study_dir}. Change config_path from {config_path} ")
 
-
-
+        cp_study_dir.mkdir(parents=True, exist_ok=True)  # create a directory if need be.
         files_to_copy = list(set(extra_files))  # make unique
         if len(files_to_copy) > 0:
             my_logger.info(f"Copying {len(files_to_copy)}  to {cp_study_dir}")
@@ -596,7 +603,7 @@ class SubmitStudy(Study, model_base, journal):
         cp_submit_study.update_history(f"Copied {len(self.model_index)} models to {cp_study_dir} ")
 
         cp_submit_study.dump_config()  # dump the new config
-        if not config_path.exists():
+        if not cp_submit_study.config_path.exists():
             raise ValueError(f"Failed to create {config_path}")
         # and we are done!
         return cp_submit_study

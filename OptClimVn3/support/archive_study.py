@@ -7,6 +7,7 @@ is not urgent.
  Provides methods to archive and extract.
 __init__ stores info on the platform ran on.
 """
+from OptClimVn3.support import genericLib
 from model_base import model_base,journal
 import typing
 import pathlib
@@ -103,22 +104,15 @@ class archive_study(model_base, journal):
             mode+=':gz'
         my_logger.debug(f'Reading data from {archive_path} using mode {mode}')
         with tarfile.open(archive_path, mode) as archive:
-            ## TODO get permission errors if files exist.
-            archive.extractall(path=str(direct))  # extract all data
-            ## TODO. When upgrade to recent version of python then add filter='data'.
+            for member in archive.getmembers():
+                full_path = genericLib.safe_join(direct, member.name) # check for path traversal attacks
+                # will raise ValueError if path traversal is detected.
+            archive.extractall(path=str(direct))  # extract all data as all files are checked for path traversal attacks.
             archive_config: archive_study = model_base.load(
                 direct / 'archive.acfg',
                 check_types=[archive_study])
             cfg_path = direct / str(archive_config.config_file)
-            # we are reading an archive which means paths need rewriting.
-            #model_base._translate_path_var = (archive_config.rootDir,direct)  # setup for translation.
-            #model_base._convert_path2pure = True  # convert paths to pure paths.
-            # QUITE ugly to use class variables to translate. Needed because can't pass args into from_dict
-            cfg = SubmitStudy.load(cfg_path)  # read the extracted data
-            # Save the configuration in the new space which should be normally readable.
-            cfg.dump_config(dump_models=True) # and write it back again
-            #turn off translation.
-            #model_base._translate_path_var = None
-            #model_base._convert_path2pure = False
+            cfg: SubmitStudy = SubmitStudy.load(cfg_path)  # read the extracted data
+
 
         return archive_config, cfg

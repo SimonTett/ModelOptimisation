@@ -78,6 +78,9 @@ my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 type_status: typing.TypeAlias = typing.Literal['CREATED', 'INSTANTIATED', 'SUBMITTED',
 'RUNNING', 'FAILED', 'PERTURBED', 'CONTINUE',
 'SUCCEEDED', 'PROCESSED']  # allowed strings for status
+type_model_used_status: typing.TypeAlias = typing.Literal[
+    'initial', 'unknown', 'called', 'read', 'not_called']  # allowed status for model_status. See runAlgorithm for details.
+# This is used to check the determinism of the study.
 
 
 class Model(ModelBaseClass, journal):
@@ -106,7 +109,7 @@ class Model(ModelBaseClass, journal):
     _post_process_output: typing.Optional[str]
     configs: GroupConfig
     remote: dict[str, str | pathlib.PurePath]
-    study_info: dict[str, str]
+    _model_used_status: type_model_used_status # comes from runAlgorithm. Values set/got by model but runAlgorithm controls them,
     StudyConfig_path:typing.Optional[pathlib.Path] # Try and remove this. Used in simple model.
 
     """
@@ -134,7 +137,7 @@ class Model(ModelBaseClass, journal):
         pertub_count -- no of times model has been perturbed.
         submission_count -- no of times model has been submitted.
         remote -- dict containing info on remote machine and directory if needed. Keys are machine and directory respectively.
-        study_info -- dict containing information from the study (and up). Model should never use this. 
+        _model_used_status -- status of the model used in the study.
         StudyConfig_path -- path to StudyConfig.
         
         Private attributes:
@@ -252,15 +255,9 @@ class Model(ModelBaseClass, journal):
         if reference_name is None:
             reference_name = reference.name
         self.reference_name = reference_name
-
-
-
-
         if status not in self.allowed_status:
             raise ValueError(f"Status {status} not in " + " ".join(self.allowed_status))
-        ## TODO remove this.  Mixes models and Studies. Can pass config in for model classes that want it
-        # via alternative.
-        self.StudyConfig_path = None  # setup StudyConfig_path attribute.
+        self.StudyConfig_path = None  # setup StudyConfig_path attribute. Should be removed in future. Model should not know about StudyConfig.
         if study_config_path is not None:
             self.StudyConfig_path = study_config_path # store the path to the config.
             if not self.StudyConfig_path.is_absolute(): # not absolute so make it so
@@ -320,11 +317,11 @@ class Model(ModelBaseClass, journal):
             remote_model_dir = self.new_path(self.model_dir, remote_model_dir, root_dir=local_root_dir)
 
         self.remote = dict(remote_machine=remote_machine, remote_model_dir=remote_model_dir)  # remote info
-        self.study_properties=dict()
         # Set status
         self.status = status
         if self.status == 'CREATED':  # creating model for the first time
             self.update_history("CREATING model")
+        self.model_used_status = 'initial'  # set model_used_status to "initial".
 
     # property methods. All return a path to a directory (or None)
     @property
@@ -381,6 +378,23 @@ class Model(ModelBaseClass, journal):
         if self._name is None:
             name='Unknown'
         return name
+
+    allowed_model_used_status = typing.get_args(type_model_used_status)
+    @property
+    def model_used_status(self) -> type_model_used_status:
+        """
+        Return the status of the model used in the study.
+        """
+
+        return self._model_used_status
+
+    @model_used_status.setter
+    def model_used_status(self, status: type_model_used_status):
+        """Set model usage status for determinism checking"""
+
+        if status not in self.allowed_model_used_status:
+            raise ValueError(f"Invalid status {status}. Must be one of {self.allowed_model_used_status}")
+        self._model_used_status = status
 
     @classmethod
     def get_param_info(cls, parameter: str) -> list[NamelistVar | typing.Callable]:
@@ -1353,6 +1367,7 @@ class Model(ModelBaseClass, journal):
             # rename name to _name
             if 'name' in dct2:
                 dct2['_name'] = dct2.pop('name')
+
         config_path = pathlib.Path(dct2.pop('config_path'))
         if filepath is not None:
             config_path = filepath.resolve()  # override config_path if provided.

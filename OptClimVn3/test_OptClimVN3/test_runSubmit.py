@@ -134,10 +134,10 @@ class testRunSubmit(unittest.TestCase):
         models = list(self.extract_runSubmit.model_index.values())
         config_path = rootDir/'test/test.scfg'
         r = runSubmit.runSubmit(copy.deepcopy(self.config), name='test_status', config_path=config_path, refDir=self.refDir,
-                                models=models)  # clean rSubmit
+                                models=models)  # clean rSubmit with new models. All model_status should be 'initial'
 
         for m in r.model_index.values():
-            self.assertEqual(r.model_used_status(m), 'initial')
+            self.assertEqual(m.model_used_status, 'initial')
 
 
     def test_update_params(self):
@@ -617,7 +617,7 @@ class testRunSubmit(unittest.TestCase):
             model = r.create_model(params, dump=False)
             self.assertEqual(len(r.model_index), len_index + 1)  # increased
             key = r.key_for_model(model)
-            self.assertEqual(r.model_used_status(model), 'called')
+            self.assertEqual(model.model_used_status, 'called')
 
         # verify that if next_command is 'stop' get None.
         r.next_command = 'stop'
@@ -668,7 +668,7 @@ class testRunSubmit(unittest.TestCase):
         model_paths = [m.config_path for m in self.extract_runSubmit.model_index.values()]
         models = r.read_model_configs(model_paths)
         for m in models:
-            self.assertEqual(r.model_used_status(m), 'read')
+            self.assertEqual(m.model_used_status, 'read')
 
         self.assertEqual(len(r.model_index),len(models))  # have some models...
 
@@ -686,11 +686,11 @@ class testRunSubmit(unittest.TestCase):
         """
         # check that legacy data has status unknown.
         rsub:runSubmit.runSubmit = self.extract_runSubmit
-        self.assertTrue(all([rsub.model_used_status(m) == 'unknown' for m in rsub.model_index.values()]))
+        self.assertTrue(all([m.model_used_status == 'unknown' for m in rsub.model_index.values()]))
 
 
         # create a fresh runSubmit with no preloaded models
-        config_path = self.rootDir/'test_status/test_status.scfg    '
+        config_path = self.rootDir/'test_status/test_status.scfg'
         r = runSubmit.runSubmit(copy.deepcopy(self.config), 'test_status',  refDir=self.refDir,config_path=config_path)
 
         # simulate a model present at init by creating a model and adding to model_index and model_status
@@ -702,27 +702,29 @@ class testRunSubmit(unittest.TestCase):
             if m is None:
                 raise ValueError("Model creation failed")
             # after create_model the status should be 'called'
-            self.assertEqual(r.model_used_status(m), 'called')
+            self.assertEqual(m.model_used_status, 'called')
 
             # simulate reading a model config (add another model)
             params2 = params.copy()
             params2['AAAA'] = 1
             m2 = r.create_model(params2, dump=False)
-            r.model_used_status(m2, 'read')
+            m2.model_used_status = 'read'  # simulate read_model_configs behaviour
+
             # mark one as read (simulate read_model_configs behaviour)
-            self.assertEqual(r.model_used_status(m2), 'read')
+            self.assertEqual(m2.model_used_status, 'read')
 
             # simulate legacy from_dict behaviour: add a legacy key with 'unknown'
             params3 = params.copy()
             params3['AAAA'] = 2.0
             m3 = r.create_model(params3, dump=False)
-            r.model_used_status(m3,'unknown')
+            m3.model_used_status = 'unknown'
+
 
         # now check reset_logical_info: unknown and called -> not_called; read/initial remain
         r.reset_models_used()
-        self.assertEqual(r.model_used_status(m), 'not_called')
-        self.assertEqual(r.model_used_status(m2), 'read')
-        self.assertEqual(r.model_used_status(m3), 'unknown')
+        self.assertEqual(m.model_used_status, 'not_called')
+        self.assertEqual(m2.model_used_status, 'read')
+        self.assertEqual(m3.model_used_status, 'unknown')
 
         # check_deterministic should now find not_called entries and trigger error handling (return False)
         ok = r.check_deterministic(error='ignore')
@@ -730,14 +732,14 @@ class testRunSubmit(unittest.TestCase):
 
         # mark them as called (simulate they were used)
         for model in [m,m3]:
-            r.model_used_status(model,'called')
+            model.model_used_status = 'called'
 
         ok = r.check_deterministic(error='ignore')
         self.assertTrue(ok)
         # reset logical again to set called -> not_called (simulate new iteration), then set them to called again
         r.reset_models_used()
         for model in [m,m3]:
-            r.model_used_status(model,'called')
+            model.model_used_status = 'called'
 
         # now ensure model_index and model_status keys match
         # remove any placeholder that is not a model object
@@ -1618,24 +1620,6 @@ class testRunSubmit(unittest.TestCase):
         for ax in axes:
             self.assertIsInstance(ax, plt.Axes)
 
-    def notest_copyConfig(self):
-        # test that copy method works correctly
-        tmpDir = tempfile.TemporaryDirectory()
-        tmp_dir = pathlib.Path(tmpDir.name)
-        run_submit = copy.deepcopy(self.extract_runSubmit)
-        copy_dir = tmp_dir / 'copy_test'
-        run_submit_copy = run_submit.copy_config(copy_dir)
-        self.assertIsInstance(run_submit_copy, runSubmit.runSubmit)
-        self.assertEqual(run_submit.config, run_submit_copy.config)
-        # check logical info models consistent with model_info
-        for name, model_list in run_submit_copy._logical_info.models.items():  # models is dict with key names and values lists of models
-            for model in model_list:
-                key = run_submit_copy.key_for_model(model)
-                self.assertIs(run_submit_copy.model_index[key], model,
-                              msg=f'{model.name}:{model} with key:{key} not same as in model_index')
-                self.assertIsInstance(run_submit_copy.model_index[key], Model.Model)
-        # check that model_info & model_status are consistent
-        self.assertSetEqual(set(run_submit_copy.model_index.keys()), set(run_submit_copy.model_status.keys()))
 
     def test_from_dict(self):
         """
