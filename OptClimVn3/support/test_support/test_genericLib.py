@@ -312,13 +312,14 @@ class genericLib_test(unittest.TestCase):
     def test_ContextFileLock(self):
         # Test that ContextFileLock can acquire and release locks correctly, and handles lock contention.
         file = self.tmp_path / 'test.txt'
-        lock_file = self.tmp_path / 'test.txt.lock'
+        file.touch()
 
         lock1 = genericLib.ContextFileLock(file)
         lock2 = genericLib.ContextFileLock(file)
 
         # Test that lock1 can acquire the lock
         with lock1:
+            lock_file = lock1.lockfile_path
             self.assertTrue(lock_file.exists(), "Lock file should exist after acquiring lock1")
 
             # Test that lock2 cannot acquire the lock while lock1 holds it
@@ -328,14 +329,17 @@ class genericLib_test(unittest.TestCase):
 
         # After releasing lock1, lock2 should be able to acquire the lock
         with lock2:
+            lock_file = lock2.lockfile_path
             self.assertTrue(lock_file.exists(), "Lock file should exist after acquiring lock2")
 
         # After releasing lock2, the lock file should be removed
+        lock_file = lock2.lockfile_path
         self.assertFalse(lock_file.exists(), "Lock file should be removed after releasing all locks")
 
         # trying with a timeout
         lock3 = genericLib.ContextFileLock(file,timeout=10.0)
         with lock3:
+            lock_file = lock3.lockfile_path
             self.assertTrue(lock_file.exists())
 
 
@@ -364,18 +368,17 @@ class genericLib_test(unittest.TestCase):
             """)
     
         # Start the child: hold lock for 4 seconds.
-        p = subprocess.Popen([sys.executable,"-c", (child_script), str(file), "2.0"],
+        p = subprocess.Popen([sys.executable,"-c", (child_script), str(file), "4.0"],
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,text=True)
 
         try:
             # Wait until lock file appears (give child a short window)
-            waited = 0.0
-            while not lock_file.exists() and waited < 2.0:
-                time.sleep(0.05)
-                waited += 0.05
-            if not lock_file.exists():
-                # tolerate scheduling variability
-                time.sleep(0.2)
+            waited = 0.5
+            time.sleep(0.5) # give process time to start
+            while (not lock_file.exists()) and waited < 3.0:
+                time.sleep(0.025)
+                waited += 0.025
+           
 
             self.assertTrue(lock_file.exists(), "Child process failed to create lock file in time")
 

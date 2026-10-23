@@ -991,6 +991,7 @@ class ContextFileLock:
                 self._lock.release()
             finally:
                 self._acquired = False
+                self.lockfile_path.unlink(missing_ok=True) # remove lockfile
 
     @property
     def lockfile_path(self) -> pathlib.Path:
