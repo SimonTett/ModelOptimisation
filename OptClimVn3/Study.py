@@ -27,7 +27,7 @@ class Study:
     # class attribute type information.
     config: "OptClimConfigVn3"
     name: str
-    study_dir: pathlib.Path
+    config_path: pathlib.Path
     model_index: dict
     """
     Class to support a study.  This class provides support for reading info
@@ -36,7 +36,7 @@ class Study:
     An instance has the following attributes:
     config -- configuration
     name -- name of the study.
-    rootDir -- path to where stuff is
+    config_path -- path to the config file.
     model_index -- dict containing models indexed by model keys. 
     """
 
@@ -48,7 +48,7 @@ class Study:
         Create read-only study instance.
         :param config: Configuration information.
         :param name: Name of the study. If None name of config is used. ANd if not set in that config_path.stem is used
-        :param rootDir : Root dir where, by default, config file will be created and
+        :param config_path : Where config will be stroed.
             where model configurations will be searched for. Will be converted to an absolute path if not already by
             prepending the current working directory.
           If None will be current dir/config.name().
