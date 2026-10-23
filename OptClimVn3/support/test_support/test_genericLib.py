@@ -546,7 +546,7 @@ class genericLib_test(unittest.TestCase):
         self.assertEqual(error.exception.name, module_name)
         self.assertEqual(
             log.output,
-            [f"ERROR:OPTCLIM.security:Module {module_name} cannot be found. "],
+            [f"ERROR:OPTCLIM.security:Module {module_name} cannot be found."],
         )
 
     def test_safe_join(self):

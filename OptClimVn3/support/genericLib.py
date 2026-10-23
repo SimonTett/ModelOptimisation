@@ -279,7 +279,7 @@ def logging_import(module_name: str) -> typing.Optional[typing.Any]:
         return sys.modules[module_name]
     spec = importlib.util.find_spec(module_name)
     if spec is None or spec.origin is None:
-        secure_logger.error(f"Module {module_name} cannot be found. ")
+        secure_logger.error(f"Module {module_name} cannot be found.")
     elif spec.origin  in ('built-in', 'frozen'):
         # Module is built-in or frozen,
         secure_logger.info(f"Module {module_name} is {spec.origin}")

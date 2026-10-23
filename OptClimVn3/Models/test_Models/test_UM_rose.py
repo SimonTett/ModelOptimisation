@@ -356,36 +356,11 @@ and even more text
             self.assertEqual('james/X001test', model.suite_name)
 
 
-    def notest_copy_config(self):
-        # test that copy method works. Turned off as UM_rose.copy_config commented out.
-        # Only need to check that have workflow and scripts copied over.
-        self.maxDiff  = None
-        model = self.model
-        model.instantiate() # instantiate it writes everything out.
-        cp_config = self.testDir / 'copy_model'/model.config_path.name
-        model_copy = model.copy_config(cp_config)
-        # check that the workflow and scripts are copied over.
-        for dct in [model_copy.model_dir,model_copy.script_dir,model_copy.config_dir]:
-            self.assertTrue(dct.is_dir(),msg=f'Directory {dct} not copied correctly')
 
-
-        orig_files = list(model.model_dir.rglob('*'))
-        copy_files = list(model_copy.model_dir.rglob('*'))
-
-        # get relative paths for comparison
-        orig_rel_paths = sorted([f.relative_to(model.model_dir) for f in orig_files])
-        copy_rel_paths = sorted([f.relative_to(model_copy.model_dir) for f in copy_files])
-        self.assertEqual(orig_rel_paths, copy_rel_paths, msg=f"Files in {model.model_dir} not copied correctly")
-        # verify copy model has sensible value for OPTCLIM_MODEL_CONFIG
-        config_var = model_copy.read_param('OPTCLIM_MODEL_CONFIG')
-        self.assertEqual(config_var,model_copy.parameters_no_key['OPTCLIM_MODEL_CONFIG'])
-        self.assertEqual(model_copy.config_path.as_posix(),config_var)
-
-        raise NotImplementedError("Add tests (and decide on behaviour) to deal with suite_name")
 
     def test_set_suite_name(self):
         """
-        Testst that set_sute_name works.
+        Test that set_sute_name works.
         """
     def test_set_run_info_vars(self):
         # test that set_run_info_vars works correctly.
