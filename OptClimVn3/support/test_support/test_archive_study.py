@@ -66,8 +66,6 @@ class TestArchive(unittest.TestCase):
         for k,m in sub.model_index.items():
             m.config_path = outdir/m.config_path.relative_to(self.submit.study_dir)
             m._history = asubmit.model_index[k]._history
-            #m.model_dir = outdir/m.model_dir.relative_to(self.submit.rootDir)
-            #m.config_dir = outdir/m.config_dir.relative_to(self.submit.rootDir)
         self.assertEqual(asubmit,sub)
 
         # read in an archive generated on Eddie -- tests that remapping happens..
@@ -77,6 +75,30 @@ class TestArchive(unittest.TestCase):
         self.assertIsInstance(submit,SubmitStudy) # should be SubmitStudy
         cost = submit.cost() # and cost should have 65 elements.
         self.assertEqual(len(cost),len(submit.model_index))
+
+        # generate an archive with path traversal attack and check it is detected.
+        # Detected means both an error on the security log and a ValueError raised.
+        # Do by including a file that has a path that goes outside the archive directory.
+        evil_dir = self.testDir / 'evil_src'
+        evil_dir.mkdir()
+        evil_file = evil_dir / 'evil.txt'
+        evil_file.write_text('evil')
+        # now generate the archive with the evil file in it.
+        good_archive = self.arc.archive(self.submit)
+        bad_archive = self.testDir / 'bad_archive.tar.gz'
+        with tarfile.open(good_archive, 'r') as src, tarfile.open(bad_archive, 'w:gz') as bad:
+            for member in src.getmembers():  # copy the good files so the dodgy one is among several
+                bad.addfile(member, src.extractfile(member))
+            bad.add(evil_file, arcname='../not_really_evil.txt')
+            # dodgy path in the archive file would be self.testDir / 'not_really_evil.txt' which is outside  outdir.
+
+        with self.assertLogs(genericLib.secure_logger, level='ERROR') as cm: # secure logger tracks path traversal attacks.
+            with self.assertRaises(ValueError): # and get value error.
+                self.arc.extract_archive(bad_archive, direct=outdir)
+        self.assertTrue(any('Path traversal detected' in line for line in cm.output))
+        self.assertFalse((self.testDir / 'not_really_evil.txt').exists())  # nothing written outside outdir
+
+
 
 
 
