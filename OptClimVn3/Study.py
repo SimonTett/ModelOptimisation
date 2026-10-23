@@ -27,7 +27,7 @@ class Study:
     # class attribute type information.
     config: "OptClimConfigVn3"
     name: str
-    rootDir: pathlib.Path
+    config_path: pathlib.Path
     model_index: dict
     """
     Class to support a study.  This class provides support for reading info
@@ -36,44 +36,39 @@ class Study:
     An instance has the following attributes:
     config -- configuration
     name -- name of the study.
-    rootDir -- path to where stuff is
+    config_path -- path to the config file.
     model_index -- dict containing models indexed by model keys. 
     """
 
     def __init__(self, config: "OptClimConfigVn3",
+                 config_path: typing.Optional[pathlib.Path] = None,
                  name: typing.Optional[str] = None,
-                 rootDir: typing.Optional[pathlib.Path] = None,
                  models: typing.Optional[list[Model]] = None):
         """
         Create read-only study instance.
         :param config: Configuration information.
-        :param name: Name of the study. If None name of config is used.
-        :param rootDir : Root dir where, by default, config file will be created and
+        :param name: Name of the study. If None name of config is used. ANd if not set in that config_path.stem is used
+        :param config_path : Where config will be stroed.
             where model configurations will be searched for. Will be converted to an absolute path if not already by
             prepending the current working directory.
           If None will be current dir/config.name().
         :param models : Lst of models.
+        :param config_path: Path to the config file.
         """
 
         self.config = copy.deepcopy(config)
+        if config_path is not None:
+            config_path = genericLib.expand(config_path).resolve()
+        self.config_path = config_path
 
         if name is None: # NB once object exists its name cannot be changed.
             name = config.name()
-        if name is None:  # still none as not defined in config
-            name = 'Unknown'
-        if name is not None:
-            self.name = name
+        if name is None and config_path is not None:
+            name = config_path.stem
+        elif name is None:
+            name = "Unknown"
 
-        if rootDir is None:  # No rootDir defined. Use cwd.
-            self.rootDir = pathlib.Path.cwd() / self.name  # default path
-        else:
-            self.rootDir = rootDir
-        # make sure rootDir is an absolute path rather than relative.
-        if not self.rootDir.is_absolute():
-            self.rootDir = pathlib.Path.cwd() / self.rootDir
-
-
-
+        self._name = name
 
         self.model_index = dict()
         if models is not None:
@@ -82,6 +77,29 @@ class Study:
                 if key in self.model_index.keys():
                     raise ValueError(f"Got duplicate key {key}")
                 self.model_index[key] = model
+
+    @property
+    def study_dir(self) -> typing.Optional[pathlib.Path]:
+        """
+        Generate the study_dir using config_path. If config_path is None then study_dir is None
+        """
+        config_path = self.config_path
+        if config_path is not None:
+            config_path =config_path.parent
+        return config_path
+
+    @property
+    def name(self) -> str:
+        """
+        Return the name of the study.
+        """
+        if self._name is not None:
+            name = self._name
+        elif self.config_path is not None:
+            name = self.config_path.stem
+        else:
+            name = "Unknown"
+        return name
 
     def update_config(self, config: "OptClimConfigVn3"):
         """
@@ -208,7 +226,7 @@ class Study:
         :return:
         """
         if direct is None:
-            direct = self.rootDir
+            direct = self.study_dir
         if not direct.is_dir():
             raise ValueError(f"Directory {direct} is not a directory")
         files = direct.glob("**/" + pattern)
@@ -330,7 +348,7 @@ class Study:
 
         return observations
 
-    def check_duplicate_obs(self,error:genericLib.error_handle_types = "raise") -> None:
+    def check_duplicate_obs(self, error:genericLib.type_error_handle_types = "fail") -> None:
         """
         Check for duplicates in simulated observations. If any are found then raise an error or warning
         :return:
@@ -343,22 +361,6 @@ class Study:
         if duplicates.any():
             msg = f"Duplicate observations found for {obs.index[duplicates].tolist()}"
             genericLib.error_handle(msg,error=error)
-
-    def obs(self, scale: bool = True,
-            normalize: bool = False,
-            obsNames:typing.Optional[list[str]]=None) -> typing.Optional[pd.DataFrame]:
-        """
-        Extract the Obs used in the *individual* simulations. If simulation has no observations then it is ignored.
-        :param scale If True data will be scaled.
-        :param normalize If True data will be normalized -- distance in SD's from tgt
-        :param obsNames list of names of observations. If not provided will be extracted from model obs and target.
-        :return: pandas dataframe of observations possibly scaled and normalized.
-           None will be returned if there are no obs
-
-           No longer in use -- use self.simulated_observations() instead.
-        """
-
-        raise NotImplementedError("Use self.simulated_observations() instead")
 
 
 
@@ -516,7 +518,10 @@ class Study:
         if params is None:
             params = self.params(normalize=True,numeric=True)
         if obs is None:
-            obs = self.simulated_observations(scale=True,normalize=True,obs_names=obsNames).dropna()
+            obs = self.simulated_observations(scale=True,normalize=True,obs_names=obsNames)
+            if obs is None: # nothign to plot so just return
+                return None
+            obs=obs.dropna() # drop all missing
             obsNames = obs.columns #
         if cost is None:
             cost = self.cost(obsNames=obsNames)

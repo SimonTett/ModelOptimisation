@@ -28,7 +28,8 @@ import filelock
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 
-
+secure_logger = logging.getLogger(f"OPTCLIM.security") # logger for security-related logging.
+# needs configuration to be set up in setup_logging.
 def _reset_logger(logger_name):
     """
     AI generated function to reset a logger to default state. This is useful for testing purposes to avoid duplicate log messages.
@@ -89,12 +90,12 @@ def _reset_all_loggers():
             logger.propagate = True
 
 
-error_handle_types = typing.Literal['fail', 'warn', 'ignore']
+type_error_handle_types: typing.TypeAlias = typing.Literal['fail', 'warn', 'ignore']
 
 
 # will use error handle in various different places so define it here.
 # It will be used to control whether to raise an error, log a warning or ignore an error when something goes wrong.
-def error_handle(message: str, error: error_handle_types = 'fail'):
+def error_handle(message: str, error: type_error_handle_types = 'fail'):
     """
     Handle an error according to the error handling strategy.
     :param message: message to be used in error or warning
@@ -264,6 +265,30 @@ class DuplicateFilter(logging.Filter):
         return True
 
 
+def logging_import(module_name: str) -> typing.Optional[typing.Any]:
+    """
+    import a module and secure log the path loaded from.
+    :param module_name: The name of the module to import.
+    error if the module cannot be found or origin is None. Logs the origin if found.
+    Info logs where the module is imported from.
+    :return: The imported module.
+    """
+
+    if module_name in sys.modules:
+        # Already imported, return the cached module
+        return sys.modules[module_name]
+    spec = importlib.util.find_spec(module_name)
+    if spec is None or spec.origin is None:
+        secure_logger.error(f"Module {module_name} cannot be found.")
+    elif spec.origin  in ('built-in', 'frozen'):
+        # Module is built-in or frozen,
+        secure_logger.info(f"Module {module_name} is {spec.origin}")
+    else:
+        secure_logger.info(f"Importing module {module_name} from {pathlib.Path(spec.origin).resolve()}")
+        # get the path to the top-level module and log that.
+    module = importlib.import_module(module_name)  # import the module. Will fail if the module cannot be imported.
+    return module
+
 def get_fn(mod_fn_str: str) -> typing.Callable:
     """
     Load a function from a module.
@@ -271,7 +296,7 @@ def get_fn(mod_fn_str: str) -> typing.Callable:
     :return: a callable
     """
     mod, fn_name = mod_fn_str.rsplit('.', maxsplit=1)
-    module = importlib.import_module(mod)  # import the module
+    module = logging_import(mod)
     fn = getattr(module, fn_name)
     if not callable(fn):
         raise AttributeError(f"{fn_name} is not a callable in {mod}")
@@ -312,7 +337,8 @@ def fake_fn(config: "OptClimConfigVn3", params: dict,obs_names:typing.Optional[l
 
     var_scales = 10.0 ** np.round(np.log10(scales))
     pscale = (param_series.reindex(min_p.index) - min_p) / scale_params
-    pscale = pscale.fillna(0.0) # fill any values that are nan with 0.0.
+    pscale = pscale.astype(float).fillna(0.0) # fill any values that are nan with 0.0.
+    # Need to coerce to float to stop warnings
     pscale -= 0.5  # tgt is at params = 0.5
     sim_obs=dict()
 
@@ -426,7 +452,7 @@ def parse_isoduration(s: str | typing.List) -> typing.List | str:
 
 
 def expand(filestr: str | pathlib.PurePath,
-           error: error_handle_types = 'fail') -> pathlib.Path:
+           error: type_error_handle_types = 'fail') -> pathlib.Path:
     """
 
     Expand any env vars, convert to path and then expand any user constructs.
@@ -762,6 +788,8 @@ def copy_files(in_direct: pathlib.Path,
     :return: Copied object and list of files copied. (which should be inheriting from model_base)
     """
     global try_symlinks  # have to be global vars
+    if symlinks:
+        my_logger.warning("Copying files with symlinks. Probably a bad idea.... ")
 
     out_direct.mkdir(parents=True, exist_ok=True)  # make it so we check it is not same as config dir
     if in_direct.samefile(out_direct):
@@ -834,6 +862,88 @@ def setup_config_env(rootDir: pathlib.Path,log_dir: pathlib.Path):
     os.environ['OPTCLIM_ROOT_DIR'] = rootDir.as_posix()
     os.environ['OPTCLIM_LOG_DIR'] = log_dir.as_posix()
     os.environ['OPTCLIM_JOB_ID'] = str(JOB_ID)  # have JOB ID
+
+
+def files_to_archive(files: list[pathlib.Path]) -> list[pathlib.Path]:
+    """
+    Given a list of files and directories, return a list of resolved files to be archived.
+    This resolves relative paths, expands directories to include all files within, and keeps only files (not directories).
+    :param files: list of files and directories to be archived. Directories will be recursively  expanded to include all files within.
+    :return: list of files to be archived.
+
+    Warnings will be given for missing files.
+    """
+
+# Check for missing files and give warning if any found.
+    missing_files = [f for f in files if not f.exists()]
+    if missing_files:
+        my_logger.warning(f"Missing files: {missing_files}")
+    #  removing non-existing files and directories. Make everything a resolved path so we don't have duplicates.
+    files_to_archive = [f.resolve() for f in files if f.exists()]
+    files_wanted = set() # list of files we want to archive. Set means we have unique files.
+    for file in files_to_archive:
+        if file.is_file():
+            files_wanted.add(file)
+        elif file.is_dir():
+            files_wanted.update([f for f in file.rglob("*") if f.is_file()]) # expand all entries, keeping only paths
+        else:
+            my_logger.warning(f"Ignoring {file} as it is not a file or directory")
+    # check all of files_wanted is a file. This should always work.
+    # If it becomes "real" then use error_handle to deal with errors.
+    ok = all([f.is_file() for f in files_wanted])
+    if not ok:
+        raise ValueError(f"Not all files in files_wanted are files: {[f for f in files_wanted if not f.is_file()]}")
+
+    return list(files_wanted)
+
+
+
+def safe_join(base_dir: typing.Optional[pathlib.Path],
+              user_path: typing.Union[pathlib.Path, str]) -> pathlib.Path:
+    """
+    Join base_dir with user_path, ensuring the result stays under base_dir.
+    
+    SECURITY: Prevents path traversal attacks where user_path contains ".." components
+    that would escape the base_dir directory. This is important when loading paths from
+    configuration files that may have been modified or come from untrusted sources.
+    
+    :param base_dir: Base directory (must be a directory, not a file)
+    :param user_path: Relative path to join with base_dir (can contain ".." if they don't escape)
+    :return: Resolved absolute path under base_dir
+    :raises ValueError: If user_path would escape base_dir (path traversal detected)
+    :raises ValueError: If base_dir does not exist or is not a directory
+    
+    Example:
+        >>> safe_join(Path("/study"), Path("model1/config.mcfg"))
+        PosixPath('/study/model1/config.mcfg')
+        
+        >>> safe_join(Path("/study"), Path("../../etc/passwd"))
+        ValueError: Path traversal detected...
+    
+    Note: This function requires filesystem access (calls resolve()) to handle symlinks
+    and other filesystem features correctly. For path-only validation without filesystem
+    access, use a different approach.
+    """
+    if base_dir is None:
+        return None
+    # Resolve base_dir to absolute path (handles symlinks, .., etc.)
+    base_resolved = base_dir.resolve()
+    
+    # Join with user_path and resolve to get canonical absolute path
+    # This handles "..", ".", and symlinks correctly
+    full_path = (base_resolved / user_path).resolve()
+    
+    # Verify the resolved path is still under base_dir
+    # relative_to() raises ValueError if full_path is not relative to base_resolved
+    if not full_path.is_relative_to(base_resolved):
+        # Path traversal detected - the resolved path is outside base_dir
+        msg = f"Path traversal detected: {user_path} escaping {base_dir} resolving to {full_path}"
+        # Log the attempt for security auditing
+        secure_logger.error(msg)
+        raise ValueError(msg )
+    # Path is safe - return the resolved absolute path
+
+    return full_path
 
 
 # AI generated code for locking and then modified.

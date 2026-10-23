@@ -52,7 +52,7 @@ class TestModelBase(unittest.TestCase):
 
     def test_from_dict(self):
         # Test a valid dictionary with all expected keys
-        valid_dict = {"p1": 22, "p2": "testa", "p3": False, 'p4': np.ones(10)}
+        valid_dict = {"p1": 22, "p2": "testa", "p3": False, 'p4': np.ones(10),"serialisation_data_version":str(self.model.serialisation_data_version)}
         instance = self.init_class.from_dict(valid_dict)
         self.assertIsInstance(instance, self.init_class)
         d=instance.to_dict()
@@ -72,7 +72,7 @@ class TestModelBase(unittest.TestCase):
         instance.param1 = 5
         instance.param2 = "test"
         instance.param3 = False
-        expected_dict = {"param1": 5, "param2": "test", "param3": False}
+        expected_dict = {"param1": 5, "param2": "test", "param3": False,'serialisation_data_version':str(instance.serialisation_data_version)}
         self.assertEqual(instance.to_dict(), expected_dict)
 
     def test_dump_load(self):
@@ -117,7 +117,7 @@ class TestModelBase(unittest.TestCase):
             else:
                 v *= 2 # modify it.
 
-            setattr(m2,k,v) # set the value in the objust
+            setattr(m2,k,v) # set the value in the object
             self.assertNotEqual(m1,m2) # should be different
             setattr(m2,k,v_orig) # put original value back
         self.assertEqual(m1,m2) # and should be equal
