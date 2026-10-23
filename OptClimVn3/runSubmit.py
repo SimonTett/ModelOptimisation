@@ -285,9 +285,9 @@ class runSubmit(SubmitStudy):
         # Currently, largely a bag of attributes which this class reaches into as it needs to.
         # Having _logical_info as private for now as not sure if it will be needed outside this class.
         self._logical_info: LogicalInfo = LogicalInfo()
-        if models:
+        if models: # got some models that we are using for the configuration
             for model in models:
-                self.model_used_status(model, 'initial')  # set model status to 'initial'
+                model.model_used_status = 'initial'  # set model status to 'initial'
 
 
     def transform_check(self, observations: pd.Series,
@@ -604,7 +604,7 @@ class runSubmit(SubmitStudy):
                 my_logger.debug("Used cache to return simulated observations")
                 models = self.models(name)
                 for model in models:
-                    self.model_used_status(model, 'called')
+                    model.model_used_status = 'called' # called the model.
                 return sim_obs
 
         # otherwise we need to compute it.
@@ -694,16 +694,19 @@ class runSubmit(SubmitStudy):
                 obj.compute_simulated_observations(model.parameters)  # compute the simulated observations for this model.
 
 
-        for key,status in model_status.items(): # if model_status was not found then the dict will be empty so nothing will happen.
+        for key,run_status in model_status.items(): # if model_status was not found then the dict will be empty so nothing will happen.
+            # old way.
             try:
                 model = obj.model_index[key]
-                obj.model_used_status(model,status) # CONSIDER changing name from status as that could confuse.
-                my_logger.warning(f"Updating model {model} to status:{status}")
+                model.model_used_status = run_status
+                my_logger.warning(f"Updating model {model} to status:{run_status}")
             except KeyError:
                 my_logger.warning(f"Failed to find {key} in model_index. Skipping")
         # Set model_used_status to 'unknown' for any models that do not have a status set.
         for model in obj.model_index.values():
-            obj.model_used_status(model,'unknown',update=False) # set model status to 'unknown' if no model status is set.
+            if model.model_used_status == 'initial':
+                model.model_used_status = 'unknown'# set model status to 'unknown' if it it was "initial"
+
 
         return obj
 
@@ -727,28 +730,6 @@ class runSubmit(SubmitStudy):
 
         return key_mapping # return the key mapping in case it is needed.
 
-    def _xxxxcopyConfig(self, direct: pathlib.Path,
-                   extra_files: typing.Optional[list[pathlib.Path]] = None,
-                   keep_list: typing.Optional[list[pathlib.Path]] = None,
-                   new_config_name: typing.Optional[str] = None,
-                   update_paths: bool = True) -> runSubmit:
-        """
-        Copy the config to a new directory. Uses super class method and then updates LogicalInfo. No longer needed
-        :param direct: directory to copy to.
-        :param extra_files: extra files to copy.
-        :param keep_list: list of files to keep in the new directory.
-        :param update_paths: if True update paths in config to point to new directory.
-        :return: new runSubmit object with config copied to new directory.
-
-        Not needed any more as copyConfig base class does what is needed.
-        """
-        # if extra_files is None:
-        #    extra_files = []
-        # extra_files += [self.config.config_path.relate_to(self.rootDir)]  # always copy config file.
-        new_run_submit = super().copy_config(direct, extra_files, keep_list=keep_list, update_paths=update_paths, new_config_name=new_config_name)
-
-        return new_run_submit
-
     def create_model(self, params: dict,
                      dump: bool = True) -> typing.Optional[Model]:
         """
@@ -763,7 +744,7 @@ class runSubmit(SubmitStudy):
         if model is  None:  # might get None if stop is set or something went wrong.
             return model # just return None
         else:
-            self.model_used_status(model, 'called')
+            model.model_used_status = 'called'
             # Check model.status is as expected.
             allowed_status = ['CREATED','INSTANTIATED','PROCESSED']
             if model.status not in allowed_status:  # # not processed/Instantiated/Created so raise ValueError and complain.
@@ -774,7 +755,7 @@ class runSubmit(SubmitStudy):
 
     def read_model_configs(self, path_list: list[pathlib.Path]) -> list[Model]:
         """
-        Reads model configs from a list of paths. Sets status to read
+        Reads model configs from a list of paths. Sets model_used_status to read
         :param path_list: List of paths
         :return: list of models.
         """
@@ -782,7 +763,7 @@ class runSubmit(SubmitStudy):
         models = super().read_model_configs(path_list)
 
         for model in models:
-            self.model_used_status(model, 'read')
+            model.model_used_status = 'read'
 
         return models
 
@@ -792,41 +773,13 @@ class runSubmit(SubmitStudy):
        Reset models that had model_used_status 'called' (and so used) to 'not_called'
         :return: List of models that were reset.
         """
-        models_called = [model for model in self.model_index.values() if self.model_used_status(model) == 'called']
+        models_called = [model for model in self.model_index.values() if model.model_used_status == 'called']
         if len(models_called) >0 :
             my_logger.info(f"Setting {len(models_called)} used_status to not_called")
             for model in models_called:
-                self.model_used_status(model, 'not_called')
+                model.model_used_status = 'not_called'
 
         return models_called
-
-    type_model_used_status: typing.TypeAlias = typing.Literal[
-        'initial', 'unknown', 'called', 'read', 'not_called']  # allowed status for model_status
-    def model_used_status(self, model: Model,
-                          status: typing.Optional[type_model_used_status] = None,
-                          update:bool = True) -> typing.Optional[type_model_used_status] :
-        """
-        Set/get  model_status
-        :param model: A model object
-        :param status: One of 'initial','called','not_called','unknown','read' or None.
-         If None then only the current value of model.study_properties['model_status'] will be returned
-        :param update -- if False then properties will be set only if they do not exist.
-        :return: Nada
-
-        Design notes -- this could be a model method, but the idea behind study_properties is that studies set values and
-          know about keys. So this is here in SubmitStudy.
-        """
-
-        if status is not None:
-            allowed_status = ['initial', 'called', 'not_called', 'unknown', 'read']
-            if status not in allowed_status:
-                raise ValueError(f"Invalid status {status}. Must be one of {' '.join(allowed_status)}")
-            if update or  ('model_status' not in model.study_properties): # updating or model_status not present in study_properties
-                model.study_properties['model_status'] = status
-
-
-        return model.study_properties.get('model_status')
-
 
     def check_deterministic(self, error: genericLib.type_error_handle_types = 'fail') -> bool:
         """
@@ -834,9 +787,14 @@ class runSubmit(SubmitStudy):
         :param error: Used to in call to genericLib.error_handle to determine whether to raise an error, warn or ignore.
           See genericLib.error_handle for allowed values and what is done.
         :return: True if deterministic, False otherwise.
+
+        The model_used_status is a small state machine with the following states:
+         initial -> not_called -> can go to called.
+         Other states are "initial", "read" and "unkbown". Those all got to called if called but do not trigger errors.
+
         """
         # check no models have status not_called
-        uncalled_models = [str(model) for model in self.model_index.values() if self.model_used_status(model) == 'not_called']  # list of uncalled models
+        uncalled_models = [str(model) for model in self.model_index.values() if model.model_used_status == 'not_called']  # list of uncalled models
         if uncalled_models:
             message = f'Have {len(uncalled_models)} models not called. Unused models are:\n' \
                       + "\n".join(uncalled_models)
