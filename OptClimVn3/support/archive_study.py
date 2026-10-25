@@ -7,7 +7,7 @@ is not urgent.
  Provides methods to archive and extract.
 __init__ stores info on the platform ran on.
 """
-from OptClimVn3.support import genericLib
+import genericLib
 from model_base import model_base,journal
 import typing
 import pathlib
