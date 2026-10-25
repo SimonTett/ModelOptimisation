@@ -1,0 +1,51 @@
+# 2nd attempt at having robust (and easy to maintain) code for non-deterministic behavior in the model.
+
+## problem being fixed
+    Problem with having model_status is that it replicates the logic embedded in model_index.
+    Loading models is tricky and requires some work. And increases maintenance burden because of this.
+    Also fix problem of iteration count not being properly incremented.
+
+
+## Solution
+
+    runAlgorithm will submit runs (to limit) if have any instantiated cases when it loads in an existing Study.
+    Add a study_properties to Model which can be used to store anything. Just need to settle on key.
+    This stores calling info replacing model_status dict.
+    Still checking for non-deterministic behavior at the algorithm level.
+
+## Details.
+name generation is not sensible as iter_count does not increment in a useful way and we regen params/obs every time as
+we run....
+
+1) Model changes
+   - modify Model to have a new attribute dict:study_properties used to store any  study properties wanted.
+2) Changes to runSubmit
+   a) Modify set_model_status to set study_properties['model_status'] to status
+   b) remove model_status dict from runSubmit.
+   b) Modify runSubmit from_dict/to_dict no longer worry about model_status. Though if present will be used to set study_properties['model_status'] and then remove it.
+   e) Modify reset of _logical_info so that iteration info correct. Now have reset_used_models which sets all called models to not_called.
+   f) Add method called models to runSubmit which returns a lists of models for a given logical name.
+     Uses _logical_info.model_keys and model_index to do this. [Which is another reason why LogicalInfo is not very satisfactory.]
+3) Changes to LogicalInfo
+   a) Add an attribute called model_keys which is a dict -- key  name, values a list of keys to look up model in model_info
+   b) remove models attribute.
+   c) remove code than handles models attribute though if present on read in use to set model_keys and then remove it.
+   d) And also modified logical_cost so it computes costs (and caches them) as needed. Will break if observations get changed...
+
+4) runAlgorithm
+   a) Move submission of existing runs earlier in runAlgorithm. Broadly after it has finished loading up existing runs.
+   That will make no determ/iteration count logic much cleaner.
+
+
+   Q: When generating new case with existing runs reject models that are not processed. Trigger an error. User needs to sort.
+
+
+
+
+
+
+
+
+
+
+

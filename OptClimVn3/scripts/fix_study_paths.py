@@ -4,6 +4,10 @@
 # this mostly  uses pure json.
 # example use: OptClimVn3/scripts/fix_study_paths.py wenjun_data/dfols_random3/dfols_r.scfg wenjun_fix --clean --max_model_simulations 25 --write_config
 
+raise NotImplementedError(
+    "fix_study_paths.py is legacy and no longer supported: generic_json no longer has a 'warn' mode "
+    "(conversion failures now raise) and the script relies on it. Scheduled for removal in the scripts purge.")
+
 import json
 import argparse
 import pathlib

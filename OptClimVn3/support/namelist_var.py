@@ -37,7 +37,7 @@ import metomi.rose.config
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 
-type_allowed_fortran = typing.Union[None,int, float, bool, str,list[int],list[float],list[bool],list[str]]  # types allowed in fortran
+type_allowed_fortran: typing.TypeAlias = typing.Optional[int | float | bool | str | list[int] | list[float] | list[bool] | list[str]]  # types allowed in fortran
 # None might cause grief but returned by read_value if not found.
 
 

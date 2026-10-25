@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# reinitialise globus passwd etc
+module load globus-cli/3.35.2 # load the globus end
+globus session update safe.archer2.ac.uk # update the archer end
+globus session update tetts@accounts.jasmin.ac.uk # and the jasmin end
+globus ls a2f53b7f-1b4e-4dce-9b7c-349ae760fee0:/~/ # check it works
