@@ -1,0 +1,132 @@
+# CYLC 8 version. Want to trap failure and run optclim_um_fail
+{% set FW_START = '20000101T0000Z' %}
+[scheduling]
+  [[ graph ]]
+        {# Set OptClim Pre-Processing to start before the first run #}
+            R1 = remote_setup => optclim_pre
+
+        {# Set OptClim Post-Processing to start after the last cycle #}
+            R1/$ = analysis => create_json => fetch_diagnostics => optclim_post
+            R1/$ = analysis_fw => create_json
+        {# Run optclim_fail if nemo_cice fails; remove optclim_fail if it succeeds #}
+        {# Run the Freshwater Perturbation experiments #}
+            R1/{{FW_START}} = nemo_cice[-{{FMT}}] => nemo_cice_fw
+            R/{{FW_START}}/{{FMT}}      = nemo_cice_fw => POSTPROC_GROUP_FW:succeed-all => pptransfer_fw => analysis_fw
+
+            R/{{FW_START}}+{{FMT}}/{{FMT}}   = postproc_nemo_fw[-{{FMT}}]  => postproc_nemo_fw
+            R/{{FW_START}}+{{FMT}}/{{FMT}}   = postproc_cice_fw[-{{FMT}}]  => postproc_cice_fw
+            R/{{FW_START}}+{{FMT}}/{{FMT}}   = postproc_nemo_grid_fw[-{{FMT}}]  => postproc_nemo_grid_fw
+
+            R/{{FW_START}}+{{FMT}}/{{FMT}}   = nemo_cice_fw[-{{FMT}}] => nemo_cice_fw
+            R/{{FW_START}}+{{FMT}}/{{FMT}}   = analysis_fw[-{{FMT}}] => analysis_fw
+            R/{{FW_START}}+{{FMT}}/{{FMT}}   = pptransfer_fw[-{{FMT}}] => pptransfer_fw
+
+        #TODO make atmos_main something variable. For coupled model will want all sub-models to succeed..
+  [[ queues ]] ## Limit number of jobs running at once in a suite. No queue would, I think, limit to 3 (5 for cylc 8).
+        [[[ default ]]]
+            limit = 4
+            # limit to two jobs running at once... No obvious way of having a limit only for serial q's.
+{# Stuff for actually running the tasks #}
+
+[runtime]
+    [[FW_BRANCH]]
+        [[[environment]]]
+           DATAM       = $CYLC_WORKFLOW_SHARE_DIR/data/{{DATAM}}_fw
+           NEMO_DATA   = $CYLC_WORKFLOW_SHARE_DIR/data/{{NEMO_RST | replace(DATAM, DATAM ~ '_fw')}}
+           CICE_DATA   = $CYLC_WORKFLOW_SHARE_DIR/data/{{CICE_RST | replace(DATAM, DATAM ~ '_fw')}}
+           ARCHIVE_SET = $CYLC_WORKFLOW_NAME/fw
+
+    [[OPTCLIM_HPC]]
+        inherit = HPC_SERIAL
+        execution time limit = PT30M
+        [[[environment]]]
+            DATAM = {{DATAM}}
+            OPTCLIMTOP = {{OPTCLIMTOP}}
+
+    [[optclim_pre]]
+        inherit = OPTCLIM_HPC
+        script = """
+        date +"%Y-%m-%d %H:%M:%S.%3N"
+        . {{PY_ENV_SETUP}} # setup the environment. Could be in script-pre?
+        date +"%Y-%m-%d %H:%M:%S.%3N"
+        {{OPTCLIM_SET_STATUS_SCRIPT}} {{OPTCLIM_ARGS}} {{MODEL_CONFIG}} RUNNING
+        """
+    [[optclim_post]]
+        inherit = OPTCLIM_HPC
+        script = """
+        date +"%Y-%m-%d %H:%M:%S.%3N"
+        . {{PY_ENV_SETUP}} # setup the environment
+        date +"%Y-%m-%d %H:%M:%S.%3N"
+        {{OPTCLIM_SET_STATUS_SCRIPT}} {{OPTCLIM_ARGS}} {{MODEL_CONFIG}} SUCCEEDED
+        """
+        ## need more time for optclim_post as could be copying lots of files
+        execution time limit = PT15M
+    [[optclim_fail]]
+        inherit = OPTCLIM_HPC
+        script = """
+        . {{PY_ENV_SETUP}} # setup the environment
+        {{OPTCLIM_SET_STATUS_SCRIPT}} {{OPTCLIM_ARGS}} {{MODEL_CONFIG}} FAILED
+        """
+    [[create_json]]
+        inherit = None, LOTUS_DIAGNOSTIC_RESOURCE
+        script = "rose task-run --verbose --command-key=create_json"
+        [[[environment]]]
+            ROSE_TASK_APP = analysis
+            ROSE_APP_OPT_CONF_KEYS =
+            OPTCLIM_SIMULATED_OBS_PATH = {{ OPTCLIM_SIMULATED_OBS_PATH }}
+
+    [[fetch_diagnostics]]
+       inherit = None, FETCH_FROM_JASMIN_RESOURCE
+       script = "rose task-run --verbose --command-key=fetch"
+       [[[environment]]]
+            ROSE_TASK_APP = analysis
+            OPTCLIM_SIMULATED_OBS_PATH = {{ OPTCLIM_SIMULATED_OBS_PATH }}
+    [[nemo_cice_fw]]
+        inherit = None, FW_BRANCH, NEMO, CICE, COUPLE_RESOURCE
+        script = ". $ROSE_DATA/etc/nemo_ancils_gl; {{TASK_RUN_COMMAND}} --define='[file:hosing.nc]source=/work/n02/n02/egavilan/FW_Hosing/NaHosMIP_hosing_Gr.02Sv.nc'"
+        [[[environment]]]
+          ROSE_TASK_APP = nemo_cice
+          CALENDAR = {{CALENDAR}}
+          CONTINUE = "$( if [[ $CYLC_TASK_CYCLE_POINT == {{FW_START}} ]]; then echo ''; else echo 'true'; fi )"
+          ROSE_APP_OPT_CONF_KEYS = "$( if [[ $CYLC_TASK_CYCLE_POINT == {{FW_START}} ]]; then echo 'nrun'; else echo ''; fi )"
+          STARTDUMP_DIR = $CYLC_WORKFLOW_SHARE_DIR/data/{{DATAM}}    # control History_Data, in place
+          YEAR = $( isodatetime ref --calendar {{CALENDAR}} --print-format="CCYY" )
+          MONTH = $( isodatetime ref --calendar {{CALENDAR}} --print-format="MM" )
+          DAY = $( isodatetime ref --calendar {{CALENDAR}} --print-format="DD" )
+          MODELBASIS = $( isodatetime ref --calendar {{CALENDAR}} --print-format="CCYY,MM,DD,0,0,0" )
+
+    [[analysis_fw]]
+        inherit = None, FW_BRANCH, LOTUS_DIAGNOSTIC_RESOURCE
+        [[[environment]]]
+            ROSE_TASK_APP = analysis
+
+    [[postproc_nemo_fw]]
+        inherit = None, FW_BRANCH, POSTPROC_GROUP_FW, POSTPROC
+        script = "rose task-run --verbose --define='[namelist:nemo_pp]work_directory=$CYLC_TASK_WORK_DIR/../nemo_cice_fw'"
+        [[[environment]]]
+            ROSE_APP_OPT_CONF_KEYS = {{ SITE }} nemorst {{RM_MEDUSA_OPT_KEY}}
+            ROSE_APP_COMMAND_KEY = postproc_nemo
+    [[postproc_cice_fw]]
+        inherit = None, FW_BRANCH, POSTPROC_GROUP_FW, POSTPROC
+        script = "rose task-run --verbose --define='[namelist:cice_pp]work_directory=$CYLC_TASK_WORK_DIR/../nemo_cice_fw'"
+        [[[environment]]]
+            ROSE_APP_COMMAND_KEY = postproc_cice
+
+    [[postproc_nemo_grid_fw]]
+        inherit = None, FW_BRANCH, POSTPROC_GROUP_FW, POSTPROC
+        script = "rose task-run --verbose --define='[namelist:nemo_pp]work_directory=$CYLC_TASK_WORK_DIR/../nemo_cice_fw'"
+        [[[environment]]]
+            ROSE_APP_COMMAND_KEY = postproc_nemo_grid
+            ROSE_APP_OPT_CONF_KEYS = {{ SITE }} nemodiags {{RM_MEDUSA_OPT_KEY}}
+            IBERG_TRAJECTORY = false
+            FIELDS = "grid_T,grid_U,grid_V,grid_W"
+
+    [[POSTPROC_GROUP_FW]]
+        # empty family, same pattern as POSTPROC_GROUP
+
+    [[pptransfer_fw]]
+        inherit = None, FW_BRANCH, PPTRANSFER_RESOURCE, POSTPROC
+        [[[environment]]]
+            ROSE_APP_COMMAND_KEY = pptransfer
+
+

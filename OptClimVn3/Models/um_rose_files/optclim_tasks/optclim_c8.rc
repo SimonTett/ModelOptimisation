@@ -2,7 +2,7 @@
 [scheduling]
   [[ graph ]]
         {# Set OptClim Pre-Processing to start before the first run #}
-            R1 = optclim_pre => install_ancil
+            R1 = optclim_pre => remote_setup
 
         {# Set OptClim Post-Processing to start after the last cycle #}
             R1/$ = analysis => create_json => fetch_diagnostics => optclim_post

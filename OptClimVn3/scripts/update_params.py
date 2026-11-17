@@ -65,7 +65,7 @@ if parameters: # got some parameters
 
 # write out the requested files
 if args.output_obs: # want to write out  observations?
-    config.logical_obs().to_csv(args.output_obs)
+    config.simulated_observations().to_csv(args.output_obs)
     my_logger.debug(f"Observations saved to {args.output_obs}")
 
 params = config.logical_params()

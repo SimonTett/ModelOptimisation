@@ -578,8 +578,9 @@ class UM_rose_cylc8(UM_rose):
     This is a subclass of UM_rose and adds the UM_rose specific parameters.
     """
     suite_file_name = 'flow.cylc'  # name of the suite file for cylc8
-    include_file_name = 'optclim_c8.rc'
-
+    def __init__(self, *args, **kwargs): 
+        super().__init__(*args, **kwargs) 
+        self.include_file_name = self.run_info.get('optclimrcName', 'optclim_c8.rc')
     # cylc 8 specific methods.
 
 
