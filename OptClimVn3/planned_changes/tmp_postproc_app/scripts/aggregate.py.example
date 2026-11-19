@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+"""
+Example aggregation script for UM Rose post-processing.
+
+This is a TEMPLATE - users should create their own script based on this pattern.
+
+Usage:
+    python aggregate.py --config <config.json> --output <output.nc>
+
+The script:
+    1. Reads configuration from JSON file
+    2. Finds all NetCDF files under TRANSFER_DIR/MODEL_NAME/
+    3. Time-sorts and aggregates using xarray
+    4. Writes single aggregated output file
+"""
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+try:
+    import xarray as xr
+except ImportError:
+    print("ERROR: xarray not found. Install with: pip install xarray")
+    sys.exit(1)
+
+
+def main():
+    """Main entry point."""
+    parser = argparse.ArgumentParser(
+        description='Aggregate UM model cycle outputs'
+    )
+    parser.add_argument('--config', required=True, help='Path to JSON configuration file')
+    parser.add_argument('--output', required=True, help='Path to output file')
+    
+    args = parser.parse_args()
+    
+    # Load configuration
+    with open(args.config) as f:
+        config = json.load(f)
+    
+    # Get paths from environment (set by rose-app.conf)
+    import os
+    transfer_dir = Path(os.environ.get('TRANSFER_DIR', '/tmp'))
+    model_name = os.environ.get('MODEL_NAME', 'unknown')
+    
+    # Find all NetCDF files
+    files = sorted((transfer_dir / model_name).rglob('**/*.nc'))
+    
+    if not files:
+        print(f"ERROR: No files found in {transfer_dir / model_name}")
+        sys.exit(1)
+    
+    print(f"Found {len(files)} files")
+    
+    # Aggregate with xarray
+    ds = xr.open_mfdataset(files, concat_dim='time', combine='by_coords')
+    
+    # Write output
+    ds.to_netcdf(args.output)
+    
+    print(f"Successfully wrote: {args.output}")
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

@@ -1,0 +1,10 @@
+{
+    "_comment": "AGGREGATION CONFIGURATION - USER PROVIDED",
+    "_version": "1.0",
+    
+    "description": "Replace this file with your own aggregation configuration",
+    
+    "_instructions": "This file is read by your Python aggregation script.",
+    "_note": "The format and contents are entirely up to your script's requirements.",
+    "_example": "See scripts/aggregate.py.example for a sample implementation"
+}

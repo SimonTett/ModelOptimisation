@@ -1,0 +1,30 @@
+# ==============================================================================
+# Custom Aggregation Task - ADD TO flow.cylc
+# Include: {% include 'app/postproc/postproc.rc' %}
+# ==============================================================================
+#
+# This file defines ONLY the custom aggregation task.
+# Your existing postproc task configuration stays in flow.cylc.
+#
+# Place this include after your main graph definition.
+# ==============================================================================
+
+[scheduling]
+    [[graph]]
+        # Aggregation runs once at workflow end, after postproc completes
+        # R1/$ means: Run once (R1) at final cycle point ($)
+        R1/$ = postproc => aggregate
+
+[runtime]
+    [[aggregate]]
+        # Runs on Jasmin where data is archived
+        platform = jasmin
+        
+        # Uses aggregate command from rose-app.conf
+        script = rose task-run --command=aggregate
+        
+        # Adjust time limit based on dataset size
+        execution time limit = PT30M
+        
+        # Retry on transient failures
+        execution retry delays = PT5M
