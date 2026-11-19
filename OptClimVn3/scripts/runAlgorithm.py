@@ -156,6 +156,7 @@ my_logger = genericLib.setup_logging(
     log_config=configData.logging_config()
 )
 
+
 # Now check the config is OK
 configData.check()
 

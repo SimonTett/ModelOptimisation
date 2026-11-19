@@ -15,4 +15,4 @@ source /work/n02/shared/tetts/venv/ModelOptimisation/bin/activate # activate env
 VN3=$OPTCLIMTOP/OptClimVn3
 export PYTHONPATH=$VN3:$VN3/Models:$VN3/support:$PYTHONPATH
 export PATH=$VN3/scripts:$PATH
-
+export PYTHONSTARTUP=$VN3/python_startup

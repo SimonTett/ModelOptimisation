@@ -707,6 +707,9 @@ class testRunSubmit(unittest.TestCase):
         params = params * prange.loc['rangeParam'] + prange.loc['minParam']
         obs = [fake_fn(self.config, prow.to_dict()).rename(name) for name, prow in params.iterrows()]
         obs = pd.DataFrame(obs)
+        # overwrite entry 0 with the start params for the None case.
+        params.iloc[5] = config.beginParam()
+        
 
         tgt = config.targets(scale=False)  # stick to SI units
         obs += tgt
@@ -726,14 +729,13 @@ class testRunSubmit(unittest.TestCase):
         )
         config.DFOLS_config()['evaluation_database'] = eval_db_dict
 
-        # test 1. Running works and start idx == 7 as new idx.
+        # test 1. Running works and start idx == 5 as new idx.
         rSubmit = copy.deepcopy(self.rSubmit)
         rSubmit.config = config
         eval_db = rSubmit.dfols_eval_db(scale=True)
-        self.assertEqual(eval_db.get_starting_eval_idx(), n_set)
+        self.assertEqual(eval_db.get_starting_eval_idx(), 5)
 
-        # test 2. set idx to min and get back min params
-        # FIXME this test is failing -- need to investigate. Get 13 when should get 9.
+        # test 2. set idx to minimum and get back min params
         trans_obs = obs - tgt
         scales = config.scales()
         trans_obs *= scales  # scale obs

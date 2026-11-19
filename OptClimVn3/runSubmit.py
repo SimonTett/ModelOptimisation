@@ -1013,10 +1013,7 @@ class runSubmit(SubmitStudy):
         """
         param_names = self.config.paramNames()
         obs_names = self.config.obsNames()
-        trans_matrix_kw = self.config.get('Covariances',{}).get('transform_matrix',{})
-        if trans_matrix_kw is None:
-            trans_matrix_kw = {}
-        transform = self.config.transform_matrix(scale=scale,**trans_matrix_kw)
+        transform = self.config.transform_matrix(scale=scale)
         eval_config = self.config.DFOLS_config().get('evaluation_database')
         if eval_config is None:
             return None
@@ -1043,10 +1040,19 @@ class runSubmit(SubmitStudy):
 
         init_params = self.config.beginParam()  # init params to match against if needed.
         if how_to_start is None:  # use initParams
-            mask = (params == init_params).all(axis=1)  # maybe do close match???
-            # this will trigger an error in params differ. This is wanted behaviour!
-            idx = mask[mask].index[0] if mask.any() else None  # index of init_params in params
-
+            # first check have the same indices
+            if set(params.columns) != set(init_params.index):
+                raise ValueError("Labels in params: { set(params.columns)} do not match labels in init_params {set(init_params.index)}")
+            ref = init_params.reindex(params.columns)  # ensure same column order
+            mask = np.all(np.isclose(params.values.astype(float),
+                                     ref.values.astype(float),
+                                     rtol=1e-5, atol=1e-7), axis=1)
+            # mask is a boolean ndarray indexed by row order; to get index:
+            idx = params.index[mask][0] if mask.any() else None  # index of init_params in params
+            if idx:
+                my_logger.debug(f"Found existing case in evaluation database = {idx}")
+            else:
+                raise ValueError(f"Did not find existing case in evaluation database for \n {init_params}")
         elif how_to_start == 'minimum':  # use minimum cost from database
             cost = (trans_obs ** 2).sum(axis=1)
             idx = cost.idxmin()
@@ -1069,6 +1075,7 @@ class runSubmit(SubmitStudy):
             eval_db.append(row.values, trans_obs.loc[index].values, make_starting_eval=(index == idx))
         # check that we found the starting evaluation
         if idx is None:  # No starting evaluation
+            raise  NotImplementedError("evaluation database does not work with obs = None")
             my_logger.info("DFOLS evaluation database: no starting evaluation found; using default start")
             eval_db.append(row.values, None, make_starting_eval=True)
         elif count_start != 1:
