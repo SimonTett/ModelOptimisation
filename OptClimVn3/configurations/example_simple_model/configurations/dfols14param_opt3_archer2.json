@@ -8,7 +8,7 @@
     "baseRunID": "dd",
     "baseRunID_comment": "base for runID",
     "run_info": {
-        "runTime": 240,
+        "runTime": 1200,
         "runTime_comment": "Time in seconds for run. Should be enough for simple_model",
         "runCode": "n02-TERRAFIRMA",
         "runCode_comment": "Project code toun job under.",

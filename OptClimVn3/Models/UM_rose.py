@@ -25,34 +25,11 @@
 # 5) Have a clean method which runs cylc clean. That could form part of the post_process step -- run after successfully running post process.
 #     Perhaps a SubmitStudy method clean which runs clean on all models in the study. [Clean being model dependent]
 
-"""
-Current problems:
-  transfer to jasmin is giving files something like: /gws/nopw/j04/terrafirma/tetts/optclim/test_run2/test_run2/tc000
-  transfer_dir='/gws/nopw/j04/terrafirma/tetts/optclim/test_run2'
-
-  My guess is that my evil hack of naming the run root_dir/tc000. Will try not changing transfer_dir to see if that helps.
-
-  Data is being copied, for example, to output/test_run2/tc003/YYYYetc -- ideally would like data to go to output/YYYYetc
-  Looks like run name is being used. To much of a faff to change now. Will deal with later if needed.
-
-  jasmin transfer fails (because credentials  expired) then very hard to restart it.
-    Auto restart does not work even when reauthorised..
-
-  And then the post-processing job never gets released for reasons... Looks like housekeeping never got run...
-  Soln: model.succeeded() -- which will release the job.
-
-  Failures from make_ancil -- increase time in reference job.
-
-"""
-
-
-
 import fileinput
 import functools
 import logging
 import os
 import re
-import tarfile
 import typing
 import shutil
 import subprocess
@@ -76,37 +53,26 @@ from namelist_var import NamelistVar
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")  # have this anywhere you want logging
 
-type_create_script = typing.Literal["submit", "continue", "clean"] # type def for various flavours of _create_script.
+type_create_script: typing.TypeAlias = typing.Literal["submit_script", "continue_script", "clean_script"] # type def for various flavours of _create_script.
 class UM_rose(Model):
     """
-    Class to support the Unified model running in ROSE. See specialised classes for cylc7 & cylc8 support.
-    The complication is that this the UM uses cylc.
-    Main changes come from including optclim.rc in suite.rc
+    Class to support the Unified model running in ROSE. See specialized classes for cylc7 & cylc8 support.
+    The complication is that  the UM uses cylc.
+    The main changes come from including optclim.rc in suite.rc
 
-    This class adds suite_name to the class attributes. This is where the suite name gets written.
-    If not set
-
-    Initialisation uses the following values from run_info which become variables -- see files in UM_rose_params :
-    For the following variables values of None mean the suite is not modified.
-        - runModelTime:str -- time as iso duration for model to run for.
-        - runUser:str -- username to run the suite as.
-        - runCode:str -- job code/account to run suite with.
-        - prebuild:str -- path (on remote machine if remote_machine used) to prebuild. Means much faster compilation
+    This class adds:
+       suite_name to the class attributes. This is where the suite name gets written.
+         See set_suite_name for how it is set.
 
 
-        - transfer_dir :str -- path to archive directory on jasmin.
 
-
-    - OPTCLIM_ARGS :str -- arguments to pass to optclim scripts which get passed to set_status_script. Default ''
-    - OPTCLIM_SET_STATUS_SCRIPT -- path to script which sets the status. (Uses self.set_status_script)
-    - runEnvSetup:str -- path to the environment setup script.
-    - MODEL_CONFIG will be set to self.cache_path
 
 
     """
     # additional attributes to the model class.
 
     suite_name: typing.Optional[str]  # name of the suite
+    CYLC_env_vars: typing.Optional[dict[str,str]]
 
 
     # test if we are on Archer by calling hostname -A and that stdout contains archer2.ac.uk
@@ -122,9 +88,14 @@ class UM_rose(Model):
     # Get the user ID
     user_id = os.environ.get('USER') or os.environ.get('USERNAME') # Needed?
     # some default values
-    model_data_dir = pathlib.Path('output') # where model data gets put
-    script_dir = pathlib.Path('scripts') # where scripts are stored.
-    suite_dir = pathlib.Path('workflow') # where the suite configuration is stored.
+
+    _script_dir = pathlib.Path('scripts') # where scripts are stored.
+    _config_dir = pathlib.Path('workflow') # where the suite configuration is stored.
+    # scripts
+    scripts = dict(submit_script='submit_script.sh', # script to run on puma2 to submit the job.
+                       continue_script='continue_script.sh',# probably don't need this for now. There if have an error.
+                       clean_script='clean_script.sh' # script to clean the suite.
+                       )
     # default values per machine
     default_archer2_remote = dict(remote_machine='puma2')
 
@@ -136,96 +107,62 @@ class UM_rose(Model):
     def __init__(self, *args, **kwargs):
         """
         Init the UM_rose instance. Calls the super-class init method.
-         Then set ups suite_name
+        Sets up the several no_key variables:
+
+          Variables that depend on run_info are set using set_run_info_vars. See that method for details.
+          Variables that depend on config_path are set using set_config_path_vars. See that method for details
         :param args: positional args. Passed through to super-class
         :param kwargs: kwargs -- passed through to super-class.
-           if kwargs contains suite_name that value will be used to set suite_name.
-
-           If suite_name is not None then the configurations will point to that directory
-           if kwargs contains model_data_dir that will be used to set model_data_dir
-        Sets up the following no_key variables:
-        runModelTime, runUser, runCode,OPTCLIM_ARGS,runEnvSetup,prebuild from run_info
-        Sets up MODEL_CONFIG (path to the model config), OPTCLIM_SET_STATUS_SCRIPT (path to script that updates model status),
-         and OPTCLIM_SIMULATED_OBS_PATH (path to where simulated obs are expected to be)
-        and sets submit and continue scripts to be in config_dir
+        if kwargs contains suite_name that value will be used to set the suite name.
+          See set_suite_name which is called from set_config_path_vars
         """
-
-        if 'config_dir' not in kwargs: # add config_dir if not present with a default value of workflow
-            kwargs['config_dir'] =self.suite_dir
         suite_name = kwargs.pop('suite_name', None) # name of the suite. Popped as not used by super class.
-
         super().__init__(*args, **kwargs)  # call the super-class init method.
-        self.set_suite_name(suite_name)
+        self.set_config_path_vars(suite_name=suite_name,write=False)  # setup any vars that depend on config_path. Do not write out the config as we are still initialising.
+        self.CYLC_env_vars = {}  # dict to hold cylc env vars. These are set by running.
 
-
-        # Set archer_archive_dir to be model_dir/model_data_dir as that is where we copy data to.
-        archive_dir = (self.model_dir / self.model_data_dir).as_posix() # posix string for the UM
-        self.parameters_no_key['archer_archive_dir'] = archive_dir # add to parameters_no_key
-        my_logger.debug(f'Set archer_archive_dir to {archive_dir}')
-        # modify parameters_no_key to include runModelTime, runUser, runCode, OPTCLIM_ARGS, runEnvSetup,prebuild,transfer_dir if set.
-        # Those parameters do not contribute towards the unique key used to identify the model so go in parameters_no_key
-        if self.run_info is not None:  # need to test for None as reloading of config gives us None.
-            for key in ['runModelTime', 'runUser', 'runCode','prebuild',
-                        'OPTCLIM_ARGS', 'runEnvSetup','transfer_dir']:
-                if self.run_info.get(key) is not None:
-                    # Get None if either null in the original  json config or not present
-                    self.parameters_no_key[key] = self.run_info[key]
-            local_root_dir = self.expand(self.run_info.get('local_root_dir'))
-            # deal with transfer_dir -- for jasmin archiving
-            if 'transfer_dir' in self.parameters_no_key:
-                transfer_dir = self.expand(self.parameters_no_key['transfer_dir'],local=False) # remote path
-                #transfer_dir = self.new_path(self.model_dir.parent,transfer_dir,root_dir=local_root_dir)
-                # transfer_dir ends with model_dir.name and when the transfer to jasmin happens the model name is used so drop it.
-                self.parameters_no_key['transfer_dir'] = transfer_dir.as_posix() # posix string for the UM
-                my_logger.debug(f'Transfer dir: {self.parameters_no_key["transfer_dir"]}')
-
-            # deal with prebuild
-            if 'prebuild' in self.parameters_no_key:
-                prebuild = self.parameters_no_key['prebuild']
-                self.parameters_no_key['prebuild'] = self.expand(prebuild,local=False).as_posix()
-                # expand any vars, make sure it looks like a purePath and convert to a posix format string.
-                my_logger.debug(f'Prebuild dir: {self.parameters_no_key["prebuild"]}')
-
-
-            # set RUNID to False and RUN_NAME to first 5 characters of the name.
-            if self.name is not None:
-                self.parameters_no_key['RUNID'] = False
-                self.parameters_no_key['RUN_NAME'] = self.name[:5]  # first 5 characters of the name.
-
-            # Deal with runEnvSetup
-            run_env_setup = self.expand(self.parameters_no_key.get('runEnvSetup'))
-            if run_env_setup is not None:
-                # check run_env_setup actually exists.
-                if not run_env_setup.is_file():
-                    raise ValueError(f'run_env_setup {run_env_setup} does not exist.')
-                self.parameters_no_key['runEnvSetup'] = run_env_setup.as_posix()  # need to convert to string.
-
-
-            # deal with OPTCLIM_ARGS -- giving it a default value of ''
-            self.parameters_no_key['OPTCLIM_ARGS'] = self.parameters_no_key.get('OPTCLIM_ARGS', '')
-            # setup OPTCLIMTOP
-            self.parameters_no_key['OPTCLIMTOP'] = str(genericLib.expand('$OPTCLIMTOP'))  # setup OPTCLIMTOP
-
-        # set up MODEL_CONFIG to point to the configuration. TODO -- change to OPTCLIM_MODEL_CONFIG
-        if self.config_path is not None:
-            self.parameters_no_key['MODEL_CONFIG'] = self.config_path.as_posix()
-            my_logger.debug(f"Set MODEL_CONFIG to {self.parameters_no_key['MODEL_CONFIG']}")
-
-        if (self.model_dir is not None) and (self._post_process_output is not None): # where the simulated obs are expected to be.
-            # some apps want this as the workflow makes the simulated obs and want to copy it into this directory.
-            # this means a "null" post-processing code.
-            self.parameters_no_key['OPTCLIM_SIMULATED_OBS_PATH'] = (self.model_dir/self._post_process_output).as_posix()
-            my_logger.debug(f"Set OPTCLIM_SIMULATED_OBS_PATH to {self.parameters_no_key['OPTCLIM_SIMULATED_OBS_PATH']}")
-
+        # setup OPTCLIMTOP
+        self.parameters_no_key['OPTCLIMTOP'] = str(self.expand('$OPTCLIMTOP'))  # setup OPTCLIMTOP
         # set up OPTCLIM_SET_STATUS_SCRIPT
-        if self.set_status_script is not None:
+        if self.set_status_script and self.set_status_script.is_file():
             self.parameters_no_key['OPTCLIM_SET_STATUS_SCRIPT'] = self.set_status_script.as_posix()
             my_logger.debug(f'Set OPTCLIM_SET_STATUS_SCRIPT to {str(self.set_status_script)}')
-        # set up paths to the various scripts we want
-        script_dir = self.model_dir/'scripts'
-        self.submit_script = script_dir / 'submit_script.sh'  # script to run on puma2 to submit the job.
-        self.continue_script = script_dir / 'continue_script.sh'  # probably don't need this for now. There if have an error.
-        self.clean_script = script_dir / 'clean_script.sh'  # script to clean the suite.
+        else:
+            raise ValueError(f'set_status_script = {self.set_status_script} None or not found ')
+        # set RUNID to False and RUN_NAME to first 5 characters of the name.
+        if self.name is not None:
+            self.parameters_no_key['RUNID'] = False
+            self.parameters_no_key['RUN_NAME'] = self.name[:5]  # first 5 characters of the name.
+
+        self.set_run_info_vars() # set the run_info variables in parameters_no_key.
+
+    @property
+    def model_run_dir(self) -> typing.Optional[pathlib.Path]:
+        """
+        Return the directory where the model is run.
+        This uses CYLC_env_vars['CYLC_WORKFLOW_RUN_DIR'] environment variable if it is set.
+        Note this is set by the running method which is expected to run on the same super-computer where
+          the model is ran.
+         otherwise it uses the default model_run_dir from the super class.
+        :return: path to the model run directory or None if not set.
+        """
+        default_dir = super().model_run_dir  # get the default model run dir from the super class.
+        model_run_dir = self.CYLC_env_vars.get('CYLC_WORKFLOW_RUN_DIR',default_dir)  # get the run dir from the cylc env vars.
+        if model_run_dir is not None:
+            model_run_dir=pathlib.Path(model_run_dir)
+        return model_run_dir
+
+    @property
+    def model_data_dir(self) -> typing.Optional[pathlib.Path]:
+        """
+        Return the directory where the model data is stored. Hardwired to be self.model_dir/'output'
+        :return: path to the model data directory or None if not set.
+        """
+        result = self.model_dir
+        if result is None:
+            return None
+        result = self.model_dir/'output'
+        return result
 
     def set_suite_name(self, suite_name: typing.Optional[str]=None) -> None:
         """
@@ -255,6 +192,89 @@ class UM_rose(Model):
                 suite_name = self.model_dir.parent.name + '/' + suite_name
 
         self.suite_name = suite_name
+
+    def set_run_info_vars(self):
+        """
+        Set various parameters from self.run_info.
+        These are set in parameters_no_key as they do not contribute to the unique key used to identify the model.
+        if self.run_info is empty then will just return.
+        Otherwise will set the following parameters in parameters_no_key taken directly from run_info:
+         see files in UM_rose_params :
+        For the following variables values of None mean the suite is not modified.
+        - runModelTime -- time as iso duration or seconds for model to run for.
+        - runUser -- username to run the suite as.
+        - runCodes -- job code/account to run suite with.
+        - OPTCLIM_ARGS :str -- arguments to pass to optclim scripts which get passed to set_status_script. Default ''
+        - prebuild  -- path (on remote machine if remote_machine used) to prebuild. Means much faster compilation
+        - transfer_dir --  root path to archive directory on jasmin.
+        - runEnvSetup -- path to script to source to setup env. MUST be set.
+        """
+        if not self.run_info:
+            return  # nothing to do if run_info is empty.
+
+        path_vars = ['runEnvSetup', 'prebuild',  'transfer_dir']
+        non_path_vars = ['runModelTime', 'runUser', 'runCode','OPTCLIM_ARGS']
+        #  path variables that need to be expanded.
+        for key in path_vars+non_path_vars:
+            value = self.run_info.get(key)
+            if value is  None:
+                # Get None if either null in the original  json config or not present
+                continue  # nothing to set so onto next key
+
+            self.parameters_no_key[key] = value
+            if key in path_vars: # variable is a path. expand and convert to posix file.
+                self.parameters_no_key[key] = self.expand(value,local=False).as_posix()  # expand any vars, make sure it looks like a purePath and convert to a posix format string.
+
+            my_logger.debug(f'Set {key} to {self.parameters_no_key[key]}')
+
+        if 'runEnvSetup' not in self.parameters_no_key:
+            raise ValueError('runEnvSetup is not defined -- needed to set up the environment on archer2. Set in run_info block of config.')
+
+        # deal with OPTCLIM_ARGS -- giving it a default value of ''
+        self.parameters_no_key['OPTCLIM_ARGS'] = self.parameters_no_key.get('OPTCLIM_ARGS', '')
+
+    def set_config_path_vars(self,
+                             suite_name: typing.Optional[str] = None,
+                             write:bool = False):
+        """
+        Setup all variables that depend on self.config_path. If self.config_path is None then do nothing.
+        :param suite_name: name of the suite. Passed to set_suite_name.
+        :param write: if True then write out the parameters to the config file. If False then just set the variables.
+
+        Sets the following variables in parameters_no_key:
+        - MODEL_CONFIG --
+        - archer_archive_dir
+        - OPTCLIM_SIMULATED_OBS_PATH
+        """
+        if self.config_path is None:
+            return # nothing to do if config_path is None
+
+        param_names=[]
+        # set up OPTCLIM_MODEL_CONFIG to point to the configuration
+        self.parameters_no_key['OPTCLIM_MODEL_CONFIG'] = self.config_path.as_posix()
+        my_logger.debug(f"Set OPTCLIM_MODEL_CONFIG to {self.parameters_no_key['OPTCLIM_MODEL_CONFIG']}")
+        param_names.append('OPTCLIM_MODEL_CONFIG')
+
+        # Set archer_archive_dir to be model_data_dir as that is where we copy data to.
+        self.parameters_no_key['archer_archive_dir'] = self.model_data_dir.as_posix() # add to parameters_no_key
+        my_logger.debug(f'Set archer_archive_dir to {self.parameters_no_key["archer_archive_dir"]}')
+        param_names.append('archer_archive_dir')
+
+        if self._post_process_output is not None:  # where the simulated obs are expected to be.
+            # some apps want this as the workflow makes the simulated obs and want to copy it into this directory.
+            # this means a "null" post-processing code.
+            pp_out = genericLib.safe_join(self.model_dir, self._post_process_output)
+            self.parameters_no_key['OPTCLIM_SIMULATED_OBS_PATH'] = pp_out.as_posix()
+            my_logger.debug(
+                f"Set OPTCLIM_SIMULATED_OBS_PATH to {self.parameters_no_key['OPTCLIM_SIMULATED_OBS_PATH']}")
+            param_names.append('OPTCLIM_SIMULATED_OBS_PATH')
+
+        self.set_suite_name(suite_name=suite_name) # set the suite name based on the current config_path and model_dir.
+
+        if write:
+            params ={param: self.parameters_no_key[param] for param in param_names if param in self.parameters_no_key}
+            self.set_params(params, backup=False)  # write out the params. No backup.
+
 
     @staticmethod
     def replace_file(file: pathlib.Path,
@@ -307,7 +327,7 @@ class UM_rose(Model):
         UM rose specific version of modify model,
         Does the following (after calling the superclass method
         Copies the optclim suite apps into the suite_dir and modifies the suite_file_name
-        Also generates  any necessary scripts and sets archer_archive_dir to model_dir/model_data_dir
+        Also generates  any necessary scripts
 
         """
         super().modify_model()  # call the base class method.
@@ -318,9 +338,9 @@ class UM_rose(Model):
         # done here as super class instantiate cleans directory before doing anything else and then checks.
         # so need to call this in modify_model
         args = self.parameters_no_key.get('OPTCLIM_ARGS')
-        self._create_script('submit', args=args)
-        self._create_script('continue', args=args)
-        self._create_script('clean',args=args)  # create the clean script.
+        self._create_script('submit_script', args=args)
+        self._create_script('continue_script', args=args)
+        self._create_script('clean_script',args=args)  # create the clean script.
 
 
 
@@ -331,17 +351,19 @@ class UM_rose(Model):
                        args: typing.Optional[str] = None):
         """
         Create a script to run on puma2.
-        :param script_type: type of script. 'submit' or 'continue'.
+        :param script_type: type of script. 'submit_script' or 'continue_script'.
         :param args: any arguments to pass to the script.
         :return: nothing.
         """
-        raise ValueError('Do not call this version. Call the cylc specific version not this one ')
+        raise ValueError('Do not call this version. Call the cylc specific version.')
 
     def update_suite_rc(self):
         """
         Update the cylc/rose suite.rc to include OptClim tasks.
         """
-        suite_file = self.config_dir / self.suite_file_name
+
+
+        suite_file =self.config_dir/self.suite_file_name
         genericLib.backup_file(suite_file, ext='.bak', create='copy')  # make a backup of the suite file.
         with suite_file.open('a') as suite_rc:
             if self.include_file_name is None:
@@ -438,9 +460,9 @@ class UM_rose(Model):
                 raise ValueError(f'RUN_TARGET {run_target} and RESUB_TIME {resub_time} are not compatible')
 
         # 2)  check the various scripts we want exist
-        for script in [self.submit_script, self.continue_script,self.clean_script]:
-            if not (script is None or script.is_file()):
-                raise FileNotFoundError(f"{script} is not a file.")
+        for script in self.scripts.values():
+            if not (script is None or (self.script_dir/script).is_file()):
+                raise FileNotFoundError(f"{self.script_dir/script} is not a file.")
         # 3) Check values of archive_pp and archive_netcdf and warn if they are not True
         for param in ['archive_pp', 'archive_netcdf']:
             if self.read_param(param,raise_error=False) is not True:
@@ -452,10 +474,26 @@ class UM_rose(Model):
     def running(self,jid:typing.Optional[str]='NOJID') -> typing.Optional[str]:
         """
         UM_model version of running. No jid possible for UM as cylc handling all of that.
+        Extracts all CYLC_* env vars and puts then in CYLC_env_vars. Then calls the super-class running method.
         :param jid: job id -- if passed in overrides any existing job id.
 
         """
-        my_jid = super().running(jid=jid)  # call the super-class method specifying jid
+        #
+        # get all the CYLC_* env vars and put them in self.CYLC_env_vars
+        for key in os.environ:
+            if key.startswith('CYLC_'):
+                self.CYLC_env_vars[key]:str = os.environ[key]
+        # Turn some CYLC variables into pathlib  paths.
+        CYLC_paths=set() # list of variables that are paths.
+        # guess from names (ends with _DIR is a path).
+        for key in self.CYLC_env_vars.keys():
+            if key.endswith('_DIR'):
+                CYLC_paths.add(key)
+
+        for key in CYLC_paths:
+            self.CYLC_env_vars[key] = self.expand(self.CYLC_env_vars[key]).resolve()
+
+        my_jid = super().running(jid=jid)  # call the super-class method specifying jid. This will also dump to disk
         return my_jid
 
 
@@ -467,41 +505,16 @@ class UM_rose(Model):
 
         """
         if self.status in ['INSTANTIATED', 'PERTURBED']:  # start again.
-            script = self.submit_script
+            script = self.scripts['submit_script']
         elif self.status == 'CONTINUE':
-            script = self.continue_script
+            script = self.scripts['continue_script']
             raise NotImplementedError('Continue not implemented yet')
         else:
             raise ValueError(f"Status {self.status} not expected ")
 
-        cmd = [self.model_dir/script]
+        cmd = [self.script_dir/script]
 
         return cmd
-
-    def copyConfig(self, direct: pathlib.Path,
-             extra_files: typing.Optional[list[pathlib.Path]] = None,
-             update_paths: bool = True) -> "UM_rose":
-
-        """
-        Copy method for UM_rose class. Calls the super-class method with extra files
-            All files must in self.model_dir
-        :param direct: directory where Model  is to be copied. Will be created if it does not exist
-        :param extra_files: list of extra files (paths provided relative to self.model_dir) to be copied to new directory.
-        :param update_paths -- If True then any path parameters will be updated to reflect new directory structure.
-        :return: Copied Model. Will copy only Model config & post process unless extra_files provided.
-        """
-        # mixture of absaloute and relative paths in model_dir is a right pain. Esp when multiple copies happen
-        # FOR NOW WILL HACK THIS... EVENTUALLY everythign is stored relative to model_dir.
-        if self.config_dir.is_absolute(): # absolute path so fix.
-            self.config_dir = self.model_dir/self.config_dir.name # really bad hack...
-        
-        files_to_add = [self.script_dir, self.config_dir.relative_to(self.model_dir)]
-        # TODO_relative_paths -- eventually make all paths relative to model_dir.
-        if extra_files is not None:
-            files_to_add += extra_files
-        cp_obj = super().copyConfig(direct=direct,extra_files=files_to_add,update_paths=update_paths)
-        return cp_obj  # return the copied object.
-
 
 
     # TODO (when needed). Add a delete method to kill the suite and delete the suite_dir
@@ -534,25 +547,20 @@ class UM_rose_cylc7(UM_rose):
         :param args: any arguments to pass to the script.
         :return: nothing.
         """
-
-        if script_type == 'submit':
-            script = self.submit_script
-        elif script_type == 'continue':
-            script = self.continue_script
-        elif script_type == 'clean':
-            script = self.clean_script
-        else:
+        if script_type not in self.scripts:
             raise ValueError(f'Unknown script type: {script_type}')
+        script = self.script_dir/self.scripts[script_type]
+
         script.parent.mkdir(parents=True, exist_ok=True)  # might need to create directory
         script.unlink(missing_ok=True)  # unlink it if it exists.
         with script.open('wt') as f:
             f.write('#!/bin/bash --login\n')
             cmd = ['rose', 'suite-run']
-            if script_type == 'submit':
+            if script_type == 'submit_script':
                 cmd += ['--new','--no-gcontrol']
-            elif script_type == 'continue':
+            elif script_type == 'continue_script':
                 cmd+= ['--restart ','--no-gcontrol']
-            elif script_type == 'clean':
+            elif script_type == 'clean_script':
                 cmd = ['rose', 'suite-clean']
             else:
                 raise ValueError(f'Unknown script_type: {script_type}')
@@ -560,9 +568,11 @@ class UM_rose_cylc7(UM_rose):
                 cmd.append(args)
             remote_dir = self.remote.get('remote_directory')
             if remote_dir is not None:
-                config_dir = remote_dir/self.config_dir # path on remote machine to config dir.
+                config_dir = remote_dir/self.config_dir.relative_to(self.model_dir) # path on remote machine to config dir.
             else:
-                config_dir = self.model_dir/self.config_dir # path on local machine to config dir.
+                config_dir = self.config_dir # path on local machine to config dir.
+                if not config_dir.is_absolute(): # need abs path
+                    raise ValueError("Expected absolute path for config directory")
 
             cmd.append(f'-C {config_dir.as_posix()}')  # path to the config dir. rose needs posix path.
             f.write(' '.join(cmd) + '\n')
@@ -592,15 +602,12 @@ class UM_rose_cylc8(UM_rose):
         :return: nothing.
         """
 
+        # TODO add cylc --get-workflow-contact run-id and command to parse output
 
-        if script_type == 'submit':
-            script = self.submit_script
-        elif script_type == 'continue':
-            script = self.continue_script
-        elif script_type == 'clean':
-            script = self.clean_script
-        else:
+        if script_type not in self.scripts:
             raise ValueError(f'Unknown script type: {script_type}')
+        script = self.script_dir/self.scripts[script_type]
+
         script.parent.mkdir(parents=True, exist_ok=True)  # might need to create directory
         script.unlink(missing_ok=True)  # unlink it if it exists.
         remote_dir = self.remote.get('remote_model_dir')
@@ -612,21 +619,22 @@ class UM_rose_cylc8(UM_rose):
             # this code unlikely to be well tested as on archer2 run cylc from puma!
             config_directory = self.config_dir
             if not config_directory.is_absolute(): # need abs path
+                raise ValueError("Expected absolute path for config directory")
                 config_directory = pathlib.Path.cwd()/config_directory
 
         with script.open('wt') as f:
             f.write('#!/bin/bash --login\n')
             f.write('export CYLC_VERSION=8\n') # make sure in cycl8
-            if script_type == 'clean':
+            if script_type == 'clean_script':
                 f.write(f'cylc stop --now --now --max-polls=100 {self.suite_name}\n')
                 f.write(f'cylc clean --yes {self.suite_name}\n')
 
 
             else:
                 cmd = ['cylc']
-                if script_type == 'submit':
+                if script_type == 'submit_script':
                     cmd += ['vip','--no-run-name']
-                elif script_type == 'continue':
+                elif script_type == 'continue_script':
                     cmd += ['play','--no-run-name'] # might need a release as well.
                 else:
                     raise ValueError(f'Unknown script_type {script_type}')
@@ -640,6 +648,16 @@ class UM_rose_cylc8(UM_rose):
         return
 
 
+
+
+    # Add a UM_ROSE running method which gets hold of various cylc variables (possibly including the runid) calls the super-class
+    # passing in the appropriate job_id when it does.
+    # and puts the cylc variables in a directory in the Model.
+    # self.cylc_vars = {k: v for k, v in os.environ.items() if k.startswith('CYLC_')}
+    # The one we actually want is probably CYLC_WORKFLOW_SHARE_DIR which points to the share directory
+    # add a property share_dir which returns pathlib.Path(self.cylc_vars['CYLC_WORKFLOW_SHARE_DIR']) if defined None if not.
+    # Makes me think it would be nice to have a per cycle task which updates properties. But that is messing with the
+    # design -- optclim submits runs. When run is done it deals with them. Alternatively, use cylc config run-id to get info.
 
 
 

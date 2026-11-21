@@ -10,9 +10,9 @@ class myModel(Model):
     def cloudRHcrit(self, rhcrit:typing.Optional[type_allowed_fortran]):
         """
         Compute rhcrit on multiple model levels
-        :param rhcrit: meta parameter for rhcrit. If None relationship will be inverted.
-        :return: (value of meta parameter if inverse set otherwise
-           a tuple with namelist_var infor and  a list of rh_crit on model levels
+        :param rhcrit: meta-parameter for rhcrit. If None relationship will be inverted.
+        :return: (value of meta-parameter if inverse set otherwise
+           a tuple with namelist_var infor and a list of rh_crit on model levels
 
         """
         # Check have 19 levels.

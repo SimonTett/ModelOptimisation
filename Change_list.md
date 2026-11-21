@@ -29,3 +29,20 @@
   - Added planned changes to better handle covariances and transform matrix.
   - New structure for covariances in config file which bumps version to 4.
   - Now handles ensemble size for internal variability. 
+
+2026-10-23 [plan_config_dir.md]
+  - The primary reference for where data is stored is now the config_path. 
+    - model_dir, study_dir and various other directories are now properties that return the correct paths based on the current configuration. 
+    - This ensures that the paths are always consistent and correctly reflect the current state of the model and study directories.
+    - This may cause some backwards incompatibility changes 
+    - GAMAIL3_new & HadCM3 models have been updated to use config_path.  
+      Beyond the internal tests no end-to-end tests have been done so if these models are used they will need some testing.
+  - As paths now set on load removed rename_path method from generic_json.py.
+  - Modifed from_dict handles changes so legacy configs can be loaded. 
+    - There may be cases where legacy configs will not load correctly and code will need to be updating.
+  - Added some security changes with a new security log. 
+    - logs when modules are imported via text and have safe_join to make sure that don't go outside base dir. 
+    - extract_archive checks to see if extracting outside target dir using safe_join
+
+
+  - Replaced Model.model_status dir with Model.model_used_status which tracks which models have been used. 

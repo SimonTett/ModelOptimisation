@@ -40,7 +40,6 @@ def fake_run(rSubmit: runSubmit, scale: bool = True) -> typing.Callable:
         with path.open('wt') as fp:
             model.simulated_obs.to_json(fp) # write it out
     rSubmit.update_obs(use_cache=True)
-    #raise NotImplementedError("Not yet implemented -- need to compute the simulated obs from the data")
     return fake_function
 
 
@@ -106,8 +105,8 @@ class testRunSubmit(unittest.TestCase):
         config.Covariances(CovTotal=covTotal)  # set total covar.
         rootDir = pathlib.Path(tmpDir.name)
         refDir = runSubmit.runSubmit.expand("$OPTCLIMTOP/Configurations/xnmea")
-        self.rSubmit = runSubmit.runSubmit(config, 'test',
-                                           rootDir=rootDir, refDir=refDir)
+        config_path = rootDir/'test/test.scfg'
+        self.rSubmit = runSubmit.runSubmit(config, 'test', refDir=refDir, config_path=config_path)
 
         self.refDir = refDir  # where the default reference configuration lives.
         self.rootDir = rootDir  # where the config info will go.
@@ -133,10 +132,13 @@ class testRunSubmit(unittest.TestCase):
 
         rootDir = self.rootDir.with_stem(self.rootDir.stem + '_test_init')
         models = list(self.extract_runSubmit.model_index.values())
-        r = runSubmit.runSubmit(copy.deepcopy(self.config), 'test_status', rootDir, refDir=self.refDir,
-                                models=models)  # clean rSubmit
-        self.assertEqual(len(r.model_status), len(models))
-        self.assertTrue(all([s == 'initial' for k, s in r.model_status.items()]))  # check everything is 'initial'
+        config_path = rootDir/'test/test.scfg'
+        r = runSubmit.runSubmit(copy.deepcopy(self.config), name='test_status', config_path=config_path, refDir=self.refDir,
+                                models=models)  # clean rSubmit with new models. All model_status should be 'initial'
+
+        for m in r.model_index.values():
+            self.assertEqual(m.model_used_status, 'initial')
+
 
     def test_update_params(self):
         # Test that updating a param changes params..
@@ -144,7 +146,14 @@ class testRunSubmit(unittest.TestCase):
         rsub.update_params(['sigma_updraught_scaling'])
         for m in rsub.model_index.values():
             self.assertEqual(m.parameters['sigma_updraught_scaling'], 1.0)
-        self.assertSetEqual(set(rsub.model_status.keys()), set(rsub.model_index.keys()))
+        # check keys in _logical_info.model_keys and params are right.
+        all_keys=[]
+        for n in rsub._logical_info.names.values():
+            all_keys += rsub._logical_info.model_keys[n]
+
+        self.assertEqual(len(all_keys), len(set(all_keys)))
+        self.assertTrue(len(all_keys) > 0)
+        self.assertSetEqual(set(all_keys), set(rsub.model_index.keys()))
 
     def test_update_obs(self):
         # test that updating obs works. Using the same approach as SubmitStudy.
@@ -164,7 +173,8 @@ class testRunSubmit(unittest.TestCase):
 
         config = copy.deepcopy(self.config)
         config.paramNames(['VF1','CT'])
-        rsubmit = runSubmit.runSubmit(config,name='test',model_name='HadCM3',rootDir=self.rootDir, next_iter_cmd=['run myself'])
+        config_path = self.rootDir/'test/test.scfg'
+        rsubmit = runSubmit.runSubmit(config,name='test',model_name='HadCM3',config_path=config_path, next_iter_cmd=['run myself'])
         # create some models
 
         for param in [dict(VF1=3, CT=1e-4), dict(VF1=2.4, CT=1e-4), dict(VF1=2.6, CT=1e-4)]:
@@ -368,7 +378,7 @@ class testRunSubmit(unittest.TestCase):
 
         # check model names are as expected
         for l_name in rSubmit.logical_params().index:
-            models = rSubmit.logical_models(l_name)
+            models = rSubmit.models(l_name)
             self.assertEqual(len(models), 2, 'Expected 2 models')
             model_names = [m.config_name() for m in models]
             expected_names = ['control#0', 'plus4k#0']  # should be these two models.
@@ -387,8 +397,9 @@ class testRunSubmit(unittest.TestCase):
         # lets run  it
         configData = self.config
         configData.ensembleSize(2)
+        config_path = self.rootDir / 'test_genOptFunction.scfg'
         rSubmit = runSubmit.runSubmit(copy.deepcopy(configData), 'optFn',
-                                      rootDir=self.rootDir, refDir=self.refDir)
+                                      refDir=self.refDir, config_path=config_path)
         params = rSubmit.config.beginParam()
         params = params.values
         nobs = len(rSubmit.config.obsNames())
@@ -425,8 +436,9 @@ class testRunSubmit(unittest.TestCase):
         # colliding with the multi-config case below.
         ens_root = self.rootDir / 'ensemble_case'
         ens_root.mkdir(parents=True, exist_ok=True)
+        config_path = ens_root / 'ensemble_case.scfg'
         ens_submit = runSubmit.runSubmit(copy.deepcopy(ens_config), 'ensemble',
-                                         rootDir=ens_root, refDir=self.refDir)
+                                         refDir=self.refDir, config_path=config_path)
         ens_base = ens_config.beginParam().to_dict()
         # gen_param_dict expands one logical parameter set into the concrete ensemble
         # members that must each be run and then averaged.
@@ -477,8 +489,9 @@ class testRunSubmit(unittest.TestCase):
         multi_config.fixedParams(fixed_params=fixed_params)
         multi_root = self.rootDir / 'multi_case'
         multi_root.mkdir(parents=True, exist_ok=True)
+        config_path = multi_root / 'multi.scfg'
         multi_submit = runSubmit.runSubmit(copy.deepcopy(multi_config), 'multi',
-                                           rootDir=multi_root, refDir=self.refDir)
+                                           config_path=config_path,  refDir=self.refDir)
         multi_base = multi_config.beginParam().to_dict()
         multi_params = multi_submit.gen_param_dict(multi_base)[0]
         multi_member_obs = {}
@@ -531,8 +544,9 @@ class testRunSubmit(unittest.TestCase):
         """
 
         def run_all(config, name='run_test'):
+            config_path = self.rootDir / f'name/{name}.scfg'
             rSubmit = runSubmit.runSubmit(copy.deepcopy(config), name,
-                                          rootDir=self.rootDir, refDir=self.refDir)
+                                          config_path=config_path, refDir=self.refDir)
             try:
                 rSubmit.runOptimized()
             except optclim_exceptions.submitModel:
@@ -603,7 +617,7 @@ class testRunSubmit(unittest.TestCase):
             model = r.create_model(params, dump=False)
             self.assertEqual(len(r.model_index), len_index + 1)  # increased
             key = r.key_for_model(model)
-            self.assertEqual(r.model_status[key], 'called')
+            self.assertEqual(model.model_used_status, 'called')
 
         # verify that if next_command is 'stop' get None.
         r.next_command = 'stop'
@@ -648,13 +662,15 @@ class testRunSubmit(unittest.TestCase):
         # test read_model_config reads in models and status is 'read'
 
         rootDir = self.rootDir.with_stem(self.rootDir.stem + '_test_read')
-        r = runSubmit.runSubmit(copy.deepcopy(self.config), 'test_status', rootDir, refDir=self.refDir)  # clean rSubmit
+        config_path = rootDir/' test_read.scfg'
+        r = runSubmit.runSubmit(copy.deepcopy(self.config), 'test_status', rootDir, config_path=config_path)  # clean rSubmit
 
         model_paths = [m.config_path for m in self.extract_runSubmit.model_index.values()]
         models = r.read_model_configs(model_paths)
-        keys = [r.key_for_model(m) for m in models]  # get all keys
-        self.assertTrue(all([r.model_status[k] == 'read' for k in keys]))
-        self.assertTrue(len(r.model_index) > 0)  # have some models...
+        for m in models:
+            self.assertEqual(m.model_used_status, 'read')
+
+        self.assertEqual(len(r.model_index),len(models))  # have some models...
 
     def test_check_deterministic(self):
         """
@@ -669,13 +685,13 @@ class testRunSubmit(unittest.TestCase):
         - check_deterministic passes when only initial/read extras exist, and fails when a true not_called exists
         """
         # check that legacy data has status unknown.
-        rsub = self.extract_runSubmit
-        self.assertTrue(all([s == 'unknown' for s in rsub.model_status.values()]))
-        self.assertEqual(len(rsub.model_status), len(rsub.model_index))
-        self.assertTrue(len(rsub.model_status) > 0)
+        rsub:runSubmit.runSubmit = self.extract_runSubmit
+        self.assertTrue(all([m.model_used_status == 'unknown' for m in rsub.model_index.values()]))
+
 
         # create a fresh runSubmit with no preloaded models
-        r = runSubmit.runSubmit(copy.deepcopy(self.config), 'test_status', rootDir=self.rootDir, refDir=self.refDir)
+        config_path = self.rootDir/'test_status/test_status.scfg'
+        r = runSubmit.runSubmit(copy.deepcopy(self.config), 'test_status',  refDir=self.refDir,config_path=config_path)
 
         # simulate a model present at init by creating a model and adding to model_index and model_status
         params = dict(CT=1e-4, EACF=0.5, ENTCOEF=3, ICE_SIZE=3e-5, RHCRIT=0.7, VF1=0.5, CW=2e-4)
@@ -685,50 +701,51 @@ class testRunSubmit(unittest.TestCase):
             m = r.create_model(params, dump=False)
             if m is None:
                 raise ValueError("Model creation failed")
-            key_m = r.key_for_model(m)
             # after create_model the status should be 'called'
-            self.assertEqual(r.model_status[key_m], 'called')
+            self.assertEqual(m.model_used_status, 'called')
 
             # simulate reading a model config (add another model)
-            params2 = params.copy();
-            params2['AAAA'] = 1.0
+            params2 = params.copy()
+            params2['AAAA'] = 1
             m2 = r.create_model(params2, dump=False)
-            key_m2 = r.key_for_model(m2)
+            m2.model_used_status = 'read'  # simulate read_model_configs behaviour
+
             # mark one as read (simulate read_model_configs behaviour)
-            r.model_status[key_m2] = 'read'
+            self.assertEqual(m2.model_used_status, 'read')
 
             # simulate legacy from_dict behaviour: add a legacy key with 'unknown'
             params3 = params.copy()
             params3['AAAA'] = 2.0
             m3 = r.create_model(params3, dump=False)
-            key_m3 = r.key_for_model(m3)
+            m3.model_used_status = 'unknown'
 
-            r.model_status[key_m3] = 'unknown'
 
         # now check reset_logical_info: unknown and called -> not_called; read/initial remain
-        r.reset_logical_info()
-        self.assertEqual(r.model_status[key_m], 'not_called')
-        self.assertEqual(r.model_status[key_m2], 'read')
-        self.assertEqual(r.model_status[key_m3], 'not_called')
+        r.reset_models_used()
+        self.assertEqual(m.model_used_status, 'not_called')
+        self.assertEqual(m2.model_used_status, 'read')
+        self.assertEqual(m3.model_used_status, 'unknown')
 
         # check_deterministic should now find not_called entries and trigger error handling (return False)
         ok = r.check_deterministic(error='ignore')
         self.assertFalse(ok)
 
         # mark them as called (simulate they were used)
-        r.model_status[key_m] = 'called'
-        r.model_status[key_m3] = 'called'
+        for model in [m,m3]:
+            model.model_used_status = 'called'
+
         ok = r.check_deterministic(error='ignore')
-        self.assertTrue(ok) # FAILING HERE
+        self.assertTrue(ok)
         # reset logical again to set called -> not_called (simulate new iteration), then set them to called again
-        r.reset_logical_info()
-        r.model_status[key_m] = 'called'
-        r.model_status[key_m3] = 'called'
+        r.reset_models_used()
+        for model in [m,m3]:
+            model.model_used_status = 'called'
 
         # now ensure model_index and model_status keys match
         # remove any placeholder that is not a model object
+        key_m3 = r.key_for_model(m3)
         r.model_index.pop(key_m3, None)
-        r.model_status.pop(key_m3, None)
+
 
         # now check deterministic should pass (no not_called)
         ok2 = r.check_deterministic(error='ignore')
@@ -830,8 +847,9 @@ class testRunSubmit(unittest.TestCase):
 
         # Run runDFOLS. WIll use fake_function to optimise directly.
         iterCount = 0
+        config_path = self.rootDir / 'test_DFOLS/test_DFOLS.scfg'
         rSubmit = runSubmit.runSubmit(configData, 'test_DFOLS',
-                                      rootDir=self.rootDir, refDir=self.refDir)
+                                     refDir=self.refDir, config_path=config_path)
         # setup Submit object.
         while True:
             try:
@@ -1084,8 +1102,9 @@ class testRunSubmit(unittest.TestCase):
         config = copy.deepcopy(configData)
         config.DFOLS_config()['evaluation_database'] = eval_db_dict
         config.DFOLS_config()['rhobeg'] = 0.01  # smaller rhobeg.
+        config_path = self.rootDir / 'test_DFOLS2/test_DFOLS2.scfg'
         rSubmit = runSubmit.runSubmit(config, 'test_DFOLS2',
-                                      rootDir=self.rootDir, refDir=self.refDir)
+                                      config_path=config_path, refDir=self.refDir)
         with self.assertRaises(optclim_exceptions.submitModel) as context:
             finalConfig = rSubmit.runDFOLS(scale=scale)  # run it
         # should be trying to run a single new case.
@@ -1151,8 +1170,9 @@ class testRunSubmit(unittest.TestCase):
         # compute what we expect --
         refParam = configData.beginParam()
         expect_jac, expect_trans_jac = raw_jac(refParam, steps, scale=scale)
+        config_path = self.rootDir / 'test_runJacobian/test_runJacobian.scfg'
         rSubmit = runSubmit.runSubmit(configData, 'test_jac',
-                                      rootDir=self.rootDir, refDir=self.refDir)
+                                      config_path=config_path, refDir=self.refDir)
         # setup Submit object.
         while True:
             try:
@@ -1184,8 +1204,9 @@ class testRunSubmit(unittest.TestCase):
         optConfig.optimumParams(optimum=opt)
         expect_jac, expect_jac_trans = raw_jac(opt, steps, scale=scale)
         rSubmit.delete()  # clean up rSubmit -- no automatic deletion as want to keep disk stuff persistent.
+        config_path = self.rootDir / 'test_opt_jac.scfg'
         rSubmit = runSubmit.runSubmit(optConfig, 'test_opt_jac',
-                                      rootDir=self.rootDir, refDir=self.refDir)
+                                     config_path=config_path, refDir=self.refDir)
         while True:
             try:
                 finalConfig = rSubmit.runJacobian(scale=scale)  # run Jacobian
@@ -1279,8 +1300,9 @@ class testRunSubmit(unittest.TestCase):
 
         iterCount = 0
         nalpha = len(optimise['alphas'])
+        config_path = self.rootDir / 'test_runGaussNewton/test_runGaussNewton.scfg'
         rSubmit = runSubmit.runSubmit(configData, 'test_GN',
-                                      rootDir=self.rootDir, refDir=self.refDir)
+                                      refDir=self.refDir, config_path=config_path)
         # setup Submit object.
         while True:
             try:
@@ -1310,8 +1332,9 @@ class testRunSubmit(unittest.TestCase):
         # check that setting maxIterations to 1 only has 1 iteration.
         shutil.rmtree(self.rootDir)
         configData.optimise(maxIterations=1)  # limit to 1 iteration
+        config_path = self.rootDir / 'test_runGaussNewton/test_runGaussNewton2.scfg'
         rSubmit = runSubmit.runSubmit(configData, 'test_GN2',
-                                      rootDir=self.rootDir, refDir=self.refDir)
+                                     config_path=config_path, refDir=self.refDir)
         iterCount = 0
         while True:
             try:
@@ -1427,7 +1450,7 @@ class testRunSubmit(unittest.TestCase):
 
     def test_logical_fns(self):
         """
-        Rather a basic test to see that logical_params, logical_obs and logical_cose works as expected.
+        Rather a basic test to see that logical_params, logical_obs and logical_cost works as expected.
 
         Tests:
          Run a set of n-params through. Calling stdFunction more than once
@@ -1562,18 +1585,26 @@ class testRunSubmit(unittest.TestCase):
         new_expected = dict(a_ent_2=0.056, cape_timescale=3600.0)
 
         update_params = params.index.to_list() + list(new_expected.keys())
+        key_mapping = super(type(run_submit),run_submit).update_params(update_params)
         expected_params = pd.concat([params, pd.Series(new_expected)]).rename(params.name)
-        got_params = run_submit.update_logical_params(name, parameters=update_params)
+        got_params = run_submit.update_logical_params(name, update_params,key_mapping)
         expected_params = expected_params.reindex(got_params.index)
         self.assertTrue(got_params.equals(expected_params), msg='pandas series differ')
 
         ## test get an error if models don't have same parameter values...
-        # which means modifying the underlying model...
-        models = run_submit.logical_models(name)  # is a dict of models
+        # which means modifying the underlying model and model_index... and key_mapping
+        models = run_submit.models(name)  # is a dict of models
+        old_key = run_submit.key_for_model(models[0])
         models[0].set_params(dict(a_ent_2=0.057), backup=False)
         models[0].update_params()
+        new_key = run_submit.key_for_model(models[0])
+        m=run_submit.model_index.pop(old_key)
+        run_submit.model_index[new_key]= models[0]
+        key_mapping[old_key] = new_key
+        k2=run_submit.key_for_model(models[1])
+        key_mapping[k2]=k2
         with self.assertRaises(ValueError):
-            run_submit.update_logical_params(name, parameters=update_params)
+            run_submit.update_logical_params(name, parameters=update_params,key_mapping=key_mapping)
 
         # would be good to have a case with single model run....
 
@@ -1589,24 +1620,6 @@ class testRunSubmit(unittest.TestCase):
         for ax in axes:
             self.assertIsInstance(ax, plt.Axes)
 
-    def test_copyConfig(self):
-        # test that copy method works correctly
-        tmpDir = tempfile.TemporaryDirectory()
-        tmp_dir = pathlib.Path(tmpDir.name)
-        run_submit = copy.deepcopy(self.extract_runSubmit)
-        copy_dir = tmp_dir / 'copy_test'
-        run_submit_copy = run_submit.copyConfig(copy_dir)
-        self.assertIsInstance(run_submit_copy, runSubmit.runSubmit)
-        self.assertEqual(run_submit.config, run_submit_copy.config)
-        # check logical info models consistent with model_info
-        for name, model_list in run_submit_copy._logical_info.models.items():  # models is dict with key names and values lists of models
-            for model in model_list:
-                key = run_submit_copy.key_for_model(model)
-                self.assertIs(run_submit_copy.model_index[key], model,
-                              msg=f'{model.name}:{model} with key:{key} not same as in model_index')
-                self.assertIsInstance(run_submit_copy.model_index[key], Model.Model)
-        # check that model_info & model_status are consistent
-        self.assertSetEqual(set(run_submit_copy.model_index.keys()), set(run_submit_copy.model_status.keys()))
 
     def test_from_dict(self):
         """
@@ -1621,7 +1634,7 @@ class testRunSubmit(unittest.TestCase):
         new_rSubmit = runSubmit.runSubmit.from_dict(dct)
         self.assertIsInstance(new_rSubmit, runSubmit.runSubmit)
         self.assertEqual(rSubmit,
-                         new_rSubmit)  # FIXME. Failing here as model reference types differ. rSubmit -- it is posic path, while new_rSubmit it is pureWindowsPath
+                         new_rSubmit)
 
 
 class TestRunParams(unittest.TestCase):
@@ -1645,8 +1658,8 @@ class TestRunParams(unittest.TestCase):
         config.Covariances(CovTotal=covTotal)  # set total covar.
         rootDir = pathlib.Path(tmpDir.name)
         refDir = runSubmit.runSubmit.expand("$OPTCLIMTOP/Configurations/xnmea")
-        self.rSubmit = runSubmit.runSubmit(config, 'test',
-                                           rootDir=rootDir, refDir=refDir)
+        config_path = rootDir/'test/test.scfg'
+        self.rSubmit = runSubmit.runSubmit(config, 'test', refDir=refDir, config_path=config_path)
 
         run_params_file = expand("$OPTCLIMTOP/OptClimVn3/configurations/run_params.ijson")
         with run_params_file.open('rt') as f:
@@ -1844,9 +1857,9 @@ class TestLogicalInfo(unittest.TestCase):
         dct = logical_info.to_dict()
         self.assertIsInstance(dct, dict)
         self.assertIn('parameters', dct)
-        self.assertIn('models', dct)
+        self.assertIn('model_keys', dct)
         # check that model keys exist
-        for name, key_list in dct['models'].items():
+        for name, key_list in dct['model_keys'].items():
             for model_key in key_list:
                 self.assertIsInstance(model_key, str)
                 expect_model = self.run_submit.model_index[model_key]

@@ -1,12 +1,12 @@
 # STUB for CESM. Needs proper writing and testing.
-from Model import Model,type_status
+import genericLib
+from Model import Model
 import pathlib
 import typing
 import os
 import logging
 import fileinput
 import re
-import json
 from ModelBaseClass import register_param
 from namelist_var import NamelistVar
 
@@ -14,56 +14,30 @@ my_logger=logging.getLogger(f"OPTLIM.{__name__}")
 print(my_logger,"my_logger")
 
 class GAMIL3_new(Model):
+    """"
+    Class to support GAMAL3 model. Which is a SYSU model using CAM interface with atmos model developed by Chinese climate centre.
+     Was ran at SYSU in earlier version of softgware. This version would need testing to make sure it works.
+    """
+    scripts = dict(
+        submit_script = 'case.submit',
+        continue_script = 'case_con.submit'
+    )
 
-    # def __init__(self,name: str,
-    #              reference: pathlib.Path,
-    #              post_process: typing.Optional[dict] = None,
-    #              model_dir: pathlib.Path = pathlib.Path.cwd(),
-    #              config_path: typing.Optional[pathlib.Path] = None,
-    #              status: type_status = "CREATED",
-    #              parameters: typing.Optional[dict] = None,
-    #              engine: typing.Optional["abstractEngine"] = None,
-    #              run_info: typing.Optional[dict] = None,
-    #              study: typing.Optional["Study"] = None):
-    #
-    #
-    #     # no parameters should be provided unless create or update provided
-    #
-    #     # call superclass init
-    #     super().__init__(name,
-    #                                  reference=reference,
-    #                                  model_dir=model_dir,
-    #                                  config_path=config_path,
-    #                                  parameters=parameters,
-    #                                  post_process=post_process,
-    #                                  study=study,
-    #                                  engine=engine,
-    #                                  run_info=run_info)
-
-    def __init__(self, name: str, reference: pathlib.Path, **kwargs):
-        """"
-        gamil3_new Init -- calls super().__init__(*args,**kwargs)
-        then sets submit_script to "case.submit" and continue script to case_con.submit
-        See Model for documentation on key word parameters
-        :param name -- name of the model.
-        :param reference -- where reference config lives.
+    # Uses the std __init__ of Model.
+    def create_model(self,
+                     direct: typing.Optional[pathlib.Path] = None,
+                     copy_ref: bool = True):
+      # creat_clone？？？！！！需要看看！！！
         """
-        super().__init__(name, reference, **kwargs)  # call super class init and then override
-
-        self.submit_script=pathlib.Path('case.submit')
-        self.continue_script = pathlib.Path('case_con.submit')
-
-
-    def create_model(self):  # creat_clone？？？！！！需要看看！！！
-        """
-        Do what ever is necessary. clone the reference case is the best way to proceed.
+        Do whatever is necessary. clone the reference case is the best way to proceed.
         :return:
         """
+
 
         cmd = ["/BIGDATA2/sysu_atmos_wjliang_1/FG3/scripts/create_clone", "-case", "%s" % (self.model_dir),
                "-clone", self.reference]
         self.run_cmd(cmd)
-        submit_script = self.model_dir / self.submit_script
+        submit_script = genericLib.safe_join(self.script_dir, self.scripts['submit_script'])
         with open(submit_script, 'wt') as fp:
             print(f"""#!/usr/bin/env bash
     echo "Hello world. Submitting job..."
@@ -185,10 +159,6 @@ class GAMIL3_new(Model):
         :return: cmd (a list of strings) to submit the model   #INSTANTIATED准备提交的代码行
         """
 
-        # newname = self.model_dir/str(self.model_dir)[80:]
-        # str(genname) + '/' + str(genname)[80:]  # str(genname)[80:]#str(genname)+'/'+str(genname)[80:]
-        # self.replace_strings_in_script(self.model_dir / 'case.submit', str(self.model_dir), self.name)
-        # self.replace_strings_in_script(self.model_dir / 'case_con.submit', str(self.model_dir), self.name)
         if self.status in ["INSTANTIATED", "PERTURBED"]:
             script = "case.submit"  # "%s.submit"%(name1)
         elif self.status == "CONTINUE":

@@ -84,8 +84,9 @@ class testHadCM3(unittest.TestCase):
 
         post_process = dict(script='$OPTCLIMTOP/OptClimVn3/scripts/comp_obs.py', output_file='obs.json')
         self.post_process = post_process
-        self.model = HadCM3(name='testM', reference=refDir,
-                            model_dir=testDir, post_process=post_process,
+        cfg_path = testDir/'testM.mcfg'
+        self.model = HadCM3(config_path=cfg_path, reference=refDir,
+                             post_process=post_process,
                             parameters=parameters)
 
         self.config_path = self.model.config_path
@@ -123,8 +124,13 @@ class testHadCM3(unittest.TestCase):
 
         self.assertEqual(self.model.status,'INSTANTIATED')
         model = self.model.load_model(self.model.config_path)
+        mdct = model.to_dict()
+        omdct = self.model.to_dict()
+        for var in ['configs','engine']:
+            mdct.pop(var,None)
+            omdct.pop(var,None)
 
-        self.assertEqual(model.to_dict(),self.model.to_dict())
+        self.assertEqual(mdct, omdct)
 
 
     def test_hadcm3_params(self):
@@ -336,8 +342,8 @@ class testHadCM3(unittest.TestCase):
         shutil.copy2(self.refDir / "SUBMIT", self.model.model_dir)
         self.model.genContSUBMIT()  # create the file.
         # should be different from std file.
-        f1 = self.model.model_dir / self.model.submit_script
-        f2 = self.model.model_dir / self.model.continue_script
+        f1 = self.model.script_dir / self.model.scripts['submit_script']
+        f2 = self.model.script_dir / self.model.scripts['continue_script']
         self.assertFalse(filecmp.cmp(f2, f1, shallow=False))
         # and count the number of modfy marks.
         modifyStrCont = '## modifiedContinue$'
@@ -385,16 +391,16 @@ class testHadCM3(unittest.TestCase):
         # two checks. If nothing requests then nothing changes.
         # runTime -- two changes (With runTime value as expected
         # runCode -- one change (with runCode as expected)
-        file = model.submit_script
-        pth = model.model_dir/file
-        bak_path = model.model_dir/'SUBMIT_backup'
+        file = model.scripts['submit_script']
+        pth = model.script_dir/file
+        bak_path = model.config_dir/'SUBMIT_backup'
         shutil.copy2(pth,bak_path)
         time = pth.stat().st_mtime
-        model.set_time_code(model.model_dir/"SUBMIT", None, None)
+        model.set_time_code(model.config_dir/"SUBMIT", None, None)
         time2 = pth.stat().st_mtime
         self.assertEqual(time,time2)
         # now change runTime
-        model.set_time_code(model.model_dir/"SUBMIT",runTime=3000)
+        model.set_time_code(model.config_dir/"SUBMIT",runTime=3000)
         time2 = pth.stat().st_mtime
         self.assertNotEqual(time, time2) # times should be different.
         modifyStr = r'## modified time/code\s*$'
@@ -465,25 +471,24 @@ class testHadCM3(unittest.TestCase):
 
         :return:
         """
-        release_cmd = 'set_model_state SUCCEEDED'
-        file = self.model.createPostProcessFile(release_cmd)
+        set_status = f'{self.model.set_status_script}'
+        file = self.model.createPostProcessFile(self.model.set_status_script)
         # expect file to exist
         self.assertTrue(file.exists())
         # and that it is as expected.
         self.assertEqual(file, self.model.model_dir / self.model.post_process_file)
         # need to check its contents...
-        # will check two things. 1) that SUBCONT is as expected 2) that the qrls cmd is in the file
-        submit_script = self.model.continue_script
+        # will check two things. 1) that SUBCONT is as expected 2) that the post-process cmd is in the file
         cntSUBCONT = 0
-        cntqrls = 0
+        cnt_set_status = 0
         with open(file, 'r') as f:
             for line in f:
-                if line.find(release_cmd) != -1:
-                    cntqrls += 1
-                elif line.find(f'SUBCONT={submit_script}') != -1:
+                if line.find(set_status) != -1:
+                    cnt_set_status += 1
+                elif line.find(f'SUBCONT=') != -1:
                     cntSUBCONT += 1
 
-        self.assertEqual(cntqrls, 1, 'Expected only 1 qrls cmd')
+        self.assertEqual(cnt_set_status, 1, 'Expected only 1 qrls cmd')
         self.assertEqual(cntSUBCONT, 1, 'expected only 1 SUBMITCMD')
 
 
@@ -493,7 +498,8 @@ class testHadCM3(unittest.TestCase):
         Tests startTime to see if it works
         :return:
         """
-        model = HadCM3('aa001',self.refDir)
+        config_path = pathlib.Path('study/aa001.mcfg')
+        model = HadCM3(config_path=config_path, reference=self.refDir)
         tests = [ '2020-01-01', '1990-01-01', '1999-09-09 01:01:01']
         expect = [[2020, 1, 1, 0, 0, 0], [1990, 1, 1, 0, 0, 0], [1999, 9, 9, 1, 1, 1]]
 
@@ -508,7 +514,8 @@ class testHadCM3(unittest.TestCase):
 
         :return: nada
         """
-        model = HadCM3('aa001',self.refDir)
+        config_path = pathlib.Path('study/aa001.mcfg')
+        model = HadCM3(config_path=config_path, reference=self.refDir)
         tests = [  'P7Y', 'P7Y1M', 'P7Y1M1D', 'P7Y1M1DT1H1M1S']
         expect = [[7, 0, 0, 0, 0, 0], [7, 1, 0, 0, 0, 0], [7, 1, 1, 0, 0, 0], [7, 1, 1, 1, 1, 1]]
 

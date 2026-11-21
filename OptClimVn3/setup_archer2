@@ -4,14 +4,18 @@ export OMP_NUM_THREADS=1 # needed for login node to reproduce behaviour on worke
 # WORKOUT whht OPTCLIMTOP should be
 pth=$(readlink -f "${BASH_SOURCE[0]}")
 export OPTCLIMTOP=$(dirname -- $(dirname -- "${pth}"))
-# rather convulted need to get parent directory of directory containting this file.
+# rather convulted way to get parent directory of directory containting this file.
 echo "OPCLIMTOP: ${OPTCLIMTOP}"
 # load necessary modules
 module load PrgEnv-gnu
 module load cray-python/3.10.10
+export PYTHON_ENV_PATH=$OPTCLIMTOP/venv
+# to create the python env run this script (which sets up env vars) and then do:
+# python -m venv $PYTHON_ENV_PATH --clear --prompt OPTCLIM --system-site-packages
+# source $PYTHON_ENV_PATH/bin/activate # activate environment
+# pip install -r $OPTCLIMTOP/requirements.txt
 # activate python env
-source /work/n02/shared/tetts/venv/ModelOptimisation/bin/activate # activate environment
-## conda activate optclim # activate optclim env.
+source $PYTHON_ENV_PATH/bin/activate # activate environment
 VN3=$OPTCLIMTOP/OptClimVn3
 export PYTHONPATH=$VN3:$VN3/Models:$VN3/support:$PYTHONPATH
 export PATH=$VN3/scripts:$PATH

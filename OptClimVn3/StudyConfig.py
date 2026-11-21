@@ -45,7 +45,8 @@ import genericLib
 
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
-type_basic = int|float|str|bool
+
+type_basic: typing.TypeAlias = int|float|str|bool
 
 @typing.runtime_checkable
 class type_fixed_param_function(typing.Protocol):
@@ -3115,7 +3116,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
         return obs
 
 
-    def study_checks(self,check_blk:typing.Optional[dict[str,str]]=None) -> dict[str,genericLib.error_handle_types]:
+    def study_checks(self,check_blk:typing.Optional[dict[str,str]]=None) -> dict[str,genericLib.type_error_handle_types]:
         """
         Extract error check values from the configuration.
         Currently, returns values for:
@@ -3123,7 +3124,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
             check_duplicate_obs -- optimise.check_duplicate_obs
         If value is not set or is None (null) will be set to 'fail'.
         :param check_blk: if not None then set optimise  nondeterministic and check_duplicate_obs to values in check_blk
-         Values will be checked for consistency with genericLib.error_handle_types
+         Values will be checked for consistency with genericLib.type_error_handle_types
 
         Note version 4 does this differently.
         :return: dict with keywords and values
@@ -3138,7 +3139,7 @@ class OptClimConfigVn3(OptClimConfigVn2):
 
 
         check_blk = self.optimise()
-        allowed_values = typing.get_args(genericLib.error_handle_types)
+        allowed_values = typing.get_args(genericLib.type_error_handle_types)
         default_value = 'fail'
         result = {}
         for key in keys_wanted:
@@ -3578,14 +3579,14 @@ class OptClimConfigVn4(OptClimConfigVn3):
                 my_logger.warning(f"Eigenvalues range is {ev_range} which is less than {warn_scale} -- can lead to over focus on small errors")
         return trans_matrix
 
-    def study_checks(self,check_blk:typing.Optional[dict[str,str]]=None) -> dict[str,genericLib.error_handle_types]:
+    def study_checks(self,check_blk:typing.Optional[dict[str,str]]=None) -> dict[str,genericLib.type_error_handle_types]:
         """
         Extract error check values from the configuration check_study block.
         Currently, returns values for:
             check_nondeterministic - check_study.check_nondeterministic
             check_duplicate_obs - check_study.check_duplicate_obs
         If value is not set or is None (null) will be set to "fail".
-         Values will be checked for consistency with genericLib.error_handle_types
+         Values will be checked for consistency with genericLib.type_error_handle_types
 
          Use of legacy values will trigger an error.
 
@@ -3594,7 +3595,7 @@ class OptClimConfigVn4(OptClimConfigVn3):
         if check_blk is not None: # got a value so use to set it.
             self.setv('study_checks',copy.deepcopy(check_blk))
         check_blk = self.getv('study_checks', {})
-        allowed_values = typing.get_args(genericLib.error_handle_types)
+        allowed_values = typing.get_args(genericLib.type_error_handle_types)
         default_value = 'fail'
         result={}
         for key in ['check_nondeterministic','check_duplicate_obs']:

@@ -1,0 +1,67 @@
+    [[TEST_RESOURCE]]
+        inherit = HPC_SERIAL
+	pre-script = "module load cray-python"
+
+    [[ROSE_ANA_RESOURCE]]
+        inherit = None, TEST_RESOURCE
+        [[[environment]]]
+            PYTHONPATH=${CYLC_SUITE_RUN_DIR}/bin/:${PYTHONPATH}
+
+    [[ATMOS_TEST_RESOURCE]]
+        inherit = ATMOS_RESOURCE
+        execution time limit = {{MAIN_CLOCK}}
+
+    [[ATMOS_NCRUN_RESOURCE]]
+        inherit = ATMOS_RESOURCE
+        execution time limit = {{NCRUN_CLOCK}}
+
+    [[UMBUILD_NOOMP]]
+        inherit = UMBUILD
+        [[[environment]]]
+            OPENMP= false
+
+{% if TEST_PE %}
+  {% set PE_TASKS_ATM = PE_ATM_PROCX * PE_ATM_PROCY + PE_IOS_NPROC %}
+  {% set PE_NODE_ATM = ((PE_TASKS_ATM*PE_OMPTHR_ATM)/(CORES_PER_NODE*PE_HYPTHR_ATM))|round(0,"ceil")|int %}
+  {% set PE_TPNUMA_ATM = (PE_TASKS_ATM/PE_NODE_ATM/NUMA)|round(0,'ceil')|int %}
+    [[ATMOS_PE_RESOURCE]]
+        inherit = ATMOS_RESOURCE
+        [[[environment]]]
+	    {% if PE_OMPTHR_ATM > 1 %}
+	      ROSE_LAUNCHER_PREOPTS = --nodes={{PE_NODE_ATM}} --ntasks={{PE_TASKS_ATM}} --tasks-per-node={{NUMA*PE_TPNUMA_ATM}} --cpus-per-task={{PE_OMPTHR_ATM}} --hint=nomultithread --distribution=block:block --export=all,OMP_NUM_THREADS={{PE_OMPTHR_ATM}},HYPERTHREADS={{PE_HYPTHR_ATM}},OMP_PLACES=cores
+            {% else %}
+              ROSE_LAUNCHER_PREOPTS = --nodes={{PE_NODE_ATM}} --ntasks={{PE_TASKS_ATM}} --tasks-per-node={{NUMA*PE_TPNUMA_ATM}} --cpus-per-task={{PE_OMPTHR_ATM}} --cpu-bind=cores --export=all,OMP_NUM_THREADS=1,HYPERTHREADS={{PE_HYPTHR_ATM}}
+            {% endif %}
+	[[[directives]]]
+            --nodes={{PE_NODE_ATM}}
+{% endif %}
+
+{% if TEST_OMP %}
+  {% set OMP_TASKS_ATM = OMP_ATM_PROCX * OMP_ATM_PROCY + OMP_IOS_NPROC %}
+  {% set OMP_NODE_ATM = ((OMP_TASKS_ATM*OMP_OMPTHR_ATM)/(CORES_PER_NODE*OMP_HYPTHR_ATM))|round(0,"ceil")|int %}
+  {% set OMP_TPNUMA_ATM = (OMP_TASKS_ATM/OMP_NODE_ATM/NUMA)|round(0,'ceil')|int %}
+    [[ATMOS_OMP_RESOURCE]]
+        inherit = ATMOS_RESOURCE
+        [[[environment]]]
+	    {% if OMP_OMPTHR_ATM > 1 %}
+	      ROSE_LAUNCHER_PREOPTS = --nodes={{OMP_NODE_ATM}} --ntasks={{OMP_TASKS_ATM}} --tasks-per-node={{NUMA*OMP_TPNUMA_ATM}} --cpus-per-task={{OMP_OMPTHR_ATM}} --hint=nomultithread --distribution=block:block --export=all,OMP_NUM_THREADS={{OMP_OMPTHR_ATM}},HYPERTHREADS={{OMP_HYPTHR_ATM}},OMP_PLACES=cores
+            {% else %}
+              ROSE_LAUNCHER_PREOPTS = --nodes={{OMP_NODE_ATM}} --ntasks={{OMP_TASKS_ATM}} --tasks-per-node={{NUMA*OMP_TPNUMA_ATM}} --cpus-per-task={{OMP_OMPTHR_ATM}} --cpu-bind=cores --export=all,OMP_NUM_THREADS=1,HYPERTHREADS={{OMP_HYPTHR_ATM}}
+            {% endif %}
+	[[[directives]]]
+            --nodes={{OMP_NODE_ATM}}
+{% endif %}
+
+{% if TEST_NOOMP %}
+  {% set NOOMP_TASKS_ATM = MAIN_ATM_PROCX * MAIN_ATM_PROCY + MAIN_IOS_NPROC %}
+  {% set NOOMP_NODE_ATM = (NOOMP_TASKS_ATM/CORES_PER_NODE)|round(0,"ceil")|int %}
+  {% set NOOMP_TPNUMA_ATM = (NOOMP_TASKS_ATM/NOOMP_NODE_ATM/NUMA)|round(0,'ceil')|int %}
+    [[ATMOS_NOOMP_RESOURCE]]
+        inherit = ATMOS_RESOURCE
+        [[[environment]]]
+            ROSE_LAUNCHER_PREOPTS = --nodes={{NOOMP_NODE_ATM}} --ntasks={{NOOMP_TASKS_ATM}} --tasks-per-node={{NUMA*NOOMP_TPNUMA_ATM}} --cpus-per-task=1 --cpu-bind=cores --export=all,OMP_NUM_THREADS=1,HYPERTHREADS={{MAIN_HYPTHR_ATM}}
+{% endif %}
+
+    [[MULE_RESOURCE]]
+        [[[environment]]]
+            PYTHONPATH=${PYTHONPATH}:${UMDIR}/lib/python2.7

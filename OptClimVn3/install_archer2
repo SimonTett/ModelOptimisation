@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Script to install python env on archer in sensible place.
+set -euo pipefail # 
+
+if [[ -n "${VIRTUAL_ENV:-}" ]]; then
+    echo "Deactivate the current venv first" >&2
+    exit 1
+fi
+# WORKOUT what OPTCLIMTOP should be
+pth=$(readlink -f "${BASH_SOURCE[0]}")
+export OPTCLIMTOP=$(dirname -- $(dirname -- "${pth}"))
+# rather convulted way to get parent directory of directory containting this file.
+# load necessary modules
+module load PrgEnv-gnu
+module load cray-python/3.10.10
+export PYTHON_ENV_PATH=$OPTCLIMTOP/venv
+# Create the python env
+python -m venv $PYTHON_ENV_PATH --clear --prompt OPTCLIM --system-site-packages
+${PYTHON_ENV_PATH}/bin/pip install -r $OPTCLIMTOP/requirements.txt
+
+

@@ -117,7 +117,7 @@ def main(argv=None):
             my_logger.info(f"Updating study configuration from {cfg_file}")
             # Setp 1 set ALL model_status to "read" as don't know if we watn them.
             for model in study.model_index.values():
-                study.set_model_status(model,'read')
+                model.model_used_status = 'read'
             cfg = readConfig(cfg_file)
             # see if we need to update the params.
             new_params = cfg.paramNames()
@@ -130,7 +130,8 @@ def main(argv=None):
                 study.update_params(list(params_to_update)) # update params to match new config.
             study.update_config(cfg) # update config.
             if args.output:
-                study = study.copyConfig(pathlib.Path(args.output.parent),keep_list=[lock.lockfile_path.absolute()],new_config_name=args.output.name)
+                study = study.copy_config(pathlib.Path(args.output), new_config_name=args.output.name)
+                study.config_path = args.output
                 dump_models = True
                 # 
         elif args.command == 'plot':

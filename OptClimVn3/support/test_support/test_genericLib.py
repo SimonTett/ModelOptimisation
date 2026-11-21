@@ -1,6 +1,7 @@
 import pathlib
 import tempfile
 import unittest
+from unittest import mock
 import genericLib
 import subprocess
 import sys
@@ -225,7 +226,7 @@ class genericLib_test(unittest.TestCase):
 
         # Test error_handle with invalid mode (should raise ValueError)
         with self.assertRaises(ValueError):
-            genericLib.error_handle('invalid_mode', 'Invalid mode message')
+            genericLib.error_handle('Invalid mode message','invalid_mode')
 
     def notest_setup_logging(self):
         """
@@ -311,13 +312,14 @@ class genericLib_test(unittest.TestCase):
     def test_ContextFileLock(self):
         # Test that ContextFileLock can acquire and release locks correctly, and handles lock contention.
         file = self.tmp_path / 'test.txt'
-        lock_file = self.tmp_path / 'test.txt.lock'
+        file.touch()
 
         lock1 = genericLib.ContextFileLock(file)
         lock2 = genericLib.ContextFileLock(file)
 
         # Test that lock1 can acquire the lock
         with lock1:
+            lock_file = lock1.lockfile_path
             self.assertTrue(lock_file.exists(), "Lock file should exist after acquiring lock1")
 
             # Test that lock2 cannot acquire the lock while lock1 holds it
@@ -327,14 +329,17 @@ class genericLib_test(unittest.TestCase):
 
         # After releasing lock1, lock2 should be able to acquire the lock
         with lock2:
+            lock_file = lock2.lockfile_path
             self.assertTrue(lock_file.exists(), "Lock file should exist after acquiring lock2")
 
         # After releasing lock2, the lock file should be removed
+        lock_file = lock2.lockfile_path
         self.assertFalse(lock_file.exists(), "Lock file should be removed after releasing all locks")
 
         # trying with a timeout
         lock3 = genericLib.ContextFileLock(file,timeout=10.0)
         with lock3:
+            lock_file = lock3.lockfile_path
             self.assertTrue(lock_file.exists())
 
 
@@ -363,18 +368,17 @@ class genericLib_test(unittest.TestCase):
             """)
     
         # Start the child: hold lock for 4 seconds.
-        p = subprocess.Popen([sys.executable,"-c", (child_script), str(file), "2.0"],
+        p = subprocess.Popen([sys.executable,"-c", (child_script), str(file), "4.0"],
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,text=True)
 
         try:
             # Wait until lock file appears (give child a short window)
-            waited = 0.0
-            while not lock_file.exists() and waited < 2.0:
-                time.sleep(0.05)
-                waited += 0.05
-            if not lock_file.exists():
-                # tolerate scheduling variability
-                time.sleep(0.2)
+            waited = 0.5
+            time.sleep(0.5) # give process time to start
+            while (not lock_file.exists()) and waited < 3.0:
+                time.sleep(0.025)
+                waited += 0.025
+           
 
             self.assertTrue(lock_file.exists(), "Child process failed to create lock file in time")
 
@@ -413,5 +417,186 @@ class genericLib_test(unittest.TestCase):
         self.assertIsNotNone(os.environ.get('OPTCLIM_JOB_ID'))  # Check that JOB_ID is set
 
 
+    def test_files_to_archive(self):
+        """
+        test files_to_archive
+
+        Have the following tests:
+        1) Missing files raise warning and are not in the result
+        2) Directories are recursively expanded to include only files
+        3) Files are just returned.
+        4) Everything is resolved!
+
+        Test code AI generated. Reviewed by SFBT
+
+        The additional overlapping-input check verifies that a file is only
+        returned once when it is supplied directly and through a directory.
+        Results are compared as sets because the implementation builds its
+        result from a set and does not guarantee ordering.
+        """
+        # A valid file is retained while a missing input is warned about and
+        # excluded from the returned paths.
+        direct_file = self.tmp_path / "direct.txt"
+        direct_file.write_text("direct")
+        missing_file = self.tmp_path / "missing.txt"
+        with self.assertLogs(genericLib.my_logger, level="WARNING") as warning:
+            result = genericLib.files_to_archive([direct_file, missing_file])
+
+        self.assertEqual(len(warning.records), 1)
+        self.assertIn(missing_file.name, warning.records[0].message)
+        self.assertEqual(set(result), {direct_file.resolve()})
+
+        # Directory inputs are expanded recursively, but empty directories
+        # themselves are not included in the result.
+        nested_dir = self.tmp_path / "nested"
+        (nested_dir / "level1" / "level2").mkdir(parents=True,exist_ok=True)
+        nested_files = {
+            nested_dir / "root.txt",
+            nested_dir / "level1" / "level1.txt",
+            nested_dir / "level1" / "level2" / "level2.txt",
+        }
+        for path in nested_files:
+            path.write_text(path.name)
+
+        result = genericLib.files_to_archive([nested_dir])
+        self.assertEqual(set(result), {path.resolve() for path in nested_files})
+
+        # Supplying the same file directly and via its parent directory must
+        # still produce one archive candidate for that file.
+        overlap_file = next(iter(nested_files))
+        duplicate_result = genericLib.files_to_archive(
+            [direct_file, direct_file, nested_dir, overlap_file]
+        )
+        expected_files = {direct_file, *nested_files}
+        self.assertEqual(
+            set(duplicate_result),
+            {path.resolve() for path in expected_files},
+        )
+
+    def test_logging_import(self):
+        """
+        Test cases:
+        1) Importing a module logs the import at info level with the correct module name.
+        2) Importing a module that is already imported does not log again.
+        3) Importing a frozen or built-in module logs that it is frozen or built-in.
+        4) Importing a module that does not exist logs an error and raises ModuleNotFoundError.
+        """
+
+        module_name = "test_log_import_fresh_module"
+        origin = "/test/path/fresh_module.py"
+        origin_str = str(pathlib.Path(origin).resolve())
+        imported_module = mock.Mock()
+
+        # Mock discovery and import so the test is independent of the host's installed modules.
+        with mock.patch.object(
+            genericLib.importlib.util, "find_spec", return_value=mock.Mock(origin=origin)
+        ), mock.patch.object(
+            genericLib.importlib, "import_module", return_value=imported_module
+        ) as import_module:
+            with self.assertLogs(genericLib.secure_logger, level="INFO") as log:
+                result = genericLib.logging_import(module_name)
+
+        self.assertIs(result, imported_module)
+        self.assertEqual(import_module.call_args.args, (module_name,))
+        self.assertEqual(
+            log.output,
+            [f"INFO:OPTCLIM.security:Importing module {module_name} from {origin_str}"],
+        )
+
+        module_name = "test_log_import_cached_module"
+        imported_module = mock.Mock()
+
+        # A cached module should bypass both spec lookup and import, and should not log.
+        with mock.patch.dict(sys.modules, {module_name: imported_module}), mock.patch.object(
+            genericLib.importlib.util, "find_spec"
+        ) as find_spec, mock.patch.object(
+            genericLib.importlib, "import_module"
+        ) as import_module, mock.patch.object(genericLib.secure_logger, "info") as info:
+            result = genericLib.logging_import(module_name)
+
+        self.assertIs(result, imported_module)
+        find_spec.assert_not_called()
+        import_module.assert_not_called()
+        info.assert_not_called()
+
+        module_name = "test_log_import_special_module"
+        imported_module = mock.Mock()
+
+        # Exercise both special origins; neither should be reported as a filesystem path.
+        for origin in ("frozen", "built-in"):
+            with self.subTest(origin=origin), mock.patch.object(
+                genericLib.importlib.util,
+                "find_spec",
+                return_value=mock.Mock(origin=origin),
+            ), mock.patch.object(
+                genericLib.importlib, "import_module", return_value=imported_module
+            ):
+                with self.assertLogs(genericLib.secure_logger, level="INFO") as log:
+                    result = genericLib.logging_import(module_name)
+
+            self.assertIs(result, imported_module)
+            self.assertEqual(
+                log.output,
+                [f"INFO:OPTCLIM.security:Module {module_name} is {origin}"],
+            )
+
+        # Use a deliberately nonexistent name so importlib raises the real exception.
+        module_name = "test_log_import_missing_7c4e2f91"
+        with self.assertLogs(genericLib.secure_logger, level="ERROR") as log:
+            with self.assertRaises(ModuleNotFoundError) as error:
+                genericLib.logging_import(module_name)
+
+        self.assertEqual(error.exception.name, module_name)
+        self.assertEqual(
+            log.output,
+            [f"ERROR:OPTCLIM.security:Module {module_name} cannot be found."],
+        )
+
+    def test_safe_join(self):
+        """
+
+        Test cases for safe_join.
+        1) Normal join: safe_join("base", "subdir", "file.txt") should return "base/subdir/file.txt".
+        2) Attempted directory traversal: safe_join("base", "..", "file.txt") should raise a ValueError.
+        3) Attempt dir traversal with absolute path: safe_join("base", "./../file.txt") should raise a ValueError.
+        4) Absolute path: safe_join("base", "/etc/passwd") should raise a ValueError
+
+        Cases 2 & 3 should also generate a secure log error.
+        """
+
+        base = pathlib.Path('harry')
+        base_resolve = base.resolve()
+        # Case 1: Normal join. No logging should occur.
+        with self.assertNoLogs(genericLib.secure_logger, level="DEBUG") as log:
+            result = genericLib.safe_join(base_resolve, "subdir/file.txt")
+        expected = base_resolve / "subdir" / "file.txt"
+        self.assertEqual(result, expected)
+
+        # Case 2: Attempted directory traversal
+        user_path = '../file.txt'
+        expected_path = (base_resolve / '../file.txt').resolve()
+        with self.assertRaises(ValueError), self.assertLogs(genericLib.secure_logger, level="ERROR") as log:
+            genericLib.safe_join(base_resolve, user_path)
+        msg = f"ERROR:OPTCLIM.security:Path traversal detected: {user_path} escaping {base_resolve} resolving to {expected_path}"
+        self.assertEqual(log.output, [msg])
+
+        # Case 3: Attempt dir traversal with absolute path
+        user_path = './../file.txt'
+        expected_path = (base_resolve / './../file.txt').resolve()
+        with self.assertRaises(ValueError), self.assertLogs(genericLib.secure_logger, level="ERROR") as log:
+            genericLib.safe_join(base_resolve, user_path)
+
+        msg = f"ERROR:OPTCLIM.security:Path traversal detected: {user_path} escaping {base_resolve} resolving to {expected_path}"
+        self.assertEqual(log.output,[msg])
+
+        # Case 4: Absolute path
+
+        expected_path = (base_resolve / "/etc/passwd").resolve()
+        user_path = '/etc/passwd'
+        with self.assertRaises(ValueError), self.assertLogs(genericLib.secure_logger, level="ERROR") as log:
+            result = genericLib.safe_join(base_resolve, user_path)
+
+        msg = f"ERROR:OPTCLIM.security:Path traversal detected: {user_path} escaping {base_resolve} resolving to {expected_path}"
+        self.assertEqual(log.output,[msg])
 if __name__ == '__main__':
     unittest.main()

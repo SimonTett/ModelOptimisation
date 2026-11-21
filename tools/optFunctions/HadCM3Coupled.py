@@ -944,7 +944,7 @@ class testHadCM3(unittest.TestCase):
         MODELRUN.submit()
         # expect to have two directories names jc001 to jc002
         # count dirs
-        dirs = self.checkDir(MODELRUN.rootDir, 41)
+        dirs = self.checkDir(MODELRUN.study_dir, 41)
 
         self.assertEqual(2, len(dirs))  # expect two directories (Ctl to 40 years)
         # now run again. Should have 4 directories and all times should be 80.
@@ -957,7 +957,7 @@ class testHadCM3(unittest.TestCase):
         MODELRUN.submit()
         # expect to have four directories names jc001 to jc004
         # count dirs
-        dirs = self.checkDir(MODELRUN.rootDir, 81)
+        dirs = self.checkDir(MODELRUN.study_dir, 81)
 
         # now run again. Should have 4 directories and all times should be 80.
         MODELRUN = Submit.ModelSubmit(self.Config, HadCM3.HadCM3, None, EQ4, modelDirs=dirs,
@@ -995,7 +995,7 @@ class testHadCM3(unittest.TestCase):
         # expect to have two directories named jt001 to jc002
         # count dirs
         expectYr = 41
-        dirs = self.checkDir(MODELRUN.rootDir, expectYr, rootname='jt00')
+        dirs = self.checkDir(MODELRUN.study_dir, expectYr, rootname='jt00')
         self.assertEqual(2, len(dirs))  # expect two directories (Ctl to 40 years)
         # now run again with times increasing by 40 each time.
         # Should have 4 directories and all times should be expectYr.
@@ -1009,7 +1009,7 @@ class testHadCM3(unittest.TestCase):
             with self.assertRaises(exceptions.runModelError):
                 result = TCR(arr, MODELRUN=MODELRUN)  # should fail.
             MODELRUN.submit()  # run it.
-            dirs = self.checkDir(MODELRUN.rootDir, expectYr, rootname='jt00')
+            dirs = self.checkDir(MODELRUN.study_dir, expectYr, rootname='jt00')
             self.assertEqual(4, len(dirs), msg='Expecting %i directories got %i' % (4, len(dirs)))
 
         # and final read should give values.

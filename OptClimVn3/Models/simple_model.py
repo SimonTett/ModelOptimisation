@@ -15,20 +15,14 @@ import copy
 
 my_logger = logging.getLogger(f"OPTCLIM.{__name__}")
 class simple_model(Model):
-    # simple model.. Need to have personal version of submit_cmd, modify_model, perturb and set_params
+    # simple model.. Need to have a personal version of submit_cmd, modify_model, perturb and set_params
     # all other methods are as Model.
+    scripts = dict(
+        submit_script='run_simple_model.py'
+    )
+    scripts['continue_script'] = scripts['submit_script']  # continue is just submit
 
-    def __init__(self, *args, **kwargs): # study should be a study but study imports model.
-        """
-        simple_model init -- calls super class -- see Model.__init__ for documentation on these.
-        :param args:  arguments
-        :param kwargs: keyword arguments
-        kwargs & args are passed to the super class.
-        """
-        super().__init__(*args,  ** kwargs)  # call the super class init.
 
-        self.submit_script = pathlib.PurePath('run_simple_model.py')
-        self.continue_script = self.submit_script # continue is just submit
 
     def create_cmd(self, status:str, modifystr:str,indent:int=0) -> typing.List[str]:
         """
@@ -121,16 +115,16 @@ class simple_model(Model):
         runQueue = self.run_info.get('runQueue',None)
         extra_args=self.run_info.get('runExtraArgs',None)
         if self.status in ['INSTANTIATED', 'PERTURBED']:
-            script = self.submit_script
+            script = self.scripts['submit_script']
         elif self.status == 'CONTINUE':
-            script = self.continue_script
+            script = self.scripts['continue_script']
         else:
             raise ValueError(f"Status {self.status} not expected ")
         # just use the submit.
         outdir = self.model_dir / 'model_output'
         outdir.mkdir(parents=True, exist_ok=True)
         my_logger.debug(f"Created {outdir}")
-        cmd = self.engine.submit_cmd([self.model_dir/script, str(self.StudyConfig_path)],
+        cmd = self.engine.submit_cmd([self.script_dir/script, str(self.StudyConfig_path)],
                                      f"{self.name}{len(self.model_jids):05d}",
                                      outdir,run_queue=runQueue,
                                      run_code=runCode, time=runTime,
