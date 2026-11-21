@@ -6,6 +6,7 @@ SubmitStudy inherits from this and that has methods to submit models and modify 
 """
 from __future__ import annotations
 import matplotlib.pyplot as plt  # so we can plot
+import matplotlib as mpl
 import datetime
 import copy
 import logging
@@ -531,7 +532,8 @@ class Study:
         fig, ax = plt.subplots(3, 1, num=fig_name, figsize=[8.3, 11.7],
                                sharex='col', clear=True,layout='constrained')
         (costAx, paramAx, obsAx) = ax  # name the axis .
-        cmap = copy.copy(plt.cm.get_cmap('RdYlGn'))
+        # For matplotlib 3.11 on need to change to:
+        cmap = mpl.colormaps['RdYlGn'] # works for at least matplot 3.6 on
         cmap.set_under('skyblue')
         cmap.set_over('black')
         nx = len(cost)
