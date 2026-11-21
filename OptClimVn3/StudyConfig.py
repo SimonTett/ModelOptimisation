@@ -2287,7 +2287,8 @@ class OptClimConfigVn3(OptClimConfigVn2):
         :param **setargs -- arguments to set.
         example: config.set_dataFrameInfo(result=result,flaming=flaming,success=pd.Dataframe(data))
         """
-        # raise NotImplementedError("Write self test")
+        if isinstance(getargs,str):
+            getargs=[getargs] # convert to a list.
         result = dict()
         alg_info = self.alg_info()
         for k, v in setargs.items():

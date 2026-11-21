@@ -443,7 +443,7 @@ class runSubmit(SubmitStudy):
                                use_cache:bool = True) -> typing.Optional[pd.DataFrame]:
         """
         Return a dataframe of observations for all logical params.
-        :param normalize: normalize the observations by error estimates from target
+        :param normalize: normalize the observations by difference from  target divided by error estimate
         :param scale: scale the observations by self.config.scales()
         :param obs_names: Names to use, If None return everything in self.config.obsNames().
            If True uses all observations in self._logical_info.observations. This might fail with normalize if not all observations are present in tgt.
