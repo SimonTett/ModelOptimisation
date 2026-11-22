@@ -12,6 +12,6 @@ pytest~=9.0.3
 metomi-rose==2.2.0 # avoid most recent version.
 f90nml~=1.4.3
 filelock~=4.3 # used for file locking
-packaging~=26
+packaging~=26.0
 #PqQt5 # needed for interactive plotting
 
