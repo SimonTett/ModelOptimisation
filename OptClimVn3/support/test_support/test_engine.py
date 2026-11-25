@@ -358,7 +358,7 @@ class TestEngine(unittest.TestCase):
         ]
 
         for env_vars, expected in env_test_cases:
-            with patch.dict(os.environ, env_vars, clear=False):
+            with patch.dict(os.environ, env_vars, clear=False),patch('socket.getfqdn', return_value='not_special.ed.ac.uk') :
                 result = engine.abstractEngine.detect_scheduler()
                 self.assertEqual(result, expected,
                     f"Failed for env_vars: {env_vars}")
@@ -384,7 +384,7 @@ class TestEngine(unittest.TestCase):
                     self.assertIsNone(result)
 
         # Test 4: Env var priority over binary detection
-        with patch.dict(os.environ, {'SLURM_JOB_ID': '123456'}):
+        with patch.dict(os.environ, {'SLURM_JOB_ID': '123456'}), patch('socket.getfqdn', return_value='localhost'):
             with patch('shutil.which', return_value='/usr/bin/qsub'):
                 result = engine.abstractEngine.detect_scheduler()
                 self.assertEqual(result, 'SLURM')
