@@ -113,7 +113,7 @@ class simple_model(Model):
         runTime = self.run_info.get('runTime', 30)  # default is 30 seconds.
         runCode = self.run_info.get('runCode')
         runQueue = self.run_info.get('runQueue',None)
-        extra_args=self.run_info.get('runExtraArgs',None)
+        qos=self.run_info.get('qos',None)
         if self.status in ['INSTANTIATED', 'PERTURBED']:
             script = self.scripts['submit_script']
         elif self.status == 'CONTINUE':
@@ -128,7 +128,7 @@ class simple_model(Model):
                                      f"{self.name}{len(self.model_jids):05d}",
                                      outdir,run_queue=runQueue,
                                      run_code=runCode, time=runTime,
-                                     rundir=self.model_dir,extra_args=extra_args)
+                                     rundir=self.model_dir,qos=qos)
 
         return cmd
 

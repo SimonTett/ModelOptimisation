@@ -6,13 +6,14 @@ It could work for running a model but it is likely that the model you want to ru
 your computer. 
 """
 
-##from __future__ import annotations
 
 import logging
 import os
+import socket
 import subprocess
 import typing
 import pathlib
+import warnings
 from abc import ABCMeta, abstractmethod
 import shlex # for protecting commands with spaces etc.
 
@@ -28,17 +29,21 @@ class abstractEngine(model_base, journal):
     Abstract class for Engines. Inherit and implement for your own class.
     """
 
-    allowed_eng: typing.TypeAlias = typing.Literal['SGE', 'SLURM','SLURM_SYSU']  # allowed engines
+    allowed_eng: typing.TypeAlias = typing.Literal['SGE', 'SLURM','SLURM_SYSU','SLURM_CIRRUS']  # allowed engines
 
     # AI generated code to guess which engine we can use.
     @staticmethod
     def detect_scheduler(timeout=1.0):
         """
 
-        Return one of: 'SLURM', 'PBS', 'SGE', 'LSF', 'UNKNOWN', or None (none found).
+        Return one of: 'SLURM', "SLURM_CIRRUS",'PBS', 'SGE', 'LSF', 'UNKNOWN', or None (none found).
         Uses env vars first, then looks for scheduler binaries and probes them.
         Non-blocking (uses short timeouts).
         """
+        #0) Specific machine checks,
+        fqdn = socket.getfqdn()
+        if 'cirrus.ac.uk' in fqdn:
+            return 'SLURM_CIRRUS' # on a UK supercomputer (cirrus) which uses SLURM but has some specific settings.
         # 1) env var checks (when running inside a job)
         env = os.environ
         if 'SLURM_JOB_ID' in env or 'SLURM_STEP_ID' in env:
@@ -163,8 +168,10 @@ class abstractEngine(model_base, journal):
             return cmd
 
         if rundir is None:
-            rundir = '$PWD'  # path at time of running (on linux systems)
-        s = f"cd {str(rundir)}; export PYTHONPATH=$PYTHONPATH ; export PATH=$PATH; export OPTCLIMTOP=$OPTCLIMTOP; " + \
+            rundir = pathlib.Path.cwd() # path at time of running (on linux systems)
+        if isinstance(rundir, str):
+            rundir = pathlib.Path(rundir)
+        s = f"cd {rundir.as_posix()}; export PYTHONPATH=$PYTHONPATH; export PATH=$PATH; export OPTCLIMTOP=$OPTCLIMTOP; " + \
             " ".join([str(c) for c in cmd])
         # sanitize the command -- in case there are spaces etc.
         s = shlex.quote(s)
@@ -203,8 +210,8 @@ class abstractEngine(model_base, journal):
         time = run_info.get('runTime',default_values.get('runTime'))  # get the runTime.
         run_code = run_info.get('runCode',default_values.get('runCode'))
         run_queue = run_info.get('runQueue',default_values.get('runQueue'))
-        extra_args = run_info.get('runExtraArgs',default_values.get('runExtraArgs'))  # extra args to pass to submission command
-        job_params = dict(time=time, run_code=run_code, run_queue=run_queue, extra_args=extra_args)
+        qos = run_info.get('qos',default_values.get('qos'))  # extra args to pass to submission command
+        job_params = dict(time=time, run_code=run_code, run_queue=run_queue, qos=qos)
         return job_params
 
     @abstractmethod
@@ -220,7 +227,7 @@ class abstractEngine(model_base, journal):
                    mem: int = 4000,
                    n_cores: int = 1,
                    n_tasks: typing.Optional[int] = None,
-                   extra_args: typing.Optional[list[str]] = None
+                   qos: typing.Optional[str] = None,
                    ) -> typing.List[str]:
         """
         Submit function.
@@ -240,7 +247,7 @@ class abstractEngine(model_base, journal):
           If False no hold will be done
         :param n_cores: No of cores to use.
         :param n_tasks: no of tasks to run. Will submit an array job.
-        :param extra_args -- any system specific extra args which should be passed to the submission command.
+        :param qos: Quality of service to use for the job. Only used, for now, on SLURM
         :return: the command to be submitted.
         """
         pass
@@ -307,7 +314,7 @@ class sge_engine(abstractEngine):
                    mem: int = 4000,
                    n_cores: int = 1,
                    n_tasks: typing.Optional[int] = None,
-                   extra_args: typing.Optional[list[str]] = None,
+                   qos: typing.Optional[str] = None,
                    ):
         """
         Function to submit to SGE
@@ -324,7 +331,8 @@ class sge_engine(abstractEngine):
           If provided as a bool then job will held if hold_jid is True. If False no hold will be done
         :param n_cores: No of cores to use.
         :param n_tasks: If not None the size of the task array to be ran.
-        :param extra_args: List of extra args which are passed direct to qsub.
+        :param n_tasks: If not None the size of the task array to be ran.
+        :param qos: Quality of service to use for the job. Only used, for now, on SLURM
         :return: the command to be submitted.
         """
 
@@ -336,10 +344,13 @@ class sge_engine(abstractEngine):
                       '-l', f'h_vmem={mem}M', # memory in MB
                       '-l', f'h_rt={time}', # time in seconds
                       '-V', # pass env vars in
-                      "-e", str(outdir) + "/", # outdir for stderr
-                      "-o", str(outdir) + "/", # outdir for stderr
+                      "-e", outdir.as_posix() + "/",  # outdir for stderr
+                      "-o", outdir.as_posix() + "/",  # outdir for stderr
                       '-N', name # name of job
                       ]
+
+
+
 
         if run_code is not None:
             submit_cmd += ['-A', run_code]
@@ -349,7 +360,7 @@ class sge_engine(abstractEngine):
         if rundir is None:
             submit_cmd += ['-cwd']  # run in current working dir
         else:
-            submit_cmd += ['-wd', str(rundir)]
+            submit_cmd += ['-wd', rundir.as_posix()]
 
         if isinstance(hold, bool) and hold:
             submit_cmd += ['-h']  # If False nothing will be held
@@ -358,11 +369,12 @@ class sge_engine(abstractEngine):
         if isinstance(hold, list) and (len(hold) > 0):  # need a non-empty list.
             submit_cmd += ['-hold_jid', ",".join(hold)]  # hold it on multiple jobs
         if n_cores > 1:  # more than 1 core wanted.
-            submit_cmd += ['-pe ', f'mpi {n_cores}']  # ask for mpi env.
+            submit_cmd += ['-pe', f'mpi {n_cores}']  # ask for mpi env.
         if n_tasks is not None:  # want to run a task array
             submit_cmd += ['-t', f'1:{n_tasks}']
-        if extra_args is not None: # got some extra args
-            submit_cmd += extra_args
+        if qos is not None:
+            warnings.warn(f"qos={qos} is not implemented for SGE engine. Ignoring it.",
+                          UserWarning,stacklevel=2)
         submit_cmd += cmd
         submit_cmd = self.connect_fn(submit_cmd, rundir=rundir)
         return submit_cmd
@@ -405,13 +417,15 @@ class sge_engine(abstractEngine):
         :param job_id: job id for status to be checked.
         :param full_output If True will return (raw) full output
         :return: One of 'Running','Held','Error','Suspended','Queuing',"Failed" or full output
+
+        See https://gridscheduler.sourceforge.net/htmlman/htmlman1/qstat.html for details of qstat cmd.
         """
-        cmd = ['qstat',f'-j {job_id}']
-        cmd = self.connect_fn(cmd)  #
+        cmd = ['qstat', '-j', job_id]
+        cmd = self.connect_fn(cmd)
         cmd = [os.path.expandvars(c) for c in cmd]
-        shell= False
-        if len(cmd) == 1: # original output so need shell. ssh seems to run shell!
-            shell=True
+        shell = False
+        if len(cmd) == 1:  # original output so need shell. ssh seems to run shell!
+            shell = True
         result = subprocess.run(cmd, capture_output=True, text=True,shell=shell)
         # if the cmd is not found this will generate a FileNotFoundError or
 
@@ -469,10 +483,10 @@ class slurm_engine(abstractEngine):
                    run_queue: typing.Optional[str] = None,
                    hold: typing.List[str] | str | bool = False,
                    time: int = 1800,
-                   mem: int = 4000,
+                   mem: int|None = 4000,
                    n_cores: int = 1,
                    n_tasks: typing.Optional[int] = None,
-                   extra_args:typing.Optional[list[str]]=None):
+                   qos:typing.Optional[str] = None):
         """
         Function to submit command to SLURM
 
@@ -490,7 +504,7 @@ class slurm_engine(abstractEngine):
         :param n_cores: No of cores to be requested
         :param n_tasks: If not not None the number of array tasks to run.
          all other 
-        :param extra_args: Extra args which should be interpreted by the submission cmd (normally sbatch)
+        :param qos: Quality of service to use for the job.
         :return: the command to be submitted.
         """
         if outdir is None:
@@ -498,17 +512,20 @@ class slurm_engine(abstractEngine):
             my_logger.debug(f"Set outdir to {outdir}")
         #TODO: Decide what to do about mem, mincpus, time. Perhaps have them as optional arguments and add them in...
         submit_cmd = [self._submit_cmd,
-                      f'--mem={mem}', # memory in Mybtes
                       f'--cpus-per-task={n_cores}', # cpus wanted per task.
                       f'--time=0:00:{time}', # Time in seconds to run for
-                      '--output', f'{outdir}/%x_%A_%a.out', # where std out goes
-                      '--error', f'{outdir}/%x_%A_%a.err', # where std error goes
+                      '--output', f'{outdir.as_posix()}/%x_%A_%a.out', # where std out goes
+                      '--error', f'{outdir.as_posix()}/%x_%A_%a.err', # where std error goes
                       '-J', name, # name of the job
                       '--ntasks=1', # use 1 task.
                       '--export=ALL',
                       # export current env. Should not be needed as default but seems to be needed on Archer2.
-                      ] 
+                      ]
+        if mem is not None:
+            submit_cmd += [f'--mem={mem}']  # memory in Mybtes
         # add on others.
+        if qos is not None:
+            submit_cmd += [f'--qos={qos}']
         if run_code is not None:
             submit_cmd += ['-A', run_code]
         if run_queue is not None:
@@ -524,8 +541,7 @@ class slurm_engine(abstractEngine):
             submit_cmd += [f"--dependency=afterok:" + ":".join(hold)]
         if n_tasks is not None:
             submit_cmd += ['-a', f'1-{n_tasks}']  # -a =  task array
-        if extra_args is not None: # got some extra args add them in
-            submit_cmd += extra_args
+
         submit_cmd += cmd
 
         submit_cmd = self.connect_fn(submit_cmd, rundir=rundir)
@@ -569,13 +585,14 @@ class slurm_engine(abstractEngine):
         :param full_output If True will return (raw) full output
         Will raise FileNotFoundError (windows) or subprocess.CalledProcessError (linux) if the command is not found.
         :return: One of 'Running','Held','Error','Suspended','Queuing',"Failed","NotFound" or full output
+        See https://slurm.schedmd.com/squeue.html for doc using --long option.
         """
 
         cmd = [self._queue_cmd, f"--job={job_id}", '--long']  # get the output in long form for specified job.
         if not full_output:
             cmd += ['--noheader']
 
-        self.connect_fn(cmd)
+        cmd = self.connect_fn(cmd)
         try:
             result = subprocess.check_output(cmd, text=True)
         except (subprocess.CalledProcessError,FileNotFoundError) as e:
@@ -628,5 +645,60 @@ class slurm_sysu_engine(slurm_engine):
     _control_cmd:str = 'yhcontrol'
     _kill_cmd:str = 'yhcancel'
 
+class slurm_cirrus_engine(slurm_engine):
+    """
+    SLURM as used at Cirrus (UK supercomputer).
+    The submit_cmd is more fusy than std
+    """
+    def submit_cmd(self, cmd: typing.List, name: str,
+                   outdir: typing.Optional[pathlib.Path] = None,
+                   rundir: typing.Optional[pathlib.Path] = None,
+                   run_code: typing.Optional[str] = None,
+                   run_queue: typing.Optional[str] = 'standard',
+                   hold: typing.List[str] | str | bool = False,
+                   time: int = 1800,
+                   mem: typing.Optional[int] = None,
+                   n_cores: int = 1,
+                   n_tasks: typing.Optional[int] = None,
+                   qos:typing.Optional[str] = 'standard',
+                   ) -> list[str]:
+        """
+         Function to submit command to SLURM on Cirrus.
+
+          Must have run_code provided. If mem provided then it will be ignored with a warning messahe.
+
+        :param cmd: list of commands to run.
+        :param name: name of job
+        :param outdir: Directory where output will be put. If None then will be cwd/output
+        :param rundir: Directory where job will be ran. If None will run in current working dir when command ran.
+        :param run_code: Code to use to run the job.
+        :param run_queue: Partition (queue)  to use to run the job. Default is 'standard'
+        :param hold: If provided as a string, this jobid will need to successfully run before cmd is ran.
+          If a list (of jobid's) then all jobs will need to be run
+          If provided as a bool then job will held if hold_jid is True. If False no hold will be done
+        :param time: Time (in seconds) needed by job,
+        :param n_cores: No of cores to be requested
+        :param n_tasks: If not not None the number of array tasks to run.
+        :param mem: Provided for compatability with slurm_engine
+        :param qos: QoS to use for the job. Default is 'standard'
+        :return: the command to be submitted.
+        """
+
+        if mem is not None:
+            warnings.warn("Cirrus does not allow memory to be specified as it is set by the number of cores. Setting to None ",
+                          UserWarning,stacklevel=2)
+            mem = None
+        # check have run_code, qos and run_queue set. These are required for Cirrus SLURM engine.
+        if run_code is None:
+            raise ValueError("run_code must be provided for Cirrus SLURM engine. It is used to specify the account to run under.")
+        if qos is None:
+            raise ValueError("qos must be provided for Cirrus SLURM engine. It is used to specify the quality of service to use.")
+        if run_queue is None:
+            raise ValueError("run_queue must be provided for Cirrus SLURM engine. It is used to specify the partition to use.")
+        cmd_to_submit = super().submit_cmd(cmd=cmd, name=name, outdir=outdir, rundir=rundir, run_code=run_code,
+                      run_queue=run_queue, hold=hold, time=time, mem=mem, n_cores=n_cores,
+                      n_tasks=n_tasks, qos=qos)
+        return cmd_to_submit
+
 KNOWN_ENGINES = dict(SGE=sge_engine, SLURM=slurm_engine,
-                     SLURM_SYSU=slurm_sysu_engine)  # known engines
+                     SLURM_SYSU=slurm_sysu_engine,SLURM_CIRRUS=slurm_cirrus_engine)  # known engines
